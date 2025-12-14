@@ -1,11 +1,11 @@
 package com.docs.scanner.presentation.navigation
 
 import androidx.compose.runtime.*
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
+import com.docs.scanner.presentation.screens.camera.CameraScreen
 import com.docs.scanner.presentation.screens.editor.EditorScreen
 import com.docs.scanner.presentation.screens.folders.FoldersScreen
 import com.docs.scanner.presentation.screens.imageviewer.ImageViewerScreen
@@ -38,6 +38,15 @@ fun NavGraph(
                 },
                 onSettingsClick = {
                     navController.navigate(Screen.Settings.route)
+                },
+                onSearchClick = {
+                    navController.navigate(Screen.Search.route)
+                },
+                onTermsClick = {
+                    navController.navigate(Screen.Terms.route)
+                },
+                onCameraClick = {
+                    navController.navigate(Screen.Camera.route)
                 },
                 onQuickScanComplete = { recordId ->
                     navController.navigate(Screen.Editor.createRoute(recordId))
@@ -79,6 +88,18 @@ fun NavGraph(
                 },
                 onImageClick = { documentId ->
                     navController.navigate(Screen.ImageViewer.createRoute(documentId))
+                }
+            )
+        }
+        
+        composable(Screen.Camera.route) {
+            CameraScreen(
+                onImageCaptured = { uris ->
+                    // TODO: Handle captured images
+                    navController.popBackStack()
+                },
+                onBackClick = {
+                    navController.popBackStack()
                 }
             )
         }
