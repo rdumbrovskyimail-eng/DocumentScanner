@@ -1,6 +1,8 @@
 package com.docs.scanner.data.remote.camera
 
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.IntentSender
 import androidx.activity.result.IntentSenderRequest
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
@@ -9,6 +11,7 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_JPEG
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_PDF
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.SCANNER_MODE_FULL
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
@@ -25,7 +28,7 @@ import javax.inject.Inject
  * ВАЖНО: Требует Google Play Services
  */
 class DocumentScannerWrapper @Inject constructor(
-    private val activity: Activity
+    @ApplicationContext private val context: Context
 ) {
     
     private val scanner = GmsDocumentScanning.getClient(
@@ -36,6 +39,18 @@ class DocumentScannerWrapper @Inject constructor(
             .setScannerMode(SCANNER_MODE_FULL) // полный режим с UI
             .build()
     )
+    
+    /**
+     * Получает Activity из Context
+     */
+    private fun Context.getActivity(): Activity? {
+        var context = this
+        while (context is ContextWrapper) {
+            if (context is Activity) return context
+            context = context.baseContext
+        }
+        return null
+    }
     
     /**
      * Создает IntentSenderRequest для запуска сканера
@@ -55,6 +70,9 @@ class DocumentScannerWrapper @Inject constructor(
      */
     suspend fun getStartScanIntent(): IntentSenderRequest {
         return try {
+            val activity = context.getActivity() 
+                ?: throw IllegalStateException("Context is not an Activity")
+            
             val intentSender: IntentSender = scanner.getStartScanIntent(activity).await()
             IntentSenderRequest.Builder(intentSender).build()
         } catch (e: Exception) {
