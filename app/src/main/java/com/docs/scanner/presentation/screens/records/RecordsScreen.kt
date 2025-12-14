@@ -1,6 +1,6 @@
 package com.docs.scanner.presentation.screens.records
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,6 +34,7 @@ fun RecordsScreen(
     val folderName by viewModel.folderName.collectAsState()
     
     var showCreateDialog by remember { mutableStateOf(false) }
+    var editingRecord by remember { mutableStateOf<Record?>(null) }
     var showDeleteDialog by remember { mutableStateOf<Record?>(null) }
     
     LaunchedEffect(folderId) {
@@ -100,6 +101,7 @@ fun RecordsScreen(
                             RecordCard(
                                 record = record,
                                 onClick = { onRecordClick(record.id) },
+                                onLongClick = { editingRecord = record },
                                 onDelete = { showDeleteDialog = record }
                             )
                         }
@@ -116,6 +118,7 @@ fun RecordsScreen(
         }
     }
     
+    // Create dialog
     if (showCreateDialog) {
         var name by remember { mutableStateOf("") }
         var description by remember { mutableStateOf("") }
@@ -164,6 +167,84 @@ fun RecordsScreen(
         )
     }
     
+    // Edit menu
+    editingRecord?.let { record ->
+        var showMenu by remember { mutableStateOf(true) }
+        var showRenameDialog by remember { mutableStateOf(false) }
+        
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { 
+                showMenu = false
+                editingRecord = null
+            }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Rename") },
+                onClick = { 
+                    showMenu = false
+                    showRenameDialog = true
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Edit, contentDescription = null)
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Delete") },
+                onClick = {
+                    showMenu = false
+                    showDeleteDialog = record
+                    editingRecord = null
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Delete, contentDescription = null)
+                }
+            )
+        }
+        
+        if (showRenameDialog) {
+            var newName by remember { mutableStateOf(record.name) }
+            
+            AlertDialog(
+                onDismissRequest = { 
+                    showRenameDialog = false
+                    editingRecord = null
+                },
+                title = { Text("Rename Record") },
+                text = {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.updateRecord(record.copy(name = newName))
+                            showRenameDialog = false
+                            editingRecord = null
+                        },
+                        enabled = newName.isNotBlank()
+                    ) {
+                        Text("Save")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { 
+                        showRenameDialog = false
+                        editingRecord = null
+                    }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+    }
+    
+    // Delete confirmation
     showDeleteDialog?.let { record ->
         ConfirmDialog(
             title = "Delete Record?",
@@ -182,12 +263,16 @@ fun RecordsScreen(
 private fun RecordCard(
     record: Record,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
@@ -228,14 +313,6 @@ private fun RecordCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            
-            IconButton(onClick = onDelete) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.error
-                )
-            }
         }
     }
 }
@@ -251,6 +328,7 @@ sealed interface RecordsUiState {
 class RecordsViewModel @Inject constructor(
     private val getRecordsUseCase: GetRecordsUseCase,
     private val createRecordUseCase: CreateRecordUseCase,
+    private val updateRecordUseCase: UpdateRecordUseCase,
     private val deleteRecordUseCase: DeleteRecordUseCase,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -289,11 +367,15 @@ class RecordsViewModel @Inject constructor(
         }
     }
     
+    fun updateRecord(record: Record) {
+        viewModelScope.launch {
+            updateRecordUseCase(record)
+        }
+    }
+    
     fun deleteRecord(id: Long) {
         viewModelScope.launch {
             deleteRecordUseCase(id)
         }
     }
 }
-
-// FILE_CONTINUED: EditorScreen in next file due to length...
