@@ -3,7 +3,6 @@ package com.docs.scanner.presentation.screens.folders
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -145,7 +144,6 @@ fun FoldersScreen(
         }
     }
     
-    // Create folder dialog
     if (showCreateDialog) {
         var name by remember { mutableStateOf("") }
         var description by remember { mutableStateOf("") }
@@ -194,7 +192,6 @@ fun FoldersScreen(
         )
     }
     
-    // Edit folder dialog
     editingFolder?.let { folder ->
         var showMenu by remember { mutableStateOf(true) }
         var showRenameDialog by remember { mutableStateOf(false) }
@@ -271,7 +268,6 @@ fun FoldersScreen(
         }
     }
     
-    // Delete confirmation
     showDeleteDialog?.let { folder ->
         ConfirmDialog(
             title = "Delete Folder?",
