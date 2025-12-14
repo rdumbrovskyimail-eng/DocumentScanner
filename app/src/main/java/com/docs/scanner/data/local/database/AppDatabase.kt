@@ -16,7 +16,7 @@ import com.docs.scanner.data.local.database.entities.RecordEntity
         DocumentEntity::class
     ],
     version = 1,
-    exportSchema = true
+    exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun folderDao(): FolderDao
