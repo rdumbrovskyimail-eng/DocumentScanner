@@ -39,7 +39,7 @@ class MLKitScanner @Inject constructor(
             val blocks = visionText.textBlocks.map { block ->
                 TextBlock(
                     text = block.text,
-                    confidence = block.confidence ?: 0f,
+                    confidence = 1.0f, // ML Kit больше не предоставляет confidence
                     lines = block.lines.size
                 )
             }
