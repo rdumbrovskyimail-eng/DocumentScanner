@@ -1,6 +1,6 @@
 package com.docs.scanner.data.remote.camera
 
-import android.content.Context
+import android.app.Activity
 import android.content.IntentSender
 import androidx.activity.result.IntentSenderRequest
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
@@ -25,7 +25,7 @@ import javax.inject.Inject
  * ВАЖНО: Требует Google Play Services
  */
 class DocumentScannerWrapper @Inject constructor(
-    private val context: Context
+    private val activity: Activity
 ) {
     
     private val scanner = GmsDocumentScanning.getClient(
@@ -55,7 +55,7 @@ class DocumentScannerWrapper @Inject constructor(
      */
     suspend fun getStartScanIntent(): IntentSenderRequest {
         return try {
-            val intentSender: IntentSender = scanner.getStartScanIntent(context).await()
+            val intentSender: IntentSender = scanner.getStartScanIntent(activity).await()
             IntentSenderRequest.Builder(intentSender).build()
         } catch (e: Exception) {
             throw Exception("Failed to start document scanner: ${e.message}", e)
