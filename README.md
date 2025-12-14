@@ -1,47 +1,44 @@
-# 📱 Document Scanner
+# Document Scanner Android Project
 
-Android приложение для сканирования, распознавания (OCR) и перевода документов с автоопределением языка на русский.
+## Project Structure
 
-## ✨ Возможности
+This archive contains all the source code files for the Document Scanner Android application.
 
-- 📸 **Умное сканирование** - ML Kit Document Scanner с авто-обнаружением краёв
-- 🔤 **OCR распознавание** - Извлечение текста из изображений на любом языке
-- 🌍 **Авто-перевод** - Перевод на русский с помощью Gemini AI
-- 📁 **Организация** - Папки → Записи → Документы (многостраничные)
-- ⚡ **Быстрое сканирование** - Кнопка камеры в главном меню
-- 💾 **Локальное хранилище** - База данных Room
-- 🎨 **Material Design 3** - Современный дизайн
+### Main Components:
+- **Presentation Layer**: UI screens and ViewModels (Jetpack Compose)
+- **Domain Layer**: Use cases and business logic
+- **Data Layer**: Repositories, database (Room), and API clients
 
-## 🏗️ Технологии
+### Technologies Used:
+- Kotlin
+- Jetpack Compose
+- Room Database
+- ML Kit (OCR & Document Scanner)
+- Hilt (Dependency Injection)
+- Retrofit (Networking)
+- Google Drive API
+- Coil (Image Loading)
 
-- **Kotlin** 2.2.21
-- **Jetpack Compose** (BOM 2025.12.00)
-- **Room** 2.8.4
-- **Hilt** - Dependency Injection
-- **ML Kit** + **Gemini 2.0 Flash**
-- Clean Architecture + MVVM
+### Build Instructions:
+1. Extract this ZIP archive
+2. Open the project in Android Studio Ladybug (2024.2.1) or later
+3. Wait for Gradle sync to complete
+4. Run on device/emulator (minimum API 26, target API 35)
 
-## 🚀 Начало работы
+### Features:
+✅ Document scanning with ML Kit Document Scanner
+✅ Multi-language OCR text recognition (Latin, Cyrillic, Chinese, Japanese, Korean, Arabic, Hindi)
+✅ Google Translate API integration
+✅ Hierarchical document organization (Folders → Records → Documents)
+✅ Google Drive backup and restore
+✅ Full-text search across all documents
+✅ Term reminders with notifications
+✅ Debug logging system
+✅ Material 3 Design
 
-1. Клонировать репозиторий
-2. Получить Gemini API Key: https://makersuite.google.com/app/apikey
-3. Запустить приложение
-4. Ввести API Key при первом запуске
+### Project Statistics:
+- Total Files: 26
+- Directories: 31
 
-## 📦 Структура проекта
-
-```
-app/
-├── data/           # Data Layer (Room, DataStore, API)
-├── domain/         # Domain Layer (Models, Repositories, UseCases)
-├── presentation/   # UI Layer (Compose, ViewModels)
-└── di/             # Dependency Injection
-```
-
-## 📄 Лицензия
-
-MIT License
-
-## 👨‍💻 Автор
-
-Your Name
+Generated: 14.12.2025, 14:54:40
+Built with ❤️ for Android
