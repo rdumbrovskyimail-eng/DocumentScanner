@@ -17,7 +17,6 @@ class EditorViewModel @Inject constructor(
     private val getDocumentsUseCase: GetDocumentsUseCase,
     private val addDocumentUseCase: AddDocumentUseCase,
     private val deleteDocumentUseCase: DeleteDocumentUseCase,
-    private val retryTranslationUseCase: RetryTranslationUseCase,
     private val recordRepository: RecordRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -29,8 +28,6 @@ class EditorViewModel @Inject constructor(
     
     private val _record = MutableStateFlow<Record?>(null)
     val record: StateFlow<Record?> = _record.asStateFlow()
-    
-    private var clipboardContent: String? = null
     
     fun loadRecord(recordId: Long) {
         viewModelScope.launch {
@@ -56,16 +53,7 @@ class EditorViewModel @Inject constructor(
     
     fun addDocument(imageUri: Uri) {
         viewModelScope.launch {
-            when (val result = addDocumentUseCase(recordId, imageUri)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    _uiState.value = EditorUiState.Error(
-                        result.message ?: "Failed to add document"
-                    )
-                }
-                else -> {}
-            }
+            addDocumentUseCase(recordId, imageUri)
         }
     }
     
@@ -75,24 +63,29 @@ class EditorViewModel @Inject constructor(
         }
     }
     
-    fun retryTranslation(documentId: Long) {
+    fun updateOriginalText(documentId: Long, newText: String) {
         viewModelScope.launch {
-            when (val result = retryTranslationUseCase(documentId)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    _uiState.value = EditorUiState.Error(
-                        result.message ?: "Failed to retry translation"
-                    )
-                }
-                else -> {}
+            // TODO: implement in repository
+        }
+    }
+    
+    fun updateRecordName(newName: String) {
+        viewModelScope.launch {
+            _record.value?.let { rec ->
+                val updated = rec.copy(name = newName)
+                recordRepository.updateRecord(updated)
+                _record.value = updated
             }
         }
     }
     
-    fun copyToClipboard(text: String?) {
-        if (text != null) {
-            clipboardContent = text
+    fun updateRecordDescription(newDescription: String?) {
+        viewModelScope.launch {
+            _record.value?.let { rec ->
+                val updated = rec.copy(description = newDescription)
+                recordRepository.updateRecord(updated)
+                _record.value = updated
+            }
         }
     }
 }

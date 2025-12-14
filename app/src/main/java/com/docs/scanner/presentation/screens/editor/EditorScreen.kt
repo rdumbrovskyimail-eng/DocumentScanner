@@ -1,8 +1,13 @@
 package com.docs.scanner.presentation.screens.editor
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,13 +17,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.docs.scanner.domain.model.Document
 import com.docs.scanner.domain.model.ProcessingStatus
-import com.docs.scanner.domain.model.Record
-import com.docs.scanner.domain.usecase.*
 import com.docs.scanner.presentation.components.*
 import java.io.File
 
@@ -31,33 +39,58 @@ fun EditorScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val record by viewModel.record.collectAsState()
+    val context = LocalContext.current
+    
+    var showEditNameDialog by remember { mutableStateOf(false) }
+    var showEditDescDialog by remember { mutableStateOf(false) }
+    var editingDocument by remember { mutableStateOf<Document?>(null) }
     
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { viewModel.addDocument(it) }
+        uri?.let {
+            viewModel.quickScan(uri) { recordId ->
+                onQuickScanComplete(recordId)
+            }
+        }
     }
     
-    LaunchedEffect(recordId) {
-        viewModel.loadRecord(recordId)
-    }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var editingFolder by remember { mutableStateOf<Folder?>(null) }
+    var showDeleteDialog by remember { mutableStateOf<Folder?>(null) }
     
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(record?.name ?: "Loading...") },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                title = { Text("Document Scanner") },
+                actions = {
+                    IconButton(onClick = onSearchClick) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
+                    
+                    IconButton(onClick = onTermsClick) {
+                        Icon(Icons.Default.Alarm, contentDescription = "Terms")
+                    }
+                    
+                    IconButton(onClick = onCameraClick) {
+                        Icon(Icons.Default.CameraAlt, contentDescription = "Camera")
+                    }
+                    
+                    IconButton(onClick = { galleryLauncher.launch("image/*") }) {
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = "Gallery")
+                    }
+                    
+                    IconButton(onClick = onSettingsClick) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }
             )
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { galleryLauncher.launch("image/*") }
+                onClick = { showCreateDialog = true }
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Document")
+                Icon(Icons.Default.Add, contentDescription = "Create Folder")
             }
         }
     ) { padding ->
@@ -67,289 +100,331 @@ fun EditorScreen(
                 .padding(padding)
         ) {
             when (uiState) {
-                is EditorUiState.Loading -> {
+                is FoldersUiState.Loading -> {
                     CircularProgressIndicator(
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }
                 
-                is EditorUiState.Empty -> {
+                is FoldersUiState.Empty -> {
                     EmptyState(
                         icon = {
                             Icon(
-                                imageVector = Icons.Default.CameraAlt,
+                                imageVector = Icons.Default.FolderOpen,
                                 contentDescription = null,
                                 modifier = Modifier.size(64.dp),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         },
-                        title = "No documents yet",
-                        message = "Add your first document to scan and translate",
-                        actionText = "Add Document",
-                        onActionClick = { galleryLauncher.launch("image/*") }
+                        title = "No folders yet",
+                        message = "Create your first folder to organize documents",
+                        actionText = "Create Folder",
+                        onActionClick = { showCreateDialog = true }
                     )
                 }
                 
-                is EditorUiState.Success -> {
-                    val documents = (uiState as EditorUiState.Success).documents
+                is FoldersUiState.Success -> {
+                    val folders = (uiState as FoldersUiState.Success).folders
                     
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(documents, key = { it.id }) { document ->
-                            DocumentCard(
-                                document = document,
-                                onImageClick = { onImageClick(document.id) },
-                                onCopyOriginal = { viewModel.copyToClipboard(document.originalText) },
-                                onCopyTranslation = { viewModel.copyToClipboard(document.translatedText) },
-                                onRetryTranslation = { viewModel.retryTranslation(document.id) },
-                                onDelete = { viewModel.deleteDocument(document.id) }
+                        items(folders, key = { it.id }) { folder ->
+                            FolderCard(
+                                folder = folder,
+                                onClick = { onFolderClick(folder.id) },
+                                onLongClick = { editingFolder = folder },
+                                onDelete = { showDeleteDialog = folder }
                             )
                         }
                     }
                 }
                 
-                is EditorUiState.Error -> {
+                is FoldersUiState.Error -> {
                     ErrorState(
-                        error = (uiState as EditorUiState.Error).message,
-                        onRetry = { viewModel.loadRecord(recordId) }
+                        error = (uiState as FoldersUiState.Error).message,
+                        onRetry = viewModel::loadFolders
                     )
                 }
             }
         }
+    }
+    
+    // Create folder dialog
+    if (showCreateDialog) {
+        var name by remember { mutableStateOf("") }
+        var description by remember { mutableStateOf("") }
+        
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            title = { Text("Create Folder") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("Description (optional)") },
+                        singleLine = false,
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.createFolder(name, description.ifBlank { null })
+                        showCreateDialog = false
+                    },
+                    enabled = name.isNotBlank()
+                ) {
+                    Text("Create")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+    
+    // Edit folder dialog
+    editingFolder?.let { folder ->
+        var showMenu by remember { mutableStateOf(true) }
+        var showRenameDialog by remember { mutableStateOf(false) }
+        
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { 
+                showMenu = false
+                editingFolder = null
+            }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Rename") },
+                onClick = { 
+                    showMenu = false
+                    showRenameDialog = true
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Edit, contentDescription = null)
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Delete") },
+                onClick = {
+                    showMenu = false
+                    showDeleteDialog = folder
+                    editingFolder = null
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Delete, contentDescription = null)
+                }
+            )
+        }
+        
+        if (showRenameDialog) {
+            var newName by remember { mutableStateOf(folder.name) }
+            
+            AlertDialog(
+                onDismissRequest = { 
+                    showRenameDialog = false
+                    editingFolder = null
+                },
+                title = { Text("Rename Folder") },
+                text = {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.updateFolder(folder.copy(name = newName))
+                            showRenameDialog = false
+                            editingFolder = null
+                        },
+                        enabled = newName.isNotBlank()
+                    ) {
+                        Text("Save")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { 
+                        showRenameDialog = false
+                        editingFolder = null
+                    }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+    }
+    
+    // Delete confirmation
+    showDeleteDialog?.let { folder ->
+        ConfirmDialog(
+            title = "Delete Folder?",
+            message = "This will delete \"${folder.name}\" and all its contents. This action cannot be undone.",
+            confirmText = "Delete",
+            onConfirm = {
+                viewModel.deleteFolder(folder.id)
+                showDeleteDialog = null
+            },
+            onDismiss = { showDeleteDialog = null }
+        )
     }
 }
 
 @Composable
-private fun DocumentCard(
-    document: Document,
-    onImageClick: () -> Unit,
-    onCopyOriginal: () -> Unit,
-    onCopyTranslation: () -> Unit,
-    onRetryTranslation: () -> Unit,
+private fun FolderCard(
+    folder: Folder,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(300.dp)
-            ) {
-                Card(
-                    modifier = Modifier
-                        .weight(0.6f)
-                        .fillMaxHeight(),
-                    onClick = onImageClick
-                ) {
-                    AsyncImage(
-                        model = File(document.imagePath),
-                        contentDescription = "Document image",
-                        modifier = Modifier.fillMaxSize()
+            Icon(
+                imageVector = Icons.Default.Folder,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = folder.name,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                
+                if (folder.description != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = folder.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 
-                Card(
-                    modifier = Modifier
-                        .weight(0.4f)
-                        .fillMaxHeight(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "🌍 ORIGINAL",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                            }
-                        }
-                        
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .padding(8.dp)
-                        ) {
-                            when (document.processingStatus) {
-                                ProcessingStatus.INITIAL,
-                                ProcessingStatus.OCR_IN_PROGRESS -> {
-                                    Column(
-                                        modifier = Modifier.align(Alignment.Center),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        CircularProgressIndicator()
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text("Scanning...", style = MaterialTheme.typography.bodySmall)
-                                    }
-                                }
-                                
-                                ProcessingStatus.ERROR -> {
-                                    Text(
-                                        "OCR failed",
-                                        color = MaterialTheme.colorScheme.error,
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                }
-                                
-                                else -> {
-                                    Text(
-                                        text = document.originalText ?: "",
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                }
-                            }
-                        }
-                        
-                        if (document.originalText != null) {
-                            HorizontalDivider()
-                            Row(
-                                modifier = Modifier.padding(4.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                IconButton(onClick = onCopyOriginal) {
-                                    Icon(
-                                        Icons.Default.ContentCopy,
-                                        contentDescription = "Copy",
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                Text(
+                    text = "${folder.recordCount} records",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            ) {
-                Column {
-                    Surface(
-                        color = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "🇷🇺 TRANSLATION",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSecondary
-                            )
-                        }
-                    }
-                    
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 100.dp, max = 300.dp)
-                            .padding(12.dp)
-                    ) {
-                        when (document.processingStatus) {
-                            ProcessingStatus.INITIAL,
-                            ProcessingStatus.OCR_IN_PROGRESS,
-                            ProcessingStatus.OCR_COMPLETE,
-                            ProcessingStatus.TRANSLATION_IN_PROGRESS -> {
-                                Column(
-                                    modifier = Modifier.align(Alignment.Center),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    CircularProgressIndicator()
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text("Translating...", style = MaterialTheme.typography.bodySmall)
-                                }
-                            }
-                            
-                            ProcessingStatus.ERROR -> {
-                                Column(
-                                    modifier = Modifier.align(Alignment.Center),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text(
-                                        "Translation failed",
-                                        color = MaterialTheme.colorScheme.error,
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                }
-                            }
-                            
-                            ProcessingStatus.COMPLETE -> {
-                                Text(
-                                    text = document.translatedText ?: "",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
-                        }
-                    }
-                    
-                    HorizontalDivider()
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        if (document.translatedText != null) {
-                            IconButton(onClick = onCopyTranslation) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
-                            }
-                        }
-                        
-                        if (document.processingStatus == ProcessingStatus.ERROR) {
-                            IconButton(onClick = onRetryTranslation) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Retry")
-                            }
-                        }
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            OutlinedButton(
-                onClick = onDelete,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Delete Document")
             }
         }
     }
 }
 
-sealed interface EditorUiState {
-    data object Loading : EditorUiState
-    data object Empty : EditorUiState
-    data class Success(val documents: List<Document>) : EditorUiState
-    data class Error(val message: String) : EditorUiState
+sealed interface FoldersUiState {
+    data object Loading : FoldersUiState
+    data object Empty : FoldersUiState
+    data class Success(val folders: List<Folder>) : FoldersUiState
+    data class Error(val message: String) : FoldersUiState
+}
+
+@HiltViewModel
+class FoldersViewModel @Inject constructor(
+    private val getFoldersUseCase: GetFoldersUseCase,
+    private val createFolderUseCase: CreateFolderUseCase,
+    private val updateFolderUseCase: UpdateFolderUseCase,
+    private val deleteFolderUseCase: DeleteFolderUseCase,
+    private val quickScanUseCase: QuickScanUseCase
+) : ViewModel() {
+    
+    private val _uiState = MutableStateFlow<FoldersUiState>(FoldersUiState.Loading)
+    val uiState: StateFlow<FoldersUiState> = _uiState.asStateFlow()
+    
+    init {
+        loadFolders()
+    }
+    
+    fun loadFolders() {
+        viewModelScope.launch {
+            _uiState.value = FoldersUiState.Loading
+            
+            getFoldersUseCase()
+                .catch { e ->
+                    _uiState.value = FoldersUiState.Error(
+                        e.message ?: "Failed to load folders"
+                    )
+                }
+                .collect { folders ->
+                    _uiState.value = if (folders.isEmpty()) {
+                        FoldersUiState.Empty
+                    } else {
+                        FoldersUiState.Success(folders)
+                    }
+                }
+        }
+    }
+    
+    fun createFolder(name: String, description: String?) {
+        viewModelScope.launch {
+            createFolderUseCase(name, description)
+        }
+    }
+    
+    fun updateFolder(folder: Folder) {
+        viewModelScope.launch {
+            updateFolderUseCase(folder)
+        }
+    }
+    
+    fun deleteFolder(id: Long) {
+        viewModelScope.launch {
+            deleteFolderUseCase(id)
+        }
+    }
+    
+    fun quickScan(imageUri: Uri, onComplete: (Long) -> Unit) {
+        viewModelScope.launch {
+            when (val result = quickScanUseCase(imageUri)) {
+                is com.docs.scanner.domain.model.Result.Success -> {
+                    onComplete(result.data)
+                }
+                is com.docs.scanner.domain.model.Result.Error -> {
+                    _uiState.value = FoldersUiState.Error(
+                        result.message ?: "Quick scan failed"
+                    )
+                }
+                else -> {}
+            }
+        }
+    }
 }
