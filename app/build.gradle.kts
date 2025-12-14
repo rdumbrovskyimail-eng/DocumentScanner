@@ -59,6 +59,7 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/DEPENDENCIES"
         }
     }
 }
@@ -115,10 +116,25 @@ dependencies {
     // DataStore
     implementation(libs.androidx.datastore.preferences)
 
-    // Google Drive
+    // Google Drive & API Client - ИСПРАВЛЕННЫЕ ЗАВИСИМОСТИ
     implementation(libs.play.services.auth)
-    implementation(libs.google.api.client.android)
-    implementation(libs.google.api.services.drive)
+    
+    // HTTP Client для AndroidHttp (это и есть решение!)
+    implementation("com.google.http-client:google-http-client-android:1.44.1") {
+        exclude(group = "org.apache.httpcomponents")
+    }
+    implementation("com.google.http-client:google-http-client-gson:1.44.1")
+    
+    // Google API Client
+    implementation("com.google.api-client:google-api-client-android:2.2.0") {
+        exclude(group = "org.apache.httpcomponents")
+        exclude(group = "com.google.guava")
+    }
+    
+    // Google Drive API
+    implementation("com.google.apis:google-api-services-drive:v3-rev20220815-2.0.0") {
+        exclude(group = "org.apache.httpcomponents")
+    }
 
     // Testing
     testImplementation(libs.junit)
