@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.model.Record
+import com.docs.scanner.domain.repository.DocumentRepository
 import com.docs.scanner.domain.repository.RecordRepository
 import com.docs.scanner.domain.usecase.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,6 +18,7 @@ class EditorViewModel @Inject constructor(
     private val getDocumentsUseCase: GetDocumentsUseCase,
     private val addDocumentUseCase: AddDocumentUseCase,
     private val deleteDocumentUseCase: DeleteDocumentUseCase,
+    private val documentRepository: DocumentRepository,
     private val recordRepository: RecordRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -65,7 +67,7 @@ class EditorViewModel @Inject constructor(
     
     fun updateOriginalText(documentId: Long, newText: String) {
         viewModelScope.launch {
-            // TODO: implement in repository
+            documentRepository.updateOriginalText(documentId, newText)
         }
     }
     
