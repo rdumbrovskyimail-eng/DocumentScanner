@@ -95,7 +95,7 @@ dependencies {
     implementation(libs.okhttp.logging.interceptor)
     implementation(libs.gson)
 
-    // Google Services (опционально, если не используешь - можно удалить)
+    // Google Services
     implementation(libs.play.services.auth)
     implementation(libs.google.api.client.android)
     implementation(libs.google.api.services.drive)
@@ -110,6 +110,7 @@ dependencies {
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     // Testing
     testImplementation(libs.junit)
