@@ -48,49 +48,29 @@ fun EditorScreen(
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let {
-            viewModel.quickScan(uri) { recordId ->
-                onQuickScanComplete(recordId)
-            }
-        }
+        uri?.let { viewModel.addDocument(it) }
     }
     
-    var showCreateDialog by remember { mutableStateOf(false) }
-    var editingFolder by remember { mutableStateOf<Folder?>(null) }
-    var showDeleteDialog by remember { mutableStateOf<Folder?>(null) }
+    LaunchedEffect(recordId) {
+        viewModel.loadRecord(recordId)
+    }
     
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Document Scanner") },
-                actions = {
-                    IconButton(onClick = onSearchClick) {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
-                    }
-                    
-                    IconButton(onClick = onTermsClick) {
-                        Icon(Icons.Default.Alarm, contentDescription = "Terms")
-                    }
-                    
-                    IconButton(onClick = onCameraClick) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = "Camera")
-                    }
-                    
-                    IconButton(onClick = { galleryLauncher.launch("image/*") }) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = "Gallery")
-                    }
-                    
-                    IconButton(onClick = onSettingsClick) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                title = { Text(record?.name ?: "Loading...") },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { showCreateDialog = true }
+                onClick = { galleryLauncher.launch("image/*") }
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Create Folder")
+                Icon(Icons.Default.Add, contentDescription = "Add Document")
             }
         }
     ) { padding ->
@@ -100,331 +80,534 @@ fun EditorScreen(
                 .padding(padding)
         ) {
             when (uiState) {
-                is FoldersUiState.Loading -> {
+                is EditorUiState.Loading -> {
                     CircularProgressIndicator(
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }
                 
-                is FoldersUiState.Empty -> {
+                is EditorUiState.Empty -> {
                     EmptyState(
                         icon = {
                             Icon(
-                                imageVector = Icons.Default.FolderOpen,
+                                imageVector = Icons.Default.CameraAlt,
                                 contentDescription = null,
                                 modifier = Modifier.size(64.dp),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         },
-                        title = "No folders yet",
-                        message = "Create your first folder to organize documents",
-                        actionText = "Create Folder",
-                        onActionClick = { showCreateDialog = true }
+                        title = "No documents yet",
+                        message = "Add your first document to scan and translate",
+                        actionText = "Add Document",
+                        onActionClick = { galleryLauncher.launch("image/*") }
                     )
                 }
                 
-                is FoldersUiState.Success -> {
-                    val folders = (uiState as FoldersUiState.Success).folders
+                is EditorUiState.Success -> {
+                    val documents = (uiState as EditorUiState.Success).documents
                     
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        contentPadding = PaddingValues(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        items(folders, key = { it.id }) { folder ->
-                            FolderCard(
-                                folder = folder,
-                                onClick = { onFolderClick(folder.id) },
-                                onLongClick = { editingFolder = folder },
-                                onDelete = { showDeleteDialog = folder }
+                        // Record Header
+                        item {
+                            RecordHeaderCard(
+                                name = record?.name ?: "",
+                                description = record?.description,
+                                onNameClick = { showEditNameDialog = true },
+                                onDescriptionClick = { showEditDescDialog = true }
+                            )
+                        }
+                        
+                        // Documents
+                        items(documents, key = { it.id }) { document ->
+                            DocumentCard(
+                                document = document,
+                                onImageClick = { onImageClick(document.id) },
+                                onOriginalTextClick = { editingDocument = document },
+                                onGptOriginalClick = {
+                                    openGptWithPrompt(
+                                        context = context,
+                                        text = document.originalText ?: "",
+                                        isTranslation = false
+                                    )
+                                },
+                                onCopyOriginal = {
+                                    copyToClipboard(context, document.originalText ?: "")
+                                },
+                                onPasteOriginal = {
+                                    val clipboard = getClipboardText(context)
+                                    if (clipboard != null) {
+                                        viewModel.updateOriginalText(document.id, clipboard)
+                                    }
+                                },
+                                onGptTranslationClick = {
+                                    openGptWithPrompt(
+                                        context = context,
+                                        text = document.translatedText ?: "",
+                                        isTranslation = true
+                                    )
+                                },
+                                onDelete = { viewModel.deleteDocument(document.id) }
                             )
                         }
                     }
                 }
                 
-                is FoldersUiState.Error -> {
+                is EditorUiState.Error -> {
                     ErrorState(
-                        error = (uiState as FoldersUiState.Error).message,
-                        onRetry = viewModel::loadFolders
+                        error = (uiState as EditorUiState.Error).message,
+                        onRetry = { viewModel.loadRecord(recordId) }
                     )
                 }
             }
         }
     }
     
-    // Create folder dialog
-    if (showCreateDialog) {
-        var name by remember { mutableStateOf("") }
-        var description by remember { mutableStateOf("") }
+    // Edit name dialog
+    if (showEditNameDialog && record != null) {
+        var newName by remember { mutableStateOf(record!!.name) }
         
         AlertDialog(
-            onDismissRequest = { showCreateDialog = false },
-            title = { Text("Create Folder") },
+            onDismissRequest = { showEditNameDialog = false },
+            title = { Text("Edit Name") },
             text = {
-                Column {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    OutlinedTextField(
-                        value = description,
-                        onValueChange = { description = it },
-                        label = { Text("Description (optional)") },
-                        singleLine = false,
-                        maxLines = 3,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.createFolder(name, description.ifBlank { null })
-                        showCreateDialog = false
+                        viewModel.updateRecordName(newName)
+                        showEditNameDialog = false
                     },
-                    enabled = name.isNotBlank()
+                    enabled = newName.isNotBlank()
                 ) {
-                    Text("Create")
+                    Text("Save")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCreateDialog = false }) {
+                TextButton(onClick = { showEditNameDialog = false }) {
                     Text("Cancel")
                 }
             }
         )
     }
     
-    // Edit folder dialog
-    editingFolder?.let { folder ->
-        var showMenu by remember { mutableStateOf(true) }
-        var showRenameDialog by remember { mutableStateOf(false) }
+    // Edit description dialog
+    if (showEditDescDialog && record != null) {
+        var newDesc by remember { mutableStateOf(record!!.description ?: "") }
         
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { 
-                showMenu = false
-                editingFolder = null
+        AlertDialog(
+            onDismissRequest = { showEditDescDialog = false },
+            title = { Text("Edit Description") },
+            text = {
+                OutlinedTextField(
+                    value = newDesc,
+                    onValueChange = { newDesc = it },
+                    label = { Text("Description") },
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.updateRecordDescription(newDesc.ifBlank { null })
+                        showEditDescDialog = false
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditDescDialog = false }) {
+                    Text("Cancel")
+                }
             }
-        ) {
-            DropdownMenuItem(
-                text = { Text("Rename") },
-                onClick = { 
-                    showMenu = false
-                    showRenameDialog = true
-                },
-                leadingIcon = {
-                    Icon(Icons.Default.Edit, contentDescription = null)
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("Delete") },
-                onClick = {
-                    showMenu = false
-                    showDeleteDialog = folder
-                    editingFolder = null
-                },
-                leadingIcon = {
-                    Icon(Icons.Default.Delete, contentDescription = null)
-                }
-            )
-        }
-        
-        if (showRenameDialog) {
-            var newName by remember { mutableStateOf(folder.name) }
-            
-            AlertDialog(
-                onDismissRequest = { 
-                    showRenameDialog = false
-                    editingFolder = null
-                },
-                title = { Text("Rename Folder") },
-                text = {
-                    OutlinedTextField(
-                        value = newName,
-                        onValueChange = { newName = it },
-                        label = { Text("Name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            viewModel.updateFolder(folder.copy(name = newName))
-                            showRenameDialog = false
-                            editingFolder = null
-                        },
-                        enabled = newName.isNotBlank()
-                    ) {
-                        Text("Save")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { 
-                        showRenameDialog = false
-                        editingFolder = null
-                    }) {
-                        Text("Cancel")
-                    }
-                }
-            )
-        }
+        )
     }
     
-    // Delete confirmation
-    showDeleteDialog?.let { folder ->
-        ConfirmDialog(
-            title = "Delete Folder?",
-            message = "This will delete \"${folder.name}\" and all its contents. This action cannot be undone.",
-            confirmText = "Delete",
-            onConfirm = {
-                viewModel.deleteFolder(folder.id)
-                showDeleteDialog = null
-            },
-            onDismiss = { showDeleteDialog = null }
+    // Fullscreen text editor
+    editingDocument?.let { document ->
+        FullscreenTextEditor(
+            initialText = document.originalText ?: "",
+            onDismiss = { editingDocument = null },
+            onSave = { newText ->
+                viewModel.updateOriginalText(document.id, newText)
+                editingDocument = null
+            }
         )
     }
 }
 
 @Composable
-private fun FolderCard(
-    folder: Folder,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
+private fun RecordHeaderCard(
+    name: String,
+    description: String?,
+    onNameClick: () -> Unit,
+    onDescriptionClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Text(
+                text = name,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable(onClick = onNameClick)
+            )
+            
+            if (description != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = description,
+                    fontSize = 14.sp,
+                    color = Color(0xFF757575),
+                    modifier = Modifier.clickable(onClick = onDescriptionClick)
+                )
+            } else {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Add description...",
+                    fontSize = 14.sp,
+                    color = Color(0xFFBDBDBD),
+                    modifier = Modifier.clickable(onClick = onDescriptionClick)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DocumentCard(
+    document: Document,
+    onImageClick: () -> Unit,
+    onOriginalTextClick: () -> Unit,
+    onGptOriginalClick: () -> Unit,
+    onCopyOriginal: () -> Unit,
+    onPasteOriginal: () -> Unit,
+    onGptTranslationClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(4.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Folder,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = folder.name,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                
-                if (folder.description != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = folder.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+            // Photo + Original Text (40% + 60%)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp)
+            ) {
+                // PHOTO - 40%
+                Card(
+                    modifier = Modifier
+                        .weight(0.4f)
+                        .fillMaxHeight(),
+                    onClick = onImageClick
+                ) {
+                    AsyncImage(
+                        model = File(document.imagePath),
+                        contentDescription = "Document image",
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 
-                Text(
-                    text = "${folder.recordCount} records",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-sealed interface FoldersUiState {
-    data object Loading : FoldersUiState
-    data object Empty : FoldersUiState
-    data class Success(val folders: List<Folder>) : FoldersUiState
-    data class Error(val message: String) : FoldersUiState
-}
-
-@HiltViewModel
-class FoldersViewModel @Inject constructor(
-    private val getFoldersUseCase: GetFoldersUseCase,
-    private val createFolderUseCase: CreateFolderUseCase,
-    private val updateFolderUseCase: UpdateFolderUseCase,
-    private val deleteFolderUseCase: DeleteFolderUseCase,
-    private val quickScanUseCase: QuickScanUseCase
-) : ViewModel() {
-    
-    private val _uiState = MutableStateFlow<FoldersUiState>(FoldersUiState.Loading)
-    val uiState: StateFlow<FoldersUiState> = _uiState.asStateFlow()
-    
-    init {
-        loadFolders()
-    }
-    
-    fun loadFolders() {
-        viewModelScope.launch {
-            _uiState.value = FoldersUiState.Loading
-            
-            getFoldersUseCase()
-                .catch { e ->
-                    _uiState.value = FoldersUiState.Error(
-                        e.message ?: "Failed to load folders"
+                // ORIGINAL TEXT - 60%
+                Card(
+                    modifier = Modifier
+                        .weight(0.6f)
+                        .fillMaxHeight(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFF5F5F5)
                     )
-                }
-                .collect { folders ->
-                    _uiState.value = if (folders.isEmpty()) {
-                        FoldersUiState.Empty
-                    } else {
-                        FoldersUiState.Success(folders)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        // Text content
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .clickable(onClick = onOriginalTextClick)
+                                .padding(8.dp)
+                        ) {
+                            when (document.processingStatus) {
+                                ProcessingStatus.INITIAL,
+                                ProcessingStatus.OCR_IN_PROGRESS -> {
+                                    Column(
+                                        modifier = Modifier.align(Alignment.Center),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            "Scanning...",
+                                            fontSize = 12.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
+                                
+                                ProcessingStatus.ERROR -> {
+                                    Text(
+                                        "OCR failed",
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.align(Alignment.Center)
+                                    )
+                                }
+                                
+                                else -> {
+                                    Text(
+                                        text = document.originalText ?: "",
+                                        fontSize = 12.sp,
+                                        maxLines = 10,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                        
+                        // Buttons under Original
+                        HorizontalDivider()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            IconButton(
+                                onClick = onGptOriginalClick,
+                                enabled = document.originalText != null,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.AutoAwesome,
+                                    contentDescription = "GPT",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            
+                            IconButton(
+                                onClick = onCopyOriginal,
+                                enabled = document.originalText != null,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = "Copy",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            
+                            IconButton(
+                                onClick = onPasteOriginal,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.ContentPaste,
+                                    contentDescription = "Paste",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            
+                            IconButton(
+                                onClick = {},
+                                enabled = false,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Send,
+                                    contentDescription = "Send",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
                 }
-        }
-    }
-    
-    fun createFolder(name: String, description: String?) {
-        viewModelScope.launch {
-            createFolderUseCase(name, description)
-        }
-    }
-    
-    fun updateFolder(folder: Folder) {
-        viewModelScope.launch {
-            updateFolderUseCase(folder)
-        }
-    }
-    
-    fun deleteFolder(id: Long) {
-        viewModelScope.launch {
-            deleteFolderUseCase(id)
-        }
-    }
-    
-    fun quickScan(imageUri: Uri, onComplete: (Long) -> Unit) {
-        viewModelScope.launch {
-            when (val result = quickScanUseCase(imageUri)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    onComplete(result.data)
+            }
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            // Translation
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFFE3F2FD)
+                )
+            ) {
+                Column {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 100.dp, max = 300.dp)
+                            .padding(12.dp)
+                    ) {
+                        when (document.processingStatus) {
+                            ProcessingStatus.INITIAL,
+                            ProcessingStatus.OCR_IN_PROGRESS,
+                            ProcessingStatus.OCR_COMPLETE,
+                            ProcessingStatus.TRANSLATION_IN_PROGRESS -> {
+                                Column(
+                                    modifier = Modifier.align(Alignment.Center),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        "Translating...",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
+                            
+                            ProcessingStatus.ERROR -> {
+                                Text(
+                                    "Translation failed",
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.align(Alignment.Center)
+                                )
+                            }
+                            
+                            ProcessingStatus.COMPLETE -> {
+                                Text(
+                                    text = document.translatedText ?: "",
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
+                    
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            IconButton(
+                                onClick = onGptTranslationClick,
+                                enabled = document.translatedText != null,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.AutoAwesome,
+                                    contentDescription = "GPT",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            
+                            IconButton(
+                                onClick = {},
+                                enabled = false,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = "Edit",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            
+                            IconButton(
+                                onClick = {},
+                                enabled = false,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.MoreHoriz,
+                                    contentDescription = "More",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        
+                        TextButton(
+                            onClick = onDelete,
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Delete", fontSize = 12.sp)
+                        }
+                    }
                 }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    _uiState.value = FoldersUiState.Error(
-                        result.message ?: "Quick scan failed"
-                    )
-                }
-                else -> {}
             }
         }
     }
+}
+
+// Utility functions
+private fun openGptWithPrompt(context: Context, text: String, isTranslation: Boolean) {
+    val prompt = if (isTranslation) {
+        "Привет, это переведенный текст, пойми контекст, проанализируй, исправь ошибки, и выдай мне текст как в оригинале, но испраленный, откоректированный. С сохранением смысла. Дай только текст. Отображи его в кодовом поле, с кнопкой копировать!\n\n$text"
+    } else {
+        "Привет, это отсканированный текст, пойми контекст, проанализируй, исправь ошибки, и выдай мне текст как в оригинале, но испраленный, откоректированный. Дай только текст. Отображи его в кодовом поле, с кнопкой копировать!\n\n$text"
+    }
+    
+    copyToClipboard(context, prompt)
+    
+    try {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            data = Uri.parse("https://chatgpt.com/")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://chat.openai.com/"))
+        context.startActivity(browserIntent)
+    }
+}
+
+private fun copyToClipboard(context: Context, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clip = ClipData.newPlainText("text", text)
+    clipboard.setPrimaryClip(clip)
+}
+
+private fun getClipboardText(context: Context): String? {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    return clipboard.primaryClip?.getItemAt(0)?.text?.toString()
+}
+
+sealed interface EditorUiState {
+    data object Loading : EditorUiState
+    data object Empty : EditorUiState
+    data class Success(val documents: List<Document>) : EditorUiState
+    data class Error(val message: String) : EditorUiState
 }
