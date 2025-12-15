@@ -30,6 +30,7 @@ interface DocumentRepository {
     suspend fun updateOriginalText(id: Long, text: String): Result<Unit>
     suspend fun updateTranslatedText(id: Long, text: String): Result<Unit>
     suspend fun updateProcessingStatus(id: Long, status: ProcessingStatus): Result<Unit>
+    fun searchEverywhere(query: String): Flow<List<Document>>
 }
 
 interface ScannerRepository {
