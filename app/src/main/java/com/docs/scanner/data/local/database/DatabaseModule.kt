@@ -1,36 +1,20 @@
 package com.docs.scanner.data.local.database
 
 import android.content.Context
-import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
-import com.docs.scanner.data.local.database.dao.*
-import com.docs.scanner.data.local.database.entities.*
+import com.docs.scanner.data.local.database.dao.DocumentDao
+import com.docs.scanner.data.local.database.dao.FolderDao
+import com.docs.scanner.data.local.database.dao.RecordDao
+import com.docs.scanner.data.local.database.dao.TermDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
-
-@Database(
-    entities = [
-        FolderEntity::class,
-        RecordEntity::class,
-        DocumentEntity::class,
-        TermEntity::class
-    ],
-    version = 2,
-    exportSchema = true
-)
-abstract class AppDatabase : RoomDatabase() {
-    abstract fun folderDao(): FolderDao
-    abstract fun recordDao(): RecordDao
-    abstract fun documentDao(): DocumentDao
-    abstract fun termDao(): TermDao
-}
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -39,7 +23,6 @@ object DatabaseModule {
     private val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
             try {
-                // Check if table already exists
                 val cursor = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='terms'")
                 val tableExists = cursor.moveToFirst()
                 cursor.close()
@@ -62,7 +45,6 @@ object DatabaseModule {
                     println("Terms table already exists, skipping creation")
                 }
                 
-                // Validate the database structure
                 validateDatabaseStructure(db)
                 
             } catch (e: Exception) {
@@ -102,7 +84,7 @@ object DatabaseModule {
             "document_scanner.db"
         )
             .addMigrations(MIGRATION_1_2)
-            .fallbackToDestructiveMigration() // Only for development
+            .fallbackToDestructiveMigration()
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     super.onCreate(db)
@@ -112,11 +94,8 @@ object DatabaseModule {
                 override fun onOpen(db: SupportSQLiteDatabase) {
                     super.onOpen(db)
                     println("Database opened successfully")
-                    
-                    // Enable foreign keys
                     db.execSQL("PRAGMA foreign_keys=ON")
                     
-                    // Validate structure on open
                     try {
                         validateDatabaseStructure(db)
                     } catch (e: Exception) {
