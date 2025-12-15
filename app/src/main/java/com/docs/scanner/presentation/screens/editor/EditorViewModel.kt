@@ -18,6 +18,8 @@ class EditorViewModel @Inject constructor(
     private val getDocumentsUseCase: GetDocumentsUseCase,
     private val addDocumentUseCase: AddDocumentUseCase,
     private val deleteDocumentUseCase: DeleteDocumentUseCase,
+    private val retryTranslationUseCase: RetryTranslationUseCase,
+    private val fixOcrUseCase: FixOcrUseCase,
     private val documentRepository: DocumentRepository,
     private val recordRepository: RecordRepository,
     savedStateHandle: SavedStateHandle
@@ -68,6 +70,18 @@ class EditorViewModel @Inject constructor(
     fun updateOriginalText(documentId: Long, newText: String) {
         viewModelScope.launch {
             documentRepository.updateOriginalText(documentId, newText)
+        }
+    }
+    
+    fun retryOcr(documentId: Long) {
+        viewModelScope.launch {
+            fixOcrUseCase(documentId)
+        }
+    }
+    
+    fun retryTranslation(documentId: Long) {
+        viewModelScope.launch {
+            retryTranslationUseCase(documentId)
         }
     }
     

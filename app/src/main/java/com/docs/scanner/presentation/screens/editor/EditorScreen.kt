@@ -7,17 +7,22 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -25,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.docs.scanner.domain.model.Document
 import com.docs.scanner.domain.model.ProcessingStatus
 import com.docs.scanner.presentation.components.*
@@ -58,10 +65,33 @@ fun EditorScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(record?.name ?: "Loading...") },
+                title = {
+                    Column {
+                        Text(
+                            record?.name ?: "Loading...",
+                            style = MaterialTheme.typography.titleLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (record?.description != null) {
+                            Text(
+                                record!!.description!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showEditNameDialog = true }) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit")
                     }
                 }
             )
@@ -108,49 +138,40 @@ fun EditorScreen(
                     
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        contentPadding = PaddingValues(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Record Header
-                        item {
-                            RecordHeaderCard(
-                                name = record?.name ?: "",
-                                description = record?.description,
-                                onNameClick = { showEditNameDialog = true },
-                                onDescriptionClick = { showEditDescDialog = true }
-                            )
-                        }
-                        
-                        // Documents
-                        items(documents, key = { it.id }) { document ->
-                            DocumentCard(
-                                document = document,
-                                onImageClick = { onImageClick(document.id) },
-                                onOriginalTextClick = { editingDocument = document },
+                        items(documents, key = { it.id }) { doc ->
+                            DocumentItemCard(
+                                document = doc,
+                                onImageClick = { onImageClick(doc.id) },
+                                onOriginalTextClick = { editingDocument = doc },
                                 onGptOriginalClick = {
                                     openGptWithPrompt(
                                         context = context,
-                                        text = document.originalText ?: "",
+                                        text = doc.originalText ?: "",
                                         isTranslation = false
                                     )
                                 },
                                 onCopyOriginal = {
-                                    copyToClipboard(context, document.originalText ?: "")
+                                    copyToClipboard(context, doc.originalText ?: "")
                                 },
                                 onPasteOriginal = {
                                     val clipboard = getClipboardText(context)
                                     if (clipboard != null) {
-                                        viewModel.updateOriginalText(document.id, clipboard)
+                                        viewModel.updateOriginalText(doc.id, clipboard)
                                     }
                                 },
                                 onGptTranslationClick = {
                                     openGptWithPrompt(
                                         context = context,
-                                        text = document.translatedText ?: "",
+                                        text = doc.translatedText ?: "",
                                         isTranslation = true
                                     )
                                 },
-                                onDelete = { viewModel.deleteDocument(document.id) }
+                                onRetryOcr = { viewModel.retryOcr(doc.id) },
+                                onRetryTranslation = { viewModel.retryTranslation(doc.id) },
+                                onDelete = { viewModel.deleteDocument(doc.id) }
                             )
                         }
                     }
@@ -166,7 +187,6 @@ fun EditorScreen(
         }
     }
     
-    // Edit name dialog
     if (showEditNameDialog && record != null) {
         var newName by remember { mutableStateOf(record!!.name) }
         
@@ -201,7 +221,6 @@ fun EditorScreen(
         )
     }
     
-    // Edit description dialog
     if (showEditDescDialog && record != null) {
         var newDesc by remember { mutableStateOf(record!!.description ?: "") }
         
@@ -235,7 +254,6 @@ fun EditorScreen(
         )
     }
     
-    // Fullscreen text editor
     editingDocument?.let { document ->
         FullscreenTextEditor(
             initialText = document.originalText ?: "",
@@ -249,53 +267,7 @@ fun EditorScreen(
 }
 
 @Composable
-private fun RecordHeaderCard(
-    name: String,
-    description: String?,
-    onNameClick: () -> Unit,
-    onDescriptionClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Text(
-                text = name,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable(onClick = onNameClick)
-            )
-            
-            if (description != null) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = description,
-                    fontSize = 14.sp,
-                    color = Color(0xFF757575),
-                    modifier = Modifier.clickable(onClick = onDescriptionClick)
-                )
-            } else {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Add description...",
-                    fontSize = 14.sp,
-                    color = Color(0xFFBDBDBD),
-                    modifier = Modifier.clickable(onClick = onDescriptionClick)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DocumentCard(
+fun DocumentItemCard(
     document: Document,
     onImageClick: () -> Unit,
     onOriginalTextClick: () -> Unit,
@@ -303,161 +275,163 @@ private fun DocumentCard(
     onCopyOriginal: () -> Unit,
     onPasteOriginal: () -> Unit,
     onGptTranslationClick: () -> Unit,
+    onRetryOcr: () -> Unit,
+    onRetryTranslation: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val context = LocalContext.current
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(4.dp)
-        ) {
-            // Photo + Original Text (40% + 60%)
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(300.dp)
+                    .height(200.dp)
             ) {
-                // PHOTO - 40%
-                Card(
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(File(context.filesDir, document.imagePath))
+                        .crossfade(true)
+                        .size(400, 600)
+                        .build(),
+                    contentDescription = null,
                     modifier = Modifier
                         .weight(0.4f)
-                        .fillMaxHeight(),
-                    onClick = onImageClick
-                ) {
-                    AsyncImage(
-                        model = File(document.imagePath),
-                        contentDescription = "Document image",
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onImageClick),
+                    contentScale = ContentScale.Crop
+                )
                 
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 
-                // ORIGINAL TEXT - 60%
-                Card(
-                    modifier = Modifier
-                        .weight(0.6f)
-                        .fillMaxHeight(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFF5F5F5)
+                Column(modifier = Modifier.weight(0.6f)) {
+                    Text(
+                        "ORIGINAL TEXT",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Gray
                     )
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize()
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .clickable(onClick = onOriginalTextClick)
                     ) {
-                        // Text content
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .clickable(onClick = onOriginalTextClick)
-                                .padding(8.dp)
-                        ) {
-                            when (document.processingStatus) {
-                                ProcessingStatus.INITIAL,
-                                ProcessingStatus.OCR_IN_PROGRESS -> {
-                                    Column(
-                                        modifier = Modifier.align(Alignment.Center),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            "Scanning...",
-                                            fontSize = 12.sp,
-                                            color = Color.Gray
-                                        )
-                                    }
+                        when (document.processingStatus) {
+                            ProcessingStatus.INITIAL,
+                            ProcessingStatus.OCR_IN_PROGRESS -> {
+                                Column(
+                                    modifier = Modifier.align(Alignment.Center),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        "Scanning...",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray
+                                    )
                                 }
-                                
-                                ProcessingStatus.ERROR -> {
+                            }
+                            
+                            ProcessingStatus.ERROR -> {
+                                Column(
+                                    modifier = Modifier.align(Alignment.Center),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
                                     Text(
                                         "OCR failed",
                                         color = MaterialTheme.colorScheme.error,
-                                        fontSize = 12.sp,
-                                        modifier = Modifier.align(Alignment.Center)
+                                        fontSize = 12.sp
                                     )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    TextButton(onClick = onRetryOcr) {
+                                        Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Retry", fontSize = 12.sp)
+                                    }
                                 }
-                                
-                                else -> {
-                                    Text(
-                                        text = document.originalText ?: "",
-                                        fontSize = 12.sp,
-                                        maxLines = 10,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
+                            }
+                            
+                            else -> {
+                                Text(
+                                    text = document.originalText ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 8,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
-                        
-                        // Buttons under Original
-                        HorizontalDivider()
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 4.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly
+                    }
+                    
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        IconButton(
+                            onClick = onGptOriginalClick,
+                            enabled = document.originalText != null,
+                            modifier = Modifier.size(32.dp)
                         ) {
-                            IconButton(
-                                onClick = onGptOriginalClick,
-                                enabled = document.originalText != null,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.AutoAwesome,
-                                    contentDescription = "GPT",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            
-                            IconButton(
-                                onClick = onCopyOriginal,
-                                enabled = document.originalText != null,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.ContentCopy,
-                                    contentDescription = "Copy",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            
-                            IconButton(
-                                onClick = onPasteOriginal,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.ContentPaste,
-                                    contentDescription = "Paste",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            
-                            IconButton(
-                                onClick = {},
-                                enabled = false,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.Send,
-                                    contentDescription = "Send",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = "GPT",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        
+                        IconButton(
+                            onClick = onCopyOriginal,
+                            enabled = document.originalText != null,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = "Copy",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        
+                        IconButton(
+                            onClick = onPasteOriginal,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ContentPaste,
+                                contentDescription = "Paste",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        
+                        IconButton(
+                            onClick = { },
+                            enabled = false,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Send,
+                                contentDescription = "Send",
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                     }
                 }
             }
             
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             
-            // Translation
-            Card(
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFFE3F2FD)
-                )
+                color = Color(0xFFE3F2FD),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color(0xFFBBDEFB))
             ) {
                 Column {
                     Box(
@@ -486,93 +460,82 @@ private fun DocumentCard(
                             }
                             
                             ProcessingStatus.ERROR -> {
-                                Text(
-                                    "Translation failed",
-                                    color = MaterialTheme.colorScheme.error,
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.align(Alignment.Center)
-                                )
+                                Column(
+                                    modifier = Modifier.align(Alignment.Center),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        "Translation failed",
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontSize = 12.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    TextButton(onClick = onRetryTranslation) {
+                                        Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Retry", fontSize = 12.sp)
+                                    }
+                                }
                             }
                             
                             ProcessingStatus.COMPLETE -> {
                                 Text(
                                     text = document.translatedText ?: "",
-                                    fontSize = 14.sp
+                                    style = MaterialTheme.typography.bodyMedium
                                 )
                             }
                         }
                     }
-                    
-                    HorizontalDivider()
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            IconButton(
-                                onClick = onGptTranslationClick,
-                                enabled = document.translatedText != null,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.AutoAwesome,
-                                    contentDescription = "GPT",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            
-                            IconButton(
-                                onClick = {},
-                                enabled = false,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.Edit,
-                                    contentDescription = "Edit",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            
-                            IconButton(
-                                onClick = {},
-                                enabled = false,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.MoreHoriz,
-                                    contentDescription = "More",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                        
-                        TextButton(
-                            onClick = onDelete,
-                            colors = ButtonDefaults.textButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
-                            )
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Delete", fontSize = 12.sp)
-                        }
-                    }
+                }
+            }
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ActionButton(Icons.Default.Share, "Share") { }
+                    ActionButton(Icons.Default.Edit, "Edit") { onOriginalTextClick() }
+                    ActionButton(Icons.Default.VolumeUp, "Speak") { }
+                    ActionButton(Icons.Default.Label, "Tags") { }
+                }
+                
+                TextButton(onClick = onDelete) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = Color.Red,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Delete", color = Color.Red, fontSize = 12.sp)
                 }
             }
         }
     }
 }
 
-// Utility functions
+@Composable
+fun ActionButton(
+    icon: ImageVector,
+    text: String,
+    onClick: () -> Unit
+) {
+    OutlinedButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+        shape = RoundedCornerShape(4.dp),
+        modifier = Modifier.height(30.dp)
+    ) {
+        Icon(icon, null, modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(text, fontSize = 10.sp)
+    }
+}
+
 private fun openGptWithPrompt(context: Context, text: String, isTranslation: Boolean) {
     val prompt = if (isTranslation) {
         "Привет, это переведенный текст, пойми контекст, проанализируй, исправь ошибки, и выдай мне текст как в оригинале, но испраленный, откоректированный. С сохранением смысла. Дай только текст. Отображи его в кодовом поле, с кнопкой копировать!\n\n$text"
