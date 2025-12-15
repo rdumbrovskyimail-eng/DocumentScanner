@@ -1,5 +1,6 @@
 package com.docs.scanner.presentation.screens.camera
 
+import android.app.Activity
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
@@ -37,18 +38,25 @@ fun CameraScreen(
     val scannerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
-        val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
-        scanResult?.pages?.let { pages ->
-            val uris = pages.mapNotNull { it.imageUri }
-            if (uris.isNotEmpty()) {
-                onImageCaptured(uris)
+        if (result.resultCode == Activity.RESULT_OK) {
+            val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+            scanResult?.pages?.let { pages ->
+                val uris = pages.mapNotNull { it.imageUri }
+                if (uris.isNotEmpty()) {
+                    onImageCaptured(uris)
+                }
             }
+        } else {
+            viewModel.onScanCancelled()
         }
     }
     
     LaunchedEffect(Unit) {
-        viewModel.startScanner { request ->
-            scannerLauncher.launch(request)
+        val activity = context as? Activity
+        if (activity != null) {
+            viewModel.startScanner(activity, scannerLauncher)
+        } else {
+            viewModel.onError("Context is not an Activity")
         }
     }
     
@@ -98,8 +106,9 @@ fun CameraScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(onClick = {
-                            viewModel.startScanner { request ->
-                                scannerLauncher.launch(request)
+                            val activity = context as? Activity
+                            if (activity != null) {
+                                viewModel.startScanner(activity, scannerLauncher)
                             }
                         }) {
                             Text("Retry")
@@ -108,7 +117,7 @@ fun CameraScreen(
                 }
                 
                 is CameraUiState.Ready -> {
-                    // Scanner UI handled by Google ML Kit
+                    // Scanner UI is handled by ML Kit
                 }
             }
         }
@@ -129,19 +138,29 @@ class CameraViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<CameraUiState>(CameraUiState.Loading)
     val uiState: StateFlow<CameraUiState> = _uiState.asStateFlow()
     
-    fun startScanner(onRequestReady: (IntentSenderRequest) -> Unit) {
+    fun startScanner(
+        activity: Activity,
+        launcher: androidx.activity.result.ActivityResultLauncher<IntentSenderRequest>
+    ) {
         viewModelScope.launch {
             _uiState.value = CameraUiState.Loading
             
             try {
-                val request = documentScanner.getStartScanIntent()
+                documentScanner.startScan(activity, launcher)
                 _uiState.value = CameraUiState.Ready
-                onRequestReady(request)
             } catch (e: Exception) {
                 _uiState.value = CameraUiState.Error(
                     e.message ?: "Failed to initialize scanner"
                 )
             }
         }
+    }
+    
+    fun onScanCancelled() {
+        _uiState.value = CameraUiState.Loading
+    }
+    
+    fun onError(message: String) {
+        _uiState.value = CameraUiState.Error(message)
     }
 }
