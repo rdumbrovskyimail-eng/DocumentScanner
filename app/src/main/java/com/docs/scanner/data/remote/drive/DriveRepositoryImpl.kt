@@ -16,6 +16,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -45,6 +48,14 @@ class DriveRepositoryImpl @Inject constructor(
     
     private var driveService: Drive? = null
     private val backupFolderName = "DocumentScanner Backup"
+    
+    private suspend fun <T> safeApiCall(call: suspend () -> T): Result<T> {
+        return try {
+            Result.Success(call())
+        } catch (e: Exception) {
+            Result.Error(Exception("API Error: ${e.message}", e))
+        }
+    }
     
     private fun getDriveService(): Drive? {
         val account = GoogleSignIn.getLastSignedInAccount(context) ?: return null
@@ -99,45 +110,46 @@ class DriveRepositoryImpl @Inject constructor(
     
     override suspend fun uploadBackup(): Result<String> {
         return withContext(Dispatchers.IO) {
-            try {
+            safeApiCall {
                 val drive = driveService ?: getDriveService() 
-                    ?: return@withContext Result.Error(Exception("Not signed in"))
+                    ?: throw Exception("Not signed in to Google Drive")
                 
                 val timestamp = System.currentTimeMillis()
                 val backupZip = File(context.cacheDir, "backup_$timestamp.zip")
                 
-                createBackupZip(backupZip)
-                
-                val folderId = getOrCreateBackupFolder(drive)
-                
-                val fileMetadata = com.google.api.services.drive.model.File()
-                fileMetadata.name = "backup_$timestamp.zip"
-                fileMetadata.parents = listOf(folderId)
-                
-                val mediaContent = com.google.api.client.http.FileContent(
-                    "application/zip",
-                    backupZip
-                )
-                
-                val file = drive.files().create(fileMetadata, mediaContent)
-                    .setFields("id, name")
-                    .execute()
-                
-                backupZip.delete()
-                
-                Result.Success(file.id)
-                
-            } catch (e: Exception) {
-                Result.Error(Exception("Backup failed: ${e.message}", e))
+                try {
+                    createBackupZip(backupZip)
+                    
+                    val folderId = getOrCreateBackupFolder(drive)
+                    
+                    val fileMetadata = com.google.api.services.drive.model.File()
+                    fileMetadata.name = "backup_$timestamp.zip"
+                    fileMetadata.parents = listOf(folderId)
+                    
+                    val mediaContent = com.google.api.client.http.FileContent(
+                        "application/zip",
+                        backupZip
+                    )
+                    
+                    val file = drive.files().create(fileMetadata, mediaContent)
+                        .setFields("id, name")
+                        .execute()
+                    
+                    file.id
+                } finally {
+                    if (backupZip.exists()) {
+                        backupZip.delete()
+                    }
+                }
             }
         }
     }
     
     override suspend fun listBackups(): Result<List<BackupInfo>> {
         return withContext(Dispatchers.IO) {
-            try {
+            safeApiCall {
                 val drive = driveService ?: getDriveService() 
-                    ?: return@withContext Result.Error(Exception("Not signed in"))
+                    ?: throw Exception("Not signed in to Google Drive")
                 
                 val folderId = getOrCreateBackupFolder(drive)
                 
@@ -148,7 +160,7 @@ class DriveRepositoryImpl @Inject constructor(
                     .setOrderBy("createdTime desc")
                     .execute()
                 
-                val backups = result.files.map { file ->
+                result.files.map { file ->
                     BackupInfo(
                         fileId = file.id,
                         fileName = file.name,
@@ -156,43 +168,42 @@ class DriveRepositoryImpl @Inject constructor(
                         sizeBytes = file.getSize() ?: 0L
                     )
                 }
-                
-                Result.Success(backups)
-                
-            } catch (e: Exception) {
-                Result.Error(Exception("Failed to list backups: ${e.message}", e))
             }
         }
     }
     
     override suspend fun restoreBackup(fileId: String): Result<Unit> {
         return withContext(Dispatchers.IO) {
-            try {
+            safeApiCall {
                 val drive = driveService ?: getDriveService() 
-                    ?: return@withContext Result.Error(Exception("Not signed in"))
+                    ?: throw Exception("Not signed in to Google Drive")
                 
+                // Create backup of current database before restore
                 val dbFile = context.getDatabasePath("document_scanner.db")
                 if (dbFile.exists()) {
+                    val backupDbFile = File(dbFile.parent, "${dbFile.name}.backup_${System.currentTimeMillis()}")
+                    dbFile.copyTo(backupDbFile, overwrite = true)
+                    
+                    // Clean up WAL files
                     val walFile = File(dbFile.parent, "${dbFile.name}-wal")
                     val shmFile = File(dbFile.parent, "${dbFile.name}-shm")
                     walFile.delete()
                     shmFile.delete()
                 }
                 
-                val tempZip = File(context.cacheDir, "restore_temp.zip")
-                val outputStream = FileOutputStream(tempZip)
+                val tempZip = File(context.cacheDir, "restore_temp_${System.currentTimeMillis()}.zip")
                 
-                drive.files().get(fileId).executeMediaAndDownloadTo(outputStream)
-                outputStream.close()
-                
-                restoreFromZip(tempZip)
-                
-                tempZip.delete()
-                
-                Result.Success(Unit)
-                
-            } catch (e: Exception) {
-                Result.Error(Exception("Restore failed: ${e.message}", e))
+                try {
+                    val outputStream = FileOutputStream(tempZip)
+                    drive.files().get(fileId).executeMediaAndDownloadTo(outputStream)
+                    outputStream.close()
+                    
+                    restoreFromZip(tempZip)
+                } finally {
+                    if (tempZip.exists()) {
+                        tempZip.delete()
+                    }
+                }
             }
         }
     }
@@ -224,6 +235,7 @@ class DriveRepositoryImpl @Inject constructor(
         val documentsDir = File(context.filesDir, "documents")
         
         ZipOutputStream(FileOutputStream(zipFile)).use { zip ->
+            // Add database
             if (dbFile.exists()) {
                 FileInputStream(dbFile).use { input ->
                     zip.putNextEntry(ZipEntry("database.db"))
@@ -232,6 +244,7 @@ class DriveRepositoryImpl @Inject constructor(
                 }
             }
             
+            // Add document files
             if (documentsDir.exists()) {
                 documentsDir.walkTopDown().forEach { file ->
                     if (file.isFile) {
@@ -245,10 +258,13 @@ class DriveRepositoryImpl @Inject constructor(
                 }
             }
             
+            // Add manifest
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
             val manifest = """
                 {
                   "app_version": "2.0.0",
-                  "backup_date": "${System.currentTimeMillis()}",
+                  "backup_date": "${dateFormat.format(Date())}",
+                  "backup_timestamp": ${System.currentTimeMillis()},
                   "db_version": 2
                 }
             """.trimIndent()
@@ -267,6 +283,10 @@ class DriveRepositoryImpl @Inject constructor(
                 when {
                     entry.name == "database.db" -> {
                         val dbFile = context.getDatabasePath("document_scanner.db")
+                        
+                        // Create parent directory if needed
+                        dbFile.parentFile?.mkdirs()
+                        
                         FileOutputStream(dbFile).use { output ->
                             zip.copyTo(output)
                         }
@@ -274,11 +294,23 @@ class DriveRepositoryImpl @Inject constructor(
                     
                     entry.name.startsWith("documents/") -> {
                         val file = File(context.filesDir, entry.name)
-                        file.parentFile?.mkdirs()
                         
-                        FileOutputStream(file).use { output ->
-                            zip.copyTo(output)
+                        // Skip if file already exists and has same size
+                        if (file.exists() && file.length() == entry.size) {
+                            println("Skipping existing file: ${file.name}")
+                        } else {
+                            file.parentFile?.mkdirs()
+                            
+                            FileOutputStream(file).use { output ->
+                                zip.copyTo(output)
+                            }
                         }
+                    }
+                    
+                    entry.name == "manifest.json" -> {
+                        // Read and validate manifest
+                        val manifestContent = zip.bufferedReader().use { it.readText() }
+                        println("Restore manifest: $manifestContent")
                     }
                 }
                 
