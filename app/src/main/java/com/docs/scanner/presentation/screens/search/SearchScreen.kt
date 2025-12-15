@@ -21,10 +21,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.repository.DocumentRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+@OptIn(FlowPreview::class)
 @Composable
 fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
@@ -44,7 +46,14 @@ fun SearchScreen(
                         onValueChange = viewModel::onSearchQueryChange,
                         placeholder = { Text("Search documents...") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                }
+                            }
+                        }
                     )
                 },
                 navigationIcon = {
@@ -69,8 +78,7 @@ fun SearchScreen(
                 
                 searchQuery.isBlank() -> {
                     Column(
-                        modifier = Modifier
-                            .fillMaxSize()
+                        modifier = Modifier.fillMaxSize()
                             .padding(32.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
@@ -86,6 +94,7 @@ fun SearchScreen(
                             "Search in all documents",
                             style = MaterialTheme.typography.titleLarge
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             "Enter text to search in original and translated documents",
                             style = MaterialTheme.typography.bodyMedium,
@@ -113,6 +122,7 @@ fun SearchScreen(
                             "No results found",
                             style = MaterialTheme.typography.titleLarge
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             "Try different keywords",
                             style = MaterialTheme.typography.bodyMedium,
@@ -127,6 +137,15 @@ fun SearchScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        item {
+                            Text(
+                                text = "${searchResults.size} result${if (searchResults.size != 1) "s" else ""} found",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                        
                         items(searchResults, key = { it.documentId }) { result ->
                             SearchResultCard(
                                 result = result,
@@ -167,16 +186,33 @@ private fun SearchResultCard(
             Text(
                 text = buildAnnotatedString {
                     val text = result.matchedText
-                    val startIndex = text.indexOf(searchQuery, ignoreCase = true)
+                    val query = searchQuery.trim()
                     
-                    if (startIndex >= 0) {
-                        append(text.substring(0, startIndex))
-                        withStyle(SpanStyle(background = Color.Yellow)) {
-                            append(text.substring(startIndex, startIndex + searchQuery.length))
-                        }
-                        append(text.substring(startIndex + searchQuery.length))
-                    } else {
+                    if (query.isEmpty()) {
                         append(text)
+                    } else {
+                        var currentIndex = 0
+                        var startIndex = text.indexOf(query, currentIndex, ignoreCase = true)
+                        
+                        while (startIndex >= 0 && currentIndex < text.length) {
+                            // Add text before match
+                            if (startIndex > currentIndex) {
+                                append(text.substring(currentIndex, startIndex))
+                            }
+                            
+                            // Add highlighted match
+                            withStyle(SpanStyle(background = Color.Yellow)) {
+                                append(text.substring(startIndex, (startIndex + query.length).coerceAtMost(text.length)))
+                            }
+                            
+                            currentIndex = startIndex + query.length
+                            startIndex = text.indexOf(query, currentIndex, ignoreCase = true)
+                        }
+                        
+                        // Add remaining text
+                        if (currentIndex < text.length) {
+                            append(text.substring(currentIndex))
+                        }
                     }
                 },
                 style = MaterialTheme.typography.bodyMedium,
@@ -204,6 +240,7 @@ data class SearchResult(
     val isOriginal: Boolean
 )
 
+@OptIn(FlowPreview::class)
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val documentRepository: DocumentRepository
@@ -218,37 +255,78 @@ class SearchViewModel @Inject constructor(
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
     
+    private val searchCache = mutableMapOf<String, List<SearchResult>>()
+    private val maxCacheSize = 20
+    
+    init {
+        // Debounce search queries
+        viewModelScope.launch {
+            _searchQuery
+                .debounce(300)
+                .distinctUntilChanged()
+                .collectLatest { query ->
+                    performSearch(query)
+                }
+        }
+    }
+    
     fun onSearchQueryChange(query: String) {
         _searchQuery.value = query
-        
+    }
+    
+    private suspend fun performSearch(query: String) {
         if (query.isBlank()) {
             _searchResults.value = emptyList()
+            _isSearching.value = false
             return
         }
         
-        if (query.length < 2) return
+        if (query.length < 2) {
+            _searchResults.value = emptyList()
+            _isSearching.value = false
+            return
+        }
         
-        viewModelScope.launch {
-            _isSearching.value = true
-            
-            try {
-                documentRepository.searchEverywhere(query).collect { documents ->
-                    _searchResults.value = documents.map { doc ->
+        // Check cache
+        val cached = searchCache[query.lowercase()]
+        if (cached != null) {
+            _searchResults.value = cached
+            return
+        }
+        
+        _isSearching.value = true
+        
+        try {
+            documentRepository.searchEverywhere(query)
+                .catch { e ->
+                    println("Search error: ${e.message}")
+                    _searchResults.value = emptyList()
+                }
+                .collect { documents ->
+                    val results = documents.take(50).map { doc ->
                         SearchResult(
                             documentId = doc.id,
                             recordId = doc.recordId,
-                            recordName = "Document",
+                            recordName = "Document ${doc.id}",
                             folderName = "Folder",
                             matchedText = doc.originalText ?: doc.translatedText ?: "",
                             isOriginal = doc.originalText?.contains(query, ignoreCase = true) == true
                         )
                     }
+                    
+                    _searchResults.value = results
+                    
+                    // Update cache
+                    if (searchCache.size >= maxCacheSize) {
+                        searchCache.remove(searchCache.keys.first())
+                    }
+                    searchCache[query.lowercase()] = results
                 }
-            } catch (e: Exception) {
-                _searchResults.value = emptyList()
-            } finally {
-                _isSearching.value = false
-            }
+        } catch (e: Exception) {
+            println("Search error: ${e.message}")
+            _searchResults.value = emptyList()
+        } finally {
+            _isSearching.value = false
         }
     }
 }
