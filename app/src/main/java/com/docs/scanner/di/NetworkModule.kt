@@ -2,6 +2,7 @@ package com.docs.scanner.di
 
 import android.content.Context
 import com.docs.scanner.data.remote.gemini.GeminiApi
+import com.docs.scanner.data.remote.gemini.GeminiApiService
 import com.docs.scanner.data.remote.gemini.GeminiTranslator
 import com.docs.scanner.data.remote.mlkit.MLKitScanner
 import com.google.gson.Gson
@@ -62,15 +63,12 @@ object NetworkModule {
     
     @Provides
     @Singleton
-    fun provideGeminiApi(retrofit: Retrofit): GeminiApi {
-        return retrofit.create(GeminiApi::class.java)
+    fun provideGeminiApiService(retrofit: Retrofit): GeminiApiService {
+        return retrofit.create(GeminiApiService::class.java)
     }
     
-    @Provides
-    @Singleton
-    fun provideGeminiTranslator(api: GeminiApi): GeminiTranslator {
-        return GeminiTranslator(api)
-    }
+    // GeminiApi и GeminiTranslator создаются автоматически через @Inject constructor
+    // Hilt сам их предоставит, поэтому здесь provide методы не нужны
     
     @Provides
     @Singleton
