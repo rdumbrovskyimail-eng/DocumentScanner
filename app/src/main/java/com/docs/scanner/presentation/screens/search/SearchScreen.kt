@@ -13,12 +13,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.docs.scanner.domain.model.Result
 import com.docs.scanner.domain.repository.DocumentRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -156,7 +156,6 @@ private fun SearchResultCard(
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            // Путь: Folder > Record
             Text(
                 text = "${result.folderName} › ${result.recordName}",
                 style = MaterialTheme.typography.labelSmall,
@@ -165,36 +164,34 @@ private fun SearchResultCard(
             
             Spacer(modifier = Modifier.height(8.dp))
             
-            // Найденный текст с подсветкой
             Text(
-                text = highlightSearchQuery(result.matchedText, searchQuery),
+                text = buildAnnotatedString {
+                    val text = result.matchedText
+                    val startIndex = text.indexOf(searchQuery, ignoreCase = true)
+                    
+                    if (startIndex >= 0) {
+                        append(text.substring(0, startIndex))
+                        withStyle(SpanStyle(background = Color.Yellow)) {
+                            append(text.substring(startIndex, startIndex + searchQuery.length))
+                        }
+                        append(text.substring(startIndex + searchQuery.length))
+                    } else {
+                        append(text)
+                    }
+                },
                 style = MaterialTheme.typography.bodyMedium,
-                maxLines = 3
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
             )
             
             Spacer(modifier = Modifier.height(4.dp))
             
-            // Тип текста (Original / Translation)
             Text(
                 text = if (result.isOriginal) "Original text" else "Translation",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-    }
-}
-
-private fun highlightSearchQuery(text: String, query: String) = buildAnnotatedString {
-    val startIndex = text.indexOf(query, ignoreCase = true)
-    
-    if (startIndex >= 0) {
-        append(text.substring(0, startIndex))
-        withStyle(SpanStyle(background = Color.Yellow)) {
-            append(text.substring(startIndex, startIndex + query.length))
-        }
-        append(text.substring(startIndex + query.length))
-    } else {
-        append(text)
     }
 }
 
@@ -234,10 +231,24 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             _isSearching.value = true
             
-            // TODO: Implement search in repository
-            // val results = searchUseCase(query)
-            
-            _isSearching.value = false
+            try {
+                documentRepository.searchEverywhere(query).collect { documents ->
+                    _searchResults.value = documents.map { doc ->
+                        SearchResult(
+                            documentId = doc.id,
+                            recordId = doc.recordId,
+                            recordName = "Document",
+                            folderName = "Folder",
+                            matchedText = doc.originalText ?: doc.translatedText ?: "",
+                            isOriginal = doc.originalText?.contains(query, ignoreCase = true) == true
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _searchResults.value = emptyList()
+            } finally {
+                _isSearching.value = false
+            }
         }
     }
 }
