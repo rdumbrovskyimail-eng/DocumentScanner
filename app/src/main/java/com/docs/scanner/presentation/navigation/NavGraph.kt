@@ -11,7 +11,9 @@ import com.docs.scanner.presentation.screens.folders.FoldersScreen
 import com.docs.scanner.presentation.screens.imageviewer.ImageViewerScreen
 import com.docs.scanner.presentation.screens.onboarding.OnboardingScreen
 import com.docs.scanner.presentation.screens.records.RecordsScreen
+import com.docs.scanner.presentation.screens.search.SearchScreen
 import com.docs.scanner.presentation.screens.settings.SettingsScreen
+import com.docs.scanner.presentation.screens.terms.TermsScreen
 
 @Composable
 fun NavGraph(
@@ -95,9 +97,27 @@ fun NavGraph(
         composable(Screen.Camera.route) {
             CameraScreen(
                 onImageCaptured = { uris ->
-                    // TODO: Handle captured images
                     navController.popBackStack()
                 },
+                onBackClick = {
+                    navController.popBackStack()
+                }
+            )
+        }
+        
+        composable(Screen.Search.route) {
+            SearchScreen(
+                onBackClick = {
+                    navController.popBackStack()
+                },
+                onDocumentClick = { recordId ->
+                    navController.navigate(Screen.Editor.createRoute(recordId))
+                }
+            )
+        }
+        
+        composable(Screen.Terms.route) {
+            TermsScreen(
                 onBackClick = {
                     navController.popBackStack()
                 }
