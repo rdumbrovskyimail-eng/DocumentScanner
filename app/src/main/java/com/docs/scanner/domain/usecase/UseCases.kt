@@ -18,6 +18,9 @@ class CreateFolderUseCase @Inject constructor(
     private val repository: FolderRepository
 ) {
     suspend operator fun invoke(name: String, description: String? = null): Result<Long> {
+        if (name.isBlank()) {
+            return Result.Error(Exception("Folder name cannot be empty"))
+        }
         return repository.createFolder(name, description)
     }
 }
@@ -50,6 +53,9 @@ class CreateRecordUseCase @Inject constructor(
     private val repository: RecordRepository
 ) {
     suspend operator fun invoke(folderId: Long, name: String, description: String? = null): Result<Long> {
+        if (name.isBlank()) {
+            return Result.Error(Exception("Record name cannot be empty"))
+        }
         return repository.createRecord(folderId, name, description)
     }
 }
@@ -93,48 +99,64 @@ class AddDocumentUseCase @Inject constructor(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
     suspend operator fun invoke(recordId: Long, imageUri: Uri): Result<Long> {
-        return when (val result = documentRepository.createDocument(recordId, imageUri)) {
-            is Result.Success -> {
-                val documentId = result.data
-                
-                scope.launch {
-                    performOcrAndTranslation(documentId, imageUri)
+        return try {
+            when (val result = documentRepository.createDocument(recordId, imageUri)) {
+                is Result.Success -> {
+                    val documentId = result.data
+                    
+                    // Launch background processing
+                    scope.launch {
+                        performOcrAndTranslation(documentId, imageUri)
+                    }
+                    
+                    Result.Success(documentId)
                 }
-                
-                Result.Success(documentId)
+                is Result.Error -> result
+                else -> Result.Error(Exception("Unknown error"))
             }
-            is Result.Error -> result
-            else -> Result.Error(Exception("Unknown error"))
+        } catch (e: Exception) {
+            Result.Error(Exception("Failed to add document: ${e.message}", e))
         }
     }
     
     private suspend fun performOcrAndTranslation(documentId: Long, imageUri: Uri) {
         try {
+            // Set status to OCR in progress
             documentRepository.updateProcessingStatus(documentId, ProcessingStatus.OCR_IN_PROGRESS)
             
+            // Perform OCR
             when (val ocrResult = scannerRepository.scanImage(imageUri)) {
                 is Result.Success -> {
                     documentRepository.updateOriginalText(documentId, ocrResult.data)
                     documentRepository.updateProcessingStatus(documentId, ProcessingStatus.TRANSLATION_IN_PROGRESS)
                     
+                    // Small delay to prevent rate limiting
                     delay(500)
                     
+                    // Perform translation
                     when (val translationResult = scannerRepository.translateText(ocrResult.data)) {
                         is Result.Success -> {
                             documentRepository.updateTranslatedText(documentId, translationResult.data)
                         }
                         is Result.Error -> {
+                            println("Translation error: ${translationResult.exception.message}")
                             documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
                         }
-                        else -> {}
+                        else -> {
+                            documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
+                        }
                     }
                 }
                 is Result.Error -> {
+                    println("OCR error: ${ocrResult.exception.message}")
                     documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
                 }
-                else -> {}
+                else -> {
+                    documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
+                }
             }
         } catch (e: Exception) {
+            println("Processing error: ${e.message}")
             documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
         }
     }
@@ -153,23 +175,27 @@ class RetryTranslationUseCase @Inject constructor(
     private val scannerRepository: ScannerRepository
 ) {
     suspend operator fun invoke(documentId: Long): Result<Unit> {
-        val document = documentRepository.getDocumentById(documentId)
-            ?: return Result.Error(Exception("Document not found"))
-        
-        val originalText = document.originalText
-            ?: return Result.Error(Exception("No original text to translate"))
-        
-        documentRepository.updateProcessingStatus(documentId, ProcessingStatus.TRANSLATION_IN_PROGRESS)
-        
-        return when (val result = scannerRepository.translateText(originalText)) {
-            is Result.Success -> {
-                documentRepository.updateTranslatedText(documentId, result.data)
+        return try {
+            val document = documentRepository.getDocumentById(documentId)
+                ?: return Result.Error(Exception("Document not found"))
+            
+            val originalText = document.originalText
+                ?: return Result.Error(Exception("No original text to translate"))
+            
+            documentRepository.updateProcessingStatus(documentId, ProcessingStatus.TRANSLATION_IN_PROGRESS)
+            
+            when (val result = scannerRepository.translateText(originalText)) {
+                is Result.Success -> {
+                    documentRepository.updateTranslatedText(documentId, result.data)
+                }
+                is Result.Error -> {
+                    documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
+                    Result.Error(result.exception)
+                }
+                else -> Result.Error(Exception("Unknown error"))
             }
-            is Result.Error -> {
-                documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
-                Result.Error(result.exception)
-            }
-            else -> Result.Error(Exception("Unknown error"))
+        } catch (e: Exception) {
+            Result.Error(Exception("Failed to retry translation: ${e.message}", e))
         }
     }
 }
@@ -179,19 +205,30 @@ class FixOcrUseCase @Inject constructor(
     private val scannerRepository: ScannerRepository
 ) {
     suspend operator fun invoke(documentId: Long): Result<Unit> {
-        val document = documentRepository.getDocumentById(documentId)
-            ?: return Result.Error(Exception("Document not found"))
-        
-        val originalText = document.originalText
-            ?: return Result.Error(Exception("No text to fix"))
-        
-        return when (val result = scannerRepository.fixOcrText(originalText)) {
-            is Result.Success -> {
-                documentRepository.updateOriginalText(documentId, result.data)
-                RetryTranslationUseCase(documentRepository, scannerRepository).invoke(documentId)
+        return try {
+            val document = documentRepository.getDocumentById(documentId)
+                ?: return Result.Error(Exception("Document not found"))
+            
+            val originalText = document.originalText
+                ?: return Result.Error(Exception("No text to fix"))
+            
+            documentRepository.updateProcessingStatus(documentId, ProcessingStatus.OCR_IN_PROGRESS)
+            
+            when (val result = scannerRepository.fixOcrText(originalText)) {
+                is Result.Success -> {
+                    documentRepository.updateOriginalText(documentId, result.data)
+                    
+                    // Also retry translation with fixed text
+                    RetryTranslationUseCase(documentRepository, scannerRepository).invoke(documentId)
+                }
+                is Result.Error -> {
+                    documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
+                    Result.Error(result.exception)
+                }
+                else -> Result.Error(Exception("Unknown error"))
             }
-            is Result.Error -> Result.Error(result.exception)
-            else -> Result.Error(Exception("Unknown error"))
+        } catch (e: Exception) {
+            Result.Error(Exception("Failed to fix OCR: ${e.message}", e))
         }
     }
 }
@@ -203,33 +240,40 @@ class QuickScanUseCase @Inject constructor(
     private val getFoldersUseCase: GetFoldersUseCase
 ) {
     suspend operator fun invoke(imageUri: Uri): Result<Long> {
-        val foldersFlow = getFoldersUseCase()
-        var testFolder: Folder? = null
-        
-        foldersFlow.first().let { folders ->
-            testFolder = folders.find { it.name == "Quick Scans" }
-        }
-        
-        val folderId = if (testFolder == null) {
-            when (val result = folderRepository.createFolder("Quick Scans", "Quickly scanned documents")) {
+        return try {
+            val foldersFlow = getFoldersUseCase()
+            var quickScansFolder: Folder? = null
+            
+            foldersFlow.first().let { folders ->
+                quickScansFolder = folders.find { it.name == "Quick Scans" }
+            }
+            
+            val folderId = if (quickScansFolder == null) {
+                when (val result = folderRepository.createFolder("Quick Scans", "Quickly scanned documents")) {
+                    is Result.Success -> result.data
+                    is Result.Error -> return Result.Error(result.exception)
+                    else -> return Result.Error(Exception("Unknown error creating folder"))
+                }
+            } else {
+                quickScansFolder!!.id
+            }
+            
+            val timestamp = System.currentTimeMillis()
+            val recordName = "Scan ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(timestamp))}"
+            
+            val recordId = when (val result = recordRepository.createRecord(folderId, recordName, null)) {
                 is Result.Success -> result.data
                 is Result.Error -> return Result.Error(result.exception)
-                else -> return Result.Error(Exception("Unknown error"))
+                else -> return Result.Error(Exception("Unknown error creating record"))
             }
-        } else {
-            testFolder!!.id
-        }
-        
-        val recordId = when (val result = recordRepository.createRecord(folderId, "Scan ${System.currentTimeMillis()}", null)) {
-            is Result.Success -> result.data
-            is Result.Error -> return Result.Error(result.exception)
-            else -> return Result.Error(Exception("Unknown error"))
-        }
-        
-        return when (val result = addDocumentUseCase(recordId, imageUri)) {
-            is Result.Success -> Result.Success(recordId)
-            is Result.Error -> result
-            else -> Result.Error(Exception("Unknown error"))
+            
+            when (val result = addDocumentUseCase(recordId, imageUri)) {
+                is Result.Success -> Result.Success(recordId)
+                is Result.Error -> result
+                else -> Result.Error(Exception("Unknown error adding document"))
+            }
+        } catch (e: Exception) {
+            Result.Error(Exception("Quick scan failed: ${e.message}", e))
         }
     }
 }
