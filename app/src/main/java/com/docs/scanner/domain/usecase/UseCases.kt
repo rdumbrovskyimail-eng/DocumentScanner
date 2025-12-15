@@ -3,6 +3,7 @@ package com.docs.scanner.domain.usecase
 import android.net.Uri
 import com.docs.scanner.domain.model.*
 import com.docs.scanner.domain.repository.*
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
@@ -89,39 +90,52 @@ class AddDocumentUseCase @Inject constructor(
     private val documentRepository: DocumentRepository,
     private val scannerRepository: ScannerRepository
 ) {
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    
     suspend operator fun invoke(recordId: Long, imageUri: Uri): Result<Long> {
         return when (val result = documentRepository.createDocument(recordId, imageUri)) {
             is Result.Success -> {
                 val documentId = result.data
                 
-                documentRepository.updateProcessingStatus(documentId, ProcessingStatus.OCR_IN_PROGRESS)
-                
-                when (val ocrResult = scannerRepository.scanImage(imageUri)) {
-                    is Result.Success -> {
-                        documentRepository.updateOriginalText(documentId, ocrResult.data)
-                        
-                        documentRepository.updateProcessingStatus(documentId, ProcessingStatus.TRANSLATION_IN_PROGRESS)
-                        
-                        when (val translationResult = scannerRepository.translateText(ocrResult.data)) {
-                            is Result.Success -> {
-                                documentRepository.updateTranslatedText(documentId, translationResult.data)
-                            }
-                            is Result.Error -> {
-                                documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
-                            }
-                            else -> {}
-                        }
-                    }
-                    is Result.Error -> {
-                        documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
-                    }
-                    else -> {}
+                scope.launch {
+                    performOcrAndTranslation(documentId, imageUri)
                 }
                 
                 Result.Success(documentId)
             }
             is Result.Error -> result
             else -> Result.Error(Exception("Unknown error"))
+        }
+    }
+    
+    private suspend fun performOcrAndTranslation(documentId: Long, imageUri: Uri) {
+        try {
+            documentRepository.updateProcessingStatus(documentId, ProcessingStatus.OCR_IN_PROGRESS)
+            
+            when (val ocrResult = scannerRepository.scanImage(imageUri)) {
+                is Result.Success -> {
+                    documentRepository.updateOriginalText(documentId, ocrResult.data)
+                    documentRepository.updateProcessingStatus(documentId, ProcessingStatus.TRANSLATION_IN_PROGRESS)
+                    
+                    delay(500)
+                    
+                    when (val translationResult = scannerRepository.translateText(ocrResult.data)) {
+                        is Result.Success -> {
+                            documentRepository.updateTranslatedText(documentId, translationResult.data)
+                        }
+                        is Result.Error -> {
+                            documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
+                        }
+                        else -> {}
+                    }
+                }
+                is Result.Error -> {
+                    documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
+                }
+                else -> {}
+            }
+        } catch (e: Exception) {
+            documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
         }
     }
 }
@@ -193,11 +207,11 @@ class QuickScanUseCase @Inject constructor(
         var testFolder: Folder? = null
         
         foldersFlow.first().let { folders ->
-            testFolder = folders.find { it.name == "Test" }
+            testFolder = folders.find { it.name == "Quick Scans" }
         }
         
         val folderId = if (testFolder == null) {
-            when (val result = folderRepository.createFolder("Test", "test")) {
+            when (val result = folderRepository.createFolder("Quick Scans", "Quickly scanned documents")) {
                 is Result.Success -> result.data
                 is Result.Error -> return Result.Error(result.exception)
                 else -> return Result.Error(Exception("Unknown error"))
@@ -206,7 +220,7 @@ class QuickScanUseCase @Inject constructor(
             testFolder!!.id
         }
         
-        val recordId = when (val result = recordRepository.createRecord(folderId, "Test", null)) {
+        val recordId = when (val result = recordRepository.createRecord(folderId, "Scan ${System.currentTimeMillis()}", null)) {
             is Result.Success -> result.data
             is Result.Error -> return Result.Error(result.exception)
             else -> return Result.Error(Exception("Unknown error"))
