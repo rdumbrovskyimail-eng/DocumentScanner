@@ -57,7 +57,8 @@
         
         <receiver
             android:name=".data.local.alarm.TermAlarmReceiver"
-            android:exported="false"android:enabled="true" />
+            android:exported="false"
+            android:enabled="true" />
             
     </application>
 
