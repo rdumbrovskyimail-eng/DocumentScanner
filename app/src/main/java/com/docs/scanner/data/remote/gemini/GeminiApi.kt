@@ -3,8 +3,6 @@ package com.docs.scanner.data.remote.gemini
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.delay
 import retrofit2.Response
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.Query
@@ -61,15 +59,9 @@ interface GeminiApiService {
 }
 
 @Singleton
-class GeminiApi @Inject constructor() {
-    
-    private val retrofit = Retrofit.Builder()
-        .baseUrl("https://generativelanguage.googleapis.com/")
-        .addConverterFactory(GsonConverterFactory.create())
-        .build()
-    
-    private val api = retrofit.create(GeminiApiService::class.java)
-    
+class GeminiApi @Inject constructor(
+    private val api: GeminiApiService
+) {
     private var requestCount = 0
     private var lastRequestTime = 0L
     private val maxRequestsPerMinute = 15
