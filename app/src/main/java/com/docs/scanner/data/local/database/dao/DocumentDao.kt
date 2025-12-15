@@ -15,6 +15,15 @@ interface DocumentDao {
     @Query("SELECT * FROM documents WHERE id = :documentId")
     fun getDocumentByIdFlow(documentId: Long): Flow<DocumentEntity?>
     
+    @Query("""
+        SELECT * FROM documents 
+        WHERE originalText LIKE '%' || :query || '%' 
+        OR translatedText LIKE '%' || :query || '%'
+        ORDER BY createdAt DESC
+        LIMIT 50
+    """)
+    fun searchEverywhere(query: String): Flow<List<DocumentEntity>>
+    
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDocument(document: DocumentEntity): Long
     
