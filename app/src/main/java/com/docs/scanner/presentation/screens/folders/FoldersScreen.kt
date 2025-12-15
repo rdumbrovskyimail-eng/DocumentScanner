@@ -61,7 +61,7 @@ fun FoldersScreen(
                     }
                     
                     IconButton(onClick = onTermsClick) {
-                        Icon(Icons.Default.Alarm, contentDescription = "Terms")
+                        Icon(Icons.Default.Event, contentDescription = "Terms")
                     }
                     
                     IconButton(onClick = onCameraClick) {
@@ -409,7 +409,7 @@ class FoldersViewModel @Inject constructor(
                 }
                 is com.docs.scanner.domain.model.Result.Error -> {
                     _uiState.value = FoldersUiState.Error(
-                        result.message ?: "Quick scan failed"
+                        result.exception.message ?: "Quick scan failed"
                     )
                 }
                 else -> {}
