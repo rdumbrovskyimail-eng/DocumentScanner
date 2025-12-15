@@ -251,13 +251,22 @@ class GeminiApi @Inject constructor(
         cleaned = cleaned.replace(Regex("[\"'«»„""]"), "")
         
         // Remove common prefixes
-        cleaned = cleaned.replace(
-            Regex(
-                "^(Перевод|Translation|Traducción|Traduction|Übersetzung|翻訳|翻译|Исправленный текст|Corrected text)[:：]\\s*",
-                RegexOption.IGNORE_CASE
-            ),
-            ""
+        val prefixes = listOf(
+            "Перевод:",
+            "Translation:",
+            "Traduccion:",
+            "Traduction:",
+            "Ubersetzung:",
+            "Исправленный текст:",
+            "Corrected text:"
         )
+        
+        for (prefix in prefixes) {
+            if (cleaned.startsWith(prefix, ignoreCase = true)) {
+                cleaned = cleaned.substring(prefix.length).trim()
+                break
+            }
+        }
         
         // Remove invisible characters
         cleaned = cleaned.replace(Regex("\\p{C}"), "")
