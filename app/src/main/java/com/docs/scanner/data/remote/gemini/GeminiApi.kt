@@ -12,7 +12,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 // Model configuration for Flash 2.5
-private const val GEMINI_MODEL = "gemini-2.0-flash-exp"
+private const val GEMINI_MODEL = "gemini-2.5-flash-lite"
 private const val MAX_TOKENS = 8192
 private const val TEMPERATURE = 0.7f
 
@@ -394,3 +394,4 @@ fun provideOkHttpClient(): OkHttpClient {
         .build()
 }
 */
+
