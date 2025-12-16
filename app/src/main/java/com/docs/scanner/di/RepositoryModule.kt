@@ -1,6 +1,8 @@
 package com.docs.scanner.di
 
 import com.docs.scanner.data.repository.*
+import com.docs.scanner.data.remote.drive.DriveRepository
+import com.docs.scanner.data.remote.drive.DriveRepositoryImpl
 import com.docs.scanner.domain.repository.*
 import dagger.Binds
 import dagger.Module
@@ -41,4 +43,10 @@ abstract class RepositoryModule {
     abstract fun bindSettingsRepository(
         impl: SettingsRepositoryImpl
     ): SettingsRepository
+    
+    @Binds
+    @Singleton
+    abstract fun bindDriveRepository(
+        impl: DriveRepositoryImpl
+    ): DriveRepository
 }
