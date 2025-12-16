@@ -1,6 +1,5 @@
 package com.docs.scanner.data.remote.gemini
 
-import android.net.Uri
 import com.docs.scanner.domain.model.Result
 import javax.inject.Inject
 import javax.inject.Singleton
