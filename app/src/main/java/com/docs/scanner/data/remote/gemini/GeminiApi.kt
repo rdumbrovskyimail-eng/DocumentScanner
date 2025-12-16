@@ -2,6 +2,8 @@ package com.docs.scanner.data.remote.gemini
 
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.POST
@@ -9,8 +11,15 @@ import retrofit2.http.Query
 import javax.inject.Inject
 import javax.inject.Singleton
 
+// Model configuration for Flash 2.5
+private const val GEMINI_MODEL = "gemini-2.0-flash-exp"
+private const val MAX_TOKENS = 8192
+private const val TEMPERATURE = 0.7f
+
 data class GeminiRequest(
-    val contents: List<Content>
+    val contents: List<Content>,
+    val generationConfig: GenerationConfig? = null,
+    val safetySettings: List<SafetySetting>? = null
 ) {
     data class Content(
         val parts: List<Part>
@@ -19,15 +28,29 @@ data class GeminiRequest(
     data class Part(
         val text: String
     )
+    
+    data class GenerationConfig(
+        val temperature: Float = TEMPERATURE,
+        val maxOutputTokens: Int = MAX_TOKENS,
+        val topP: Float = 0.95f,
+        val topK: Int = 40
+    )
+    
+    data class SafetySetting(
+        val category: String,
+        val threshold: String
+    )
 }
 
 data class GeminiResponse(
-    val candidates: List<Candidate>?
+    val candidates: List<Candidate>?,
+    val promptFeedback: PromptFeedback?
 ) {
     data class Candidate(
         val content: Content,
         @SerializedName("safetyRatings")
-        val safetyRatings: List<SafetyRating>
+        val safetyRatings: List<SafetyRating>,
+        val finishReason: String?
     )
     
     data class Content(
@@ -42,6 +65,10 @@ data class GeminiResponse(
         val category: String,
         val probability: String
     )
+    
+    data class PromptFeedback(
+        val blockReason: String?
+    )
 }
 
 sealed class GeminiResult {
@@ -51,7 +78,7 @@ sealed class GeminiResult {
 }
 
 interface GeminiApiService {
-    @POST("v1beta/models/gemini-1.5-flash:generateContent")
+    @POST("v1beta/models/$GEMINI_MODEL:generateContent")
     suspend fun generateContent(
         @Query("key") apiKey: String,
         @Body request: GeminiRequest
@@ -62,29 +89,32 @@ interface GeminiApiService {
 class GeminiApi @Inject constructor(
     private val api: GeminiApiService
 ) {
+    private val requestLock = Mutex()
     private var requestCount = 0
     private var lastRequestTime = 0L
     private val maxRequestsPerMinute = 15
-    private val rateLimitWindow = 60_000L // 1 minute
+    private val rateLimitWindow = 60_000L
     
     private suspend fun checkRateLimit() {
-        val currentTime = System.currentTimeMillis()
-        
-        if (currentTime - lastRequestTime > rateLimitWindow) {
-            requestCount = 0
-            lastRequestTime = currentTime
-        }
-        
-        if (requestCount >= maxRequestsPerMinute) {
-            val waitTime = rateLimitWindow - (currentTime - lastRequestTime)
-            if (waitTime > 0) {
-                delay(waitTime)
+        requestLock.withLock {
+            val currentTime = System.currentTimeMillis()
+            
+            if (currentTime - lastRequestTime > rateLimitWindow) {
                 requestCount = 0
-                lastRequestTime = System.currentTimeMillis()
+                lastRequestTime = currentTime
             }
+            
+            if (requestCount >= maxRequestsPerMinute) {
+                val waitTime = rateLimitWindow - (currentTime - lastRequestTime)
+                if (waitTime > 0) {
+                    delay(waitTime)
+                    requestCount = 0
+                    lastRequestTime = System.currentTimeMillis()
+                }
+            }
+            
+            requestCount++
         }
-        
-        requestCount++
     }
     
     suspend fun fixOcrText(text: String, apiKey: String, maxRetries: Int = 3): GeminiResult {
@@ -96,6 +126,10 @@ class GeminiApi @Inject constructor(
             return GeminiResult.Failed("Input text is empty")
         }
         
+        if (!isValidApiKey(apiKey)) {
+            return GeminiResult.Failed("Invalid API key format")
+        }
+        
         var lastError: Exception? = null
         
         repeat(maxRetries) { attempt ->
@@ -104,6 +138,8 @@ class GeminiApi @Inject constructor(
                 
                 val prompt = """
                     Исправь ошибки OCR в этом тексте. Верни только исправленный текст без пояснений.
+                    Сохрани форматирование и структуру текста.
+                    
                     Текст: $text
                 """.trimIndent()
                 
@@ -112,7 +148,12 @@ class GeminiApi @Inject constructor(
                         GeminiRequest.Content(
                             parts = listOf(GeminiRequest.Part(prompt))
                         )
-                    )
+                    ),
+                    generationConfig = GeminiRequest.GenerationConfig(
+                        temperature = 0.3f, // Lower temp for OCR correction
+                        maxOutputTokens = MAX_TOKENS
+                    ),
+                    safetySettings = createSafetySettings()
                 )
                 
                 val response = api.generateContent(apiKey, request)
@@ -120,11 +161,8 @@ class GeminiApi @Inject constructor(
                 if (response.isSuccessful) {
                     return sanitizeResponse(response.body())
                 } else {
-                    val errorBody = response.errorBody()?.string()
-                    
                     when (response.code()) {
                         429 -> {
-                            // Rate limit exceeded
                             if (attempt < maxRetries - 1) {
                                 delay(2000L * (attempt + 1))
                                 return@repeat
@@ -134,6 +172,7 @@ class GeminiApi @Inject constructor(
                             return GeminiResult.Failed("Invalid API key")
                         }
                         else -> {
+                            val errorBody = response.errorBody()?.string()
                             lastError = Exception("HTTP ${response.code()}: $errorBody")
                         }
                     }
@@ -158,6 +197,15 @@ class GeminiApi @Inject constructor(
             return GeminiResult.Failed("Input text is empty")
         }
         
+        if (!isValidApiKey(apiKey)) {
+            return GeminiResult.Failed("Invalid API key format")
+        }
+        
+        // Limit text length
+        if (text.length > 10000) {
+            return GeminiResult.Failed("Text too long (max 10000 chars)")
+        }
+        
         var lastError: Exception? = null
         
         repeat(maxRetries) { attempt ->
@@ -166,6 +214,9 @@ class GeminiApi @Inject constructor(
                 
                 val prompt = """
                     Переведи этот текст на русский язык. Верни только перевод без пояснений.
+                    Сохрани форматирование и структуру текста.
+                    Если текст уже на русском, верни его без изменений.
+                    
                     Текст: $text
                 """.trimIndent()
                 
@@ -174,7 +225,12 @@ class GeminiApi @Inject constructor(
                         GeminiRequest.Content(
                             parts = listOf(GeminiRequest.Part(prompt))
                         )
-                    )
+                    ),
+                    generationConfig = GeminiRequest.GenerationConfig(
+                        temperature = TEMPERATURE,
+                        maxOutputTokens = MAX_TOKENS
+                    ),
+                    safetySettings = createSafetySettings()
                 )
                 
                 val response = api.generateContent(apiKey, request)
@@ -182,8 +238,6 @@ class GeminiApi @Inject constructor(
                 if (response.isSuccessful) {
                     return sanitizeResponse(response.body())
                 } else {
-                    val errorBody = response.errorBody()?.string()
-                    
                     when (response.code()) {
                         429 -> {
                             if (attempt < maxRetries - 1) {
@@ -195,6 +249,7 @@ class GeminiApi @Inject constructor(
                             return GeminiResult.Failed("Invalid API key")
                         }
                         else -> {
+                            val errorBody = response.errorBody()?.string()
                             lastError = Exception("HTTP ${response.code()}: $errorBody")
                         }
                     }
@@ -210,20 +265,37 @@ class GeminiApi @Inject constructor(
         return GeminiResult.Failed(lastError?.message ?: "Unknown error occurred")
     }
     
+    private fun createSafetySettings(): List<GeminiRequest.SafetySetting> {
+        return listOf(
+            GeminiRequest.SafetySetting(
+                category = "HARM_CATEGORY_HARASSMENT",
+                threshold = "BLOCK_NONE"
+            ),
+            GeminiRequest.SafetySetting(
+                category = "HARM_CATEGORY_HATE_SPEECH",
+                threshold = "BLOCK_NONE"
+            ),
+            GeminiRequest.SafetySetting(
+                category = "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                threshold = "BLOCK_NONE"
+            ),
+            GeminiRequest.SafetySetting(
+                category = "HARM_CATEGORY_DANGEROUS_CONTENT",
+                threshold = "BLOCK_NONE"
+            )
+        )
+    }
+    
     private fun sanitizeResponse(response: GeminiResponse?): GeminiResult {
         return try {
+            // Check prompt feedback first
+            response?.promptFeedback?.blockReason?.let { reason ->
+                return GeminiResult.Blocked("Content blocked: $reason")
+            }
+            
             response?.candidates?.firstOrNull()?.let { candidate ->
-                // Check safety ratings
-                val hasExplicitContent = candidate.safetyRatings.any { rating ->
-                    rating.category in listOf(
-                        "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                        "HARM_CATEGORY_HATE_SPEECH",
-                        "HARM_CATEGORY_HARASSMENT",
-                        "HARM_CATEGORY_DANGEROUS_CONTENT"
-                    ) && rating.probability in listOf("HIGH", "MEDIUM")
-                }
-                
-                if (hasExplicitContent) {
+                // Check finish reason
+                if (candidate.finishReason == "SAFETY") {
                     return GeminiResult.Blocked("Content blocked due to safety concerns")
                 }
                 
@@ -254,11 +326,10 @@ class GeminiApi @Inject constructor(
         val prefixes = listOf(
             "Перевод:",
             "Translation:",
-            "Traduccion:",
-            "Traduction:",
-            "Ubersetzung:",
             "Исправленный текст:",
-            "Corrected text:"
+            "Corrected text:",
+            "Here is",
+            "Here's"
         )
         
         for (prefix in prefixes) {
@@ -276,4 +347,50 @@ class GeminiApi @Inject constructor(
         
         return cleaned.trim()
     }
+    
+    private fun isValidApiKey(key: String): Boolean {
+        return key.matches(Regex("^AIza[A-Za-z0-9_-]{35}$"))
+    }
 }
+
+// =====================================================
+// NetworkModule Update
+// =====================================================
+
+// Update in NetworkModule.kt:
+/*
+@Provides
+@Singleton
+fun provideRetrofit(
+    okHttpClient: OkHttpClient,
+    gson: Gson
+): Retrofit {
+    return Retrofit.Builder()
+        .baseUrl("https://generativelanguage.googleapis.com/")
+        .client(okHttpClient)
+        .addConverterFactory(GsonConverterFactory.create(gson))
+        .build()
+}
+
+@Provides
+@Singleton
+fun provideOkHttpClient(): OkHttpClient {
+    val loggingInterceptor = HttpLoggingInterceptor { message ->
+        // Filter sensitive data
+        if (!message.contains("key=") && !message.contains("AIza")) {
+            android.util.Log.d("HTTP", message)
+        }
+    }.apply {
+        level = HttpLoggingInterceptor.Level.BODY
+    }
+    
+    return OkHttpClient.Builder()
+        .addInterceptor(loggingInterceptor)
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .callTimeout(120, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
+}
+*/
