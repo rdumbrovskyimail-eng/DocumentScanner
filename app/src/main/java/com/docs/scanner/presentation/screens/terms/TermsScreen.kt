@@ -1,3 +1,8 @@
+// =====================================================
+// ИСПРАВЛЕНИЕ 2: Terms Screen - Date/Time Picker
+// =====================================================
+
+// File: TermsScreen.kt
 package com.docs.scanner.presentation.screens.terms
 
 import androidx.compose.foundation.clickable
