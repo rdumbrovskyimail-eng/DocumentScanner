@@ -36,21 +36,30 @@ fun FoldersScreen(
     onQuickScanComplete: (Long) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    
+    var isProcessing by remember { mutableStateOf(false) }
+
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            viewModel.quickScan(uri) { recordId ->
-                onQuickScanComplete(recordId)
-            }
+            isProcessing = true
+            viewModel.quickScan(
+                imageUri = uri,
+                onComplete = { recordId ->
+                    isProcessing = false
+                    onQuickScanComplete(recordId)
+                },
+                onError = {
+                    isProcessing = false
+                }
+            )
         }
     }
-    
+
     var showCreateDialog by remember { mutableStateOf(false) }
     var editingFolder by remember { mutableStateOf<Folder?>(null) }
     var showDeleteDialog by remember { mutableStateOf<Folder?>(null) }
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -59,19 +68,35 @@ fun FoldersScreen(
                     IconButton(onClick = onSearchClick) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
-                    
+
                     IconButton(onClick = onTermsClick) {
                         Icon(Icons.Default.Event, contentDescription = "Terms")
                     }
-                    
-                    IconButton(onClick = onCameraClick) {
+
+                    IconButton(
+                        onClick = onCameraClick,
+                        enabled = !isProcessing
+                    ) {
                         Icon(Icons.Default.CameraAlt, contentDescription = "Camera")
                     }
-                    
-                    IconButton(onClick = { galleryLauncher.launch("image/*") }) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = "Gallery")
+
+                    IconButton(
+                        onClick = { galleryLauncher.launch("image/*") },
+                        enabled = !isProcessing
+                    ) {
+                        if (isProcessing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.PhotoLibrary,
+                                contentDescription = "Gallery"
+                            )
+                        }
                     }
-                    
+
                     IconButton(onClick = onSettingsClick) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
@@ -79,13 +104,12 @@ fun FoldersScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showCreateDialog = true }
-            ) {
+            FloatingActionButton(onClick = { showCreateDialog = true }) {
                 Icon(Icons.Default.Add, contentDescription = "Create Folder")
             }
         }
     ) { padding ->
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -97,12 +121,12 @@ fun FoldersScreen(
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }
-                
+
                 is FoldersUiState.Empty -> {
                     EmptyState(
                         icon = {
                             Icon(
-                                imageVector = Icons.Default.FolderOpen,
+                                Icons.Default.FolderOpen,
                                 contentDescription = null,
                                 modifier = Modifier.size(64.dp),
                                 tint = MaterialTheme.colorScheme.primary
@@ -114,10 +138,10 @@ fun FoldersScreen(
                         onActionClick = { showCreateDialog = true }
                     )
                 }
-                
+
                 is FoldersUiState.Success -> {
                     val folders = (uiState as FoldersUiState.Success).folders
-                    
+
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp),
@@ -133,7 +157,7 @@ fun FoldersScreen(
                         }
                     }
                 }
-                
+
                 is FoldersUiState.Error -> {
                     ErrorState(
                         error = (uiState as FoldersUiState.Error).message,
@@ -142,12 +166,34 @@ fun FoldersScreen(
                 }
             }
         }
+
+        if (isProcessing) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    elevation = CardDefaults.cardElevation(8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Processing document...")
+                    }
+                }
+            }
+        }
     }
-    
+
     if (showCreateDialog) {
         var name by remember { mutableStateOf("") }
         var description by remember { mutableStateOf("") }
-        
+
         AlertDialog(
             onDismissRequest = { showCreateDialog = false },
             title = { Text("Create Folder") },
@@ -160,14 +206,13 @@ fun FoldersScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
                     OutlinedTextField(
                         value = description,
                         onValueChange = { description = it },
                         label = { Text("Description (optional)") },
-                        singleLine = false,
                         maxLines = 3,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -191,87 +236,11 @@ fun FoldersScreen(
             }
         )
     }
-    
-    editingFolder?.let { folder ->
-        var showMenu by remember { mutableStateOf(true) }
-        var showRenameDialog by remember { mutableStateOf(false) }
-        
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { 
-                showMenu = false
-                editingFolder = null
-            }
-        ) {
-            DropdownMenuItem(
-                text = { Text("Rename") },
-                onClick = { 
-                    showMenu = false
-                    showRenameDialog = true
-                },
-                leadingIcon = {
-                    Icon(Icons.Default.Edit, contentDescription = null)
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("Delete") },
-                onClick = {
-                    showMenu = false
-                    showDeleteDialog = folder
-                    editingFolder = null
-                },
-                leadingIcon = {
-                    Icon(Icons.Default.Delete, contentDescription = null)
-                }
-            )
-        }
-        
-        if (showRenameDialog) {
-            var newName by remember { mutableStateOf(folder.name) }
-            
-            AlertDialog(
-                onDismissRequest = { 
-                    showRenameDialog = false
-                    editingFolder = null
-                },
-                title = { Text("Rename Folder") },
-                text = {
-                    OutlinedTextField(
-                        value = newName,
-                        onValueChange = { newName = it },
-                        label = { Text("Name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            viewModel.updateFolder(folder.copy(name = newName))
-                            showRenameDialog = false
-                            editingFolder = null
-                        },
-                        enabled = newName.isNotBlank()
-                    ) {
-                        Text("Save")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { 
-                        showRenameDialog = false
-                        editingFolder = null
-                    }) {
-                        Text("Cancel")
-                    }
-                }
-            )
-        }
-    }
-    
+
     showDeleteDialog?.let { folder ->
         ConfirmDialog(
             title = "Delete Folder?",
-            message = "This will delete \"${folder.name}\" and all its contents. This action cannot be undone.",
+            message = "This will delete \"${folder.name}\" and all its contents.",
             confirmText = "Delete",
             onConfirm = {
                 viewModel.deleteFolder(folder.id)
@@ -295,43 +264,36 @@ private fun FolderCard(
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
-            ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            )
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Default.Folder,
+                Icons.Default.Folder,
                 contentDescription = null,
                 modifier = Modifier.size(48.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
-            
+
             Spacer(modifier = Modifier.width(16.dp))
-            
+
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = folder.name,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                
-                if (folder.description != null) {
+                Text(folder.name, style = MaterialTheme.typography.titleMedium)
+
+                folder.description?.let {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = folder.description,
+                        it,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.height(4.dp))
-                
                 Text(
-                    text = "${folder.recordCount} records",
+                    "${folder.recordCount} records",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -339,6 +301,8 @@ private fun FolderCard(
         }
     }
 }
+
+/* ================= VIEWMODEL ================= */
 
 sealed interface FoldersUiState {
     data object Loading : FoldersUiState
@@ -355,64 +319,61 @@ class FoldersViewModel @Inject constructor(
     private val deleteFolderUseCase: DeleteFolderUseCase,
     private val quickScanUseCase: QuickScanUseCase
 ) : ViewModel() {
-    
+
     private val _uiState = MutableStateFlow<FoldersUiState>(FoldersUiState.Loading)
     val uiState: StateFlow<FoldersUiState> = _uiState.asStateFlow()
-    
+
     init {
         loadFolders()
     }
-    
+
     fun loadFolders() {
         viewModelScope.launch {
             _uiState.value = FoldersUiState.Loading
-            
             getFoldersUseCase()
-                .catch { e ->
-                    _uiState.value = FoldersUiState.Error(
-                        e.message ?: "Failed to load folders"
-                    )
+                .catch {
+                    _uiState.value = FoldersUiState.Error("Failed to load folders")
                 }
                 .collect { folders ->
-                    _uiState.value = if (folders.isEmpty()) {
-                        FoldersUiState.Empty
-                    } else {
-                        FoldersUiState.Success(folders)
-                    }
+                    _uiState.value =
+                        if (folders.isEmpty()) FoldersUiState.Empty
+                        else FoldersUiState.Success(folders)
                 }
         }
     }
-    
+
     fun createFolder(name: String, description: String?) {
         viewModelScope.launch {
             createFolderUseCase(name, description)
         }
     }
-    
+
     fun updateFolder(folder: Folder) {
         viewModelScope.launch {
             updateFolderUseCase(folder)
         }
     }
-    
+
     fun deleteFolder(id: Long) {
         viewModelScope.launch {
             deleteFolderUseCase(id)
         }
     }
-    
-    fun quickScan(imageUri: Uri, onComplete: (Long) -> Unit) {
+
+    fun quickScan(
+        imageUri: Uri,
+        onComplete: (Long) -> Unit,
+        onError: (Throwable) -> Unit
+    ) {
         viewModelScope.launch {
             when (val result = quickScanUseCase(imageUri)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
+                is com.docs.scanner.domain.model.Result.Success ->
                     onComplete(result.data)
-                }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    _uiState.value = FoldersUiState.Error(
-                        result.exception.message ?: "Quick scan failed"
-                    )
-                }
-                else -> {}
+
+                is com.docs.scanner.domain.model.Result.Error ->
+                    onError(result.exception)
+
+                else -> Unit
             }
         }
     }
