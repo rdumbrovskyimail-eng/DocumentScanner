@@ -20,6 +20,8 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
     
+    private const val DATABASE_NAME = "document_scanner.db"
+    
     private val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
             try {
@@ -81,7 +83,7 @@ object DatabaseModule {
         return Room.databaseBuilder(
             context,
             AppDatabase::class.java,
-            "document_scanner.db"
+            DATABASE_NAME
         )
             .addMigrations(MIGRATION_1_2)
             .fallbackToDestructiveMigration()
