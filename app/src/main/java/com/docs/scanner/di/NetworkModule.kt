@@ -1,9 +1,7 @@
 package com.docs.scanner.di
 
 import android.content.Context
-import com.docs.scanner.data.remote.gemini.GeminiApi
 import com.docs.scanner.data.remote.gemini.GeminiApiService
-import com.docs.scanner.data.remote.gemini.GeminiTranslator
 import com.docs.scanner.data.remote.mlkit.MLKitScanner
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -36,7 +34,11 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
-        val loggingInterceptor = HttpLoggingInterceptor().apply {
+        val loggingInterceptor = HttpLoggingInterceptor { message ->
+            if (!message.contains("key=") && !message.contains("AIza")) {
+                android.util.Log.d("HTTP", message)
+            }
+        }.apply {
             level = HttpLoggingInterceptor.Level.BODY
         }
         
@@ -45,6 +47,8 @@ object NetworkModule {
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
+            .callTimeout(120, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
     }
     
@@ -66,9 +70,6 @@ object NetworkModule {
     fun provideGeminiApiService(retrofit: Retrofit): GeminiApiService {
         return retrofit.create(GeminiApiService::class.java)
     }
-    
-    // GeminiApi и GeminiTranslator создаются автоматически через @Inject constructor
-    // Hilt сам их предоставит, поэтому здесь provide методы не нужны
     
     @Provides
     @Singleton
