@@ -247,8 +247,8 @@ class GeminiApi @Inject constructor(
         // Remove code block markers
         cleaned = cleaned.replace(Regex("`{1,3}[\\s\\S]*?`{1,3}"), "")
         
-        // Remove quotes
-        cleaned = cleaned.replace(Regex("[\"'«»„""]"), "")
+        // Remove quotes  
+        cleaned = cleaned.replace(Regex("""["'«»„""]"""), "")
         
         // Remove common prefixes
         val prefixes = listOf(
