@@ -1,6 +1,8 @@
 package com.docs.scanner.data.repository
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import com.docs.scanner.data.local.database.dao.*
 import com.docs.scanner.data.local.database.entities.*
@@ -13,6 +15,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 import javax.inject.Inject
 
@@ -161,9 +164,15 @@ class DocumentRepositoryImpl @Inject constructor(
             val destFile = File(documentsDir, fileName)
             
             context.contentResolver.openInputStream(imageUri)?.use { input ->
-                destFile.outputStream().use { output ->
-                    input.copyTo(output)
+                val bitmap = BitmapFactory.decodeStream(input)
+                val scaledBitmap = scaleBitmap(bitmap, 1920, 1080)
+                
+                FileOutputStream(destFile).use { output ->
+                    scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, output)
                 }
+                
+                bitmap.recycle()
+                scaledBitmap.recycle()
             }
             
             val position = documentDao.getNextPosition(recordId)
@@ -178,6 +187,27 @@ class DocumentRepositoryImpl @Inject constructor(
             Result.Success(id)
         } catch (e: Exception) {
             Result.Error(e)
+        }
+    }
+    
+    private fun scaleBitmap(bitmap: Bitmap, maxWidth: Int, maxHeight: Int): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        
+        if (width <= maxWidth && height <= maxHeight) {
+            return bitmap
+        }
+        
+        val ratio = minOf(maxWidth.toFloat() / width, maxHeight.toFloat() / height)
+        val newWidth = (width * ratio).toInt()
+        val newHeight = (height * ratio).toInt()
+        
+        return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+    }
+    
+    override fun searchEverywhere(query: String): Flow<List<Document>> {
+        return documentDao.searchEverywhere(query).map { entities ->
+            entities.map { it.toDomain() }
         }
     }
     
