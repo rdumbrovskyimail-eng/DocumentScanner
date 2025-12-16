@@ -11,8 +11,7 @@ import retrofit2.http.Query
 import javax.inject.Inject
 import javax.inject.Singleton
 
-// Model configuration for Flash 2.5
-private const val GEMINI_MODEL = "gemini-2.5-flash-lite"
+private const val GEMINI_MODEL = "gemini-2.0-flash-exp"
 private const val MAX_TOKENS = 8192
 private const val TEMPERATURE = 0.7f
 
@@ -150,7 +149,7 @@ class GeminiApi @Inject constructor(
                         )
                     ),
                     generationConfig = GeminiRequest.GenerationConfig(
-                        temperature = 0.3f, // Lower temp for OCR correction
+                        temperature = 0.3f,
                         maxOutputTokens = MAX_TOKENS
                     ),
                     safetySettings = createSafetySettings()
@@ -201,7 +200,6 @@ class GeminiApi @Inject constructor(
             return GeminiResult.Failed("Invalid API key format")
         }
         
-        // Limit text length
         if (text.length > 10000) {
             return GeminiResult.Failed("Text too long (max 10000 chars)")
         }
@@ -288,13 +286,11 @@ class GeminiApi @Inject constructor(
     
     private fun sanitizeResponse(response: GeminiResponse?): GeminiResult {
         return try {
-            // Check prompt feedback first
             response?.promptFeedback?.blockReason?.let { reason ->
                 return GeminiResult.Blocked("Content blocked: $reason")
             }
             
             response?.candidates?.firstOrNull()?.let { candidate ->
-                // Check finish reason
                 if (candidate.finishReason == "SAFETY") {
                     return GeminiResult.Blocked("Content blocked due to safety concerns")
                 }
@@ -316,13 +312,9 @@ class GeminiApi @Inject constructor(
     private fun cleanText(text: String): String {
         var cleaned = text.trim()
         
-        // Remove code block markers
         cleaned = cleaned.replace(Regex("`{1,3}[\\s\\S]*?`{1,3}"), "")
-        
-        // Remove quotes  
         cleaned = cleaned.replace(Regex("""["'«»„""]"""), "")
         
-        // Remove common prefixes
         val prefixes = listOf(
             "Перевод:",
             "Translation:",
@@ -339,10 +331,7 @@ class GeminiApi @Inject constructor(
             }
         }
         
-        // Remove invisible characters
         cleaned = cleaned.replace(Regex("\\p{C}"), "")
-        
-        // Normalize whitespace
         cleaned = cleaned.replace(Regex("\\s+"), " ")
         
         return cleaned.trim()
@@ -352,46 +341,3 @@ class GeminiApi @Inject constructor(
         return key.matches(Regex("^AIza[A-Za-z0-9_-]{35}$"))
     }
 }
-
-// =====================================================
-// NetworkModule Update
-// =====================================================
-
-// Update in NetworkModule.kt:
-/*
-@Provides
-@Singleton
-fun provideRetrofit(
-    okHttpClient: OkHttpClient,
-    gson: Gson
-): Retrofit {
-    return Retrofit.Builder()
-        .baseUrl("https://generativelanguage.googleapis.com/")
-        .client(okHttpClient)
-        .addConverterFactory(GsonConverterFactory.create(gson))
-        .build()
-}
-
-@Provides
-@Singleton
-fun provideOkHttpClient(): OkHttpClient {
-    val loggingInterceptor = HttpLoggingInterceptor { message ->
-        // Filter sensitive data
-        if (!message.contains("key=") && !message.contains("AIza")) {
-            android.util.Log.d("HTTP", message)
-        }
-    }.apply {
-        level = HttpLoggingInterceptor.Level.BODY
-    }
-    
-    return OkHttpClient.Builder()
-        .addInterceptor(loggingInterceptor)
-        .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .callTimeout(120, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(true)
-        .build()
-}
-*/
-
