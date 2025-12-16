@@ -3,6 +3,7 @@ package com.docs.scanner.presentation.screens.settings
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -17,18 +18,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.docs.scanner.data.remote.drive.DriveRepository
-import com.docs.scanner.domain.repository.SettingsRepository
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.Scope
-import com.google.api.services.drive.DriveScopes
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @Composable
 fun SettingsScreen(
@@ -37,16 +26,20 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val apiKey by viewModel.apiKey.collectAsState()
+    val savedApiKeys by viewModel.savedApiKeys.collectAsState()
     val isSaving by viewModel.isSaving.collectAsState()
     val saveMessage by viewModel.saveMessage.collectAsState()
     val driveEmail by viewModel.driveEmail.collectAsState()
     val isBackingUp by viewModel.isBackingUp.collectAsState()
     val backupMessage by viewModel.backupMessage.collectAsState()
     
+    var showApiKeyMenu by remember { mutableStateOf(false) }
+    var showAddKeyDialog by remember { mutableStateOf(false) }
+    
     val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        viewModel.handleSignInResult(result.data)
+        viewModel.handleSignInResult(result.resultCode, result.data)
     }
     
     Scaffold(
@@ -69,6 +62,7 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // ============ GEMINI API KEY CARD ============
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -82,6 +76,10 @@ fun SettingsScreen(
                             text = "Gemini API Key",
                             style = MaterialTheme.typography.titleMedium
                         )
+                        Spacer(modifier = Modifier.weight(1f))
+                        IconButton(onClick = { showApiKeyMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Manage Keys")
+                        }
                     }
                     
                     Spacer(modifier = Modifier.height(16.dp))
@@ -99,31 +97,62 @@ fun SettingsScreen(
                             PasswordVisualTransformation()
                         },
                         trailingIcon = {
-                            IconButton(onClick = { showPassword = !showPassword }) {
-                                Icon(
-                                    imageVector = if (showPassword) {
-                                        Icons.Default.VisibilityOff
-                                    } else {
-                                        Icons.Default.Visibility
-                                    },
-                                    contentDescription = null
-                                )
+                            Row {
+                                IconButton(onClick = { showPassword = !showPassword }) {
+                                    Icon(
+                                        imageVector = if (showPassword) {
+                                            Icons.Default.VisibilityOff
+                                        } else {
+                                            Icons.Default.Visibility
+                                        },
+                                        contentDescription = null
+                                    )
+                                }
+                                if (apiKey.isNotBlank()) {
+                                    IconButton(onClick = { viewModel.copyApiKey(context) }) {
+                                        Icon(
+                                            Icons.Default.ContentCopy,
+                                            contentDescription = "Copy"
+                                        )
+                                    }
+                                }
                             }
                         },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        isError = saveMessage.contains("Invalid") || saveMessage.contains("failed")
                     )
+                    
+                    if (saveMessage.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = saveMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (saveMessage.contains("✓")) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            }
+                        )
+                    }
                     
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        TextButton(onClick = { }) {
+                        TextButton(
+                            onClick = { 
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    data = android.net.Uri.parse("https://aistudio.google.com/app/apikey")
+                                }
+                                context.startActivity(intent)
+                            }
+                        ) {
                             Icon(
-                                Icons.Default.OpenInNew,contentDescription = null,
+                                Icons.Default.OpenInNew,
+                                contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
@@ -144,18 +173,59 @@ fun SettingsScreen(
                             Text("Save")
                         }
                     }
-                    
-                    if (saveMessage.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = saveMessage,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
+                }
+            }
+            
+            // API Key Management Menu
+            DropdownMenu(
+                expanded = showApiKeyMenu,
+                onDismissRequest = { showApiKeyMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Add New Key") },
+                    onClick = { 
+                        showApiKeyMenu = false
+                        showAddKeyDialog = true
+                    },
+                    leadingIcon = { Icon(Icons.Default.Add, null) }
+                )
+                
+                if (savedApiKeys.isNotEmpty()) {
+                    Divider()
+                    savedApiKeys.forEach { key ->
+                        DropdownMenuItem(
+                            text = { 
+                                Column {
+                                    Text(
+                                        text = key.name,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        text = "...${key.key.takeLast(8)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            onClick = { 
+                                viewModel.selectApiKey(key)
+                                showApiKeyMenu = false
+                            },
+                            trailingIcon = {
+                                IconButton(onClick = { viewModel.deleteApiKey(key.id) }) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = "Delete",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
                         )
                     }
                 }
             }
             
+            // ============ GOOGLE DRIVE CARD ============
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -182,12 +252,13 @@ fun SettingsScreen(
                         
                         Spacer(modifier = Modifier.height(16.dp))
                         
+                        // Export/Import Buttons
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Button(
-                                onClick = { viewModel.backupToGoogleDrive() },
+                                onClick = { viewModel.exportToGoogleDrive() },
                                 enabled = !isBackingUp,
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -200,17 +271,17 @@ fun SettingsScreen(
                                     Icon(Icons.Default.Upload, null, modifier = Modifier.size(18.dp))
                                 }
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Backup")
+                                Text("Export")
                             }
                             
                             OutlinedButton(
-                                onClick = { viewModel.restoreFromGoogleDrive() },
+                                onClick = { viewModel.importFromGoogleDrive() },
                                 enabled = !isBackingUp,
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Restore")
+                                Text("Import")
                             }
                         }
                         
@@ -225,13 +296,7 @@ fun SettingsScreen(
                     } else {
                         Button(
                             onClick = {
-                                val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                                    .requestEmail()
-                                    .requestScopes(Scope(DriveScopes.DRIVE_FILE))
-                                    .build()
-                                
-                                val client = GoogleSignIn.getClient(context, gso)
-                                signInLauncher.launch(client.signInIntent)
+                                viewModel.signInGoogleDrive(context, signInLauncher)
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -256,6 +321,7 @@ fun SettingsScreen(
                 }
             }
             
+            // ============ ABOUT CARD ============
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -281,6 +347,14 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     
                     Text(
+                        text = "Gemini Model: gemini-2.0-flash-exp",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    Text(
                         text = "Scan, recognize, and translate documents using ML Kit and Gemini AI",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -289,145 +363,65 @@ fun SettingsScreen(
             }
         }
     }
+    
+    // Add Key Dialog
+    if (showAddKeyDialog) {
+        var keyName by remember { mutableStateOf("") }
+        var keyValue by remember { mutableStateOf("") }
+        
+        AlertDialog(
+            onDismissRequest = { showAddKeyDialog = false },
+            title = { Text("Add API Key") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = keyName,
+                        onValueChange = { keyName = it },
+                        label = { Text("Key Name") },
+                        placeholder = { Text("My API Key") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    OutlinedTextField(
+                        value = keyValue,
+                        onValueChange = { keyValue = it },
+                        label = { Text("API Key") },
+                        placeholder = { Text("AIza...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.addApiKey(keyName, keyValue)
+                        showAddKeyDialog = false
+                    },
+                    enabled = keyName.isNotBlank() && keyValue.isNotBlank()
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddKeyDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
-@HiltViewModel
-class SettingsViewModel @Inject constructor(
-    private val settingsRepository: SettingsRepository,
-    private val driveRepository: DriveRepository
-) : ViewModel() {
-    
-    private val _apiKey = MutableStateFlow("")
-    val apiKey: StateFlow<String> = _apiKey.asStateFlow()
-    
-    private val _isSaving = MutableStateFlow(false)
-    val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
-    
-    private val _saveMessage = MutableStateFlow("")
-    val saveMessage: StateFlow<String> = _saveMessage.asStateFlow()
-    
-    private val _driveEmail = MutableStateFlow<String?>(null)
-    val driveEmail: StateFlow<String?> = _driveEmail.asStateFlow()
-    
-    private val _isBackingUp = MutableStateFlow(false)
-    val isBackingUp: StateFlow<Boolean> = _isBackingUp.asStateFlow()
-    
-    private val _backupMessage = MutableStateFlow("")
-    val backupMessage: StateFlow<String> = _backupMessage.asStateFlow()
-    
-    init {
-        loadSettings()
-        checkDriveConnection()
-    }
-    
-    private fun loadSettings() {
-        viewModelScope.launch {
-            val key = settingsRepository.getApiKey()
-            _apiKey.value = key ?: ""
-        }
-    }
-    
-    private fun checkDriveConnection() {
-        viewModelScope.launch {
-            val isConnected = driveRepository.isSignedIn()
-            if (isConnected) {
-                when (val result = driveRepository.signIn()) {
-                    is com.docs.scanner.domain.model.Result.Success -> {
-                        _driveEmail.value = result.data
-                    }
-                    else -> {
-                        _driveEmail.value = null
-                    }
-                }
-            }
-        }
-    }
-    
-    fun updateApiKey(key: String) {
-        _apiKey.value = key
-        _saveMessage.value = ""
-    }
-    
-    fun saveApiKey() {
-        viewModelScope.launch {
-            _isSaving.value = true
-            _saveMessage.value = ""
-            
-            try {
-                settingsRepository.setApiKey(_apiKey.value)
-                _saveMessage.value = "✓ API key saved successfully"
-            } catch (e: Exception) {
-                _saveMessage.value = "✗ Failed to save: ${e.message}"
-            } finally {
-                _isSaving.value = false
-            }
-        }
-    }
-    
-    fun handleSignInResult(data: Intent?) {
-        viewModelScope.launch {
-            try {
-                val result = driveRepository.signIn()
-                if (result is com.docs.scanner.domain.model.Result.Success) {
-                    _driveEmail.value = result.data
-                    _backupMessage.value = "✓ Connected to Google Drive"
-                }
-            } catch (e: Exception) {
-                _backupMessage.value = "✗ Connection failed: ${e.message}"
-            }
-        }
-    }
-    
-    fun backupToGoogleDrive() {
-        viewModelScope.launch {
-            _isBackingUp.value = true
-            _backupMessage.value = "Backing up..."
-            
-            when (val result = driveRepository.uploadBackup()) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    _backupMessage.value = "✓ Backup completed successfully"
-                }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    _backupMessage.value = "✗ Backup failed: ${result.exception.message}"
-                }
-                else -> {}
-            }
-            
-            _isBackingUp.value = false
-        }
-    }
-    
-    fun restoreFromGoogleDrive() {
-        viewModelScope.launch {
-            _isBackingUp.value = true
-            _backupMessage.value = "Restoring..."
-            
-            val backups = driveRepository.listBackups()
-            if (backups is com.docs.scanner.domain.model.Result.Success && backups.data.isNotEmpty()) {
-                val latestBackup = backups.data.first()
-                
-                when (val result = driveRepository.restoreBackup(latestBackup.fileId)) {
-                    is com.docs.scanner.domain.model.Result.Success -> {
-                        _backupMessage.value = "✓ Restore completed successfully"
-                    }
-                    is com.docs.scanner.domain.model.Result.Error -> {
-                        _backupMessage.value = "✗ Restore failed: ${result.exception.message}"
-                    }
-                    else -> {}
-                }
-            } else {
-                _backupMessage.value = "✗ No backups found"
-            }
-            
-            _isBackingUp.value = false
-        }
-    }
-    
-    fun signOutGoogleDrive() {
-        viewModelScope.launch {
-            driveRepository.signOut()
-            _driveEmail.value = null
-            _backupMessage.value = "Disconnected from Google Drive"
-        }
-    }
-}
+// =====================================================
+// Data Models
+// =====================================================
+
+data class SavedApiKey(
+    val id: Long,
+    val name: String,
+    val key: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
