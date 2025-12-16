@@ -15,21 +15,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.docs.scanner.data.remote.camera.DocumentScannerWrapper
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @Composable
 fun CameraScreen(
     viewModel: CameraViewModel = hiltViewModel(),
-    onImageCaptured: (List<Uri>) -> Unit,
+    onScanComplete: (Long) -> Unit,
     onBackClick: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -43,11 +34,12 @@ fun CameraScreen(
             scanResult?.pages?.let { pages ->
                 val uris = pages.mapNotNull { it.imageUri }
                 if (uris.isNotEmpty()) {
-                    onImageCaptured(uris)
+                    viewModel.processScannedImages(uris, onScanComplete)
                 }
             }
         } else {
             viewModel.onScanCancelled()
+            onBackClick()
         }
     }
     
@@ -80,12 +72,24 @@ fun CameraScreen(
         ) {
             when (uiState) {
                 is CameraUiState.Loading -> {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
                         Spacer(modifier = Modifier.height(16.dp))
                         Text("Initializing scanner...")
+                    }
+                }
+                
+                is CameraUiState.Processing -> {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = (uiState as CameraUiState.Processing).message,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
                     }
                 }
                 
@@ -116,9 +120,7 @@ fun CameraScreen(
                     }
                 }
                 
-                is CameraUiState.Ready -> {
-                    // Scanner UI is handled by ML Kit
-                }
+                is CameraUiState.Ready -> {}
             }
         }
     }
@@ -127,40 +129,6 @@ fun CameraScreen(
 sealed interface CameraUiState {
     data object Loading : CameraUiState
     data object Ready : CameraUiState
+    data class Processing(val message: String) : CameraUiState
     data class Error(val message: String) : CameraUiState
-}
-
-@HiltViewModel
-class CameraViewModel @Inject constructor(
-    private val documentScanner: DocumentScannerWrapper
-) : ViewModel() {
-    
-    private val _uiState = MutableStateFlow<CameraUiState>(CameraUiState.Loading)
-    val uiState: StateFlow<CameraUiState> = _uiState.asStateFlow()
-    
-    fun startScanner(
-        activity: Activity,
-        launcher: androidx.activity.result.ActivityResultLauncher<IntentSenderRequest>
-    ) {
-        viewModelScope.launch {
-            _uiState.value = CameraUiState.Loading
-            
-            try {
-                documentScanner.startScan(activity, launcher)
-                _uiState.value = CameraUiState.Ready
-            } catch (e: Exception) {
-                _uiState.value = CameraUiState.Error(
-                    e.message ?: "Failed to initialize scanner"
-                )
-            }
-        }
-    }
-    
-    fun onScanCancelled() {
-        _uiState.value = CameraUiState.Loading
-    }
-    
-    fun onError(message: String) {
-        _uiState.value = CameraUiState.Error(message)
-    }
 }
