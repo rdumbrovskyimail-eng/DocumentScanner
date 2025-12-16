@@ -245,7 +245,7 @@ class GeminiApi @Inject constructor(
         var cleaned = text.trim()
         
         // Remove code block markers
-        cleaned = cleaned.replace(Regex("`{1,3}.*?`{1,3}", setOf(RegexOption.DOT_MATCHES_ALL)), "")
+        cleaned = cleaned.replace(Regex("`{1,3}[\\s\\S]*?`{1,3}"), "")
         
         // Remove quotes
         cleaned = cleaned.replace(Regex("[\"'«»„""]"), "")
