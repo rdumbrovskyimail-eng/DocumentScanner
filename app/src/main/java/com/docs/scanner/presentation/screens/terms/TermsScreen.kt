@@ -1,6 +1,6 @@
 package com.docs.scanner.presentation.screens.terms
 
-import androidx.compose.foundation.clickable
+import android.app.TimePickerDialog
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,39 +10,40 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.docs.scanner.data.local.database.entities.TermEntity
-import com.docs.scanner.presentation.components.EmptyState
+import com.docs.scanner.domain.model.TermEntity
 import java.text.SimpleDateFormat
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TermsScreen(
-    viewModel: TermsViewModel = hiltViewModel(),
-    onBackClick: () -> Unit
+    onNavigateBack: () -> Unit,
+    viewModel: TermsViewModel = hiltViewModel()
 ) {
     val upcomingTerms by viewModel.upcomingTerms.collectAsState()
     val completedTerms by viewModel.completedTerms.collectAsState()
-    var showCreateDialog by remember { mutableStateOf(false) }
+    
+    var showDialog by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableIntStateOf(0) }
     
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Terms") },
+                title = { Text("Terms & Deadlines") },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.Default.ArrowBack, "Back")
                     }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showCreateDialog = true }
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Create Term")
+            FloatingActionButton(onClick = { showDialog = true }) {
+                Icon(Icons.Default.Add, "Add Term")
             }
         }
     ) { padding ->
@@ -51,76 +52,148 @@ fun TermsScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            if (upcomingTerms.isEmpty() && completedTerms.isEmpty()) {
-                EmptyState(
-                    icon = {
-                        Icon(
-                            Icons.Default.Event,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    title = "No terms yet",
-                    message = "Create your first term reminder",
-                    actionText = "Create Term",
-                    onActionClick = { showCreateDialog = true }
+            // Tabs
+            TabRow(selectedTabIndex = selectedTab) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text("Upcoming") }
                 )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (upcomingTerms.isNotEmpty()) {
-                        item {
-                            Text(
-                                "Upcoming",
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
-                        }
-                        
-                        items(upcomingTerms, key = { it.id }) { term ->
-                            TermCard(
-                                term = term,
-                                onComplete = { viewModel.completeTerm(term.id) },
-                                onDelete = { viewModel.deleteTerm(term.id) }
-                            )
-                        }
-                    }
-                    
-                    if (completedTerms.isNotEmpty()) {
-                        item {
-                            Text(
-                                "Completed",
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
-                        }
-                        
-                        items(completedTerms, key = { it.id }) { term ->
-                            TermCard(
-                                term = term,
-                                onComplete = null,
-                                onDelete = { viewModel.deleteTerm(term.id) }
-                            )
-                        }
-                    }
-                }
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text("Completed") }
+                )
+            }
+            
+            // Content
+            when (selectedTab) {
+                0 -> TermsList(
+                    terms = upcomingTerms,
+                    onComplete = { viewModel.completeTerm(it) },
+                    onDelete = { viewModel.deleteTerm(it) }
+                )
+                1 -> TermsList(
+                    terms = completedTerms,
+                    onComplete = null,
+                    onDelete = { viewModel.deleteTerm(it) }
+                )
             }
         }
     }
     
-    if (showCreateDialog) {
+    if (showDialog) {
         CreateTermDialog(
-            onDismiss = { showCreateDialog = false },
-            onCreate = { title, description, dateTime, _ ->
-                // Умная система напоминаний включена по умолчанию
-                viewModel.createTerm(title, description, dateTime, null)
-                showCreateDialog = false
+            onDismiss = { showDialog = false },
+            onCreate = { title, date, reminderMinutes ->
+                viewModel.createTerm(title, date, reminderMinutes)
+                showDialog = false
             }
         )
+    }
+}
+
+@Composable
+private fun TermsList(
+    terms: List<TermEntity>,
+    onComplete: ((TermEntity) -> Unit)?,
+    onDelete: (TermEntity) -> Unit
+) {
+    if (terms.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "No terms yet",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(terms) { term ->
+                TermCard(
+                    term = term,
+                    onComplete = onComplete,
+                    onDelete = onDelete
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TermCard(
+    term: TermEntity,
+    onComplete: ((TermEntity) -> Unit)?,
+    onDelete: (TermEntity) -> Unit
+) {
+    val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()) }
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = term.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    Text(
+                        text = dateFormat.format(Date(term.dueDate)),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    if (term.reminderMinutesBefore > 0) {
+                        Text(
+                            text = "Reminder: ${term.reminderMinutesBefore} min before",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                
+                Row {
+                    if (onComplete != null) {
+                        IconButton(onClick = { onComplete(term) }) {
+                            Icon(
+                                Icons.Default.Check,
+                                "Complete",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    
+                    IconButton(onClick = { onDelete(term) }) {
+                        Icon(
+                            Icons.Default.Delete,
+                            "Delete",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -128,170 +201,94 @@ fun TermsScreen(
 @Composable
 private fun CreateTermDialog(
     onDismiss: () -> Unit,
-    onCreate: (String, String?, Long, Int?) -> Unit
+    onCreate: (String, Long, Int) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
+    var selectedDateMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var selectedHour by remember { mutableIntStateOf(12) }
+    var selectedMinute by remember { mutableIntStateOf(0) }
+    var reminderMinutes by remember { mutableIntStateOf(15) }
     
-    // Date/Time state
-    val calendar = remember { Calendar.getInstance() }
-    var selectedDate by remember { mutableStateOf(calendar.timeInMillis) }
-    var selectedTime by remember { mutableStateOf(calendar.timeInMillis) }
-    
+    val context = LocalContext.current
     val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = selectedDate
+        initialSelectedDateMillis = selectedDateMillis
     )
-    val timePickerState = rememberTimePickerState(
-        initialHour = calendar.get(Calendar.HOUR_OF_DAY),
-        initialMinute = calendar.get(Calendar.MINUTE)
-    )
-    
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     
-    val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.US) }
-    val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.US) }
-    
-    // Combine date and time
-    val finalDateTime = remember(selectedDate, selectedTime) {
-        val dateCalendar = Calendar.getInstance().apply {
-            timeInMillis = selectedDate
-        }
-        val timeCalendar = Calendar.getInstance().apply {
-            timeInMillis = selectedTime
-        }
-        
-        Calendar.getInstance().apply {
-            set(Calendar.YEAR, dateCalendar.get(Calendar.YEAR))
-            set(Calendar.MONTH, dateCalendar.get(Calendar.MONTH))
-            set(Calendar.DAY_OF_MONTH, dateCalendar.get(Calendar.DAY_OF_MONTH))
-            set(Calendar.HOUR_OF_DAY, timeCalendar.get(Calendar.HOUR_OF_DAY))
-            set(Calendar.MINUTE, timeCalendar.get(Calendar.MINUTE))
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-    }
-    
-    val isDateInPast = finalDateTime < System.currentTimeMillis()
-    
-    // Вычисляем время до термина
-    val timeUntilTerm = finalDateTime - System.currentTimeMillis()
-    val daysUntil = (timeUntilTerm / (1000 * 60 * 60 * 24)).toInt()
-    val hoursUntil = (timeUntilTerm / (1000 * 60 * 60)).toInt() % 24
+    val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create Term") },
+        title = { Text("Create New Term") },
         text = {
-            Column {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
                     label = { Text("Title") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description (optional)") },
-                    maxLines = 3,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                Spacer(modifier = Modifier.height(16.dp))
                 
                 // Date Picker Button
                 OutlinedButton(
                     onClick = { showDatePicker = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(Icons.Default.CalendarToday, contentDescription = null)
+                    Icon(Icons.Default.DateRange, null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(dateFormat.format(Date(selectedDate)))
+                    Text(dateFormat.format(Date(selectedDateMillis)))
                 }
-                
-                Spacer(modifier = Modifier.height(8.dp))
                 
                 // Time Picker Button
                 OutlinedButton(
                     onClick = { showTimePicker = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(Icons.Default.AccessTime, contentDescription = null)
+                    Icon(Icons.Default.Schedule, null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(timeFormat.format(Date(selectedTime)))
+                    Text(String.format("%02d:%02d", selectedHour, selectedMinute))
                 }
                 
-                if (isDateInPast) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                // Reminder Selector
+                Column {
                     Text(
-                        text = "⚠️ Selected time is in the past",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
+                        text = "Reminder",
+                        style = MaterialTheme.typography.labelMedium
                     )
-                } else if (timeUntilTerm > 0) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "⏰ Time until term: $daysUntil days, $hoursUntil hours",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Информация об умной системе напоминаний
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Notifications,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                "Smart Reminders Enabled",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(15, 30, 60).forEach { minutes ->
+                            FilterChip(
+                                selected = reminderMinutes == minutes,
+                                onClick = { reminderMinutes = minutes },
+                                label = { Text("$minutes min") }
                             )
                         }
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        Text(
-                            "• 2-4 days before: Daily reminders\n" +
-                            "• 12-24 hours before: 3 reminders\n" +
-                            "• 5 hours before: Hourly reminders\n" +
-                            "• Last hour: Every 15 minutes",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(
+            Button(
                 onClick = {
-                    onCreate(
-                        title,
-                        description.ifBlank { null },
-                        finalDateTime,
-                        null // Умная система включена по умолчанию
-                    )
+                    if (title.isNotBlank()) {
+                        val calendar = Calendar.getInstance().apply {
+                            timeInMillis = selectedDateMillis
+                            set(Calendar.HOUR_OF_DAY, selectedHour)
+                            set(Calendar.MINUTE, selectedMinute)
+                            set(Calendar.SECOND, 0)
+                        }
+                        onCreate(title, calendar.timeInMillis, reminderMinutes)
+                    }
                 },
-                enabled = title.isNotBlank() && !isDateInPast
+                enabled = title.isNotBlank()
             ) {
                 Text("Create")
             }
@@ -303,7 +300,7 @@ private fun CreateTermDialog(
         }
     )
     
-    // Date Picker Dialog
+    // ✅ ИСПРАВЛЕНО: Убран параметр dateValidator
     if (showDatePicker) {
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
@@ -311,7 +308,7 @@ private fun CreateTermDialog(
                 TextButton(
                     onClick = {
                         datePickerState.selectedDateMillis?.let {
-                            selectedDate = it
+                            selectedDateMillis = it
                         }
                         showDatePicker = false
                     }
@@ -325,175 +322,24 @@ private fun CreateTermDialog(
                 }
             }
         ) {
-            DatePicker(
-                state = datePickerState,
-                dateValidator = { timestamp ->
-                    timestamp >= System.currentTimeMillis() - 86400000
-                }
-            )
+            DatePicker(state = datePickerState)
         }
     }
     
-    // Time Picker Dialog
     if (showTimePicker) {
         TimePickerDialog(
-            onDismissRequest = { showTimePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val cal = Calendar.getInstance().apply {
-                            set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                            set(Calendar.MINUTE, timePickerState.minute)
-                        }
-                        selectedTime = cal.timeInMillis
-                        showTimePicker = false
-                    }
-                ) {
-                    Text("OK")
-                }
+            context,
+            { _, hour, minute ->
+                selectedHour = hour
+                selectedMinute = minute
+                showTimePicker = false
             },
-            dismissButton = {
-                TextButton(onClick = { showTimePicker = false }) {
-                    Text("Cancel")
-                }
-            }
-        ) {
-            TimePicker(state = timePickerState)
-        }
-    }
-}
-
-@Composable
-private fun TimePickerDialog(
-    onDismissRequest: () -> Unit,
-    confirmButton: @Composable () -> Unit,
-    dismissButton: @Composable () -> Unit,
-    content: @Composable () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismissRequest,
-        confirmButton = confirmButton,
-        dismissButton = dismissButton,
-        text = { content() }
-    )
-}
-
-@Composable
-private fun TermCard(
-    term: TermEntity,
-    onComplete: (() -> Unit)?,
-    onDelete: () -> Unit
-) {
-    val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.US) }
-    
-    // Вычисляем время до термина
-    val timeUntilTerm = term.dateTime - System.currentTimeMillis()
-    val isOverdue = timeUntilTerm < 0
-    val daysUntil = (timeUntilTerm / (1000 * 60 * 60 * 24)).toInt()
-    val hoursUntil = (timeUntilTerm / (1000 * 60 * 60)).toInt() % 24
-    
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = when {
-            term.isCompleted -> CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-            isOverdue -> CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer
-            )
-            else -> CardDefaults.cardColors()
-        }
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                when {
-                    term.isCompleted -> Icons.Default.CheckCircle
-                    isOverdue -> Icons.Default.Warning
-                    else -> Icons.Default.Event
-                },
-                contentDescription = null,
-                modifier = Modifier.size(40.dp),
-                tint = when {
-                    term.isCompleted -> MaterialTheme.colorScheme.primary
-                    isOverdue -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.secondary
-                }
-            )
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = term.title,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                
-                if (term.description != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = term.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(4.dp))
-                
-                Text(
-                    text = dateFormat.format(Date(term.dateTime)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                if (!term.isCompleted && !isOverdue && timeUntilTerm > 0) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (daysUntil > 0) {
-                            "In $daysUntil days, $hoursUntil hours"
-                        } else if (hoursUntil > 0) {
-                            "In $hoursUntil hours"
-                        } else {
-                            val minutesUntil = (timeUntilTerm / (1000 * 60)).toInt()
-                            "In $minutesUntil minutes"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                
-                if (isOverdue && !term.isCompleted) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "⚠️ OVERDUE",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-            
-            if (onComplete != null) {
-                IconButton(onClick = onComplete) {
-                    Icon(
-                        Icons.Default.Check,
-                        contentDescription = "Complete",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-            
-            IconButton(onClick = onDelete) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.error
-                )
-            }
+            selectedHour,
+            selectedMinute,
+            true
+        ).apply {
+            setOnCancelListener { showTimePicker = false }
+            show()
         }
     }
 }
