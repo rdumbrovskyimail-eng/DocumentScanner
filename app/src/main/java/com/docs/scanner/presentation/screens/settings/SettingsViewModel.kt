@@ -1,5 +1,7 @@
 package com.docs.scanner.presentation.screens.settings
 
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
