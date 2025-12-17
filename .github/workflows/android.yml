@@ -24,9 +24,17 @@ jobs:
       run: |
         gradle wrapper --gradle-version 9.2.1
         chmod +x gradlew
+    
+    # ✅ ДОБАВЬТЕ ЭТИ ШАГИ ОЧИСТКИ
+    - name: Clean build directories
+      run: |
+        ./gradlew clean
+        rm -rf app/build/generated/ksp/
+        rm -rf .gradle/
         
+    # ✅ ИЗМЕНИТЕ КОМАНДУ СБОРКИ
     - name: Build with Gradle
-      run: ./gradlew assembleDebug --stacktrace
+      run: ./gradlew assembleDebug --stacktrace --no-build-cache --rerun-tasks
       
     - name: Get commit info
       id: commit
