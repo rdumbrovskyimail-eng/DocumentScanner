@@ -2,8 +2,8 @@ package com.docs.scanner.presentation.screens.terms
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.docs.scanner.data.local.alarm.AlarmScheduler
-import com.docs.scanner.data.local.database.entity.TermEntity
+import com.docs.scanner.data.local.alarm.AlarmSchedulerWrapper
+import com.docs.scanner.data.local.database.entities.TermEntity
 import com.docs.scanner.data.repository.TermRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -15,7 +15,7 @@ import javax.inject.Inject
 @HiltViewModel
 class TermsViewModel @Inject constructor(
     private val termRepository: TermRepository,
-    private val alarmScheduler: AlarmScheduler
+    private val alarmScheduler: AlarmSchedulerWrapper  // ✅ Используем Wrapper
 ) : ViewModel() {
 
     val upcomingTerms: StateFlow<List<TermEntity>> = termRepository.getUpcomingTerms()
@@ -36,7 +36,7 @@ class TermsViewModel @Inject constructor(
         viewModelScope.launch {
             val term = TermEntity(
                 title = title,
-                dueDate = dueDate,
+                dueDate = dueDate,  // ✅ Правильное поле
                 reminderMinutesBefore = reminderMinutesBefore,
                 isCompleted = false,
                 createdAt = System.currentTimeMillis()
