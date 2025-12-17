@@ -5,10 +5,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
-import com.docs.scanner.data.local.database.dao.DocumentDao
-import com.docs.scanner.data.local.database.dao.FolderDao
-import com.docs.scanner.data.local.database.dao.RecordDao
-import com.docs.scanner.data.local.database.dao.TermDao
+import com.docs.scanner.data.local.database.dao.*
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,17 +19,15 @@ object DatabaseModule {
     
     private const val DATABASE_NAME = "document_scanner.db"
     
-    // ✅ ИСПРАВЛЕННАЯ МИГРАЦИЯ 1 → 2 с правильными полями
+    // Migration 1 → 2: Добавление таблицы terms
     private val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
             try {
-                // Проверяем, существует ли таблица terms
                 val cursor = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='terms'")
                 val tableExists = cursor.moveToFirst()
                 cursor.close()
                 
                 if (!tableExists) {
-                    println("✅ Creating terms table...")
                     db.execSQL("""
                         CREATE TABLE IF NOT EXISTS `terms` (
                             `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -44,23 +39,47 @@ object DatabaseModule {
                             `createdAt` INTEGER NOT NULL
                         )
                     """)
-                    println("✅ Terms table created successfully")
-                } else {
-                    println("ℹ️ Terms table already exists, skipping creation")
                 }
                 
-                // Валидация структуры БД
                 validateDatabaseStructure(db)
-                
             } catch (e: Exception) {
-                println("❌ Migration error: ${e.message}")
+                println("❌ Migration 1→2 error: ${e.message}")
+                throw e
+            }
+        }
+    }
+    
+    // ✅ НОВАЯ Migration 2 → 3: Добавление таблицы api_keys
+    private val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            try {
+                val cursor = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='api_keys'")
+                val tableExists = cursor.moveToFirst()
+                cursor.close()
+                
+                if (!tableExists) {
+                    db.execSQL("""
+                        CREATE TABLE IF NOT EXISTS `api_keys` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `key` TEXT NOT NULL,
+                            `label` TEXT,
+                            `isActive` INTEGER NOT NULL DEFAULT 0,
+                            `createdAt` INTEGER NOT NULL
+                        )
+                    """)
+                    println("✅ API keys table created")
+                }
+                
+                validateDatabaseStructure(db)
+            } catch (e: Exception) {
+                println("❌ Migration 2→3 error: ${e.message}")
                 throw e
             }
         }
     }
     
     private fun validateDatabaseStructure(db: SupportSQLiteDatabase) {
-        val expectedTables = listOf("folders", "records", "documents", "terms")
+        val expectedTables = listOf("folders", "records", "documents", "terms", "api_keys")
         val cursor = db.query("SELECT name FROM sqlite_master WHERE type='table'")
         
         val existingTables = mutableListOf<String>()
@@ -88,8 +107,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             DATABASE_NAME
         )
-            .addMigrations(MIGRATION_1_2)
-            .fallbackToDestructiveMigration()
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)  // ✅ Добавлена новая миграция
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     super.onCreate(db)
@@ -100,6 +118,21 @@ object DatabaseModule {
                     super.onOpen(db)
                     println("✅ Database opened successfully")
                     db.execSQL("PRAGMA foreign_keys=ON")
+                    
+                    // ✅ Создаём backup перед любой операцией
+                    try {
+                        val dbFile = context.getDatabasePath(DATABASE_NAME)
+                        val backupFile = java.io.File(
+                            dbFile.parent, 
+                            "${dbFile.name}.backup_${System.currentTimeMillis()}"
+                        )
+                        if (dbFile.exists()) {
+                            dbFile.copyTo(backupFile, overwrite = false)
+                            println("✅ Database backup created: ${backupFile.name}")
+                        }
+                    } catch (e: Exception) {
+                        println("⚠️ Failed to create backup: ${e.message}")
+                    }
                     
                     try {
                         validateDatabaseStructure(db)
@@ -133,5 +166,12 @@ object DatabaseModule {
     @Singleton
     fun provideTermDao(database: AppDatabase): TermDao {
         return database.termDao()
+    }
+    
+    // ✅ НОВОЕ: Provider для ApiKeyDao
+    @Provides
+    @Singleton
+    fun provideApiKeyDao(database: AppDatabase): ApiKeyDao {
+        return database.apiKeyDao()
     }
 }
