@@ -8,6 +8,10 @@ import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
 
+/**
+ * ✅ Use Case для быстрого сканирования
+ * Создает папку "New Folder" и документ "New document" с timestamp
+ */
 class QuickScanUseCase @Inject constructor(
     private val folderRepository: FolderRepository,
     private val recordRepository: RecordRepository,
@@ -16,7 +20,7 @@ class QuickScanUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(imageUri: Uri): Result<Long> {
         return try {
-            // ✅ ИСПРАВЛЕНО: Поиск папки "New Folder" (не "Test")
+            // ✅ Поиск или создание папки "New Folder"
             val foldersFlow = getFoldersUseCase()
             var targetFolder: Folder? = null
             
@@ -24,7 +28,7 @@ class QuickScanUseCase @Inject constructor(
                 targetFolder = folders.find { it.name == "New Folder" }
             }
             
-            // ✅ Создаем папку "New Folder" если не существует
+            // Создаем папку "New Folder" если не существует
             val folderId = if (targetFolder == null) {
                 when (val result = folderRepository.createFolder("New Folder", "Auto-created folder for quick scans")) {
                     is Result.Success -> result.data
@@ -35,7 +39,7 @@ class QuickScanUseCase @Inject constructor(
                 targetFolder!!.id
             }
             
-            // ✅ ИСПРАВЛЕНО: Имя "New document" + timestamp
+            // ✅ Создание имени "New document" + timestamp
             val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
             val timestamp = dateFormat.format(Date())
             val recordName = "New document $timestamp"
