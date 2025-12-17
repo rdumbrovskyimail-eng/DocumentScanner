@@ -20,7 +20,7 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 @Composable
 fun CameraScreen(
     viewModel: CameraViewModel = hiltViewModel(),
-    onScanComplete: (Long) -> Unit,
+    onScanComplete: (Long) -> Unit,  // ✅ Вызывается после создания документа
     onBackClick: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -34,6 +34,7 @@ fun CameraScreen(
             scanResult?.pages?.let { pages ->
                 val uris = pages.mapNotNull { it.imageUri }
                 if (uris.isNotEmpty()) {
+                    // ✅ ИСПРАВЛЕНО: Передаем callback
                     viewModel.processScannedImages(uris, onScanComplete)
                 }
             }
