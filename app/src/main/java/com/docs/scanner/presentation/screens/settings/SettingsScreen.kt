@@ -1,6 +1,7 @@
 package com.docs.scanner.presentation.screens.settings
 
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -13,25 +14,28 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.docs.scanner.data.local.database.entities.ApiKeyEntity
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
     onBackClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val apiKey by viewModel.apiKey.collectAsState()
     val isSaving by viewModel.isSaving.collectAsState()
     val saveMessage by viewModel.saveMessage.collectAsState()
     val driveEmail by viewModel.driveEmail.collectAsState()
     val isBackingUp by viewModel.isBackingUp.collectAsState()
     val backupMessage by viewModel.backupMessage.collectAsState()
     
-    var showPassword by remember { mutableStateOf(false) }
+    // Состояние для диалога добавления ключа
+    var showAddKeyDialog by remember { mutableStateOf(false) }
     
     val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -59,71 +63,60 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // ✅ ОБНОВЛЕННАЯ СЕКЦИЯ GEMINI API KEYS
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.Key,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Gemini API Key",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    OutlinedTextField(
-                        value = apiKey,
-                        onValueChange = viewModel::updateApiKey,
-                        label = { Text("API Key") },
-                        placeholder = { Text("AIza...") },
-                        visualTransformation = if (showPassword) {
-                            VisualTransformation.None
-                        } else {
-                            PasswordVisualTransformation()
-                        },
-                        trailingIcon = {
-                            Row {
-                                IconButton(onClick = { showPassword = !showPassword }) {
-                                    Icon(
-                                        imageVector = if (showPassword) {
-                                            Icons.Default.VisibilityOff
-                                        } else {
-                                            Icons.Default.Visibility
-                                        },
-                                        contentDescription = null
-                                    )
-                                }
-                                if (apiKey.isNotBlank()) {
-                                    IconButton(onClick = { viewModel.copyApiKey(context) }) {
-                                        Icon(
-                                            Icons.Default.ContentCopy,
-                                            contentDescription = "Copy"
-                                        )
-                                    }
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        isError = saveMessage.contains("Invalid") || saveMessage.contains("failed")
-                    )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Key,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Gemini API Keys",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                        
+                        IconButton(onClick = { showAddKeyDialog = true }) {
+                            Icon(Icons.Default.Add, "Add key")
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    val apiKeys by viewModel.apiKeys.collectAsState()
+                    
+                    apiKeys.forEach { keyEntity ->
+                        ApiKeyItem(
+                            key = keyEntity,
+                            onActivate = { viewModel.activateKey(keyEntity.id) },
+                            onCopy = { viewModel.copyApiKey(context, keyEntity.key) },
+                            onDelete = { viewModel.deleteKey(keyEntity.id) }
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    
+                    if (apiKeys.isEmpty()) {
+                        Text(
+                            text = "No API keys added",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
                         TextButton(
                             onClick = { 
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    data = android.net.Uri.parse("https://aistudio.google.com/app/apikey")
+                                    data = Uri.parse("https://aistudio.google.com/app/apikey")
                                 }
                                 context.startActivity(intent)
                             }
@@ -134,39 +127,13 @@ fun SettingsScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Get API key")
+                            Text("Get free API key")
                         }
-                        
-                        Button(
-                            onClick = viewModel::saveApiKey,
-                            enabled = apiKey.isNotBlank() && !isSaving
-                        ) {
-                            if (isSaving) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                            }
-                            Text("Save")
-                        }
-                    }
-                    
-                    if (saveMessage.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = saveMessage,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (saveMessage.contains("✓")) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.error
-                            }
-                        )
                     }
                 }
             }
             
+            // СЕКЦИЯ GOOGLE DRIVE
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -261,6 +228,7 @@ fun SettingsScreen(
                 }
             }
             
+            // СЕКЦИЯ ABOUT
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -290,13 +258,137 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+        }
+    }
+
+    // ✅ ДИАЛОГ ДОБАВЛЕНИЯ КЛЮЧА
+    if (showAddKeyDialog) {
+        var newKey by remember { mutableStateOf("") }
+        var newLabel by remember { mutableStateOf("") }
+        var showKeyText by remember { mutableStateOf(false) }
+        
+        AlertDialog(
+            onDismissRequest = { showAddKeyDialog = false },
+            title = { Text("Add API Key") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = newKey,
+                        onValueChange = { newKey = it },
+                        label = { Text("API Key") },
+                        placeholder = { Text("AIza...") },
+                        visualTransformation = if (showKeyText) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { showKeyText = !showKeyText }) {
+                                Icon(if (showKeyText) Icons.Default.VisibilityOff else Icons.Default.Visibility, null)
+                            }
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     
+                    OutlinedTextField(
+                        value = newLabel,
+                        onValueChange = { newLabel = it },
+                        label = { Text("Label (optional)") },
+                        placeholder = { Text("Personal, Work, etc.") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.addApiKey(newKey, newLabel.ifBlank { null })
+                        showAddKeyDialog = false
+                    },
+                    enabled = newKey.isNotBlank()
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddKeyDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+// ✅ ВСПОМОГАТЕЛЬНЫЙ COMPOSABLE ДЛЯ ЭЛЕМЕНТА СПИСКА
+@Composable
+private fun ApiKeyItem(
+    key: ApiKeyEntity,
+    onActivate: () -> Unit,
+    onCopy: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (key.isActive) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "${key.key.take(10)}...${key.key.takeLast(4)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.Monospace
+                )
+                
+                key.label?.let {
                     Text(
-                        text = "Scan, recognize, and translate documents using ML Kit and Gemini AI",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = it,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                if (key.isActive) {
+                    Text(
+                        text = "● Active",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            
+            Row {
+                if (!key.isActive) {
+                    IconButton(onClick = onActivate) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            "Activate",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                
+                IconButton(onClick = onCopy) {
+                    Icon(Icons.Default.ContentCopy, "Copy")
+                }
+                
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        Icons.Default.Delete,
+                        "Delete",
+                        tint = MaterialTheme.colorScheme.error
                     )
                 }
             }
