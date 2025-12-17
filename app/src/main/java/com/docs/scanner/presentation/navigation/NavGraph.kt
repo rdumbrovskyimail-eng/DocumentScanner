@@ -39,7 +39,7 @@ fun NavGraph(
                     try {
                         navController.navigate(Screen.Records.createRoute(folderId))
                     } catch (e: Exception) {
-                        println("Navigation error: ${e.message}")
+                        println("❌ Navigation error: ${e.message}")
                     }
                 },
                 onSettingsClick = {
@@ -58,7 +58,7 @@ fun NavGraph(
                     try {
                         navController.navigate(Screen.Editor.createRoute(recordId))
                     } catch (e: Exception) {
-                        println("Navigation error: ${e.message}")
+                        println("❌ Navigation error: ${e.message}")
                     }
                 }
             )
@@ -76,7 +76,6 @@ fun NavGraph(
             val folderId = backStackEntry.arguments?.getLong("folderId") ?: -1L
             
             if (folderId == -1L) {
-                // Navigate back if invalid folderId
                 LaunchedEffect(Unit) {
                     navController.popBackStack()
                 }
@@ -90,7 +89,7 @@ fun NavGraph(
                         try {
                             navController.navigate(Screen.Editor.createRoute(recordId))
                         } catch (e: Exception) {
-                            println("Navigation error: ${e.message}")
+                            println("❌ Navigation error: ${e.message}")
                         }
                     }
                 )
@@ -109,7 +108,6 @@ fun NavGraph(
             val recordId = backStackEntry.arguments?.getLong("recordId") ?: -1L
             
             if (recordId == -1L) {
-                // Navigate back if invalid recordId
                 LaunchedEffect(Unit) {
                     navController.popBackStack()
                 }
@@ -123,29 +121,30 @@ fun NavGraph(
                         try {
                             navController.navigate(Screen.ImageViewer.createRoute(documentId))
                         } catch (e: Exception) {
-                            println("Navigation error: ${e.message}")
+                            println("❌ Navigation error: ${e.message}")
                         }
                     }
                 )
             }
         }
+        
         composable(Screen.Camera.route) {
-    CameraScreen(
-        onScanComplete = { recordId ->  // ✅ НОВЫЙ КОД
-            try {
-                navController.navigate(Screen.Editor.createRoute(recordId)) {
-                    popUpTo(Screen.Folders.route) { inclusive = false }
+            CameraScreen(
+                onScanComplete = { recordId ->
+                    try {
+                        navController.navigate(Screen.Editor.createRoute(recordId)) {
+                            popUpTo(Screen.Folders.route) { inclusive = false }
+                        }
+                    } catch (e: Exception) {
+                        println("❌ Navigation error: ${e.message}")
+                        navController.popBackStack()
+                    }
+                },
+                onBackClick = {
+                    navController.popBackStack()
                 }
-            } catch (e: Exception) {
-                println("Navigation error: ${e.message}")
-                navController.popBackStack()
-            }
-        },
-        onBackClick = {
-            navController.popBackStack()
+            )
         }
-    )
-}
         
         composable(Screen.Search.route) {
             SearchScreen(
@@ -156,12 +155,13 @@ fun NavGraph(
                     try {
                         navController.navigate(Screen.Editor.createRoute(recordId))
                     } catch (e: Exception) {
-                        println("Navigation error: ${e.message}")
+                        println("❌ Navigation error: ${e.message}")
                     }
                 }
             )
         }
         
+        // ✅ НОВЫЙ ЭКРАН: Terms
         composable(Screen.Terms.route) {
             TermsScreen(
                 onBackClick = {
@@ -190,7 +190,6 @@ fun NavGraph(
             val documentId = backStackEntry.arguments?.getLong("documentId") ?: -1L
             
             if (documentId == -1L) {
-                // Navigate back if invalid documentId
                 LaunchedEffect(Unit) {
                     navController.popBackStack()
                 }
@@ -204,5 +203,4 @@ fun NavGraph(
             }
         }
     }
-
 }
