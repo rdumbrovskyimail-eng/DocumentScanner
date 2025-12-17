@@ -129,17 +129,23 @@ fun NavGraph(
                 )
             }
         }
-        
         composable(Screen.Camera.route) {
-            CameraScreen(
-                onImageCaptured = { uris ->
-                    navController.popBackStack()
-                },
-                onBackClick = {
-                    navController.popBackStack()
+    CameraScreen(
+        onScanComplete = { recordId ->  // ✅ НОВЫЙ КОД
+            try {
+                navController.navigate(Screen.Editor.createRoute(recordId)) {
+                    popUpTo(Screen.Folders.route) { inclusive = false }
                 }
-            )
+            } catch (e: Exception) {
+                println("Navigation error: ${e.message}")
+                navController.popBackStack()
+            }
+        },
+        onBackClick = {
+            navController.popBackStack()
         }
+    )
+}
         
         composable(Screen.Search.route) {
             SearchScreen(
@@ -198,4 +204,5 @@ fun NavGraph(
             }
         }
     }
+
 }
