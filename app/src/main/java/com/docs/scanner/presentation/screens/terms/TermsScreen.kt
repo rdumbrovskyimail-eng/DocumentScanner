@@ -14,7 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.docs.scanner.domain.model.TermEntity
+import com.docs.scanner.data.local.database.entity.TermEntity
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -300,7 +300,6 @@ private fun CreateTermDialog(
         }
     )
     
-    // ✅ ИСПРАВЛЕНО: Убран параметр dateValidator
     if (showDatePicker) {
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
