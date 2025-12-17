@@ -14,7 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.docs.scanner.data.local.database.entity.TermEntity
+import com.docs.scanner.data.local.database.entities.TermEntity
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -158,6 +158,7 @@ private fun TermCard(
                     
                     Spacer(modifier = Modifier.height(4.dp))
                     
+                    // ✅ ИСПОЛЬЗУЕТ dueDate
                     Text(
                         text = dateFormat.format(Date(term.dueDate)),
                         style = MaterialTheme.typography.bodyMedium,
