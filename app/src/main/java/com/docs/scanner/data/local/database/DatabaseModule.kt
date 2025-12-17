@@ -22,7 +22,7 @@ object DatabaseModule {
     
     private const val DATABASE_NAME = "document_scanner.db"
     
-    // ✅ ИСПРАВЛЕННАЯ МИГРАЦИЯ 1 → 2
+    // ✅ ИСПРАВЛЕННАЯ МИГРАЦИЯ 1 → 2 с правильными полями
     private val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
             try {
@@ -38,8 +38,8 @@ object DatabaseModule {
                             `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                             `title` TEXT NOT NULL,
                             `description` TEXT,
-                            `dateTime` INTEGER NOT NULL,
-                            `reminderMinutesBefore` INTEGER,
+                            `dueDate` INTEGER NOT NULL,
+                            `reminderMinutesBefore` INTEGER NOT NULL DEFAULT 0,
                             `isCompleted` INTEGER NOT NULL DEFAULT 0,
                             `createdAt` INTEGER NOT NULL
                         )
