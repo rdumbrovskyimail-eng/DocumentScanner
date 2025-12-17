@@ -210,6 +210,11 @@ class DocumentRepositoryImpl @Inject constructor(
             entities.map { it.toDomain() }
         }
     }
+
+    // ✅ ДОБАВЛЕННАЯ РЕАЛИЗАЦИЯ
+    override fun searchEverywhereWithNames(query: String): Flow<List<DocumentWithNames>> {
+        return documentDao.searchEverywhereWithNames(query)
+    }
     
     override suspend fun updateDocument(document: Document): Result<Unit> {
         return try {
