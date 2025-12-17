@@ -5,7 +5,7 @@ sealed class Screen(val route: String) {
     data object Folders : Screen("folders")
     data object Camera : Screen("camera")
     data object Search : Screen("search")
-    data object Terms : Screen("terms")
+    data object Terms : Screen("terms") // ✅ ДОБАВЛЕНО
     data object Settings : Screen("settings")
     
     data object Records : Screen("records/{folderId}") {
