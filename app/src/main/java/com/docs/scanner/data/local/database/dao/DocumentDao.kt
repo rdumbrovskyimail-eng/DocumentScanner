@@ -62,4 +62,27 @@ interface DocumentDao {
     
     @Query("SELECT * FROM documents WHERE processingStatus = :status ORDER BY createdAt DESC")
     fun getDocumentsByStatus(status: Int): Flow<List<DocumentEntity>>
+
+    // ✅ НОВЫЙ метод с JOIN для получения названий папок и записей
+    @Query("""
+        SELECT 
+            d.id,
+            d.recordId,
+            d.imagePath,
+            d.originalText,
+            d.translatedText,
+            d.position,
+            d.processingStatus,
+            d.createdAt,
+            r.name as recordName,
+            f.name as folderName
+        FROM documents d
+        INNER JOIN records r ON d.recordId = r.id
+        INNER JOIN folders f ON r.folderId = f.id
+        WHERE (d.originalText IS NOT NULL AND LOWER(d.originalText) LIKE LOWER('%' || :query || '%'))
+        OR (d.translatedText IS NOT NULL AND LOWER(d.translatedText) LIKE LOWER('%' || :query || '%'))
+        ORDER BY d.createdAt DESC
+        LIMIT 50
+    """)
+    fun searchEverywhereWithNames(query: String): Flow<List<DocumentWithNames>>
 }
