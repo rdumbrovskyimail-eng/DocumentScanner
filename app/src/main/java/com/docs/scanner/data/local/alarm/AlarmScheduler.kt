@@ -18,81 +18,79 @@ class AlarmScheduler @Inject constructor(
     
     fun scheduleTerm(term: TermEntity) {
         val now = System.currentTimeMillis()
-        val termTime = term.dueDate  // ✅ ИЗМЕНЕНО: dateTime → dueDate
+        val termTime = term.dueDate
         val timeUntilTerm = termTime - now
         
         if (timeUntilTerm <= 0) {
-            return
+            return  // Уже прошло
         }
         
         val reminders = mutableListOf<ReminderTime>()
         
-        if (timeUntilTerm > DAYS_4) {
-            reminders.add(ReminderTime(termTime - DAYS_4, "Reminder: ${term.title} in 4 days", 1))
-        }
-        
-        if (timeUntilTerm > DAYS_3) {
-            reminders.add(ReminderTime(termTime - DAYS_3, "Reminder: ${term.title} in 3 days", 2))
-        }
-        
-        if (timeUntilTerm > DAYS_2) {
-            reminders.add(ReminderTime(termTime - DAYS_2, "Reminder: ${term.title} in 2 days", 3))
-        }
-        
-        if (timeUntilTerm > DAY_1) {
-            reminders.add(ReminderTime(termTime - DAY_1, "Reminder: ${term.title} tomorrow", 4))
-            reminders.add(ReminderTime(termTime - (DAY_1 - HOURS_12), "Tomorrow: ${term.title}", 5))
-        }
-        
-        if (timeUntilTerm > HOURS_12) {
-            reminders.add(ReminderTime(termTime - HOURS_12, "12 hours until: ${term.title}", 6))
-        }
-        
-        if (timeUntilTerm > HOURS_6) {
-            reminders.add(ReminderTime(termTime - HOURS_6, "6 hours until: ${term.title}", 7))
-        }
-        
-        for (hour in 5 downTo 2) {
-            val hourTime = hour * HOUR_1
-            if (timeUntilTerm > hourTime) {
-                reminders.add(ReminderTime(
-                    termTime - hourTime, 
-                    "$hour hours until: ${term.title}", 
-                    7 + hour
-                ))
+        // ✅ ПРОГРЕССИВНЫЕ НАПОМИНАНИЯ ДО дедлайна
+        when {
+            // Больше 2 дней → 1 раз в день
+            timeUntilTerm > DAYS_2 -> {
+                reminders.add(ReminderTime(termTime - DAYS_2, "2 days until: ${term.title}", 1))
+                reminders.add(ReminderTime(termTime - DAY_1, "1 day until: ${term.title}", 2))
+            }
+            
+            // Больше 1 дня → утро и вечер
+            timeUntilTerm > DAY_1 -> {
+                reminders.add(ReminderTime(termTime - DAY_1, "Tomorrow: ${term.title}", 3))
+                reminders.add(ReminderTime(termTime - HOURS_12, "12 hours until: ${term.title}", 4))
+            }
+            
+            // Меньше 1 дня, но больше 5 часов → каждые 2-3 часа
+            timeUntilTerm > HOURS_5 -> {
+                reminders.add(ReminderTime(termTime - HOURS_5, "5 hours until: ${term.title}", 5))
+                reminders.add(ReminderTime(termTime - HOURS_3, "3 hours until: ${term.title}", 6))
+                reminders.add(ReminderTime(termTime - HOUR_1, "1 hour until: ${term.title}", 7))
+            }
+            
+            // Меньше 5 часов → каждые 30 минут
+            timeUntilTerm > HOUR_1 -> {
+                reminders.add(ReminderTime(termTime - MIN_60, "60 minutes until: ${term.title}", 8))
+                reminders.add(ReminderTime(termTime - MIN_30, "30 minutes until: ${term.title}", 9))
+            }
+            
+            // Последний час → каждые 15 минут
+            timeUntilTerm > MIN_15 -> {
+                reminders.add(ReminderTime(termTime - MIN_30, "30 minutes until: ${term.title}", 10))
+                reminders.add(ReminderTime(termTime - MIN_15, "15 minutes until: ${term.title}", 11))
             }
         }
         
-        if (timeUntilTerm > HOUR_1) {
-            reminders.add(ReminderTime(termTime - HOUR_1, "1 hour until: ${term.title}", 20))
-            reminders.add(ReminderTime(termTime - MIN_45, "45 minutes until: ${term.title}", 21))
-            reminders.add(ReminderTime(termTime - MIN_30, "30 minutes until: ${term.title}", 22))
-            reminders.add(ReminderTime(termTime - MIN_15, "15 minutes until: ${term.title}", 23))
+        // ✅ ГЛАВНОЕ УВЕДОМЛЕНИЕ (звонок в момент дедлайна)
+        reminders.add(ReminderTime(termTime, "⏰ NOW: ${term.title}", 100))
+        
+        // ✅ ПОВТОРЯЮЩИЕСЯ НАПОМИНАНИЯ ПОСЛЕ дедлайна (каждые 5 минут в течение часа)
+        for (i in 1..12) {
+            reminders.add(
+                ReminderTime(
+                    termTime + (i * MIN_5),
+                    "⏰ REMINDER: ${term.title}",
+                    100 + i
+                )
+            )
         }
         
-        if (timeUntilTerm > MIN_10) {
-            reminders.add(ReminderTime(termTime - MIN_10, "10 minutes until: ${term.title}", 24))
-        }
-        
-        if (timeUntilTerm > MIN_5) {
-            reminders.add(ReminderTime(termTime - MIN_5, "5 minutes until: ${term.title}", 25))
-        }
-        
-        reminders.add(ReminderTime(termTime, "NOW: ${term.title}", 100))
-        
+        // Планируем все напоминания
         reminders.forEach { reminder ->
             scheduleAlarm(
                 termId = term.id,
                 time = reminder.time,
                 title = reminder.message,
                 description = term.description,
-                requestCode = term.id.toInt() * 1000 + reminder.offset
+                requestCode = term.id.toInt() * 1000 + reminder.offset,
+                isMainAlarm = reminder.offset == 100
             )
         }
     }
     
     fun cancelTerm(termId: Long) {
-        for (offset in 0..100) {
+        // Отменяем все возможные напоминания (до 112 штук)
+        for (offset in 0..150) {
             cancelAlarm(termId.toInt() * 1000 + offset)
         }
     }
@@ -102,7 +100,8 @@ class AlarmScheduler @Inject constructor(
         time: Long,
         title: String,
         description: String?,
-        requestCode: Int
+        requestCode: Int,
+        isMainAlarm: Boolean = false
     ) {
         if (time <= System.currentTimeMillis()) {
             return
@@ -112,6 +111,7 @@ class AlarmScheduler @Inject constructor(
             putExtra("term_id", termId)
             putExtra("title", title)
             putExtra("description", description)
+            putExtra("is_main_alarm", isMainAlarm)
         }
         
         val pendingIntent = PendingIntent.getBroadcast(
@@ -121,20 +121,35 @@ class AlarmScheduler @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (alarmManager.canScheduleExactAlarms()) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (alarmManager.canScheduleExactAlarms()) {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        time,
+                        pendingIntent
+                    )
+                    println("✅ Scheduled exact alarm for $time (main=$isMainAlarm)")
+                } else {
+                    // Fallback: неточный будильник
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        time,
+                        pendingIntent
+                    )
+                    println("⚠️ Scheduled inexact alarm (no permission)")
+                }
+            } else {
                 alarmManager.setExactAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
                     time,
                     pendingIntent
                 )
+                println("✅ Scheduled exact alarm for $time")
             }
-        } else {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                time,
-                pendingIntent
-            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            println("❌ Failed to schedule alarm: ${e.message}")
         }
     }
     
@@ -148,6 +163,7 @@ class AlarmScheduler @Inject constructor(
         )
         
         alarmManager.cancel(pendingIntent)
+        pendingIntent.cancel()
     }
     
     private data class ReminderTime(
@@ -159,16 +175,14 @@ class AlarmScheduler @Inject constructor(
     companion object {
         private const val MIN_1 = 60_000L
         private const val MIN_5 = 5 * MIN_1
-        private const val MIN_10 = 10 * MIN_1
         private const val MIN_15 = 15 * MIN_1
         private const val MIN_30 = 30 * MIN_1
-        private const val MIN_45 = 45 * MIN_1
+        private const val MIN_60 = 60 * MIN_1
         private const val HOUR_1 = 60 * MIN_1
-        private const val HOURS_6 = 6 * HOUR_1
+        private const val HOURS_3 = 3 * HOUR_1
+        private const val HOURS_5 = 5 * HOUR_1
         private const val HOURS_12 = 12 * HOUR_1
         private const val DAY_1 = 24 * HOUR_1
         private const val DAYS_2 = 2 * DAY_1
-        private const val DAYS_3 = 3 * DAY_1
-        private const val DAYS_4 = 4 * DAY_1
     }
 }
