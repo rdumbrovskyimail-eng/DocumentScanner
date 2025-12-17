@@ -78,7 +78,8 @@ fun SearchScreen(
                 
                 searchQuery.isBlank() -> {
                     Column(
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
                             .padding(32.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
@@ -175,6 +176,7 @@ private fun SearchResultCard(
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
+            // ✅ ПРАВИЛЬНАЯ ИЕРАРХИЯ: Папка › Запись
             Text(
                 text = "${result.folderName} › ${result.recordName}",
                 style = MaterialTheme.typography.labelSmall,
@@ -183,6 +185,7 @@ private fun SearchResultCard(
             
             Spacer(modifier = Modifier.height(8.dp))
             
+            // ✅ ПОДСВЕТКА с поддержкой кириллицы
             Text(
                 text = buildAnnotatedString {
                     val text = result.matchedText
@@ -191,27 +194,32 @@ private fun SearchResultCard(
                     if (query.isEmpty()) {
                         append(text)
                     } else {
-                        var currentIndex = 0
-                        var startIndex = text.indexOf(query, currentIndex, ignoreCase = true)
-                        
-                        while (startIndex >= 0 && currentIndex < text.length) {
-                            // Add text before match
-                            if (startIndex > currentIndex) {
-                                append(text.substring(currentIndex, startIndex))
+                        try {
+                            val regex = Regex(Regex.escape(query), RegexOption.IGNORE_CASE)
+                            val matches = regex.findAll(text)
+                            
+                            var lastIndex = 0
+                            matches.forEach { match ->
+                                // Текст до совпадения
+                                if (match.range.first > lastIndex) {
+                                    append(text.substring(lastIndex, match.range.first))
+                                }
+                                
+                                // Подсвеченное совпадение
+                                withStyle(SpanStyle(background = Color.Yellow)) {
+                                    append(text.substring(match.range.first, match.range.last + 1))
+                                }
+                                
+                                lastIndex = match.range.last + 1
                             }
                             
-                            // Add highlighted match
-                            withStyle(SpanStyle(background = Color.Yellow)) {
-                                append(text.substring(startIndex, (startIndex + query.length).coerceAtMost(text.length)))
+                            // Оставшийся текст
+                            if (lastIndex < text.length) {
+                                append(text.substring(lastIndex))
                             }
-                            
-                            currentIndex = startIndex + query.length
-                            startIndex = text.indexOf(query, currentIndex, ignoreCase = true)
-                        }
-                        
-                        // Add remaining text
-                        if (currentIndex < text.length) {
-                            append(text.substring(currentIndex))
+                        } catch (e: Exception) {
+                            // Fallback: просто показываем текст без подсветки
+                            append(text)
                         }
                     }
                 },
@@ -234,8 +242,8 @@ private fun SearchResultCard(
 data class SearchResult(
     val documentId: Long,
     val recordId: Long,
-    val recordName: String,
-    val folderName: String,
+    val recordName: String,  // ✅ Реальное имя записи
+    val folderName: String,  // ✅ Реальное имя папки
     val matchedText: String,
     val isOriginal: Boolean
 )
@@ -259,7 +267,6 @@ class SearchViewModel @Inject constructor(
     private val maxCacheSize = 20
     
     init {
-        // Debounce search queries
         viewModelScope.launch {
             _searchQuery
                 .debounce(300)
@@ -287,7 +294,6 @@ class SearchViewModel @Inject constructor(
             return
         }
         
-        // Check cache
         val cached = searchCache[query.lowercase()]
         if (cached != null) {
             _searchResults.value = cached
@@ -297,18 +303,22 @@ class SearchViewModel @Inject constructor(
         _isSearching.value = true
         
         try {
-            documentRepository.searchEverywhere(query)
+            println("🔍 Searching for: '$query'")
+            
+            documentRepository.searchEverywhereWithNames(query)
                 .catch { e ->
-                    println("Search error: ${e.message}")
+                    println("❌ Search error: ${e.message}")
                     _searchResults.value = emptyList()
                 }
                 .collect { documents ->
+                    println("✅ Found ${documents.size} documents")
+                    
                     val results = documents.take(50).map { doc ->
                         SearchResult(
                             documentId = doc.id,
                             recordId = doc.recordId,
-                            recordName = "Document ${doc.id}",
-                            folderName = "Folder",
+                            recordName = doc.recordName,  // ✅ Реальное имя
+                            folderName = doc.folderName,  // ✅ Реальное имя
                             matchedText = doc.originalText ?: doc.translatedText ?: "",
                             isOriginal = doc.originalText?.contains(query, ignoreCase = true) == true
                         )
@@ -316,14 +326,13 @@ class SearchViewModel @Inject constructor(
                     
                     _searchResults.value = results
                     
-                    // Update cache
                     if (searchCache.size >= maxCacheSize) {
                         searchCache.remove(searchCache.keys.first())
                     }
                     searchCache[query.lowercase()] = results
                 }
         } catch (e: Exception) {
-            println("Search error: ${e.message}")
+            println("❌ Search error: ${e.message}")
             _searchResults.value = emptyList()
         } finally {
             _isSearching.value = false
