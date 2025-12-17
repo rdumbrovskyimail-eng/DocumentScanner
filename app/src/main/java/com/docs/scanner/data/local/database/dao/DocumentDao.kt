@@ -2,6 +2,7 @@ package com.docs.scanner.data.local.database.dao
 
 import androidx.room.*
 import com.docs.scanner.data.local.database.entities.DocumentEntity
+import com.docs.scanner.domain.model.DocumentWithNames  // ✅ ДОБАВЬТЕ ЭТОТ ИМПОРТ
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -63,7 +64,6 @@ interface DocumentDao {
     @Query("SELECT * FROM documents WHERE processingStatus = :status ORDER BY createdAt DESC")
     fun getDocumentsByStatus(status: Int): Flow<List<DocumentEntity>>
 
-    // ✅ НОВЫЙ метод с JOIN для получения названий папок и записей
     @Query("""
         SELECT 
             d.id,
