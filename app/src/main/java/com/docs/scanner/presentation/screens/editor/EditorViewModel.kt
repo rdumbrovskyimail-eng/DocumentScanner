@@ -1,292 +1,176 @@
-package com.docs.scanner.presentation.screens.onboarding
+package com.docs.scanner.presentation.screens.editor
 
-import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.docs.scanner.domain.repository.SettingsRepository
+import com.docs.scanner.domain.model.Record
+import com.docs.scanner.domain.repository.DocumentRepository
+import com.docs.scanner.domain.repository.FolderRepository
+import com.docs.scanner.domain.repository.RecordRepository
+import com.docs.scanner.domain.usecase.*
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-@Composable
-fun OnboardingScreen(
-    viewModel: OnboardingViewModel = hiltViewModel(),
-    onComplete: () -> Unit
-) {
-    val context = LocalContext.current
-    val apiKey by viewModel.apiKey.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    
-    LaunchedEffect(Unit) {
-        viewModel.checkFirstLaunch {
-            onComplete()
-        }
-    }
-    
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Welcome to Document Scanner") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            Icon(
-                imageVector = Icons.Default.CameraAlt,
-                contentDescription = null,
-                modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            Text(
-                text = "Document Scanner",
-                style = MaterialTheme.typography.headlineMedium,
-                textAlign = TextAlign.Center
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Text(
-                text = "Scan, recognize, and translate documents",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-            
-            Spacer(modifier = Modifier.height(48.dp))
-            
-            FeatureItem(
-                icon = Icons.Default.CameraAlt,
-                title = "Smart Scanning",
-                description = "ML Kit document scanner with auto edge detection"
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            FeatureItem(
-                icon = Icons.Default.TextFields,
-                title = "OCR Recognition",
-                description = "Extract text from images in any language"
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            FeatureItem(
-                icon = Icons.Default.Translate,
-                title = "Auto Translation",
-                description = "Translate to Russian using Gemini AI"
-            )
-            
-            Spacer(modifier = Modifier.height(48.dp))
-            
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    Text(
-                        text = "Gemini API Key Required",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    Text(
-                        text = "Enter your Google Gemini API key to enable translation",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    var showPassword by remember { mutableStateOf(false) }
-                    
-                    OutlinedTextField(
-                        value = apiKey,
-                        onValueChange = viewModel::updateApiKey,
-                        label = { Text("API Key") },
-                        placeholder = { Text("AIza...") },
-                        visualTransformation = if (showPassword) {
-                            VisualTransformation.None
-                        } else {
-                            PasswordVisualTransformation()
-                        },
-                        trailingIcon = {
-                            IconButton(onClick = { showPassword = !showPassword }) {
-                                Icon(
-                                    imageVector = if (showPassword) {
-                                        Icons.Default.VisibilityOff
-                                    } else {
-                                        Icons.Default.Visibility
-                                    },
-                                    contentDescription = if (showPassword) {
-                                        "Hide API key"
-                                    } else {
-                                        "Show API key"
-                                    }
-                                )
-                            }
-                        },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    TextButton(
-                        onClick = { 
-                            // ✅ ИСПРАВЛЕНО: Открывает браузер
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                data = Uri.parse("https://aistudio.google.com/app/apikey")
-                            }
-                            context.startActivity(intent)
-                        }
-                    ) {
-                        Icon(
-                            Icons.Default.OpenInNew,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Get free API key")
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            Button(
-                onClick = {
-                    viewModel.saveAndContinue(onComplete)
-                },
-                enabled = apiKey.isNotBlank() && !isLoading,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                } else {
-                    Text("Continue")
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-    }
-}
-
-@Composable
-private fun FeatureItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    description: String
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(40.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        
-        Spacer(modifier = Modifier.width(16.dp))
-        
-        Column {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
 @HiltViewModel
-class OnboardingViewModel @Inject constructor(
-    private val settingsRepository: SettingsRepository
+class EditorViewModel @Inject constructor(
+    private val getDocumentsUseCase: GetDocumentsUseCase,
+    private val addDocumentUseCase: AddDocumentUseCase,
+    private val deleteDocumentUseCase: DeleteDocumentUseCase,
+    private val retryTranslationUseCase: RetryTranslationUseCase,
+    private val fixOcrUseCase: FixOcrUseCase,
+    private val documentRepository: DocumentRepository,
+    private val recordRepository: RecordRepository,
+    private val folderRepository: FolderRepository,  // ✅ ДОБАВЛЕНО
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     
-    private val _apiKey = MutableStateFlow("")
-    val apiKey: StateFlow<String> = _apiKey.asStateFlow()
+    private val recordId: Long = savedStateHandle.get<Long>("recordId") ?: -1L
     
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+    private val _uiState = MutableStateFlow<EditorUiState>(EditorUiState.Loading)
+    val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
     
-    fun checkFirstLaunch(onNotFirstLaunch: () -> Unit) {
+    private val _record = MutableStateFlow<Record?>(null)
+    val record: StateFlow<Record?> = _record.asStateFlow()
+    
+    // ✅ ДОБАВЛЕНО: Название папки
+    private val _folderName = MutableStateFlow<String?>(null)
+    val folderName: StateFlow<String?> = _folderName.asStateFlow()
+    
+    init {
+        if (recordId > 0) {
+            loadRecord(recordId)
+        } else {
+            _uiState.value = EditorUiState.Error("Invalid record ID")
+        }
+    }
+    
+    fun loadRecord(recordId: Long) {
+        if (recordId <= 0) {
+            _uiState.value = EditorUiState.Error("Invalid record ID")
+            return
+        }
+        
         viewModelScope.launch {
-            val isFirstLaunch = settingsRepository.isFirstLaunch()
-            if (!isFirstLaunch) {
-                onNotFirstLaunch()
+            try {
+                val record = recordRepository.getRecordById(recordId)
+                _record.value = record
+                
+                // ✅ Загружаем название папки
+                record?.let {
+                    val folder = folderRepository.getFolderById(it.folderId)
+                    _folderName.value = folder?.name
+                }
+                
+                _uiState.value = EditorUiState.Loading
+                
+                getDocumentsUseCase(recordId)
+                    .catch { e ->
+                        _uiState.value = EditorUiState.Error(
+                            e.message ?: "Failed to load documents"
+                        )
+                    }
+                    .collect { documents ->
+                        _uiState.value = if (documents.isEmpty()) {
+                            EditorUiState.Empty
+                        } else {
+                            EditorUiState.Success(documents)
+                        }
+                    }
+            } catch (e: Exception) {
+                _uiState.value = EditorUiState.Error(
+                    e.message ?: "Failed to load record"
+                )
             }
         }
     }
     
-    fun updateApiKey(key: String) {
-        _apiKey.value = key
+    fun addDocument(imageUri: Uri) {
+        if (recordId <= 0) {
+            println("Cannot add document: invalid record ID")
+            return
+        }
+        
+        viewModelScope.launch {
+            try {
+                addDocumentUseCase(recordId, imageUri)
+            } catch (e: Exception) {
+                println("Error adding document: ${e.message}")
+            }
+        }
     }
     
-    fun saveAndContinue(onComplete: () -> Unit) {
+    fun deleteDocument(documentId: Long) {
         viewModelScope.launch {
-            _isLoading.value = true
-            
             try {
-                settingsRepository.setApiKey(_apiKey.value)
-                settingsRepository.setFirstLaunchCompleted()
-                onComplete()
+                deleteDocumentUseCase(documentId)
             } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                _isLoading.value = false
+                println("Error deleting document: ${e.message}")
+            }
+        }
+    }
+    
+    fun updateOriginalText(documentId: Long, newText: String) {
+        viewModelScope.launch {
+            try {
+                documentRepository.updateOriginalText(documentId, newText)
+            } catch (e: Exception) {
+                println("Error updating text: ${e.message}")
+            }
+        }
+    }
+    
+    fun retryOcr(documentId: Long) {
+        viewModelScope.launch {
+            try {
+                fixOcrUseCase(documentId)
+            } catch (e: Exception) {
+                println("Error retrying OCR: ${e.message}")
+            }
+        }
+    }
+    
+    fun retryTranslation(documentId: Long) {
+        viewModelScope.launch {
+            try {
+                retryTranslationUseCase(documentId)
+            } catch (e: Exception) {
+                println("Error retrying translation: ${e.message}")
+            }
+        }
+    }
+    
+    fun updateRecordName(newName: String) {
+        if (newName.isBlank()) {
+            println("Record name cannot be empty")
+            return
+        }
+        
+        viewModelScope.launch {
+            try {
+                _record.value?.let { rec ->
+                    val updated = rec.copy(name = newName)
+                    recordRepository.updateRecord(updated)
+                    _record.value = updated
+                }
+            } catch (e: Exception) {
+                println("Error updating record name: ${e.message}")
+            }
+        }
+    }
+    
+    fun updateRecordDescription(newDescription: String?) {
+        viewModelScope.launch {
+            try {
+                _record.value?.let { rec ->
+                    val updated = rec.copy(description = newDescription)
+                    recordRepository.updateRecord(updated)
+                    _record.value = updated
+                }
+            } catch (e: Exception) {
+                println("Error updating record description: ${e.message}")
             }
         }
     }
