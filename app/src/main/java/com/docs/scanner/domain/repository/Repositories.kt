@@ -31,6 +31,8 @@ interface DocumentRepository {
     suspend fun updateTranslatedText(id: Long, text: String): Result<Unit>
     suspend fun updateProcessingStatus(id: Long, status: ProcessingStatus): Result<Unit>
     fun searchEverywhere(query: String): Flow<List<Document>>
+    // ✅ Добавлено:
+    fun searchEverywhereWithNames(query: String): Flow<List<DocumentWithNames>>
 }
 
 interface ScannerRepository {
