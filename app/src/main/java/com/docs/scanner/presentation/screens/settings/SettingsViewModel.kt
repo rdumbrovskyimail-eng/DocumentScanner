@@ -8,10 +8,13 @@ import android.content.Intent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.docs.scanner.data.local.database.dao.ApiKeyDao
+import com.docs.scanner.data.local.database.entities.ApiKeyEntity
 import com.docs.scanner.data.remote.drive.DriveRepository
 import com.docs.scanner.domain.repository.SettingsRepository
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import com.google.api.services.drive.DriveScopes
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,11 +27,17 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
-    private val driveRepository: DriveRepository
+    private val driveRepository: DriveRepository,
+    private val apiKeyDao: ApiKeyDao  // ✅ ДОБАВЛЕНО
 ) : ViewModel() {
     
-    private val _apiKey = MutableStateFlow("")
-    val apiKey: StateFlow<String> = _apiKey.asStateFlow()
+    // ✅ Список всех API ключей
+    val apiKeys: StateFlow<List<ApiKeyEntity>> = apiKeyDao.getAllKeys()
+        .stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
     
     private val _isSaving = MutableStateFlow(false)
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
@@ -46,15 +55,7 @@ class SettingsViewModel @Inject constructor(
     val backupMessage: StateFlow<String> = _backupMessage.asStateFlow()
     
     init {
-        loadSettings()
         checkDriveConnection()
-    }
-    
-    private fun loadSettings() {
-        viewModelScope.launch {
-            val key = settingsRepository.getApiKey()
-            _apiKey.value = key ?: ""
-        }
     }
     
     private fun checkDriveConnection() {
@@ -73,39 +74,71 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    fun updateApiKey(key: String) {
-        _apiKey.value = key
-        _saveMessage.value = ""
-    }
-    
-    fun saveApiKey() {
+    // ✅ НОВОЕ: Добавить API ключ
+    fun addApiKey(key: String, label: String?) {
         viewModelScope.launch {
-            _isSaving.value = true
-            _saveMessage.value = ""
-            
             try {
-                val key = _apiKey.value.trim()
-                
                 if (!isValidApiKey(key)) {
                     _saveMessage.value = "✗ Invalid API key format"
-                    _isSaving.value = false
                     return@launch
                 }
                 
-                settingsRepository.setApiKey(key)
-                _saveMessage.value = "✓ API key saved successfully"
+                // Деактивируем все ключи
+                apiKeyDao.deactivateAll()
+                
+                // Добавляем новый активный ключ
+                val newKey = ApiKeyEntity(
+                    key = key.trim(),
+                    label = label?.ifBlank { null },
+                    isActive = true
+                )
+                apiKeyDao.insertKey(newKey)
+                
+                // Сохраняем в DataStore для обратной совместимости
+                settingsRepository.setApiKey(key.trim())
+                
+                _saveMessage.value = "✓ API key added successfully"
             } catch (e: Exception) {
-                _saveMessage.value = "✗ Failed to save: ${e.message}"
-            } finally {
-                _isSaving.value = false
+                _saveMessage.value = "✗ Failed to add key: ${e.message}"
             }
         }
     }
     
-    fun copyApiKey(context: Context) {
+    // ✅ НОВОЕ: Активировать ключ
+    fun activateKey(keyId: Long) {
+        viewModelScope.launch {
+            try {
+                apiKeyDao.activateKey(keyId)
+                
+                // Обновляем DataStore
+                val activeKey = apiKeyDao.getActiveKey()
+                activeKey?.let {
+                    settingsRepository.setApiKey(it.key)
+                }
+                
+                _saveMessage.value = "✓ API key activated"
+            } catch (e: Exception) {
+                _saveMessage.value = "✗ Failed to activate key: ${e.message}"
+            }
+        }
+    }
+    
+    // ✅ НОВОЕ: Удалить ключ
+    fun deleteKey(keyId: Long) {
+        viewModelScope.launch {
+            try {
+                apiKeyDao.deleteKeyById(keyId)
+                _saveMessage.value = "✓ API key deleted"
+            } catch (e: Exception) {
+                _saveMessage.value = "✗ Failed to delete key: ${e.message}"
+            }
+        }
+    }
+    
+    fun copyApiKey(context: Context, key: String) {
         try {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clip = ClipData.newPlainText("API Key", _apiKey.value)
+            val clip = ClipData.newPlainText("API Key", key)
             clipboard.setPrimaryClip(clip)
             _saveMessage.value = "✓ API key copied to clipboard"
         } catch (e: Exception) {
@@ -122,17 +155,8 @@ class SettingsViewModel @Inject constructor(
                 .build()
             
             val client = GoogleSignIn.getClient(context, gso)
+            launcher.launch(client.signInIntent)
             
-            // ✅ Сначала signOut для очистки предыдущих сессий
-            viewModelScope.launch {
-                try {
-                    client.signOut().addOnCompleteListener {
-                        launcher.launch(client.signInIntent)
-                    }
-                } catch (e: Exception) {
-                    launcher.launch(client.signInIntent)
-                }
-            }
         } catch (e: Exception) {
             _backupMessage.value = "✗ Failed to start sign in: ${e.message}"
         }
@@ -141,36 +165,43 @@ class SettingsViewModel @Inject constructor(
     fun handleSignInResult(resultCode: Int, data: Intent?) {
         viewModelScope.launch {
             try {
-                if (resultCode == Activity.RESULT_OK) {
-                    when (val result = driveRepository.signIn()) {
-                        is com.docs.scanner.domain.model.Result.Success -> {
-                            _driveEmail.value = result.data
-                            _backupMessage.value = "✓ Connected to Google Drive"
+                if (resultCode == Activity.RESULT_OK && data != null) {
+                    val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+                    val account = task.getResult(ApiException::class.java)
+                    
+                    if (account != null) {
+                        when (val result = driveRepository.signIn()) {
+                            is com.docs.scanner.domain.model.Result.Success -> {
+                                _driveEmail.value = result.data
+                                _backupMessage.value = "✓ Connected to Google Drive"
+                            }
+                            is com.docs.scanner.domain.model.Result.Error -> {
+                                _backupMessage.value = "✗ Connection failed: ${result.exception.message}"
+                            }
+                            else -> {
+                                _backupMessage.value = "✗ Connection failed"
+                            }
                         }
-                        is com.docs.scanner.domain.model.Result.Error -> {
-                            _backupMessage.value = "✗ Connection failed: ${result.exception.message}"
-                        }
-                        else -> {
-                            _backupMessage.value = "✗ Connection failed"
-                        }
+                    } else {
+                        _backupMessage.value = "✗ No account selected"
                     }
                 } else {
                     _backupMessage.value = "Sign in cancelled"
                 }
+            } catch (e: ApiException) {
+                _backupMessage.value = "✗ Sign in failed: ${e.statusCode}"
             } catch (e: Exception) {
                 _backupMessage.value = "✗ Connection failed: ${e.message}"
             }
         }
     }
     
-    // ✅ ИСПРАВЛЕНО: Backup с проверкой подключения
     fun backupToGoogleDrive() {
         viewModelScope.launch {
             _isBackingUp.value = true
             _backupMessage.value = "Backing up..."
             
             try {
-                // Проверяем подключение
                 if (!driveRepository.isSignedIn()) {
                     _backupMessage.value = "✗ Not signed in to Google Drive"
                     _isBackingUp.value = false
@@ -196,14 +227,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    // ✅ ИСПРАВЛЕНО: Restore с проверкой подключения
     fun restoreFromGoogleDrive() {
         viewModelScope.launch {
             _isBackingUp.value = true
             _backupMessage.value = "Fetching backups..."
             
             try {
-                // Проверяем подключение
                 if (!driveRepository.isSignedIn()) {
                     _backupMessage.value = "✗ Not signed in to Google Drive"
                     _isBackingUp.value = false
