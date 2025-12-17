@@ -10,11 +10,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.domain.usecase.*
 import com.docs.scanner.presentation.components.*
@@ -32,10 +34,12 @@ fun RecordsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val folderName by viewModel.folderName.collectAsState()
+    val allFolders by viewModel.allFolders.collectAsState()
     
     var showCreateDialog by remember { mutableStateOf(false) }
     var editingRecord by remember { mutableStateOf<Record?>(null) }
     var showDeleteDialog by remember { mutableStateOf<Record?>(null) }
+    var showMoveDialog by remember { mutableStateOf<Record?>(null) }
     
     LaunchedEffect(folderId) {
         viewModel.loadRecords(folderId)
@@ -132,6 +136,9 @@ fun RecordsScreen(
                         value = name,
                         onValueChange = { name = it },
                         label = { Text("Name") },
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -167,63 +174,104 @@ fun RecordsScreen(
         )
     }
     
-    // Edit menu
+    // ✅ Edit menu (центрированное)
     editingRecord?.let { record ->
         var showMenu by remember { mutableStateOf(true) }
         var showRenameDialog by remember { mutableStateOf(false) }
         
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { 
-                showMenu = false
-                editingRecord = null
-            }
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
-            DropdownMenuItem(
-                text = { Text("Rename") },
-                onClick = { 
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { 
                     showMenu = false
-                    showRenameDialog = true
-                },
-                leadingIcon = {
-                    Icon(Icons.Default.Edit, contentDescription = null)
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("Delete") },
-                onClick = {
-                    showMenu = false
-                    showDeleteDialog = record
                     editingRecord = null
-                },
-                leadingIcon = {
-                    Icon(Icons.Default.Delete, contentDescription = null)
                 }
-            )
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Rename") },
+                    onClick = { 
+                        showMenu = false
+                        showRenameDialog = true
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.Edit, contentDescription = null)
+                    }
+                )
+                
+                // ✅ НОВОЕ: Move to folder
+                DropdownMenuItem(
+                    text = { Text("Move to folder") },
+                    onClick = {
+                        showMenu = false
+                        showMoveDialog = record
+                        editingRecord = null
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.DriveFileMove, contentDescription = null)
+                    }
+                )
+                
+                DropdownMenuItem(
+                    text = { Text("Delete") },
+                    onClick = {
+                        showMenu = false
+                        showDeleteDialog = record
+                        editingRecord = null
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.Delete, contentDescription = null)
+                    }
+                )
+            }
         }
         
+        // ✅ Rename dialog с Description
         if (showRenameDialog) {
             var newName by remember { mutableStateOf(record.name) }
+            var newDescription by remember { mutableStateOf(record.description ?: "") }
             
             AlertDialog(
                 onDismissRequest = { 
                     showRenameDialog = false
                     editingRecord = null
                 },
-                title = { Text("Rename Record") },
+                title = { Text("Edit Record") },
                 text = {
-                    OutlinedTextField(
-                        value = newName,
-                        onValueChange = { newName = it },
-                        label = { Text("Name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Column {
+                        OutlinedTextField(
+                            value = newName,
+                            onValueChange = { newName = it },
+                            label = { Text("Name") },
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = FontWeight.Bold
+                            ),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        OutlinedTextField(
+                            value = newDescription,
+                            onValueChange = { newDescription = it },
+                            label = { Text("Description") },
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 },
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            viewModel.updateRecord(record.copy(name = newName))
+                            viewModel.updateRecord(
+                                record.copy(
+                                    name = newName,
+                                    description = newDescription.ifBlank { null }
+                                )
+                            )
                             showRenameDialog = false
                             editingRecord = null
                         },
@@ -242,6 +290,36 @@ fun RecordsScreen(
                 }
             )
         }
+    }
+    
+    // ✅ Move dialog
+    showMoveDialog?.let { record ->
+        AlertDialog(
+            onDismissRequest = { showMoveDialog = null },
+            title = { Text("Move to folder") },
+            text = {
+                LazyColumn {
+                    items(allFolders.filter { it.id != record.folderId }) { folder ->
+                        ListItem(
+                            headlineContent = { Text(folder.name) },
+                            leadingContent = {
+                                Icon(Icons.Default.Folder, contentDescription = null)
+                            },
+                            modifier = Modifier.clickable {
+                                viewModel.moveRecord(record.id, folder.id)
+                                showMoveDialog = null
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showMoveDialog = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
     
     // Delete confirmation
@@ -317,8 +395,7 @@ private fun RecordCard(
     }
 }
 
-sealed interface RecordsUiState {
-    data object Loading : RecordsUiState
+sealed interface RecordsUiState {data object Loading : RecordsUiState
     data object Empty : RecordsUiState
     data class Success(val records: List<Record>) : RecordsUiState
     data class Error(val message: String) : RecordsUiState
@@ -330,6 +407,7 @@ class RecordsViewModel @Inject constructor(
     private val createRecordUseCase: CreateRecordUseCase,
     private val updateRecordUseCase: UpdateRecordUseCase,
     private val deleteRecordUseCase: DeleteRecordUseCase,
+    private val getFoldersUseCase: GetFoldersUseCase,  // ✅ ДОБАВЛЕНО
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     
@@ -340,6 +418,14 @@ class RecordsViewModel @Inject constructor(
     
     private val _folderName = MutableStateFlow("Records")
     val folderName: StateFlow<String> = _folderName.asStateFlow()
+    
+    // ✅ ДОБАВЛЕНО: Все папки для Move dialog
+    val allFolders: StateFlow<List<Folder>> = getFoldersUseCase()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
     
     fun loadRecords(folderId: Long) {
         viewModelScope.launch {
@@ -376,6 +462,24 @@ class RecordsViewModel @Inject constructor(
     fun deleteRecord(id: Long) {
         viewModelScope.launch {
             deleteRecordUseCase(id)
+        }
+    }
+    
+    // ✅ НОВОЕ: Перемещение записи
+    fun moveRecord(recordId: Long, newFolderId: Long) {
+        viewModelScope.launch {
+            try {
+                // Получаем запись
+                val allRecords = (uiState.value as? RecordsUiState.Success)?.records ?: return@launch
+                val record = allRecords.find { it.id == recordId } ?: return@launch
+                
+                // Обновляем folderId
+                updateRecordUseCase(record.copy(folderId = newFolderId))
+                
+                println("✅ Record moved to folder $newFolderId")
+            } catch (e: Exception) {
+                println("❌ Failed to move record: ${e.message}")
+            }
         }
     }
 }
