@@ -1,7 +1,3 @@
-// =====================================================
-// ИСПРАВЛЕНИЕ: Terms Screen с Date/Time Picker
-// =====================================================
-
 package com.docs.scanner.presentation.screens.terms
 
 import androidx.compose.foundation.clickable
@@ -119,8 +115,9 @@ fun TermsScreen(
     if (showCreateDialog) {
         CreateTermDialog(
             onDismiss = { showCreateDialog = false },
-            onCreate = { title, description, dateTime, reminderMinutes ->
-                viewModel.createTerm(title, description, dateTime, reminderMinutes)
+            onCreate = { title, description, dateTime, _ ->
+                // Умная система напоминаний включена по умолчанию
+                viewModel.createTerm(title, description, dateTime, null)
                 showCreateDialog = false
             }
         )
@@ -151,7 +148,6 @@ private fun CreateTermDialog(
     
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
-    var reminderMinutes by remember { mutableStateOf<Int?>(null) }
     
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.US) }
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.US) }
@@ -177,6 +173,11 @@ private fun CreateTermDialog(
     }
     
     val isDateInPast = finalDateTime < System.currentTimeMillis()
+    
+    // Вычисляем время до термина
+    val timeUntilTerm = finalDateTime - System.currentTimeMillis()
+    val daysUntil = (timeUntilTerm / (1000 * 60 * 60 * 24)).toInt()
+    val hoursUntil = (timeUntilTerm / (1000 * 60 * 60)).toInt() % 24
     
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -232,30 +233,51 @@ private fun CreateTermDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
+                } else if (timeUntilTerm > 0) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "⏰ Time until term: $daysUntil days, $hoursUntil hours",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                Text("Reminder:", style = MaterialTheme.typography.labelMedium)
-                
-                Row {
-                    FilterChip(
-                        selected = reminderMinutes == 15,
-                        onClick = { reminderMinutes = if (reminderMinutes == 15) null else 15 },
-                        label = { Text("15 min") }
+                // Информация об умной системе напоминаний
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    FilterChip(
-                        selected = reminderMinutes == 30,
-                        onClick = { reminderMinutes = if (reminderMinutes == 30) null else 30 },
-                        label = { Text("30 min") }
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    FilterChip(
-                        selected = reminderMinutes == 60,
-                        onClick = { reminderMinutes = if (reminderMinutes == 60) null else 60 },
-                        label = { Text("1 hour") }
-                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Notifications,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Smart Reminders Enabled",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Text(
+                            "• 2-4 days before: Daily reminders\n" +
+                            "• 12-24 hours before: 3 reminders\n" +
+                            "• 5 hours before: Hourly reminders\n" +
+                            "• Last hour: Every 15 minutes",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
                 }
             }
         },
@@ -266,7 +288,7 @@ private fun CreateTermDialog(
                         title,
                         description.ifBlank { null },
                         finalDateTime,
-                        reminderMinutes
+                        null // Умная система включена по умолчанию
                     )
                 },
                 enabled = title.isNotBlank() && !isDateInPast
@@ -306,7 +328,7 @@ private fun CreateTermDialog(
             DatePicker(
                 state = datePickerState,
                 dateValidator = { timestamp ->
-                    timestamp >= System.currentTimeMillis() - 86400000 // Allow today
+                    timestamp >= System.currentTimeMillis() - 86400000
                 }
             )
         }
@@ -364,15 +386,23 @@ private fun TermCard(
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.US) }
     
+    // Вычисляем время до термина
+    val timeUntilTerm = term.dateTime - System.currentTimeMillis()
+    val isOverdue = timeUntilTerm < 0
+    val daysUntil = (timeUntilTerm / (1000 * 60 * 60 * 24)).toInt()
+    val hoursUntil = (timeUntilTerm / (1000 * 60 * 60)).toInt() % 24
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = if (term.isCompleted) {
-            CardDefaults.cardColors(
+        colors = when {
+            term.isCompleted -> CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant
             )
-        } else {
-            CardDefaults.cardColors()
+            isOverdue -> CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer
+            )
+            else -> CardDefaults.cardColors()
         }
     ) {
         Row(
@@ -382,13 +412,17 @@ private fun TermCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                if (term.isCompleted) Icons.Default.CheckCircle else Icons.Default.Event,
+                when {
+                    term.isCompleted -> Icons.Default.CheckCircle
+                    isOverdue -> Icons.Default.Warning
+                    else -> Icons.Default.Event
+                },
                 contentDescription = null,
                 modifier = Modifier.size(40.dp),
-                tint = if (term.isCompleted) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.secondary
+                tint = when {
+                    term.isCompleted -> MaterialTheme.colorScheme.primary
+                    isOverdue -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.secondary
                 }
             )
             
@@ -417,11 +451,28 @@ private fun TermCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
-                if (term.reminderMinutesBefore != null) {
+                if (!term.isCompleted && !isOverdue && timeUntilTerm > 0) {
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Reminder: ${term.reminderMinutesBefore} min before",
+                        text = if (daysUntil > 0) {
+                            "In $daysUntil days, $hoursUntil hours"
+                        } else if (hoursUntil > 0) {
+                            "In $hoursUntil hours"
+                        } else {
+                            val minutesUntil = (timeUntilTerm / (1000 * 60)).toInt()
+                            "In $minutesUntil minutes"
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                
+                if (isOverdue && !term.isCompleted) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "⚠️ OVERDUE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
             }
