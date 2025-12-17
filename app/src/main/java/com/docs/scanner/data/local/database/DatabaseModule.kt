@@ -22,15 +22,17 @@ object DatabaseModule {
     
     private const val DATABASE_NAME = "document_scanner.db"
     
+    // ✅ ИСПРАВЛЕННАЯ МИГРАЦИЯ 1 → 2
     private val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
             try {
+                // Проверяем, существует ли таблица terms
                 val cursor = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='terms'")
                 val tableExists = cursor.moveToFirst()
                 cursor.close()
                 
                 if (!tableExists) {
-                    println("Creating terms table...")
+                    println("✅ Creating terms table...")
                     db.execSQL("""
                         CREATE TABLE IF NOT EXISTS `terms` (
                             `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -42,15 +44,16 @@ object DatabaseModule {
                             `createdAt` INTEGER NOT NULL
                         )
                     """)
-                    println("Terms table created successfully")
+                    println("✅ Terms table created successfully")
                 } else {
-                    println("Terms table already exists, skipping creation")
+                    println("ℹ️ Terms table already exists, skipping creation")
                 }
                 
+                // Валидация структуры БД
                 validateDatabaseStructure(db)
                 
             } catch (e: Exception) {
-                println("Migration error: ${e.message}")
+                println("❌ Migration error: ${e.message}")
                 throw e
             }
         }
@@ -68,11 +71,11 @@ object DatabaseModule {
         
         expectedTables.forEach { table ->
             if (table !in existingTables) {
-                println("WARNING: Expected table '$table' not found in database")
+                println("⚠️ WARNING: Expected table '$table' not found in database")
             }
         }
         
-        println("Database validation complete. Found tables: $existingTables")
+        println("✅ Database validation complete. Found tables: $existingTables")
     }
     
     @Provides
@@ -90,18 +93,18 @@ object DatabaseModule {
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     super.onCreate(db)
-                    println("Database created successfully")
+                    println("✅ Database created successfully")
                 }
                 
                 override fun onOpen(db: SupportSQLiteDatabase) {
                     super.onOpen(db)
-                    println("Database opened successfully")
+                    println("✅ Database opened successfully")
                     db.execSQL("PRAGMA foreign_keys=ON")
                     
                     try {
                         validateDatabaseStructure(db)
                     } catch (e: Exception) {
-                        println("Database validation error: ${e.message}")
+                        println("❌ Database validation error: ${e.message}")
                     }
                 }
             })
