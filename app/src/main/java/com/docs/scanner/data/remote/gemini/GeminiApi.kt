@@ -11,7 +11,8 @@ import retrofit2.http.Query
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private const val GEMINI_MODEL = "gemini-2.0-flash-exp"
+// ✅ ИСПРАВЛЕНО: Gemini 2.5 Flash Lite (PRODUCTION MODEL)
+private const val GEMINI_MODEL = "gemini-2.5-flash-lite"
 private const val MAX_TOKENS = 8192
 private const val TEMPERATURE = 0.7f
 
@@ -20,25 +21,15 @@ data class GeminiRequest(
     val generationConfig: GenerationConfig? = null,
     val safetySettings: List<SafetySetting>? = null
 ) {
-    data class Content(
-        val parts: List<Part>
-    )
-    
-    data class Part(
-        val text: String
-    )
-    
+    data class Content(val parts: List<Part>)
+    data class Part(val text: String)
     data class GenerationConfig(
         val temperature: Float = TEMPERATURE,
         val maxOutputTokens: Int = MAX_TOKENS,
         val topP: Float = 0.95f,
         val topK: Int = 40
     )
-    
-    data class SafetySetting(
-        val category: String,
-        val threshold: String
-    )
+    data class SafetySetting(val category: String, val threshold: String)
 }
 
 data class GeminiResponse(
@@ -47,27 +38,13 @@ data class GeminiResponse(
 ) {
     data class Candidate(
         val content: Content,
-        @SerializedName("safetyRatings")
-        val safetyRatings: List<SafetyRating>,
+        @SerializedName("safetyRatings") val safetyRatings: List<SafetyRating>,
         val finishReason: String?
     )
-    
-    data class Content(
-        val parts: List<Part>
-    )
-    
-    data class Part(
-        val text: String
-    )
-    
-    data class SafetyRating(
-        val category: String,
-        val probability: String
-    )
-    
-    data class PromptFeedback(
-        val blockReason: String?
-    )
+    data class Content(val parts: List<Part>)
+    data class Part(val text: String)
+    data class SafetyRating(val category: String, val probability: String)
+    data class PromptFeedback(val blockReason: String?)
 }
 
 sealed class GeminiResult {
@@ -117,17 +94,9 @@ class GeminiApi @Inject constructor(
     }
     
     suspend fun fixOcrText(text: String, apiKey: String, maxRetries: Int = 3): GeminiResult {
-        if (apiKey.isBlank()) {
-            return GeminiResult.Failed("API key is required")
-        }
-        
-        if (text.isBlank()) {
-            return GeminiResult.Failed("Input text is empty")
-        }
-        
-        if (!isValidApiKey(apiKey)) {
-            return GeminiResult.Failed("Invalid API key format")
-        }
+        if (apiKey.isBlank()) return GeminiResult.Failed("API key is required")
+        if (text.isBlank()) return GeminiResult.Failed("Input text is empty")
+        if (!isValidApiKey(apiKey)) return GeminiResult.Failed("Invalid API key format")
         
         var lastError: Exception? = null
         
@@ -143,15 +112,8 @@ class GeminiApi @Inject constructor(
                 """.trimIndent()
                 
                 val request = GeminiRequest(
-                    contents = listOf(
-                        GeminiRequest.Content(
-                            parts = listOf(GeminiRequest.Part(prompt))
-                        )
-                    ),
-                    generationConfig = GeminiRequest.GenerationConfig(
-                        temperature = 0.3f,
-                        maxOutputTokens = MAX_TOKENS
-                    ),
+                    contents = listOf(GeminiRequest.Content(parts = listOf(GeminiRequest.Part(prompt)))),
+                    generationConfig = GeminiRequest.GenerationConfig(temperature = 0.3f, maxOutputTokens = MAX_TOKENS),
                     safetySettings = createSafetySettings()
                 )
                 
@@ -167,20 +129,13 @@ class GeminiApi @Inject constructor(
                                 return@repeat
                             }
                         }
-                        401, 403 -> {
-                            return GeminiResult.Failed("Invalid API key")
-                        }
-                        else -> {
-                            val errorBody = response.errorBody()?.string()
-                            lastError = Exception("HTTP ${response.code()}: $errorBody")
-                        }
+                        401, 403 -> return GeminiResult.Failed("Invalid API key")
+                        else -> lastError = Exception("HTTP ${response.code()}: ${response.errorBody()?.string()}")
                     }
                 }
             } catch (e: Exception) {
                 lastError = e
-                if (attempt < maxRetries - 1) {
-                    delay(1000L * (attempt + 1))
-                }
+                if (attempt < maxRetries - 1) delay(1000L * (attempt + 1))
             }
         }
         
@@ -188,21 +143,10 @@ class GeminiApi @Inject constructor(
     }
     
     suspend fun translateText(text: String, apiKey: String, maxRetries: Int = 3): GeminiResult {
-        if (apiKey.isBlank()) {
-            return GeminiResult.Failed("API key is required")
-        }
-        
-        if (text.isBlank()) {
-            return GeminiResult.Failed("Input text is empty")
-        }
-        
-        if (!isValidApiKey(apiKey)) {
-            return GeminiResult.Failed("Invalid API key format")
-        }
-        
-        if (text.length > 10000) {
-            return GeminiResult.Failed("Text too long (max 10000 chars)")
-        }
+        if (apiKey.isBlank()) return GeminiResult.Failed("API key is required")
+        if (text.isBlank()) return GeminiResult.Failed("Input text is empty")
+        if (!isValidApiKey(apiKey)) return GeminiResult.Failed("Invalid API key format")
+        if (text.length > 10000) return GeminiResult.Failed("Text too long (max 10000 chars)")
         
         var lastError: Exception? = null
         
@@ -219,15 +163,8 @@ class GeminiApi @Inject constructor(
                 """.trimIndent()
                 
                 val request = GeminiRequest(
-                    contents = listOf(
-                        GeminiRequest.Content(
-                            parts = listOf(GeminiRequest.Part(prompt))
-                        )
-                    ),
-                    generationConfig = GeminiRequest.GenerationConfig(
-                        temperature = TEMPERATURE,
-                        maxOutputTokens = MAX_TOKENS
-                    ),
+                    contents = listOf(GeminiRequest.Content(parts = listOf(GeminiRequest.Part(prompt)))),
+                    generationConfig = GeminiRequest.GenerationConfig(temperature = TEMPERATURE, maxOutputTokens = MAX_TOKENS),
                     safetySettings = createSafetySettings()
                 )
                 
@@ -243,20 +180,13 @@ class GeminiApi @Inject constructor(
                                 return@repeat
                             }
                         }
-                        401, 403 -> {
-                            return GeminiResult.Failed("Invalid API key")
-                        }
-                        else -> {
-                            val errorBody = response.errorBody()?.string()
-                            lastError = Exception("HTTP ${response.code()}: $errorBody")
-                        }
+                        401, 403 -> return GeminiResult.Failed("Invalid API key")
+                        else -> lastError = Exception("HTTP ${response.code()}: ${response.errorBody()?.string()}")
                     }
                 }
             } catch (e: Exception) {
                 lastError = e
-                if (attempt < maxRetries - 1) {
-                    delay(1000L * (attempt + 1))
-                }
+                if (attempt < maxRetries - 1) delay(1000L * (attempt + 1))
             }
         }
         
@@ -265,22 +195,10 @@ class GeminiApi @Inject constructor(
     
     private fun createSafetySettings(): List<GeminiRequest.SafetySetting> {
         return listOf(
-            GeminiRequest.SafetySetting(
-                category = "HARM_CATEGORY_HARASSMENT",
-                threshold = "BLOCK_NONE"
-            ),
-            GeminiRequest.SafetySetting(
-                category = "HARM_CATEGORY_HATE_SPEECH",
-                threshold = "BLOCK_NONE"
-            ),
-            GeminiRequest.SafetySetting(
-                category = "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                threshold = "BLOCK_NONE"
-            ),
-            GeminiRequest.SafetySetting(
-                category = "HARM_CATEGORY_DANGEROUS_CONTENT",
-                threshold = "BLOCK_NONE"
-            )
+            GeminiRequest.SafetySetting("HARM_CATEGORY_HARASSMENT", "BLOCK_NONE"),
+            GeminiRequest.SafetySetting("HARM_CATEGORY_HATE_SPEECH", "BLOCK_NONE"),
+            GeminiRequest.SafetySetting("HARM_CATEGORY_SEXUALLY_EXPLICIT", "BLOCK_NONE"),
+            GeminiRequest.SafetySetting("HARM_CATEGORY_DANGEROUS_CONTENT", "BLOCK_NONE")
         )
     }
     
@@ -311,19 +229,10 @@ class GeminiApi @Inject constructor(
     
     private fun cleanText(text: String): String {
         var cleaned = text.trim()
-        
         cleaned = cleaned.replace(Regex("`{1,3}[\\s\\S]*?`{1,3}"), "")
         cleaned = cleaned.replace(Regex("""["'«»„""]"""), "")
         
-        val prefixes = listOf(
-            "Перевод:",
-            "Translation:",
-            "Исправленный текст:",
-            "Corrected text:",
-            "Here is",
-            "Here's"
-        )
-        
+        val prefixes = listOf("Перевод:", "Translation:", "Исправленный текст:", "Corrected text:", "Here is", "Here's")
         for (prefix in prefixes) {
             if (cleaned.startsWith(prefix, ignoreCase = true)) {
                 cleaned = cleaned.substring(prefix.length).trim()
