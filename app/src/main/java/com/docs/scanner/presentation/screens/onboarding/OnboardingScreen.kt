@@ -1,5 +1,7 @@
 package com.docs.scanner.presentation.screens.onboarding
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -9,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -29,6 +32,7 @@ fun OnboardingScreen(
     viewModel: OnboardingViewModel = hiltViewModel(),
     onComplete: () -> Unit
 ) {
+    val context = LocalContext.current
     val apiKey by viewModel.apiKey.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     
@@ -169,7 +173,13 @@ fun OnboardingScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     TextButton(
-                        onClick = { }
+                        onClick = { 
+                            // ✅ ИСПРАВЛЕНО: Открывает браузер
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                data = Uri.parse("https://aistudio.google.com/app/apikey")
+                            }
+                            context.startActivity(intent)
+                        }
                     ) {
                         Icon(
                             Icons.Default.OpenInNew,
@@ -281,6 +291,3 @@ class OnboardingViewModel @Inject constructor(
         }
     }
 }
-
-// FILE_CONTINUED: Due to length, splitting files into multiple sections...
-// Continue in next message with remaining screens
