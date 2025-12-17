@@ -1,5 +1,7 @@
 package com.docs.scanner.domain.model
 
+import androidx.room.ColumnInfo
+
 data class DocumentWithNames(
     val id: Long,
     val recordId: Long,
@@ -9,6 +11,8 @@ data class DocumentWithNames(
     val position: Int,
     val processingStatus: Int,
     val createdAt: Long,
+    @ColumnInfo(name = "recordName")
     val recordName: String,
+    @ColumnInfo(name = "folderName")
     val folderName: String
 )
