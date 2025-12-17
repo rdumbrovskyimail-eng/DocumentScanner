@@ -161,10 +161,10 @@ fun NavGraph(
             )
         }
         
-        // ✅ НОВЫЙ ЭКРАН: Terms
+        // ✅ ИСПРАВЛЕНО: Terms Screen - используем onNavigateBack вместо onBackClick
         composable(Screen.Terms.route) {
             TermsScreen(
-                onBackClick = {
+                onNavigateBack = {  // ✅ Правильный параметр
                     navController.popBackStack()
                 }
             )
