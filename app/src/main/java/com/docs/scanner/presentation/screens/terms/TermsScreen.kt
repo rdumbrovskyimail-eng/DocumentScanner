@@ -1,8 +1,7 @@
 // =====================================================
-// ИСПРАВЛЕНИЕ 2: Terms Screen - Date/Time Picker
+// ИСПРАВЛЕНИЕ: Terms Screen с Date/Time Picker
 // =====================================================
 
-// File: TermsScreen.kt
 package com.docs.scanner.presentation.screens.terms
 
 import androidx.compose.foundation.clickable
@@ -17,6 +16,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.docs.scanner.data.local.database.entities.TermEntity
+import com.docs.scanner.presentation.components.EmptyState
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -58,7 +59,7 @@ fun TermsScreen(
                 EmptyState(
                     icon = {
                         Icon(
-                            Icons.Default.Alarm,
+                            Icons.Default.Event,
                             contentDescription = null,
                             modifier = Modifier.size(64.dp),
                             tint = MaterialTheme.colorScheme.primary
@@ -381,7 +382,7 @@ private fun TermCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                if (term.isCompleted) Icons.Default.CheckCircle else Icons.Default.Alarm,
+                if (term.isCompleted) Icons.Default.CheckCircle else Icons.Default.Event,
                 contentDescription = null,
                 modifier = Modifier.size(40.dp),
                 tint = if (term.isCompleted) {
