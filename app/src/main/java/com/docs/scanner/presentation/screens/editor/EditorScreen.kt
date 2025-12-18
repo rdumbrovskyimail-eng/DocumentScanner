@@ -47,7 +47,6 @@ fun EditorScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val record by viewModel.record.collectAsState()
-    // Предполагаем, что имя папки берется из viewModel или состояния
     val folderName by viewModel.folderName.collectAsState(initial = null) 
     
     val context = LocalContext.current
@@ -71,7 +70,6 @@ fun EditorScreen(
             TopAppBar(
                 title = {
                     Column {
-                        // ✅ ПАПКА СВЕРХУ (мелким текстом)
                         folderName?.let {
                             Text(
                                 text = it,
@@ -80,7 +78,6 @@ fun EditorScreen(
                             )
                         }
                         
-                        // ✅ ИМЯ ЗАПИСИ (жирным)
                         Text(
                             text = record?.name ?: "Loading...",
                             style = MaterialTheme.typography.titleLarge,
@@ -89,7 +86,6 @@ fun EditorScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         
-                        // ✅ ОПИСАНИЕ (обычным)
                         if (record?.description != null) {
                             Text(
                                 text = record!!.description!!,
@@ -204,7 +200,6 @@ fun EditorScreen(
         }
     }
     
-    // ... остальной код (диалоги и вспомогательные функции) остается прежним
     if (showEditNameDialog && record != null) {
         var newName by remember { mutableStateOf(record!!.name) }
         
@@ -239,7 +234,217 @@ fun EditorScreen(
         )
     }
 
-    // Сократил для краткости ответа, остальная логика из вашего исходника сохранена
+    editingDocument?.let { doc ->
+        FullscreenTextEditor(
+            initialText = doc.originalText ?: "",
+            onDismiss = { editingDocument = null },
+            onSave = { newText ->
+                viewModel.updateOriginalText(doc.id, newText)
+                editingDocument = null
+            }
+        )
+    }
 }
 
-// Вставьте здесь DocumentItemCard, ActionButton и другие приватные методы из вашего исходного кода
+@Composable
+private fun DocumentItemCard(
+    document: Document,
+    onImageClick: () -> Unit,
+    onOriginalTextClick: () -> Unit,
+    onGptOriginalClick: () -> Unit,
+    onCopyOriginal: () -> Unit,
+    onPasteOriginal: () -> Unit,
+    onGptTranslationClick: () -> Unit,
+    onRetryOcr: () -> Unit,
+    onRetryTranslation: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(File(LocalContext.current.filesDir, document.imagePath))
+                    .crossfade(true)
+                    .build(),
+                contentDescription = "Document",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onImageClick),
+                contentScale = ContentScale.Crop
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Text(
+                text = "Original Text",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            if (document.processingStatus == ProcessingStatus.OCR_IN_PROGRESS) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Processing...", style = MaterialTheme.typography.bodySmall)
+                }
+            } else if (document.originalText.isNullOrBlank()) {
+                Text(
+                    text = "No text detected",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                ActionButton(
+                    icon = Icons.Default.Refresh,
+                    label = "Retry OCR",
+                    onClick = onRetryOcr
+                )
+            } else {
+                Text(
+                    text = document.originalText ?: "",
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable(onClick = onOriginalTextClick)
+                )
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ActionButton(
+                        icon = Icons.Default.Edit,
+                        label = "Edit",
+                        onClick = onOriginalTextClick
+                    )
+                    ActionButton(
+                        icon = Icons.Default.SmartToy,
+                        label = "GPT",
+                        onClick = onGptOriginalClick
+                    )
+                    ActionButton(
+                        icon = Icons.Default.ContentCopy,
+                        label = "Copy",
+                        onClick = onCopyOriginal
+                    )
+                    ActionButton(
+                        icon = Icons.Default.ContentPaste,
+                        label = "Paste",
+                        onClick = onPasteOriginal
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Text(
+                text = "Translation",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            when {
+                document.processingStatus == ProcessingStatus.TRANSLATION_IN_PROGRESS -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Translating...", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                document.translatedText.isNullOrBlank() -> {
+                    Text(
+                        text = "Translation failed",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    ActionButton(
+                        icon = Icons.Default.Refresh,
+                        label = "Retry",
+                        onClick = onRetryTranslation
+                    )
+                }
+                else -> {
+                    Text(
+                        text = document.translatedText ?: "",
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    
+                    ActionButton(
+                        icon = Icons.Default.SmartToy,
+                        label = "GPT",
+                        onClick = onGptTranslationClick
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            TextButton(
+                onClick = onDelete,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = null)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Delete")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActionButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.height(36.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+private fun openGptWithPrompt(context: Context, text: String, isTranslation: Boolean) {
+    val prompt = if (isTranslation) {
+        "Improve this translation:\n\n$text"
+    } else {
+        "Correct this OCR text:\n\n$text"
+    }
+    
+    val encodedPrompt = java.net.URLEncoder.encode(prompt, "UTF-8")
+    val uri = Uri.parse("https://chatgpt.com/?q=$encodedPrompt")
+    
+    val intent = Intent(Intent.ACTION_VIEW, uri)
+    context.startActivity(intent)
+}
+
+private fun copyToClipboard(context: Context, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clip = ClipData.newPlainText("Document text", text)
+    clipboard.setPrimaryClip(clip)
+}
+
+private fun getClipboardText(context: Context): String? {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    return clipboard.primaryClip?.getItemAt(0)?.text?.toString()
+}
