@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.docs.scanner.domain.model.Document
+// Ключевой импорт, которого не хватало:
 import com.docs.scanner.presentation.screens.editor.EditorEvent
 
 @Composable
@@ -35,7 +36,6 @@ fun DocumentCard(
         border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Имя документа жирным
             Text(
                 text = "Документ #${document.id}",
                 style = MaterialTheme.typography.titleMedium.copy(
@@ -44,14 +44,13 @@ fun DocumentCard(
                 )
             )
             Text(
-                text = "Дата: ${document.createdAt}",
+                text = "Создан: ${document.createdAt}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Ряд: Картинка (35%) | Текст (65%)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -78,11 +77,14 @@ fun DocumentCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
                     ) {
-                        // Важно: используем параметры, которые ожидает ваш EditorEvent
-                        IconButton(onClick = { onEvent(EditorEvent.OpenTextEditor(document.originalText ?: "", true)) }) {
+                        IconButton(onClick = { 
+                            onEvent(EditorEvent.OpenTextEditor(document.originalText ?: "", true)) 
+                        }) {
                             Icon(Icons.Default.Edit, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                         }
-                        IconButton(onClick = { onEvent(EditorEvent.CopyText(document.originalText ?: "")) }) {
+                        IconButton(onClick = { 
+                            onEvent(EditorEvent.CopyText(document.originalText ?: "")) 
+                        }) {
                             Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(20.dp))
                         }
                     }
@@ -91,7 +93,6 @@ fun DocumentCard(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), thickness = 0.5.dp)
 
-            // Перевод
             Text(
                 text = "ПЕРЕВОД",
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
@@ -105,7 +106,6 @@ fun DocumentCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Кнопки внизу
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
