@@ -19,7 +19,7 @@ import com.docs.scanner.presentation.components.FullscreenTextEditor
 @Composable
 fun EditorScreen(
     recordId: Long,
-    onNavigateBack: () -> Unit,
+    onNavigateBack: () -> Unit, // Оставляем это имя, оно стандартное
     viewModel: EditorViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -31,16 +31,16 @@ fun EditorScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Документы записи", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Редактор") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.Default.ArrowBack, null)
                     }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { /* Вызов камеры/галереи */ }) {
+            FloatingActionButton(onClick = { viewModel.onEvent(EditorEvent.AddDocument) }) {
                 Icon(Icons.Default.AddAPhoto, null)
             }
         }
@@ -60,17 +60,16 @@ fun EditorScreen(
                     }
                 }
             }
-            is EditorUiState.Error -> { /* Компонент ошибки */ }
             else -> {}
         }
     }
 
-    // Если открыт полноэкранный редактор (логика должна быть в EditorViewModel)
+    // Проверка состояний редактора из ViewModel
     if (viewModel.isTextEditorOpen) {
         FullscreenTextEditor(
             initialText = viewModel.editingText,
-            onDismiss = { viewModel.closeTextEditor() },
-            onSave = { newText -> viewModel.saveEditedText(newText) }
+            onDismiss = { viewModel.onEvent(EditorEvent.CloseTextEditor) },
+            onSave = { newText -> viewModel.onEvent(EditorEvent.SaveEditedText(newText)) }
         )
     }
 }
