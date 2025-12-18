@@ -35,7 +35,6 @@ fun DocumentCard(
         border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // ШАПКА: Жирное название и дата
             Text(
                 text = "Страница ${document.id}",
                 style = MaterialTheme.typography.titleMedium.copy(
@@ -51,7 +50,6 @@ fun DocumentCard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // СРЕДНИЙ БЛОК: Фото (35%) и Оригинал (65%)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -60,30 +58,34 @@ fun DocumentCard(
                     model = document.imagePath,
                     contentDescription = null,
                     modifier = Modifier
-                        .weight(0.35f) // Ровно 35% ширины
+                        .weight(0.35f)
                         .aspectRatio(3f / 4f)
                         .clip(RoundedCornerShape(8.dp)),
                     contentScale = ContentScale.Crop
                 )
 
                 Column(modifier = Modifier.weight(0.65f)) {
+                    // Используем .orEmpty() для обработки null
                     Text(
-                        text = document.originalText.ifEmpty { "Распознавание..." },
+                        text = document.originalText.orEmpty().ifEmpty { "Распознавание..." },
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 6,
                         overflow = TextOverflow.Ellipsis,
                         lineHeight = 18.sp
                     )
                     
-                    // Кнопки справа под оригиналом
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
                     ) {
-                        IconButton(onClick = { onEvent(EditorEvent.OpenTextEditor(document.originalText, isOriginal = true)) }) {
+                        IconButton(onClick = { 
+                            onEvent(EditorEvent.OpenTextEditor(document.originalText.orEmpty(), true)) 
+                        }) {
                             Icon(Icons.Default.Edit, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                         }
-                        IconButton(onClick = { onEvent(EditorEvent.CopyText(document.originalText)) }) {
+                        IconButton(onClick = { 
+                            onEvent(EditorEvent.CopyText(document.originalText.orEmpty())) 
+                        }) {
                             Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(20.dp))
                         }
                     }
@@ -92,21 +94,19 @@ fun DocumentCard(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), thickness = 0.5.dp)
 
-            // НИЖНИЙ БЛОК: Перевод на всю ширину
             Text(
                 text = "ПЕРЕВОД",
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.primary
             )
             Text(
-                text = document.translatedText.ifEmpty { "Перевод выполняется..." },
+                text = document.translatedText.orEmpty().ifEmpty { "Перевод выполняется..." },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 style = MaterialTheme.typography.bodyMedium
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Кнопки внизу (50/50 по ширине)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
