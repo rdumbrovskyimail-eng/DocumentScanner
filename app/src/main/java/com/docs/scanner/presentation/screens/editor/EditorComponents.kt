@@ -35,21 +35,23 @@ fun DocumentCard(
         border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            // Имя документа жирным
             Text(
-                text = "Страница ${document.id}",
+                text = "Документ #${document.id}",
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 18.sp
                 )
             )
             Text(
-                text = "Обработано: ${document.createdAt}",
+                text = "Дата: ${document.createdAt}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Ряд: Картинка (35%) | Текст (65%)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -65,27 +67,22 @@ fun DocumentCard(
                 )
 
                 Column(modifier = Modifier.weight(0.65f)) {
-                    // Используем .orEmpty() для обработки null
                     Text(
-                        text = document.originalText.orEmpty().ifEmpty { "Распознавание..." },
+                        text = document.originalText ?: "",
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 6,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 18.sp
+                        overflow = TextOverflow.Ellipsis
                     )
                     
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
                     ) {
-                        IconButton(onClick = { 
-                            onEvent(EditorEvent.OpenTextEditor(document.originalText.orEmpty(), true)) 
-                        }) {
+                        // Важно: используем параметры, которые ожидает ваш EditorEvent
+                        IconButton(onClick = { onEvent(EditorEvent.OpenTextEditor(document.originalText ?: "", true)) }) {
                             Icon(Icons.Default.Edit, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                         }
-                        IconButton(onClick = { 
-                            onEvent(EditorEvent.CopyText(document.originalText.orEmpty())) 
-                        }) {
+                        IconButton(onClick = { onEvent(EditorEvent.CopyText(document.originalText ?: "")) }) {
                             Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(20.dp))
                         }
                     }
@@ -94,19 +91,21 @@ fun DocumentCard(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), thickness = 0.5.dp)
 
+            // Перевод
             Text(
                 text = "ПЕРЕВОД",
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.primary
             )
             Text(
-                text = document.translatedText.orEmpty().ifEmpty { "Перевод выполняется..." },
+                text = document.translatedText ?: "",
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 style = MaterialTheme.typography.bodyMedium
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // Кнопки внизу
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -117,7 +116,7 @@ fun DocumentCard(
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Icon(Icons.Default.AutoFixHigh, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text("Исправить AI", fontSize = 12.sp)
                 }
                 OutlinedButton(
@@ -126,7 +125,7 @@ fun DocumentCard(
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text("Поделиться", fontSize = 12.sp)
                 }
             }
