@@ -19,7 +19,10 @@ import com.docs.scanner.presentation.components.FullscreenTextEditor
 @Composable
 fun EditorScreen(
     recordId: Long,
-    onNavigateBack: () -> Unit, // Оставляем это имя, оно стандартное
+    onNavigateBack: () -> Unit,
+    // Эти параметры нужны для совместимости с вашим NavGraph.kt
+    onBackClick: () -> Unit = onNavigateBack,
+    onImageClick: (String) -> Unit = {},
     viewModel: EditorViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -31,10 +34,10 @@ fun EditorScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Редактор") },
+                title = { Text("Редактор записи") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, null)
+                    IconButton(onClick = onBackClick) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
                     }
                 }
             )
@@ -55,7 +58,7 @@ fun EditorScreen(
                     items(state.documents, key = { it.id }) { doc ->
                         DocumentCard(
                             document = doc,
-                            onEvent = viewModel::onEvent
+                            onEvent = { event -> viewModel.onEvent(event) }
                         )
                     }
                 }
@@ -64,7 +67,7 @@ fun EditorScreen(
         }
     }
 
-    // Проверка состояний редактора из ViewModel
+    // Проверка состояния редактора (используем свойства из EditorViewModel)
     if (viewModel.isTextEditorOpen) {
         FullscreenTextEditor(
             initialText = viewModel.editingText,
