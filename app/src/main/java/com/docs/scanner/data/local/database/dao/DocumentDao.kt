@@ -2,7 +2,7 @@ package com.docs.scanner.data.local.database.dao
 
 import androidx.room.*
 import com.docs.scanner.data.local.database.entities.DocumentEntity
-import com.docs.scanner.domain.model.DocumentWithNames  // ✅ ДОБАВЬТЕ ЭТОТ ИМПОРТ
+import com.docs.scanner.domain.model.DocumentWithNames
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -16,14 +16,57 @@ interface DocumentDao {
     @Query("SELECT * FROM documents WHERE id = :documentId")
     fun getDocumentByIdFlow(documentId: Long): Flow<DocumentEntity?>
     
+    // ============================================
+    // ✅ FTS5 SEARCH (Super fast!)
+    // ============================================
+    
     @Query("""
-        SELECT * FROM documents 
-        WHERE originalText LIKE '%' || :query || '%' 
-        OR translatedText LIKE '%' || :query || '%'
-        ORDER BY createdAt DESC
+        SELECT 
+            d.id,
+            d.recordId,
+            d.imagePath,
+            d.originalText,
+            d.translatedText,
+            d.position,
+            d.processingStatus,
+            d.createdAt,
+            r.name as recordName,
+            f.name as folderName
+        FROM documents_fts fts
+        INNER JOIN documents d ON fts.rowid = d.id
+        INNER JOIN records r ON d.recordId = r.id
+        INNER JOIN folders f ON r.folderId = f.id
+        WHERE documents_fts MATCH :query
+        ORDER BY rank
         LIMIT 50
     """)
-    fun searchEverywhere(query: String): Flow<List<DocumentEntity>>
+    fun searchEverywhereWithFTS(query: String): Flow<List<DocumentWithNames>>
+    
+    // ============================================
+    // Fallback: Old search (without FTS5)
+    // ============================================
+    
+    @Query("""
+        SELECT 
+            d.id,
+            d.recordId,
+            d.imagePath,
+            d.originalText,
+            d.translatedText,
+            d.position,
+            d.processingStatus,
+            d.createdAt,
+            r.name as recordName,
+            f.name as folderName
+        FROM documents d
+        INNER JOIN records r ON d.recordId = r.id
+        INNER JOIN folders f ON r.folderId = f.id
+        WHERE (d.originalText IS NOT NULL AND LOWER(d.originalText) LIKE LOWER('%' || :query || '%'))
+        OR (d.translatedText IS NOT NULL AND LOWER(d.translatedText) LIKE LOWER('%' || :query || '%'))
+        ORDER BY d.createdAt DESC
+        LIMIT 50
+    """)
+    fun searchEverywhereWithNames(query: String): Flow<List<DocumentWithNames>>
     
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDocument(document: DocumentEntity): Long
@@ -63,26 +106,4 @@ interface DocumentDao {
     
     @Query("SELECT * FROM documents WHERE processingStatus = :status ORDER BY createdAt DESC")
     fun getDocumentsByStatus(status: Int): Flow<List<DocumentEntity>>
-
-    @Query("""
-        SELECT 
-            d.id,
-            d.recordId,
-            d.imagePath,
-            d.originalText,
-            d.translatedText,
-            d.position,
-            d.processingStatus,
-            d.createdAt,
-            r.name as recordName,
-            f.name as folderName
-        FROM documents d
-        INNER JOIN records r ON d.recordId = r.id
-        INNER JOIN folders f ON r.folderId = f.id
-        WHERE (d.originalText IS NOT NULL AND LOWER(d.originalText) LIKE LOWER('%' || :query || '%'))
-        OR (d.translatedText IS NOT NULL AND LOWER(d.translatedText) LIKE LOWER('%' || :query || '%'))
-        ORDER BY d.createdAt DESC
-        LIMIT 50
-    """)
-    fun searchEverywhereWithNames(query: String): Flow<List<DocumentWithNames>>
 }
