@@ -4,31 +4,39 @@ import android.content.Context
 import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
+ * ✅ ИСПРАВЛЕНО: Добавлено управление lifecycle и освобождение ресурсов
+ * 
  * ML Kit OCR Scanner с поддержкой ВСЕХ языков
+ * - Латиница (English, German, Polish, French, Spanish...)
+ * - Кириллица (Russian, Ukrainian, Serbian, Bulgarian...)
+ * - Китайский, Японский, Корейский
+ * - Деvanagari, Арабская вязь
  * 
- * ChineseTextRecognizerOptions - универсальный распознаватель:
- * ✅ Латиница (English, German, Polish, French, Spanish...)
- * ✅ Кириллица (Russian, Ukrainian, Serbian, Bulgarian...)
- * ✅ Китайский (Simplified, Traditional)
- * ✅ Японский (Hiragana, Katakana, Kanji)
- * ✅ Корейский (Hangul)
- * ✅ Деvanagari (Hindi, Marathi...)
- * ✅ Арабская вязь
- * 
- * ВАЖНО: Model весит ~10MB, скачивается автоматически при первом использовании
+ * Model: ~10MB, скачивается автоматически при первом использовании
  */
+@Singleton
 class MLKitScanner @Inject constructor(
     private val context: Context
 ) {
     
-    private val recognizer = TextRecognition.getClient(
-        ChineseTextRecognizerOptions.Builder().build()
-    )
+    // ✅ ИСПРАВЛЕНО: Lazy инициализация + volatile для thread-safety
+    @Volatile
+    private var recognizer: TextRecognizer? = null
+    
+    private fun getRecognizer(): TextRecognizer {
+        return recognizer ?: synchronized(this) {
+            recognizer ?: TextRecognition.getClient(
+                ChineseTextRecognizerOptions.Builder().build()
+            ).also { recognizer = it }
+        }
+    }
     
     /**
      * Сканирует изображение и извлекает текст
@@ -39,7 +47,7 @@ class MLKitScanner @Inject constructor(
     suspend fun scanImage(imageUri: Uri): com.docs.scanner.domain.model.Result<String> {
         return try {
             val image = InputImage.fromFilePath(context, imageUri)
-            val visionText = recognizer.process(image).await()
+            val visionText = getRecognizer().process(image).await()
             val extractedText = visionText.text.trim()
             
             if (extractedText.isEmpty()) {
@@ -65,7 +73,7 @@ class MLKitScanner @Inject constructor(
     suspend fun scanImageDetailed(imageUri: Uri): com.docs.scanner.domain.model.Result<List<TextBlock>> {
         return try {
             val image = InputImage.fromFilePath(context, imageUri)
-            val visionText = recognizer.process(image).await()
+            val visionText = getRecognizer().process(image).await()
             
             val blocks = visionText.textBlocks.map { block ->
                 TextBlock(
@@ -90,8 +98,23 @@ class MLKitScanner @Inject constructor(
         }
     }
     
+    /**
+     * ✅ ИСПРАВЛЕНО: Освобождает ресурсы (~10MB)
+     * Вызывается автоматически при уничтожении Singleton
+     */
     fun close() {
-        recognizer.close()
+        recognizer?.close()
+        recognizer = null
+        println("✅ MLKitScanner: Resources released (~10MB)")
+    }
+    
+    /**
+     * ✅ ДОБАВЛЕНО: Принудительная переинициализация
+     * Используется если ML Kit модель повреждена
+     */
+    fun reinitialize() {
+        close()
+        println("♻️ MLKitScanner: Reinitializing...")
     }
     
     data class TextBlock(
@@ -99,4 +122,9 @@ class MLKitScanner @Inject constructor(
         val lines: Int,
         val boundingBox: android.graphics.Rect?
     )
+    
+    // ✅ ДОБАВЛЕНО: Cleanup при уничтожении приложения
+    protected fun finalize() {
+        close()
+    }
 }
