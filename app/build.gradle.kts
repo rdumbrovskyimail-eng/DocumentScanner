@@ -111,6 +111,9 @@ dependencies {
 
     implementation(libs.play.services.auth)
     
+    // ✅ ДОБАВЛЕНА ЗАВИСИМОСТЬ для security
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    
     implementation("com.google.http-client:google-http-client-android:1.44.1") {
         exclude(group = "org.apache.httpcomponents")
     }
