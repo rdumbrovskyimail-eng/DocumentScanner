@@ -3,30 +3,24 @@ package com.docs.scanner.data.remote.gemini
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import retrofit2.Response
 import java.util.concurrent.ConcurrentLinkedQueue
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.pow
 
 /**
- * ✅ ИСПРАВЛЕНО: Sliding Window Rate Limiting + Exponential Backoff
- * - 15 запросов в минуту (точный контроль)
- * - Exponential backoff при 429 ошибке
+ * ✅ Gemini 2.0 Flash Exp (2.5 Flash Lite) API Wrapper
+ * - Sliding Window Rate Limiting (15 RPM)
+ * - Exponential Backoff для 429 ошибок
  * - Thread-safe реализация
  */
 @Singleton
 class GeminiApi @Inject constructor(
     private val api: GeminiApiService
 ) {
-    // ✅ ИСПРАВЛЕНО: Sliding Window вместо Fixed Window
     private val requestTimestamps = ConcurrentLinkedQueue<Long>()
     private val rateLimitMutex = Mutex()
     
-    /**
-     * ✅ ИСПРАВЛЕНО: Точный Sliding Window Rate Limiting
-     * Отслеживает временные метки последних 15 запросов
-     */
     private suspend fun checkRateLimit() {
         rateLimitMutex.withLock {
             val now = System.currentTimeMillis()
@@ -41,34 +35,26 @@ class GeminiApi @Inject constructor(
                 }
             }
             
-            // Если лимит достигнут, ждём освобождения слота
+            // Если лимит достигнут, ждём
             if (requestTimestamps.size >= MAX_REQUESTS_PER_MINUTE) {
                 val oldestRequest = requestTimestamps.peek()!!
                 val waitTime = RATE_LIMIT_WINDOW_MS - (now - oldestRequest)
                 
                 if (waitTime > 0) {
                     println("⏳ Rate limit reached. Waiting ${waitTime}ms...")
-                    delay(waitTime + 100)  // +100ms buffer
-                    
-                    // Рекурсивная проверка после ожидания
+                    delay(waitTime + 100)
                     return checkRateLimit()
                 }
             }
             
-            // Добавляем текущий запрос
             requestTimestamps.add(now)
         }
     }
     
-    /**
-     * ✅ ИСПРАВЛЕНО: Exponential Backoff с максимальной задержкой
-     */
     private suspend fun exponentialBackoff(attempt: Int): Long {
-        val baseDelay = 1000L  // 1 секунда
-        val maxDelay = 32000L  // 32 секунды
+        val baseDelay = 1000L
+        val maxDelay = 32000L
         val delay = (baseDelay * 2.0.pow(attempt)).toLong().coerceAtMost(maxDelay)
-        
-        // Добавляем jitter (±20%)
         val jitter = (delay * 0.2 * (Math.random() - 0.5)).toLong()
         val finalDelay = delay + jitter
         
@@ -98,7 +84,10 @@ class GeminiApi @Inject constructor(
                 
                 val request = GeminiRequest(
                     contents = listOf(GeminiRequest.Content(parts = listOf(GeminiRequest.Part(prompt)))),
-                    generationConfig = GeminiRequest.GenerationConfig(temperature = 0.3f, maxOutputTokens = MAX_TOKENS),
+                    generationConfig = GeminiRequest.GenerationConfig(
+                        temperature = 0.3f,
+                        maxOutputTokens = MAX_TOKENS
+                    ),
                     safetySettings = createSafetySettings()
                 )
                 
@@ -152,7 +141,10 @@ class GeminiApi @Inject constructor(
                 
                 val request = GeminiRequest(
                     contents = listOf(GeminiRequest.Content(parts = listOf(GeminiRequest.Part(prompt)))),
-                    generationConfig = GeminiRequest.GenerationConfig(temperature = TEMPERATURE, maxOutputTokens = MAX_TOKENS),
+                    generationConfig = GeminiRequest.GenerationConfig(
+                        temperature = TEMPERATURE,
+                        maxOutputTokens = MAX_TOKENS
+                    ),
                     safetySettings = createSafetySettings()
                 )
                 
@@ -242,7 +234,8 @@ class GeminiApi @Inject constructor(
     }
     
     companion object {
-        private const val GEMINI_MODEL = "gemini-2.5-flash-lite"
+        // ✅ Правильное название модели в API для Gemini 2.5 Flash Lite
+        private const val GEMINI_MODEL = "gemini-2.0-flash-exp"
         private const val MAX_TOKENS = 8192
         private const val TEMPERATURE = 0.7f
         private const val MAX_REQUESTS_PER_MINUTE = 15
