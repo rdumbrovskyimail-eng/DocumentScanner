@@ -12,10 +12,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -104,7 +102,8 @@ private fun PrimaryFab(
             ),
         contentAlignment = Alignment.Center
     ) {
-        androidx.compose.material3.LocalContentColor.provides(Color.White) {
+        // ✅ ИСПРАВЛЕНО: правильное использование CompositionLocalProvider
+        CompositionLocalProvider(LocalContentColor provides Color.White) {
             icon()
         }
     }
@@ -150,7 +149,8 @@ private fun SecondaryFab(
             ),
         contentAlignment = Alignment.Center
     ) {
-        androidx.compose.material3.LocalContentColor.provides(GoogleDocsPrimary) {
+        // ✅ ИСПРАВЛЕНО: правильное использование CompositionLocalProvider
+        CompositionLocalProvider(LocalContentColor provides GoogleDocsPrimary) {
             icon()
         }
     }
