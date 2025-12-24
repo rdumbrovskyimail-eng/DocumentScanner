@@ -17,33 +17,7 @@ interface DocumentDao {
     fun getDocumentByIdFlow(documentId: Long): Flow<DocumentEntity?>
     
     // ============================================
-    // ✅ FTS5 SEARCH (Super fast!)
-    // ============================================
-    
-    @Query("""
-        SELECT 
-            d.id,
-            d.recordId,
-            d.imagePath,
-            d.originalText,
-            d.translatedText,
-            d.position,
-            d.processingStatus,
-            d.createdAt,
-            r.name as recordName,
-            f.name as folderName
-        FROM documents_fts fts
-        INNER JOIN documents d ON fts.rowid = d.id
-        INNER JOIN records r ON d.recordId = r.id
-        INNER JOIN folders f ON r.folderId = f.id
-        WHERE documents_fts MATCH :query
-        ORDER BY rank
-        LIMIT 50
-    """)
-    fun searchEverywhereWithFTS(query: String): Flow<List<DocumentWithNames>>
-    
-    // ============================================
-    // Fallback: Old search (without FTS5)
+    // ✅ ОСНОВНОЙ ПОИСК (без FTS)
     // ============================================
     
     @Query("""
