@@ -17,16 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.docs.scanner.domain.repository.DocumentRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
-import javax.inject.Inject
 
-@OptIn(FlowPreview::class)
 @Composable
 fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
@@ -176,7 +167,6 @@ private fun SearchResultCard(
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            // ✅ ПРАВИЛЬНАЯ ИЕРАРХИЯ: Папка › Запись
             Text(
                 text = "${result.folderName} › ${result.recordName}",
                 style = MaterialTheme.typography.labelSmall,
@@ -185,7 +175,6 @@ private fun SearchResultCard(
             
             Spacer(modifier = Modifier.height(8.dp))
             
-            // ✅ ПОДСВЕТКА с поддержкой кириллицы
             Text(
                 text = buildAnnotatedString {
                     val text = result.matchedText
@@ -200,12 +189,10 @@ private fun SearchResultCard(
                             
                             var lastIndex = 0
                             matches.forEach { match ->
-                                // Текст до совпадения
                                 if (match.range.first > lastIndex) {
                                     append(text.substring(lastIndex, match.range.first))
                                 }
                                 
-                                // Подсвеченное совпадение
                                 withStyle(SpanStyle(background = Color.Yellow)) {
                                     append(text.substring(match.range.first, match.range.last + 1))
                                 }
@@ -213,12 +200,10 @@ private fun SearchResultCard(
                                 lastIndex = match.range.last + 1
                             }
                             
-                            // Оставшийся текст
                             if (lastIndex < text.length) {
                                 append(text.substring(lastIndex))
                             }
                         } catch (e: Exception) {
-                            // Fallback: просто показываем текст без подсветки
                             append(text)
                         }
                     }
@@ -235,107 +220,6 @@ private fun SearchResultCard(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
-    }
-}
-
-data class SearchResult(
-    val documentId: Long,
-    val recordId: Long,
-    val recordName: String,  // ✅ Реальное имя записи
-    val folderName: String,  // ✅ Реальное имя папки
-    val matchedText: String,
-    val isOriginal: Boolean
-)
-
-@OptIn(FlowPreview::class)
-@HiltViewModel
-class SearchViewModel @Inject constructor(
-    private val documentRepository: DocumentRepository
-) : ViewModel() {
-    
-    private val _searchQuery = MutableStateFlow("")
-    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
-    
-    private val _searchResults = MutableStateFlow<List<SearchResult>>(emptyList())
-    val searchResults: StateFlow<List<SearchResult>> = _searchResults.asStateFlow()
-    
-    private val _isSearching = MutableStateFlow(false)
-    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
-    
-    private val searchCache = mutableMapOf<String, List<SearchResult>>()
-    private val maxCacheSize = 20
-    
-    init {
-        viewModelScope.launch {
-            _searchQuery
-                .debounce(300)
-                .distinctUntilChanged()
-                .collectLatest { query ->
-                    performSearch(query)
-                }
-        }
-    }
-    
-    fun onSearchQueryChange(query: String) {
-        _searchQuery.value = query
-    }
-    
-    private suspend fun performSearch(query: String) {
-        if (query.isBlank()) {
-            _searchResults.value = emptyList()
-            _isSearching.value = false
-            return
-        }
-        
-        if (query.length < 2) {
-            _searchResults.value = emptyList()
-            _isSearching.value = false
-            return
-        }
-        
-        val cached = searchCache[query.lowercase()]
-        if (cached != null) {
-            _searchResults.value = cached
-            return
-        }
-        
-        _isSearching.value = true
-        
-        try {
-            println("🔍 Searching for: '$query'")
-            
-            documentRepository.searchEverywhereWithNames(query)
-                .catch { e ->
-                    println("❌ Search error: ${e.message}")
-                    _searchResults.value = emptyList()
-                }
-                .collect { documents ->
-                    println("✅ Found ${documents.size} documents")
-                    
-                    val results = documents.take(50).map { doc ->
-                        SearchResult(
-                            documentId = doc.id,
-                            recordId = doc.recordId,
-                            recordName = doc.recordName,  // ✅ Реальное имя
-                            folderName = doc.folderName,  // ✅ Реальное имя
-                            matchedText = doc.originalText ?: doc.translatedText ?: "",
-                            isOriginal = doc.originalText?.contains(query, ignoreCase = true) == true
-                        )
-                    }
-                    
-                    _searchResults.value = results
-                    
-                    if (searchCache.size >= maxCacheSize) {
-                        searchCache.remove(searchCache.keys.first())
-                    }
-                    searchCache[query.lowercase()] = results
-                }
-        } catch (e: Exception) {
-            println("❌ Search error: ${e.message}")
-            _searchResults.value = emptyList()
-        } finally {
-            _isSearching.value = false
         }
     }
 }
