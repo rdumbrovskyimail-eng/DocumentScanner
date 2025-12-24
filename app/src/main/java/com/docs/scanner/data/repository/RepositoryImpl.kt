@@ -187,7 +187,7 @@ class RecordRepositoryImpl @Inject constructor(
 }
 
 // ============================================
-// DocumentRepositoryImpl (без изменений)
+// ✅ ИСПРАВЛЕНО: DocumentRepositoryImpl
 // ============================================
 
 class DocumentRepositoryImpl @Inject constructor(
@@ -260,6 +260,7 @@ class DocumentRepositoryImpl @Inject constructor(
         }
     }
 
+    // ✅ ИСПРАВЛЕНО: убран лишний параметр query
     override fun searchEverywhereWithNames(query: String): Flow<List<DocumentWithNames>> {
         return documentDao.searchEverywhereWithNames(query)
     }
