@@ -19,21 +19,10 @@ import java.io.FileOutputStream
 import java.util.UUID
 import javax.inject.Inject
 
-// ============================================
-// ✅ ИСПРАВЛЕНО: FolderRepositoryImpl
-// Использует JOIN вместо N+1 queries
-// Производительность: 100-500ms → 5-10ms
-// ============================================
-
 class FolderRepositoryImpl @Inject constructor(
     private val folderDao: FolderDao
 ) : FolderRepository {
     
-    /**
-     * ✅ ИСПРАВЛЕНО: Одним запросом вместо N+1
-     * До: ~100-500ms для 20 папок
-     * После: ~5-10ms для 20 папок
-     */
     override fun getAllFolders(): Flow<List<Folder>> {
         return folderDao.getAllFoldersWithCounts().map { foldersWithCount ->
             foldersWithCount.map { it.toDomain() }
@@ -48,7 +37,6 @@ class FolderRepositoryImpl @Inject constructor(
     }
     
     override suspend fun createFolder(name: String, description: String?): Result<Long> {
-        // ✅ ДОБАВЛЕНО: Валидация
         if (name.isBlank()) {
             return Result.Error(Exception("Folder name cannot be empty"))
         }
@@ -70,7 +58,6 @@ class FolderRepositoryImpl @Inject constructor(
     }
     
     override suspend fun updateFolder(folder: Folder): Result<Unit> {
-        // ✅ ДОБАВЛЕНО: Валидация
         if (folder.id <= 0) {
             return Result.Error(Exception("Invalid folder ID"))
         }
@@ -115,10 +102,6 @@ class FolderRepositoryImpl @Inject constructor(
         private const val MAX_NAME_LENGTH = 100
     }
 }
-
-// ============================================
-// RecordRepositoryImpl (без изменений)
-// ============================================
 
 class RecordRepositoryImpl @Inject constructor(
     private val recordDao: RecordDao,
@@ -185,10 +168,6 @@ class RecordRepositoryImpl @Inject constructor(
         }
     }
 }
-
-// ============================================
-// ✅ ИСПРАВЛЕНО: DocumentRepositoryImpl
-// ============================================
 
 class DocumentRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -260,7 +239,6 @@ class DocumentRepositoryImpl @Inject constructor(
         }
     }
 
-    // ✅ ИСПРАВЛЕНО: убран лишний параметр query
     override fun searchEverywhereWithNames(query: String): Flow<List<DocumentWithNames>> {
         return documentDao.searchEverywhereWithNames(query)
     }
@@ -327,10 +305,6 @@ class DocumentRepositoryImpl @Inject constructor(
     }
 }
 
-// ============================================
-// ScannerRepositoryImpl (без изменений)
-// ============================================
-
 class ScannerRepositoryImpl @Inject constructor(
     private val mlKitScanner: MLKitScanner,
     private val geminiTranslator: GeminiTranslator,
@@ -356,10 +330,6 @@ class ScannerRepositoryImpl @Inject constructor(
     }
 }
 
-// ============================================
-// SettingsRepositoryImpl (без изменений)
-// ============================================
-
 class SettingsRepositoryImpl @Inject constructor(
     private val dataStore: SettingsDataStore
 ) : SettingsRepository {
@@ -381,13 +351,6 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 }
 
-// ============================================
-// Extension Functions
-// ============================================
-
-/**
- * ✅ ДОБАВЛЕНО: Extension для FolderWithCount → Folder
- */
 private fun com.docs.scanner.data.local.database.dao.FolderWithCount.toDomain() = Folder(
     id = id,
     name = name,
