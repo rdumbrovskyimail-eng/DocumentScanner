@@ -232,12 +232,6 @@ class DocumentRepositoryImpl @Inject constructor(
         
         return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
     }
-    
-    override fun searchEverywhere(query: String): Flow<List<Document>> {
-        return documentDao.searchEverywhere(query).map { entities ->
-            entities.map { it.toDomain() }
-        }
-    }
 
     override fun searchEverywhereWithNames(query: String): Flow<List<DocumentWithNames>> {
         return documentDao.searchEverywhereWithNames(query)
