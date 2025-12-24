@@ -1,96 +1,81 @@
 package com.docs.scanner.data.remote.gemini
 
-import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import retrofit2.Response
-import retrofit2.http.Body
-import retrofit2.http.POST
-import retrofit2.http.Query
+import java.util.concurrent.ConcurrentLinkedQueue
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.pow
 
-// ✅ ИСПРАВЛЕНО: Gemini 2.5 Flash Lite (PRODUCTION MODEL)
-private const val GEMINI_MODEL = "gemini-2.5-flash-lite"
-private const val MAX_TOKENS = 8192
-private const val TEMPERATURE = 0.7f
-
-data class GeminiRequest(
-    val contents: List<Content>,
-    val generationConfig: GenerationConfig? = null,
-    val safetySettings: List<SafetySetting>? = null
-) {
-    data class Content(val parts: List<Part>)
-    data class Part(val text: String)
-    data class GenerationConfig(
-        val temperature: Float = TEMPERATURE,
-        val maxOutputTokens: Int = MAX_TOKENS,
-        val topP: Float = 0.95f,
-        val topK: Int = 40
-    )
-    data class SafetySetting(val category: String, val threshold: String)
-}
-
-data class GeminiResponse(
-    val candidates: List<Candidate>?,
-    val promptFeedback: PromptFeedback?
-) {
-    data class Candidate(
-        val content: Content,
-        @SerializedName("safetyRatings") val safetyRatings: List<SafetyRating>,
-        val finishReason: String?
-    )
-    data class Content(val parts: List<Part>)
-    data class Part(val text: String)
-    data class SafetyRating(val category: String, val probability: String)
-    data class PromptFeedback(val blockReason: String?)
-}
-
-sealed class GeminiResult {
-    data class Allowed(val text: String) : GeminiResult()
-    data class Blocked(val reason: String) : GeminiResult()
-    data class Failed(val error: String) : GeminiResult()
-}
-
-interface GeminiApiService {
-    @POST("v1beta/models/$GEMINI_MODEL:generateContent")
-    suspend fun generateContent(
-        @Query("key") apiKey: String,
-        @Body request: GeminiRequest
-    ): Response<GeminiResponse>
-}
-
+/**
+ * ✅ ИСПРАВЛЕНО: Sliding Window Rate Limiting + Exponential Backoff
+ * - 15 запросов в минуту (точный контроль)
+ * - Exponential backoff при 429 ошибке
+ * - Thread-safe реализация
+ */
 @Singleton
 class GeminiApi @Inject constructor(
     private val api: GeminiApiService
 ) {
-    private val requestLock = Mutex()
-    private var requestCount = 0
-    private var lastRequestTime = 0L
-    private val maxRequestsPerMinute = 15
-    private val rateLimitWindow = 60_000L
+    // ✅ ИСПРАВЛЕНО: Sliding Window вместо Fixed Window
+    private val requestTimestamps = ConcurrentLinkedQueue<Long>()
+    private val rateLimitMutex = Mutex()
     
+    /**
+     * ✅ ИСПРАВЛЕНО: Точный Sliding Window Rate Limiting
+     * Отслеживает временные метки последних 15 запросов
+     */
     private suspend fun checkRateLimit() {
-        requestLock.withLock {
-            val currentTime = System.currentTimeMillis()
+        rateLimitMutex.withLock {
+            val now = System.currentTimeMillis()
             
-            if (currentTime - lastRequestTime > rateLimitWindow) {
-                requestCount = 0
-                lastRequestTime = currentTime
-            }
-            
-            if (requestCount >= maxRequestsPerMinute) {
-                val waitTime = rateLimitWindow - (currentTime - lastRequestTime)
-                if (waitTime > 0) {
-                    delay(waitTime)
-                    requestCount = 0
-                    lastRequestTime = System.currentTimeMillis()
+            // Удаляем запросы старше 1 минуты
+            while (requestTimestamps.isNotEmpty()) {
+                val oldest = requestTimestamps.peek()
+                if (now - oldest > RATE_LIMIT_WINDOW_MS) {
+                    requestTimestamps.poll()
+                } else {
+                    break
                 }
             }
             
-            requestCount++
+            // Если лимит достигнут, ждём освобождения слота
+            if (requestTimestamps.size >= MAX_REQUESTS_PER_MINUTE) {
+                val oldestRequest = requestTimestamps.peek()!!
+                val waitTime = RATE_LIMIT_WINDOW_MS - (now - oldestRequest)
+                
+                if (waitTime > 0) {
+                    println("⏳ Rate limit reached. Waiting ${waitTime}ms...")
+                    delay(waitTime + 100)  // +100ms buffer
+                    
+                    // Рекурсивная проверка после ожидания
+                    return checkRateLimit()
+                }
+            }
+            
+            // Добавляем текущий запрос
+            requestTimestamps.add(now)
         }
+    }
+    
+    /**
+     * ✅ ИСПРАВЛЕНО: Exponential Backoff с максимальной задержкой
+     */
+    private suspend fun exponentialBackoff(attempt: Int): Long {
+        val baseDelay = 1000L  // 1 секунда
+        val maxDelay = 32000L  // 32 секунды
+        val delay = (baseDelay * 2.0.pow(attempt)).toLong().coerceAtMost(maxDelay)
+        
+        // Добавляем jitter (±20%)
+        val jitter = (delay * 0.2 * (Math.random() - 0.5)).toLong()
+        val finalDelay = delay + jitter
+        
+        println("⏳ Exponential backoff: waiting ${finalDelay}ms (attempt $attempt)")
+        delay(finalDelay)
+        
+        return finalDelay
     }
     
     suspend fun fixOcrText(text: String, apiKey: String, maxRetries: Int = 3): GeminiResult {
@@ -125,9 +110,10 @@ class GeminiApi @Inject constructor(
                     when (response.code()) {
                         429 -> {
                             if (attempt < maxRetries - 1) {
-                                delay(2000L * (attempt + 1))
+                                exponentialBackoff(attempt)
                                 return@repeat
                             }
+                            lastError = Exception("Rate limit exceeded after $maxRetries attempts")
                         }
                         401, 403 -> return GeminiResult.Failed("Invalid API key")
                         else -> lastError = Exception("HTTP ${response.code()}: ${response.errorBody()?.string()}")
@@ -135,7 +121,9 @@ class GeminiApi @Inject constructor(
                 }
             } catch (e: Exception) {
                 lastError = e
-                if (attempt < maxRetries - 1) delay(1000L * (attempt + 1))
+                if (attempt < maxRetries - 1) {
+                    exponentialBackoff(attempt)
+                }
             }
         }
         
@@ -176,9 +164,10 @@ class GeminiApi @Inject constructor(
                     when (response.code()) {
                         429 -> {
                             if (attempt < maxRetries - 1) {
-                                delay(2000L * (attempt + 1))
+                                exponentialBackoff(attempt)
                                 return@repeat
                             }
+                            lastError = Exception("Rate limit exceeded after $maxRetries attempts")
                         }
                         401, 403 -> return GeminiResult.Failed("Invalid API key")
                         else -> lastError = Exception("HTTP ${response.code()}: ${response.errorBody()?.string()}")
@@ -186,7 +175,9 @@ class GeminiApi @Inject constructor(
                 }
             } catch (e: Exception) {
                 lastError = e
-                if (attempt < maxRetries - 1) delay(1000L * (attempt + 1))
+                if (attempt < maxRetries - 1) {
+                    exponentialBackoff(attempt)
+                }
             }
         }
         
@@ -248,5 +239,13 @@ class GeminiApi @Inject constructor(
     
     private fun isValidApiKey(key: String): Boolean {
         return key.matches(Regex("^AIza[A-Za-z0-9_-]{35}$"))
+    }
+    
+    companion object {
+        private const val GEMINI_MODEL = "gemini-2.5-flash-lite"
+        private const val MAX_TOKENS = 8192
+        private const val TEMPERATURE = 0.7f
+        private const val MAX_REQUESTS_PER_MINUTE = 15
+        private const val RATE_LIMIT_WINDOW_MS = 60_000L
     }
 }
