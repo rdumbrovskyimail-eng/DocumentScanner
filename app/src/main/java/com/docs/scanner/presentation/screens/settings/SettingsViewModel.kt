@@ -10,8 +10,8 @@ import android.content.Intent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.docs.scanner.data.local.database.dao.ApiKeyDao
-import com.docs.scanner.data.local.database.entities.ApiKeyEntity
+import com.docs.scanner.data.local.security.EncryptedKeyStorage // ✅ ДОБАВЛЕНО
+import com.docs.scanner.data.local.security.ApiKeyData // ✅ ДОБАВЛЕНО
 import com.docs.scanner.data.remote.drive.DriveRepository
 import com.docs.scanner.domain.repository.SettingsRepository
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -23,6 +23,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -30,16 +31,12 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val driveRepository: DriveRepository,
-    private val apiKeyDao: ApiKeyDao  // ✅ ДОБАВЛЕНО
+    private val encryptedKeyStorage: EncryptedKeyStorage  // ✅ ИЗМЕНЕНО: используем EncryptedKeyStorage вместо ApiKeyDao
 ) : ViewModel() {
     
-    // ✅ Список всех API ключей
-    val apiKeys: StateFlow<List<ApiKeyEntity>> = apiKeyDao.getAllKeys()
-        .stateIn(
-            scope = viewModelScope,
-            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+    // ✅ Список всех API ключей из зашифрованного хранилища
+    private val _apiKeys = MutableStateFlow<List<ApiKeyData>>(emptyList())
+    val apiKeys: StateFlow<List<ApiKeyData>> = _apiKeys.asStateFlow()
     
     private val _isSaving = MutableStateFlow(false)
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
@@ -58,6 +55,14 @@ class SettingsViewModel @Inject constructor(
     
     init {
         checkDriveConnection()
+        loadApiKeys() // ✅ ДОБАВЛЕНО
+    }
+    
+    // ✅ НОВОЕ: Загрузка ключей из зашифрованного хранилища
+    private fun loadApiKeys() {
+        viewModelScope.launch {
+            _apiKeys.value = encryptedKeyStorage.getAllKeys()
+        }
     }
     
     private fun checkDriveConnection() {
@@ -76,7 +81,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    // ✅ НОВОЕ: Добавить API ключ
+    // ✅ ИЗМЕНЕНО: Добавить API ключ в зашифрованное хранилище
     fun addApiKey(key: String, label: String?) {
         viewModelScope.launch {
             try {
@@ -85,19 +90,26 @@ class SettingsViewModel @Inject constructor(
                     return@launch
                 }
                 
-                // Деактивируем все ключи
-                apiKeyDao.deactivateAll()
+                val trimmedKey = key.trim()
                 
                 // Добавляем новый активный ключ
-                val newKey = ApiKeyEntity(
-                    key = key.trim(),
+                val newKey = ApiKeyData(
+                    id = System.currentTimeMillis().toString(),
+                    key = trimmedKey,
                     label = label?.ifBlank { null },
-                    isActive = true
+                    isActive = true,
+                    createdAt = System.currentTimeMillis()
                 )
-                apiKeyDao.insertKey(newKey)
+                
+                // Сохраняем в зашифрованное хранилище
+                encryptedKeyStorage.addKey(newKey)
+                encryptedKeyStorage.setActiveApiKey(trimmedKey)
                 
                 // Сохраняем в DataStore для обратной совместимости
-                settingsRepository.setApiKey(key.trim())
+                settingsRepository.setApiKey(trimmedKey)
+                
+                // Обновляем список
+                loadApiKeys()
                 
                 _saveMessage.value = "✓ API key added successfully"
             } catch (e: Exception) {
@@ -106,30 +118,39 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    // ✅ НОВОЕ: Активировать ключ
-    fun activateKey(keyId: Long) {
+    // ✅ ИЗМЕНЕНО: Активировать ключ
+    fun activateKey(keyId: String) {
         viewModelScope.launch {
             try {
-                apiKeyDao.activateKey(keyId)
-                
-                // Обновляем DataStore
-                val activeKey = apiKeyDao.getActiveKey()
-                activeKey?.let {
-                    settingsRepository.setApiKey(it.key)
+                val key = _apiKeys.value.find { it.id == keyId }
+                if (key != null) {
+                    encryptedKeyStorage.setActiveApiKey(key.key)
+                    
+                    // Обновляем DataStore
+                    settingsRepository.setApiKey(key.key)
+                    
+                    // Обновляем список
+                    loadApiKeys()
+                    
+                    _saveMessage.value = "✓ API key activated"
+                } else {
+                    _saveMessage.value = "✗ Key not found"
                 }
-                
-                _saveMessage.value = "✓ API key activated"
             } catch (e: Exception) {
                 _saveMessage.value = "✗ Failed to activate key: ${e.message}"
             }
         }
     }
     
-    // ✅ НОВОЕ: Удалить ключ
-    fun deleteKey(keyId: Long) {
+    // ✅ ИЗМЕНЕНО: Удалить ключ
+    fun deleteKey(keyId: String) {
         viewModelScope.launch {
             try {
-                apiKeyDao.deleteKeyById(keyId)
+                encryptedKeyStorage.removeKey(keyId)
+                
+                // Обновляем список
+                loadApiKeys()
+                
                 _saveMessage.value = "✓ API key deleted"
             } catch (e: Exception) {
                 _saveMessage.value = "✗ Failed to delete key: ${e.message}"
@@ -148,7 +169,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    // ✅ ИСПРАВЛЕНО: Sign In через Google Drive
     fun signInGoogleDrive(context: Context, launcher: ActivityResultLauncher<Intent>) {
         try {
             val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
