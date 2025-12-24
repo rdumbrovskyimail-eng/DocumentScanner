@@ -27,12 +27,12 @@ class SearchViewModel @Inject constructor(
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
     
-    // ✅ ИСПРАВЛЕНО: Thread-safe кэш с LRU
+    // Thread-safe кэш с LRU
     private val searchCache = Collections.synchronizedMap(
         object : LinkedHashMap<String, List<SearchResult>>(
-            20,  // Initial capacity
-            0.75f,  // Load factor
-            true  // Access order (LRU)
+            20,
+            0.75f,
+            true
         ) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<SearchResult>>?): Boolean {
                 return size > MAX_CACHE_SIZE
@@ -70,7 +70,7 @@ class SearchViewModel @Inject constructor(
             return
         }
         
-        // ✅ ИСПРАВЛЕНО: Thread-safe чтение из кэша
+        // Thread-safe чтение из кэша
         val cached = cacheMutex.withLock {
             searchCache[query.lowercase()]
         }
@@ -102,7 +102,7 @@ class SearchViewModel @Inject constructor(
                     
                     _searchResults.value = results
                     
-                    // ✅ ИСПРАВЛЕНО: Thread-safe запись в кэш
+                    // Thread-safe запись в кэш
                     cacheMutex.withLock {
                         searchCache[query.lowercase()] = results
                     }
@@ -115,7 +115,6 @@ class SearchViewModel @Inject constructor(
         }
     }
     
-    // ✅ ДОБАВЛЕНО: Очистка кэша
     fun clearCache() {
         viewModelScope.launch {
             cacheMutex.withLock {
