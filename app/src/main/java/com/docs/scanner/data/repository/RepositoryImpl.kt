@@ -233,6 +233,25 @@ class DocumentRepositoryImpl @Inject constructor(
         return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
     }
 
+    // ✅ ДОБАВЛЕНА РЕАЛИЗАЦИЯ searchEverywhere
+    override fun searchEverywhere(query: String): Flow<List<Document>> {
+        return documentDao.searchEverywhereWithNames(query).map { documentsWithNames ->
+            documentsWithNames.map { docWithNames ->
+                Document(
+                    id = docWithNames.id,
+                    recordId = docWithNames.recordId,
+                    imagePath = docWithNames.imagePath,
+                    imageFile = null,
+                    originalText = docWithNames.originalText,
+                    translatedText = docWithNames.translatedText,
+                    position = 0,
+                    processingStatus = ProcessingStatus.fromInt(docWithNames.processingStatus),
+                    createdAt = docWithNames.createdAt
+                )
+            }
+        }
+    }
+
     override fun searchEverywhereWithNames(query: String): Flow<List<DocumentWithNames>> {
         return documentDao.searchEverywhereWithNames(query)
     }
