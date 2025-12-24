@@ -19,7 +19,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.docs.scanner.data.local.database.entities.ApiKeyEntity
+import com.docs.scanner.data.local.security.ApiKeyData // ✅ ИЗМЕНЕНО
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -324,7 +324,7 @@ fun SettingsScreen(
 // ✅ ВСПОМОГАТЕЛЬНЫЙ COMPOSABLE ДЛЯ ЭЛЕМЕНТА СПИСКА
 @Composable
 private fun ApiKeyItem(
-    key: ApiKeyEntity,
+    key: ApiKeyData,  // ✅ ИЗМЕНЕНО: было ApiKeyEntity
     onActivate: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit
