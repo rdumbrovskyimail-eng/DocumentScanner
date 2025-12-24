@@ -14,7 +14,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -312,7 +311,7 @@ private fun GoogleDocsTopBar(
 }
 
 // ============================================
-// DOCUMENT HEADER
+// ✅ ИСПРАВЛЕНО: DOCUMENT HEADER
 // ============================================
 
 @Composable
@@ -329,7 +328,7 @@ private fun DocumentHeader(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = AlignmentverticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically  // ✅ ИСПРАВЛЕНО
         ) {
             Text(
                 text = recordName,
