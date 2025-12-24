@@ -10,8 +10,8 @@ import android.content.Intent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.docs.scanner.data.local.security.EncryptedKeyStorage // ✅ ДОБАВЛЕНО
-import com.docs.scanner.data.local.security.ApiKeyData // ✅ ДОБАВЛЕНО
+import com.docs.scanner.data.local.security.EncryptedKeyStorage
+import com.docs.scanner.data.local.security.ApiKeyData
 import com.docs.scanner.data.remote.drive.DriveRepository
 import com.docs.scanner.domain.repository.SettingsRepository
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -31,10 +31,10 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val driveRepository: DriveRepository,
-    private val encryptedKeyStorage: EncryptedKeyStorage  // ✅ ИЗМЕНЕНО: используем EncryptedKeyStorage вместо ApiKeyDao
+    private val encryptedKeyStorage: EncryptedKeyStorage
 ) : ViewModel() {
     
-    // ✅ Список всех API ключей из зашифрованного хранилища
+    // Список всех API ключей из зашифрованного хранилища
     private val _apiKeys = MutableStateFlow<List<ApiKeyData>>(emptyList())
     val apiKeys: StateFlow<List<ApiKeyData>> = _apiKeys.asStateFlow()
     
@@ -55,10 +55,10 @@ class SettingsViewModel @Inject constructor(
     
     init {
         checkDriveConnection()
-        loadApiKeys() // ✅ ДОБАВЛЕНО
+        loadApiKeys()
     }
     
-    // ✅ НОВОЕ: Загрузка ключей из зашифрованного хранилища
+    // Загрузка ключей из зашифрованного хранилища
     private fun loadApiKeys() {
         viewModelScope.launch {
             _apiKeys.value = encryptedKeyStorage.getAllKeys()
@@ -81,7 +81,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    // ✅ ИЗМЕНЕНО: Добавить API ключ в зашифрованное хранилище
+    // Добавить API ключ в зашифрованное хранилище
     fun addApiKey(key: String, label: String?) {
         viewModelScope.launch {
             try {
@@ -118,7 +118,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    // ✅ ИЗМЕНЕНО: Активировать ключ
+    // Активировать ключ
     fun activateKey(keyId: String) {
         viewModelScope.launch {
             try {
@@ -142,11 +142,11 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    // ✅ ИЗМЕНЕНО: Удалить ключ
+    // Удалить ключ
     fun deleteKey(keyId: String) {
         viewModelScope.launch {
             try {
-                encryptedKeyStorage.removeKey(keyId)
+                encryptedKeyStorage.deleteKey(keyId) // ✅ ИСПРАВЛЕНО
                 
                 // Обновляем список
                 loadApiKeys()
