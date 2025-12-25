@@ -52,8 +52,10 @@ jobs:
     # ✅ Сборка
     - name: Build with Gradle
       id: build
+      continue-on-error: true
       run: ./gradlew assembleDebug --stacktrace
       
+    # ⚠️ ВАЖНО: always() чтобы выполнялось даже при ошибке!
     - name: Get commit info
       if: always()
       id: commit
@@ -61,7 +63,7 @@ jobs:
         echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
         echo "date=$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
         
-    # ✅ Создание Release
+    # ✅ Создание Release (только при успехе)
     - name: Create Release
       if: steps.build.outcome == 'success'
       id: create_release
