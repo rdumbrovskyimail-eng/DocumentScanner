@@ -8,8 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,10 +20,6 @@ import com.docs.scanner.domain.model.Document
 import com.docs.scanner.presentation.components.*
 import com.docs.scanner.presentation.screens.editor.components.*
 import com.docs.scanner.presentation.theme.*
-
-// ============================================
-// EDITOR SCREEN (100% Google Docs Style)
-// ============================================
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +45,7 @@ fun EditorScreen(
     val listState = rememberLazyListState()
     
     LaunchedEffect(recordId) {
+        android.util.Log.d("EditorScreen", "🔄 Loading record: $recordId")
         viewModel.loadRecord(recordId)
     }
     
@@ -59,12 +55,12 @@ fun EditorScreen(
             GoogleDocsTopBar(
                 title = folderName ?: "Documents",
                 onBackClick = onBackClick,
-                onMenuClick = { /* TODO: Show menu */ }
+                onMenuClick = { /* TODO: Menu */ }
             )
         },
         floatingActionButton = {
             FloatingActionButtons(
-                onCameraClick = { /* TODO: Open camera */ },
+                onCameraClick = { /* TODO: Camera */ },
                 onGalleryClick = { galleryLauncher.launch("image/*") }
             )
         }
@@ -108,7 +104,7 @@ fun EditorScreen(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // Document Header
+                        // ✅ DOCUMENT HEADER
                         item {
                             DocumentHeader(
                                 recordName = record?.name ?: "Document",
@@ -117,12 +113,12 @@ fun EditorScreen(
                             )
                         }
                         
-                        // Divider
+                        // ✅ DIVIDER
                         item {
                             SimpleDivider()
                         }
                         
-                        // Documents (with pagination indicator)
+                        // ✅ DOCUMENTS
                         items(
                             items = documents,
                             key = { it.id }
@@ -130,7 +126,7 @@ fun EditorScreen(
                             Column(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                // Pagination Indicator
+                                // Pagination indicator
                                 if (documents.size > 1) {
                                     Text(
                                         text = "Page ${documents.indexOf(document) + 1} of ${documents.size}",
@@ -140,7 +136,7 @@ fun EditorScreen(
                                     )
                                 }
                                 
-                                // G-Container with document content
+                                // ✅ G-CONTAINER
                                 GContainerLayout(
                                     previewContent = {
                                         DocumentPreview(
@@ -162,12 +158,12 @@ fun EditorScreen(
                                     }
                                 )
                                 
-                                // Translation Field
+                                // ✅ TRANSLATION FIELD
                                 TranslationField(
                                     translatedText = document.translatedText
                                 )
                                 
-                                // Action Buttons for Translation
+                                // ✅ ACTION BUTTONS (для перевода)
                                 if (!document.translatedText.isNullOrBlank()) {
                                     ActionButtonsRow(
                                         text = document.translatedText ?: "",
@@ -175,7 +171,7 @@ fun EditorScreen(
                                     )
                                 }
                                 
-                                // Smart Divider (if not last item)
+                                // ✅ SMART DIVIDER (если не последний)
                                 if (document != documents.last()) {
                                     SmartDivider(
                                         modifier = Modifier.padding(vertical = 16.dp)
@@ -196,7 +192,7 @@ fun EditorScreen(
         }
     }
     
-    // Edit Name Dialog
+    // ✅ EDIT NAME DIALOG
     if (showEditNameDialog && record != null) {
         var newName by remember { mutableStateOf(record!!.name) }
         var newDescription by remember { mutableStateOf(record!!.description ?: "") }
@@ -243,7 +239,7 @@ fun EditorScreen(
         )
     }
     
-    // Fullscreen Text Editor
+    // ✅ FULLSCREEN TEXT EDITOR
     editingDocument?.let { doc ->
         FullscreenTextEditor(
             initialText = doc.originalText ?: "",
@@ -311,7 +307,7 @@ private fun GoogleDocsTopBar(
 }
 
 // ============================================
-// ✅ ИСПРАВЛЕНО: DOCUMENT HEADER
+// DOCUMENT HEADER
 // ============================================
 
 @Composable
@@ -328,7 +324,7 @@ private fun DocumentHeader(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically  // ✅ ИСПРАВЛЕНО
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = recordName,
