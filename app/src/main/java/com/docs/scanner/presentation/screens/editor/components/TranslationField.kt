@@ -22,7 +22,8 @@ import androidx.compose.ui.unit.dp
 import com.docs.scanner.presentation.theme.*
 
 // ============================================
-// TRANSLATION FIELD (Google Docs Style)
+// ✅ TRANSLATION FIELD (Google Docs Style)
+// Точная копия из HTML дизайна
 // ============================================
 
 @Composable
@@ -40,12 +41,12 @@ fun TranslationField(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    color = GoogleDocsTranslationBackground,
-                    shape = MaterialTheme.shapes.small
+                    color = GoogleDocsTranslationBackground, // #FFFBF5
+                    shape = MaterialTheme.shapes.small // 16dp radius
                 )
                 .border(
                     width = 1.5.dp,
-                    color = GoogleDocsTranslationBorder,
+                    color = GoogleDocsTranslationBorder, // #F0E6D2
                     shape = MaterialTheme.shapes.small
                 )
                 .padding(24.dp)
@@ -53,7 +54,7 @@ fun TranslationField(
             Column(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Header
+                // ✅ HEADER
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -62,20 +63,20 @@ fun TranslationField(
                         imageVector = Icons.Default.Translate,
                         contentDescription = "Translation",
                         modifier = Modifier.size(20.dp),
-                        tint = GoogleDocsTranslationIcon
+                        tint = GoogleDocsTranslationIcon // #8B7355
                     )
                     Text(
                         text = "Translation",
                         style = MaterialTheme.typography.titleMedium,
-                        color = GoogleDocsTranslationTitle
+                        color = GoogleDocsTranslationTitle // #6B5744
                     )
                 }
                 
-                // Content
+                // ✅ CONTENT
                 Text(
                     text = translatedText ?: "",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = GoogleDocsTranslationText,
+                    style = MaterialTheme.typography.bodyLarge, // 14sp
+                    color = GoogleDocsTranslationText, // #3E3428
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 80.dp, max = 300.dp)
