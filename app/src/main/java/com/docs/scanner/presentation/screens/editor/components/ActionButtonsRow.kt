@@ -17,7 +17,8 @@ import com.docs.scanner.presentation.components.MicroButton
 import com.docs.scanner.presentation.components.MoreButton
 
 // ============================================
-// ACTION BUTTONS ROW (Google Docs Style)
+// ✅ ACTION BUTTONS ROW (Google Docs Style)
+// AI | Copy | Paste | Share | More
 // ============================================
 
 @Composable
@@ -36,31 +37,35 @@ fun ActionButtonsRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // AI Button
+        // ✅ AI BUTTON
         MicroButton(
             text = "AI",
             icon = Icons.Default.AutoAwesome,
-            onClick = { openGptWithPrompt(context, text, isTranslation = false) }
+            onClick = { openGptWithPrompt(context, text) }
         )
         
-        // Copy Button
+        // ✅ COPY BUTTON
         MicroButton(
             text = "Copy",
             icon = Icons.Default.ContentCopy,
-            onClick = { copyToClipboard(context, text) }
+            onClick = { 
+                copyToClipboard(context, text)
+                android.util.Log.d("ActionButtons", "✅ Copied to clipboard")
+            }
         )
         
-        // Paste Button
+        // ✅ PASTE BUTTON
         MicroButton(
             text = "Paste",
             icon = Icons.Default.ContentPaste,
             onClick = {
                 val clipboard = getClipboardText(context)
-                // Handle paste - will be implemented in ViewModel
+                android.util.Log.d("ActionButtons", "📋 Pasted: $clipboard")
+                // TODO: Implement paste handler
             }
         )
         
-        // Share Button
+        // ✅ SHARE BUTTON
         MicroButton(
             text = "Share",
             icon = Icons.Default.Share,
@@ -69,48 +74,64 @@ fun ActionButtonsRow(
         
         Spacer(modifier = Modifier.weight(1f))
         
-        // More Button
+        // ✅ MORE BUTTON
         MoreButton(
             onClick = { showMenu = true }
         )
     }
     
-    // TODO: Add DropdownMenu for more options (Retry, Delete, etc.)
+    // TODO: DropdownMenu для More (Retry, Delete, Export)
 }
 
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
 
-private fun openGptWithPrompt(context: Context, text: String, isTranslation: Boolean) {
-    val prompt = if (isTranslation) {
-        "Improve this translation:\n\n$text"
-    } else {
-        "Correct this OCR text:\n\n$text"
+private fun openGptWithPrompt(context: Context, text: String) {
+    try {
+        val prompt = "Improve this text:\n\n$text"
+        val encodedPrompt = java.net.URLEncoder.encode(prompt, "UTF-8")
+        val uri = Uri.parse("https://chatgpt.com/?q=$encodedPrompt")
+        
+        val intent = Intent(Intent.ACTION_VIEW, uri)
+        context.startActivity(intent)
+        
+        android.util.Log.d("ActionButtons", "🤖 Opened ChatGPT")
+    } catch (e: Exception) {
+        android.util.Log.e("ActionButtons", "❌ Failed to open ChatGPT", e)
     }
-    
-    val encodedPrompt = java.net.URLEncoder.encode(prompt, "UTF-8")
-    val uri = Uri.parse("https://chatgpt.com/?q=$encodedPrompt")
-    
-    val intent = Intent(Intent.ACTION_VIEW, uri)
-    context.startActivity(intent)
 }
 
 private fun copyToClipboard(context: Context, text: String) {
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val clip = ClipData.newPlainText("Document text", text)
-    clipboard.setPrimaryClip(clip)
+    try {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("Document text", text)
+        clipboard.setPrimaryClip(clip)
+    } catch (e: Exception) {
+        android.util.Log.e("ActionButtons", "❌ Failed to copy", e)
+    }
 }
 
 private fun getClipboardText(context: Context): String? {
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    return clipboard.primaryClip?.getItemAt(0)?.text?.toString()
+    return try {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.primaryClip?.getItemAt(0)?.text?.toString()
+    } catch (e: Exception) {
+        android.util.Log.e("ActionButtons", "❌ Failed to get clipboard", e)
+        null
+    }
 }
 
 private fun shareText(context: Context, text: String) {
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, text)
+    try {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share text"))
+        
+        android.util.Log.d("ActionButtons", "📤 Shared text")
+    } catch (e: Exception) {
+        android.util.Log.e("ActionButtons", "❌ Failed to share", e)
     }
-    context.startActivity(Intent.createChooser(intent, "Share text"))
 }
