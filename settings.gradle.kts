@@ -20,12 +20,11 @@ dependencyResolutionManagement {
     }
 }
 
-// ✅ ДОБАВЛЕНО: Build Cache для ускорения повторных сборок
+// ✅ ИСПРАВЛЕНО: Упрощённая конфигурация Build Cache
 buildCache {
     local {
         isEnabled = true
         directory = File(rootDir, "build-cache")
-        removeUnusedEntriesAfterDays = 30
     }
 }
 
