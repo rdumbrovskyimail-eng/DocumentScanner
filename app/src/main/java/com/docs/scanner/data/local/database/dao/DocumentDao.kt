@@ -34,34 +34,7 @@ interface DocumentDao {
     suspend fun deleteDocumentById(documentId: Long)
     
     // ============================================
-    // ✅ ПОИСК С FTS5 (ОСНОВНОЙ)
-    // ============================================
-    
-    @Query("""
-        SELECT 
-            d.id,
-            d.recordId,
-            d.imagePath,
-            d.originalText,
-            d.translatedText,
-            d.position,
-            d.processingStatus,
-            d.createdAt,
-            r.name as recordName,
-            f.name as folderName
-        FROM documents_fts
-        INNER JOIN documents d ON documents_fts.rowid = d.id
-        INNER JOIN records r ON d.recordId = r.id
-        INNER JOIN folders f ON r.folderId = f.id
-        WHERE documents_fts MATCH :query
-        ORDER BY rank
-        LIMIT 50
-    """)
-    fun searchWithFTS5(query: String): Flow<List<DocumentWithNames>>
-    
-    // ============================================
-    // ✅ ПОИСК БЕЗ FTS5 (FALLBACK)
-    // Используется если FTS5 не работает
+    // ✅ ПОИСК (LIKE - работает без FTS5)
     // ============================================
     
     @Query("""
