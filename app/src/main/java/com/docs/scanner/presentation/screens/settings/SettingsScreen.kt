@@ -2,6 +2,7 @@ package com.docs.scanner.presentation.screens.settings
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -19,7 +20,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.docs.scanner.data.local.security.ApiKeyData // ✅ ИЗМЕНЕНО
+import com.docs.scanner.data.local.security.ApiKeyData
+import com.docs.scanner.util.LogcatCollector
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,7 +36,6 @@ fun SettingsScreen(
     val isBackingUp by viewModel.isBackingUp.collectAsState()
     val backupMessage by viewModel.backupMessage.collectAsState()
     
-    // Состояние для диалога добавления ключа
     var showAddKeyDialog by remember { mutableStateOf(false) }
     
     val signInLauncher = rememberLauncherForActivityResult(
@@ -63,7 +64,7 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // ✅ ОБНОВЛЕННАЯ СЕКЦИЯ GEMINI API KEYS
+            // ✅ GEMINI API KEYS
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(
@@ -133,7 +134,7 @@ fun SettingsScreen(
                 }
             }
             
-            // СЕКЦИЯ GOOGLE DRIVE
+            // ✅ GOOGLE DRIVE
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -228,7 +229,52 @@ fun SettingsScreen(
                 }
             }
             
-            // СЕКЦИЯ ABOUT
+            // ✅ DEBUG (НОВОЕ)
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.BugReport,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Debug",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Button(
+                        onClick = {
+                            android.util.Log.d("SettingsScreen", "💾 Saving debug log...")
+                            LogcatCollector.getInstance(context).forceSave()
+                            Toast.makeText(
+                                context,
+                                "✅ Log saved to Downloads folder",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Save Debug Log")
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Text(
+                        text = "Saves all app logs to Downloads/logcat_*.txt",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            
+            // ✅ ABOUT
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -263,7 +309,7 @@ fun SettingsScreen(
         }
     }
 
-    // ✅ ДИАЛОГ ДОБАВЛЕНИЯ КЛЮЧА
+    // ✅ ADD KEY DIALOG
     if (showAddKeyDialog) {
         var newKey by remember { mutableStateOf("") }
         var newLabel by remember { mutableStateOf("") }
@@ -321,10 +367,9 @@ fun SettingsScreen(
     }
 }
 
-// ✅ ВСПОМОГАТЕЛЬНЫЙ COMPOSABLE ДЛЯ ЭЛЕМЕНТА СПИСКА
 @Composable
 private fun ApiKeyItem(
-    key: ApiKeyData,  // ✅ ИЗМЕНЕНО: было ApiKeyEntity
+    key: ApiKeyData,
     onActivate: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit
