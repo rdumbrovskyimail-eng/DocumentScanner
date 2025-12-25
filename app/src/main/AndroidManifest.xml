@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- ✅ ОСНОВНЫЕ PERMISSIONS -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
@@ -10,12 +11,23 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28"
         tools:ignore="ScopedStorage" />
+    
+    <!-- ✅ ALARMS -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    
+    <!-- ✅ NETWORK -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    
+    <!-- ✅ GOOGLE DRIVE (CRITICAL FOR BACKUP) -->
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
+    
+    <!-- ✅ CAMERA FEATURE (не обязательно) -->
+    <uses-feature 
+        android:name="android.hardware.camera" 
+        android:required="false" />
 
     <application
         android:name=".App"
@@ -30,6 +42,7 @@
         android:largeHeap="true"
         tools:targetApi="31">
         
+        <!-- ✅ MAIN ACTIVITY -->
         <activity
             android:name=".presentation.MainActivity"
             android:exported="true"
@@ -41,6 +54,7 @@
             </intent-filter>
         </activity>
 
+        <!-- ✅ FILE PROVIDER (для Camera и Gallery) -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -51,10 +65,12 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- ✅ ML KIT OCR -->
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
             android:value="ocr" />
         
+        <!-- ✅ ALARM RECEIVER (для Terms напоминаний) -->
         <receiver
             android:name=".data.local.alarm.TermAlarmReceiver"
             android:exported="false"
