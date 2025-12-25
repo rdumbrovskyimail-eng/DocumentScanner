@@ -39,7 +39,10 @@ fun EditorScreen(
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { viewModel.addDocument(it) }
+        uri?.let { 
+            android.util.Log.d("EditorScreen", "📷 Image selected: $uri")
+            viewModel.addDocument(it) 
+        }
     }
     
     val listState = rememberLazyListState()
@@ -54,14 +57,26 @@ fun EditorScreen(
         topBar = {
             GoogleDocsTopBar(
                 title = folderName ?: "Documents",
-                onBackClick = onBackClick,
-                onMenuClick = { /* TODO: Menu */ }
+                onBackClick = {
+                    android.util.Log.d("EditorScreen", "⬅️ Back clicked")
+                    onBackClick()
+                },
+                onMenuClick = { 
+                    android.util.Log.d("EditorScreen", "⋮ Menu clicked")
+                    // TODO: Menu
+                }
             )
         },
         floatingActionButton = {
             FloatingActionButtons(
-                onCameraClick = { /* TODO: Camera */ },
-                onGalleryClick = { galleryLauncher.launch("image/*") }
+                onCameraClick = { 
+                    android.util.Log.d("EditorScreen", "📸 Camera clicked")
+                    // TODO: Camera
+                },
+                onGalleryClick = { 
+                    android.util.Log.d("EditorScreen", "🖼️ Gallery clicked")
+                    galleryLauncher.launch("image/*") 
+                }
             )
         }
     ) { padding ->
@@ -70,7 +85,7 @@ fun EditorScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            when (uiState) {
+            when (val state = uiState) {
                 is EditorUiState.Loading -> {
                     CircularProgressIndicator(
                         modifier = Modifier.align(Alignment.Center),
@@ -91,12 +106,17 @@ fun EditorScreen(
                         title = "No documents yet",
                         message = "Add your first document to scan and translate",
                         actionText = "Add Document",
-                        onActionClick = { galleryLauncher.launch("image/*") }
+                        onActionClick = { 
+                            android.util.Log.d("EditorScreen", "➕ Add Document clicked")
+                            galleryLauncher.launch("image/*") 
+                        }
                     )
                 }
                 
                 is EditorUiState.Success -> {
-                    val documents = (uiState as EditorUiState.Success).documents
+                    val documents = state.documents
+                    
+                    android.util.Log.d("EditorScreen", "✅ Documents loaded: ${documents.size}")
                     
                     LazyColumn(
                         state = listState,
@@ -105,23 +125,26 @@ fun EditorScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         // ✅ DOCUMENT HEADER
-                        item {
+                        item(key = "header") {
                             DocumentHeader(
                                 recordName = record?.name ?: "Document",
                                 description = record?.description,
-                                onEditClick = { showEditNameDialog = true }
+                                onEditClick = { 
+                                    android.util.Log.d("EditorScreen", "✏️ Edit name clicked")
+                                    showEditNameDialog = true 
+                                }
                             )
                         }
                         
                         // ✅ DIVIDER
-                        item {
+                        item(key = "divider") {
                             SimpleDivider()
                         }
                         
                         // ✅ DOCUMENTS
                         items(
                             items = documents,
-                            key = { it.id }
+                            key = { "doc_${it.id}" }
                         ) { document ->
                             Column(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -141,19 +164,28 @@ fun EditorScreen(
                                     previewContent = {
                                         DocumentPreview(
                                             document = document,
-                                            onImageClick = { onImageClick(document.id) }
+                                            onImageClick = { 
+                                                android.util.Log.d("EditorScreen", "🖼️ Image clicked: ${document.id}")
+                                                onImageClick(document.id) 
+                                            }
                                         )
                                     },
                                     ocrTextContent = {
                                         OCRTextContainer(
                                             text = document.originalText,
-                                            onTextClick = { editingDocument = document }
+                                            onTextClick = { 
+                                                android.util.Log.d("EditorScreen", "📝 Text edit clicked")
+                                                editingDocument = document 
+                                            }
                                         )
                                     },
                                     actionButtonsContent = {
                                         ActionButtonsRow(
                                             text = document.originalText ?: "",
-                                            onRetry = { viewModel.retryOcr(document.id) }
+                                            onRetry = { 
+                                                android.util.Log.d("EditorScreen", "🔄 Retry OCR: ${document.id}")
+                                                viewModel.retryOcr(document.id) 
+                                            }
                                         )
                                     }
                                 )
@@ -167,12 +199,15 @@ fun EditorScreen(
                                 if (!document.translatedText.isNullOrBlank()) {
                                     ActionButtonsRow(
                                         text = document.translatedText ?: "",
-                                        onRetry = { viewModel.retryTranslation(document.id) }
+                                        onRetry = { 
+                                            android.util.Log.d("EditorScreen", "🔄 Retry translation: ${document.id}")
+                                            viewModel.retryTranslation(document.id) 
+                                        }
                                     )
                                 }
                                 
-                                // ✅ SMART DIVIDER (если не последний)
-                                if (document != documents.last()) {
+                                // ✅ SMART DIVIDER
+                                if (document != documents.lastOrNull()) {
                                     SmartDivider(
                                         modifier = Modifier.padding(vertical = 16.dp)
                                     )
@@ -183,9 +218,13 @@ fun EditorScreen(
                 }
                 
                 is EditorUiState.Error -> {
+                    android.util.Log.e("EditorScreen", "❌ Error: ${state.message}")
                     ErrorState(
-                        error = (uiState as EditorUiState.Error).message,
-                        onRetry = { viewModel.loadRecord(recordId) }
+                        error = state.message,
+                        onRetry = { 
+                            android.util.Log.d("EditorScreen", "🔄 Retry loading")
+                            viewModel.loadRecord(recordId) 
+                        }
                     )
                 }
             }
@@ -222,6 +261,7 @@ fun EditorScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
+                        android.util.Log.d("EditorScreen", "💾 Saving: name=$newName")
                         viewModel.updateRecordName(newName)
                         viewModel.updateRecordDescription(newDescription.ifBlank { null })
                         showEditNameDialog = false
@@ -243,8 +283,12 @@ fun EditorScreen(
     editingDocument?.let { doc ->
         FullscreenTextEditor(
             initialText = doc.originalText ?: "",
-            onDismiss = { editingDocument = null },
+            onDismiss = { 
+                android.util.Log.d("EditorScreen", "❌ Edit cancelled")
+                editingDocument = null 
+            },
             onSave = { newText ->
+                android.util.Log.d("EditorScreen", "💾 Saving text: ${newText.take(50)}...")
                 viewModel.updateOriginalText(doc.id, newText)
                 editingDocument = null
             }
