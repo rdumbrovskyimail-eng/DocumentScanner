@@ -59,7 +59,44 @@ jobs:
         echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
         echo "date=$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
         
+    # ✅ Отправка APK в Telegram (при успехе)
+    - name: Send APK to Telegram
+      if: success()
+      run: |
+        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+        APK_NAME=$(basename "$APK_PATH")
+        COMMIT_MSG="${{ github.event.head_commit.message }}"
+        
+        curl -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+             -F document=@"${APK_PATH}" \
+             -F caption="✅ APK собран успешно!
+        📱 Файл: ${APK_NAME}
+        📝 Commit: ${COMMIT_MSG}
+        👤 Автор: ${{ github.actor }}
+        🕐 Время: ${{ steps.commit.outputs.date }}
+        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}" \
+             https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument
+    
+    # ❌ Уведомление об ошибке в Telegram (при провале)
+    - name: Send Failure Notification to Telegram
+      if: failure()
+      run: |
+        COMMIT_MSG="${{ github.event.head_commit.message }}"
+        
+        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+             -d parse_mode="HTML" \
+             -d text="❌ <b>Сборка упала!</b>
+        
+        📝 Commit: ${COMMIT_MSG}
+        👤 Автор: ${{ github.actor }}
+        🕐 Время: ${{ steps.commit.outputs.date }}
+        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
+        
+        🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Посмотреть логи</a>"
+        
     - name: Create Release
+      if: success()
       uses: softprops/action-gh-release@v2
       with:
         tag_name: build-${{ steps.commit.outputs.date }}
