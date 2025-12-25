@@ -20,21 +20,44 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
     
+    # ✅ ДОБАВЛЕНО: Кэширование Gradle для ускорения
+    - name: Cache Gradle packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+          ~/.gradle/build-cache
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+    
+    # ✅ ДОБАВЛЕНО: Кэширование зависимостей Kotlin
+    - name: Cache Kotlin Native
+      uses: actions/cache@v4
+      with:
+        path: ~/.konan
+        key: ${{ runner.os }}-konan-${{ hashFiles('**/*.gradle*') }}
+        restore-keys: |
+          ${{ runner.os }}-konan-
+    
     - name: Setup Gradle
       run: |
-        gradle wrapper --gradle-version 9.2.1
         chmod +x gradlew
     
-    # ✅ ДОБАВЛЕН ШАГ ОЧИСТКИ
+    # ✅ ИЗМЕНЕНО: Убрана агрессивная очистка (кэш работать не будет)
     - name: Clean build directories
-      run: |
-        ./gradlew clean
-        rm -rf app/build/generated/ksp/
-        rm -rf .gradle/
+      run: ./gradlew clean
         
-    # ✅ УПРОЩЕНА КОМАНДА СБОРКИ
+    # ✅ ОПТИМИЗИРОВАНО: Добавлены флаги производительности
     - name: Build with Gradle
-      run: ./gradlew assembleDebug --stacktrace
+      run: |
+        ./gradlew assembleDebug \
+          --stacktrace \
+          --no-daemon \
+          --max-workers=4 \
+          -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=512m" \
+          -Dkotlin.compiler.execution.strategy=in-process
       
     - name: Get commit info
       id: commit
