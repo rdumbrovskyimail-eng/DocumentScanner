@@ -20,7 +20,7 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
     
-    # ✅ ДОБАВЛЕНО: Кэширование Gradle для ускорения
+    # ✅ Кэширование Gradle
     - name: Cache Gradle packages
       uses: actions/cache@v4
       with:
@@ -32,7 +32,7 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gradle-
     
-    # ✅ ДОБАВЛЕНО: Кэширование зависимостей Kotlin
+    # ✅ Кэширование Kotlin
     - name: Cache Kotlin Native
       uses: actions/cache@v4
       with:
@@ -41,24 +41,17 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-konan-
     
-    # ✅ ИСПРАВЛЕНО: Даём права на выполнение gradlew
+    # ✅ Права на gradlew
     - name: Make gradlew executable
       run: chmod +x gradlew
     
-    # ✅ ИСПОЛЬЗУЕМ официальный setup-gradle
+    # ✅ Setup Gradle
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
         
-    # ✅ Очистка build директорий
-    - name: Clean build directories
-      run: ./gradlew clean
-        
-    # ✅ ОПТИМИЗИРОВАНО: Сборка с флагами производительности
+    # ✅ Сборка
     - name: Build with Gradle
-      run: |
-        ./gradlew assembleDebug \
-          --stacktrace \
-          --max-workers=4
+      run: ./gradlew assembleDebug --stacktrace
       
     - name: Get commit info
       id: commit
