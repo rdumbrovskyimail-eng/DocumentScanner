@@ -38,11 +38,14 @@ fun EditorScreen(
     var showEditNameDialog by remember { mutableStateOf(false) }
     var editingDocument by remember { mutableStateOf<Document?>(null) }
     
+    // ✅ ИСПРАВЛЕНО: Используем rememberCoroutineScope()
+    val coroutineScope = rememberCoroutineScope()
+    
     // ✅ НОВОЕ: Snackbar state
     val snackbarHostState = remember { SnackbarHostState() }
     
-    // ✅ НОВОЕ: Debouncer для кнопок
-    val galleryDebouncer = remember { Debouncer(800L, viewModel.viewModelScope) }
+    // ✅ ИСПРАВЛЕНО: Передаем coroutineScope вместо viewModel.viewModelScope
+    val galleryDebouncer = remember { Debouncer(800L, coroutineScope) }
     
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
