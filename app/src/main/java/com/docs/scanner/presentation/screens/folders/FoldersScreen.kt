@@ -15,9 +15,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.model.Folder
+import com.docs.scanner.domain.usecase.*
 import com.docs.scanner.presentation.components.*
-import com.docs.scanner.util.Debouncer
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @Composable
 fun FoldersScreen(
@@ -32,9 +38,6 @@ fun FoldersScreen(
     val uiState by viewModel.uiState.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     var isProcessing by remember { mutableStateOf(false) }
-
-    val cameraDebouncer = remember { Debouncer(800L, viewModel.viewModelScope) }
-    val galleryDebouncer = remember { Debouncer(800L, viewModel.viewModelScope) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -63,43 +66,23 @@ fun FoldersScreen(
             TopAppBar(
                 title = { Text("Document Scanner") },
                 actions = {
-                    IconButton(
-                        onClick = { 
-                            cameraDebouncer.invoke { onSearchClick() }
-                        }
-                    ) {
+                    IconButton(onClick = onSearchClick) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
 
-                    IconButton(
-                        onClick = { 
-                            cameraDebouncer.invoke { onTermsClick() }
-                        }
-                    ) {
+                    IconButton(onClick = onTermsClick) {
                         Icon(Icons.Default.Event, contentDescription = "Terms")
                     }
 
                     IconButton(
-                        onClick = {
-                            cameraDebouncer.invoke {
-                                if (!isProcessing) {
-                                    onCameraClick()
-                                }
-                            }
-                        },
+                        onClick = { if (!isProcessing) onCameraClick() },
                         enabled = !isProcessing
                     ) {
                         Icon(Icons.Default.CameraAlt, contentDescription = "Camera")
                     }
 
                     IconButton(
-                        onClick = {
-                            galleryDebouncer.invoke {
-                                if (!isProcessing) {
-                                    galleryLauncher.launch("image/*")
-                                }
-                            }
-                        },
+                        onClick = { if (!isProcessing) galleryLauncher.launch("image/*") },
                         enabled = !isProcessing
                     ) {
                         if (isProcessing) {
@@ -108,10 +91,7 @@ fun FoldersScreen(
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            Icon(
-                                Icons.Default.PhotoLibrary,
-                                contentDescription = "Gallery"
-                            )
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = "Gallery")
                         }
                     }
 
@@ -141,17 +121,12 @@ fun FoldersScreen(
             }
         }
     ) { padding ->
-
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
+            modifier = Modifier.fillMaxSize().padding(padding)
         ) {
             when (uiState) {
                 is FoldersUiState.Loading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 }
 
                 is FoldersUiState.Empty -> {
@@ -183,8 +158,7 @@ fun FoldersScreen(
                             FolderCard(
                                 folder = folder,
                                 onClick = { onFolderClick(folder.id) },
-                                onLongClick = { editingFolder = folder },
-                                onDelete = { showDeleteDialog = folder }
+                                onLongClick = { editingFolder = folder }
                             )
                         }
                     }
@@ -200,14 +174,10 @@ fun FoldersScreen(
 
             if (isProcessing) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
+                    modifier = Modifier.fillMaxSize().padding(padding),
                     contentAlignment = Alignment.Center
                 ) {
-                    Card(
-                        elevation = CardDefaults.cardElevation(8.dp)
-                    ) {
+                    Card(elevation = CardDefaults.cardElevation(8.dp)) {
                         Column(
                             modifier = Modifier.padding(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
@@ -222,7 +192,7 @@ fun FoldersScreen(
         }
     }
 
-    // ✅ CREATE DIALOG
+    // CREATE DIALOG
     if (showCreateDialog) {
         var name by remember { mutableStateOf("") }
         var description by remember { mutableStateOf("") }
@@ -239,9 +209,7 @@ fun FoldersScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     OutlinedTextField(
                         value = description,
                         onValueChange = { description = it },
@@ -270,7 +238,7 @@ fun FoldersScreen(
         )
     }
 
-    // ✅ EDIT DIALOG (FIXED)
+    // EDIT DIALOG
     editingFolder?.let { folder ->
         var showEditDialog by remember { mutableStateOf(true) }
         
@@ -293,9 +261,7 @@ fun FoldersScreen(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-
                         Spacer(modifier = Modifier.height(8.dp))
-
                         OutlinedTextField(
                             value = newDescription,
                             onValueChange = { newDescription = it },
@@ -303,10 +269,7 @@ fun FoldersScreen(
                             maxLines = 3,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        
                         Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // ✅ КНОПКА DELETE ВНУТРИ ДИАЛОГА
                         OutlinedButton(
                             onClick = {
                                 showEditDialog = false
@@ -353,7 +316,7 @@ fun FoldersScreen(
         }
     }
 
-    // ✅ DELETE CONFIRMATION
+    // DELETE CONFIRMATION
     showDeleteDialog?.let { folder ->
         ConfirmDialog(
             title = "Delete Folder?",
@@ -372,8 +335,7 @@ fun FoldersScreen(
 private fun FolderCard(
     folder: Folder,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    onDelete: () -> Unit
+    onLongClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -393,12 +355,9 @@ private fun FolderCard(
                 modifier = Modifier.size(48.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
-
             Spacer(modifier = Modifier.width(16.dp))
-
             Column(modifier = Modifier.weight(1f)) {
                 Text(folder.name, style = MaterialTheme.typography.titleMedium)
-
                 folder.description?.let {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
@@ -407,7 +366,6 @@ private fun FolderCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     "${folder.recordCount} records",
@@ -416,5 +374,98 @@ private fun FolderCard(
                 )
             }
         }
+    }
+}
+
+// VIEWMODEL
+sealed interface FoldersUiState {
+    data object Loading : FoldersUiState
+    data object Empty : FoldersUiState
+    data class Success(val folders: List<Folder>) : FoldersUiState
+    data class Error(val message: String) : FoldersUiState
+}
+
+@HiltViewModel
+class FoldersViewModel @Inject constructor(
+    private val getFoldersUseCase: GetFoldersUseCase,
+    private val createFolderUseCase: CreateFolderUseCase,
+    private val updateFolderUseCase: UpdateFolderUseCase,
+    private val deleteFolderUseCase: DeleteFolderUseCase,
+    private val quickScanUseCase: QuickScanUseCase
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow<FoldersUiState>(FoldersUiState.Loading)
+    val uiState: StateFlow<FoldersUiState> = _uiState.asStateFlow()
+
+    private val _errorMessage = MutableStateFlow("")
+    val errorMessage: StateFlow<String> = _errorMessage.asStateFlow()
+
+    init {
+        loadFolders()
+    }
+
+    fun loadFolders() {
+        viewModelScope.launch {
+            _uiState.value = FoldersUiState.Loading
+            getFoldersUseCase()
+                .catch {
+                    _uiState.value = FoldersUiState.Error("Failed to load folders")
+                }
+                .collect { folders ->
+                    _uiState.value =
+                        if (folders.isEmpty()) FoldersUiState.Empty
+                        else FoldersUiState.Success(folders)
+                }
+        }
+    }
+
+    fun createFolder(name: String, description: String?) {
+        viewModelScope.launch {
+            createFolderUseCase(name, description)
+        }
+    }
+
+    fun updateFolder(folder: Folder) {
+        viewModelScope.launch {
+            updateFolderUseCase(folder)
+        }
+    }
+
+    fun deleteFolder(id: Long) {
+        viewModelScope.launch {
+            deleteFolderUseCase(id)
+        }
+    }
+
+    fun quickScan(
+        imageUri: Uri,
+        onComplete: (Long) -> Unit,
+        onError: (Throwable) -> Unit
+    ) {
+        viewModelScope.launch {
+            when (val result = quickScanUseCase(imageUri)) {
+                is com.docs.scanner.domain.model.Result.Success -> {
+                    onComplete(result.data)
+                }
+                is com.docs.scanner.domain.model.Result.Error -> {
+                    val errorMsg = result.exception.message ?: "Unknown error"
+                    
+                    if (errorMsg.contains("quota", ignoreCase = true)) {
+                        _errorMessage.value = "⚠️ API quota exceeded. Please wait 1 hour or upgrade your plan."
+                    } else if (errorMsg.contains("Invalid API key", ignoreCase = true)) {
+                        _errorMessage.value = "❌ Invalid API key. Please check your settings."
+                    } else {
+                        _errorMessage.value = "❌ Error: $errorMsg"
+                    }
+                    
+                    onError(result.exception)
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    fun clearError() {
+        _errorMessage.value = ""
     }
 }
