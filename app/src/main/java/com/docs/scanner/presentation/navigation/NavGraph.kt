@@ -3,7 +3,9 @@ package com.docs.scanner.presentation.navigation
 import androidx.compose.runtime.*
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
-import androidx.navigation.compose.*
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.docs.scanner.presentation.screens.camera.CameraScreen
 import com.docs.scanner.presentation.screens.editor.EditorScreen
@@ -32,15 +34,11 @@ fun NavGraph(
                 }
             )
         }
-        
+
         composable(Screen.Folders.route) {
             FoldersScreen(
                 onFolderClick = { folderId ->
-                    try {
-                        navController.navigate(Screen.Records.createRoute(folderId))
-                    } catch (e: Exception) {
-                        println("❌ Navigation error: ${e.message}")
-                    }
+                    navController.navigate(Screen.Records.createRoute(folderId))
                 },
                 onSettingsClick = {
                     navController.navigate(Screen.Settings.route)
@@ -55,152 +53,80 @@ fun NavGraph(
                     navController.navigate(Screen.Camera.route)
                 },
                 onQuickScanComplete = { recordId ->
-                    try {
-                        navController.navigate(Screen.Editor.createRoute(recordId))
-                    } catch (e: Exception) {
-                        println("❌ Navigation error: ${e.message}")
-                    }
+                    navController.navigate(Screen.Editor.createRoute(recordId))
                 }
             )
         }
-        
+
         composable(
             route = Screen.Records.route,
-            arguments = listOf(
-                navArgument("folderId") { 
-                    type = NavType.LongType
-                    defaultValue = -1L
+            arguments = listOf(navArgument("folderId") { type = NavType.LongType })
+        ) { backStackEntry ->
+            val folderId = backStackEntry.arguments?.getLong("folderId") ?: return@composable
+            RecordsScreen(
+                folderId = folderId,
+                onBackClick = { navController.popBackStack() },
+                onRecordClick = { recordId ->
+                    navController.navigate(Screen.Editor.createRoute(recordId))
                 }
             )
-        ) { backStackEntry ->
-            val folderId = backStackEntry.arguments?.getLong("folderId") ?: -1L
-            
-            if (folderId == -1L) {
-                LaunchedEffect(Unit) {
-                    navController.popBackStack()
-                }
-            } else {
-                RecordsScreen(
-                    folderId = folderId,
-                    onBackClick = {
-                        navController.popBackStack()
-                    },
-                    onRecordClick = { recordId ->
-                        try {
-                            navController.navigate(Screen.Editor.createRoute(recordId))
-                        } catch (e: Exception) {
-                            println("❌ Navigation error: ${e.message}")
-                        }
-                    }
-                )
-            }
         }
-        
+
         composable(
             route = Screen.Editor.route,
-            arguments = listOf(
-                navArgument("recordId") { 
-                    type = NavType.LongType
-                    defaultValue = -1L
+            arguments = listOf(navArgument("recordId") { type = NavType.LongType })
+        ) { backStackEntry ->
+            val recordId = backStackEntry.arguments?.getLong("recordId") ?: return@composable
+            EditorScreen(
+                recordId = recordId,
+                onBackClick = { navController.popBackStack() },
+                onImageClick = { documentId ->
+                    navController.navigate(Screen.ImageViewer.createRoute(documentId))
                 }
             )
-        ) { backStackEntry ->
-            val recordId = backStackEntry.arguments?.getLong("recordId") ?: -1L
-            
-            if (recordId == -1L) {
-                LaunchedEffect(Unit) {
-                    navController.popBackStack()
-                }
-            } else {
-                EditorScreen(
-                    recordId = recordId,
-                    onBackClick = {
-                        navController.popBackStack()
-                    },
-                    onImageClick = { documentId ->
-                        try {
-                            navController.navigate(Screen.ImageViewer.createRoute(documentId))
-                        } catch (e: Exception) {
-                            println("❌ Navigation error: ${e.message}")
-                        }
-                    }
-                )
-            }
         }
-        
+
         composable(Screen.Camera.route) {
             CameraScreen(
                 onScanComplete = { recordId ->
-                    try {
-                        navController.navigate(Screen.Editor.createRoute(recordId)) {
-                            popUpTo(Screen.Folders.route) { inclusive = false }
-                        }
-                    } catch (e: Exception) {
-                        println("❌ Navigation error: ${e.message}")
-                        navController.popBackStack()
+                    navController.navigate(Screen.Editor.createRoute(recordId)) {
+                        popUpTo(Screen.Folders.route) { inclusive = false }
                     }
                 },
-                onBackClick = {
-                    navController.popBackStack()
-                }
+                onBackClick = { navController.popBackStack() }
             )
         }
-        
+
         composable(Screen.Search.route) {
             SearchScreen(
-                onBackClick = {
-                    navController.popBackStack()
-                },
+                onBackClick = { navController.popBackStack() },
                 onDocumentClick = { recordId ->
-                    try {
-                        navController.navigate(Screen.Editor.createRoute(recordId))
-                    } catch (e: Exception) {
-                        println("❌ Navigation error: ${e.message}")
-                    }
+                    navController.navigate(Screen.Editor.createRoute(recordId))
                 }
             )
         }
-        
-        // ✅ ИСПРАВЛЕНО: Terms Screen - используем onNavigateBack вместо onBackClick
+
         composable(Screen.Terms.route) {
             TermsScreen(
-                onNavigateBack = {  // ✅ Правильный параметр
-                    navController.popBackStack()
-                }
+                onNavigateBack = { navController.popBackStack() }
             )
         }
-        
+
         composable(Screen.Settings.route) {
             SettingsScreen(
-                onBackClick = {
-                    navController.popBackStack()
-                }
+                onBackClick = { navController.popBackStack() }
             )
         }
-        
+
         composable(
             route = Screen.ImageViewer.route,
-            arguments = listOf(
-                navArgument("documentId") { 
-                    type = NavType.LongType
-                    defaultValue = -1L
-                }
-            )
+            arguments = listOf(navArgument("documentId") { type = NavType.LongType })
         ) { backStackEntry ->
-            val documentId = backStackEntry.arguments?.getLong("documentId") ?: -1L
-            
-            if (documentId == -1L) {
-                LaunchedEffect(Unit) {
-                    navController.popBackStack()
-                }
-            } else {
-                ImageViewerScreen(
-                    documentId = documentId,
-                    onBackClick = {
-                        navController.popBackStack()
-                    }
-                )
-            }
+            val documentId = backStackEntry.arguments?.getLong("documentId") ?: return@composable
+            ImageViewerScreen(
+                documentId = documentId,
+                onBackClick = { navController.popBackStack() }
+            )
         }
     }
 }
