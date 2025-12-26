@@ -24,7 +24,7 @@ class QuickScanUseCase @Inject constructor(
                 ?: folderRepository.createFolder(
                     name = "New Folder",
                     description = "Quick scans"
-                )
+                ) ?: return Result.Error(Exception("Failed to create folder"))
             
             // 3. Создать форматированную дату и время
             val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -32,15 +32,15 @@ class QuickScanUseCase @Inject constructor(
             
             // 4. Создать запись с датой в ОПИСАНИИ
             val record = recordRepository.createRecord(
-                folderId = newFolder.id,  // ✅ Now newFolder is guaranteed to be non-null
+                folderId = newFolder.id,
                 name = "New document",
                 description = "Created: $currentDateTime"
-            )
+            ) ?: return Result.Error(Exception("Failed to create record"))
             
             // 5. Добавить документ с изображением
-            addDocumentUseCase(record.id, imageUri)  // ✅ record is guaranteed to be non-null
+            addDocumentUseCase(record.id, imageUri)
             
-            Result.Success(record.id)  // ✅ record.id is accessible
+            Result.Success(record.id)
         } catch (e: Exception) {
             android.util.Log.e("QuickScanUseCase", "❌ Error in quick scan", e)
             Result.Error(e)
