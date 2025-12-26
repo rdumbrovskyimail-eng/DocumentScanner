@@ -19,38 +19,17 @@ import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    
-    private val requestPermissionLauncher = registerForActivityResult(
+
+    private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        permissions.entries.forEach {
-            // Handle permission results
-        }
-    }
-    
+    ) { /* handled */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
         enableEdgeToEdge()
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val permissionsToRequest = mutableListOf<String>()
-            
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
-                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
-            }
-            
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES)
-                != PackageManager.PERMISSION_GRANTED) {
-                permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES)
-            }
-            
-            if (permissionsToRequest.isNotEmpty()) {
-                requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
-            }
-        }
-        
+
+        requestNecessaryPermissions()
+
         setContent {
             DocumentScannerTheme {
                 Surface(
@@ -60,6 +39,34 @@ class MainActivity : ComponentActivity() {
                     NavGraph()
                 }
             }
+        }
+    }
+
+    private fun requestNecessaryPermissions() {
+        val permissions = mutableListOf<String>()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) !=
+                PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (!android.app.AlarmManager.AlarmManagerCompat.canScheduleExactAlarms(
+                    getSystemService(ALARM_SERVICE) as android.app.AlarmManager
+                )) {
+                // Точные будильники требуют отдельного запроса через Settings
+                // Можно открыть Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
+            }
+        }
+
+        if (permissions.isNotEmpty()) {
+            permissionLauncher.launch(permissions.toTypedArray())
         }
     }
 }
