@@ -15,16 +15,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.model.Folder
-import com.docs.scanner.domain.usecase.*
 import com.docs.scanner.presentation.components.*
 import com.docs.scanner.util.Debouncer
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @Composable
 fun FoldersScreen(
@@ -40,7 +33,6 @@ fun FoldersScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     var isProcessing by remember { mutableStateOf(false) }
 
-    // ✅ НОВОЕ: Debouncer для всех кнопок
     val cameraDebouncer = remember { Debouncer(800L, viewModel.viewModelScope) }
     val galleryDebouncer = remember { Debouncer(800L, viewModel.viewModelScope) }
 
@@ -71,7 +63,6 @@ fun FoldersScreen(
             TopAppBar(
                 title = { Text("Document Scanner") },
                 actions = {
-                    // ✅ Search с debounce
                     IconButton(
                         onClick = { 
                             cameraDebouncer.invoke { onSearchClick() }
@@ -80,7 +71,6 @@ fun FoldersScreen(
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
 
-                    // ✅ Terms с debounce
                     IconButton(
                         onClick = { 
                             cameraDebouncer.invoke { onTermsClick() }
@@ -89,7 +79,6 @@ fun FoldersScreen(
                         Icon(Icons.Default.Event, contentDescription = "Terms")
                     }
 
-                    // ✅ Camera с debounce
                     IconButton(
                         onClick = {
                             cameraDebouncer.invoke {
@@ -103,7 +92,6 @@ fun FoldersScreen(
                         Icon(Icons.Default.CameraAlt, contentDescription = "Camera")
                     }
 
-                    // ✅ Gallery с debounce
                     IconButton(
                         onClick = {
                             galleryDebouncer.invoke {
@@ -139,7 +127,6 @@ fun FoldersScreen(
             }
         },
         snackbarHost = {
-            // ✅ НОВОЕ: Snackbar для ошибок
             if (errorMessage.isNotEmpty()) {
                 Snackbar(
                     modifier = Modifier.padding(16.dp),
@@ -211,7 +198,6 @@ fun FoldersScreen(
                 }
             }
 
-            // ✅ НОВОЕ: Processing overlay
             if (isProcessing) {
                 Box(
                     modifier = Modifier
@@ -236,6 +222,7 @@ fun FoldersScreen(
         }
     }
 
+    // ✅ CREATE DIALOG
     if (showCreateDialog) {
         var name by remember { mutableStateOf("") }
         var description by remember { mutableStateOf("") }
@@ -283,6 +270,90 @@ fun FoldersScreen(
         )
     }
 
+    // ✅ EDIT DIALOG (FIXED)
+    editingFolder?.let { folder ->
+        var showEditDialog by remember { mutableStateOf(true) }
+        
+        if (showEditDialog) {
+            var newName by remember { mutableStateOf(folder.name) }
+            var newDescription by remember { mutableStateOf(folder.description ?: "") }
+            
+            AlertDialog(
+                onDismissRequest = { 
+                    showEditDialog = false
+                    editingFolder = null
+                },
+                title = { Text("Edit Folder") },
+                text = {
+                    Column {
+                        OutlinedTextField(
+                            value = newName,
+                            onValueChange = { newName = it },
+                            label = { Text("Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = newDescription,
+                            onValueChange = { newDescription = it },
+                            label = { Text("Description") },
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // ✅ КНОПКА DELETE ВНУТРИ ДИАЛОГА
+                        OutlinedButton(
+                            onClick = {
+                                showEditDialog = false
+                                showDeleteDialog = folder
+                                editingFolder = null
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Delete Folder")
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.updateFolder(
+                                folder.copy(
+                                    name = newName,
+                                    description = newDescription.ifBlank { null }
+                                )
+                            )
+                            showEditDialog = false
+                            editingFolder = null
+                        },
+                        enabled = newName.isNotBlank()
+                    ) {
+                        Text("Save")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { 
+                        showEditDialog = false
+                        editingFolder = null
+                    }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+    }
+
+    // ✅ DELETE CONFIRMATION
     showDeleteDialog?.let { folder ->
         ConfirmDialog(
             title = "Delete Folder?",
@@ -345,102 +416,5 @@ private fun FolderCard(
                 )
             }
         }
-    }
-}
-
-/* ================= VIEWMODEL ================= */
-
-sealed interface FoldersUiState {
-    data object Loading : FoldersUiState
-    data object Empty : FoldersUiState
-    data class Success(val folders: List<Folder>) : FoldersUiState
-    data class Error(val message: String) : FoldersUiState
-}
-
-@HiltViewModel
-class FoldersViewModel @Inject constructor(
-    private val getFoldersUseCase: GetFoldersUseCase,
-    private val createFolderUseCase: CreateFolderUseCase,
-    private val updateFolderUseCase: UpdateFolderUseCase,
-    private val deleteFolderUseCase: DeleteFolderUseCase,
-    private val quickScanUseCase: QuickScanUseCase
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow<FoldersUiState>(FoldersUiState.Loading)
-    val uiState: StateFlow<FoldersUiState> = _uiState.asStateFlow()
-
-    // ✅ НОВОЕ: Error message state
-    private val _errorMessage = MutableStateFlow("")
-    val errorMessage: StateFlow<String> = _errorMessage.asStateFlow()
-
-    init {
-        loadFolders()
-    }
-
-    fun loadFolders() {
-        viewModelScope.launch {
-            _uiState.value = FoldersUiState.Loading
-            getFoldersUseCase()
-                .catch {
-                    _uiState.value = FoldersUiState.Error("Failed to load folders")
-                }
-                .collect { folders ->
-                    _uiState.value =
-                        if (folders.isEmpty()) FoldersUiState.Empty
-                        else FoldersUiState.Success(folders)
-                }
-        }
-    }
-
-    fun createFolder(name: String, description: String?) {
-        viewModelScope.launch {
-            createFolderUseCase(name, description)
-        }
-    }
-
-    fun updateFolder(folder: Folder) {
-        viewModelScope.launch {
-            updateFolderUseCase(folder)
-        }
-    }
-
-    fun deleteFolder(id: Long) {
-        viewModelScope.launch {
-            deleteFolderUseCase(id)
-        }
-    }
-
-    fun quickScan(
-        imageUri: Uri,
-        onComplete: (Long) -> Unit,
-        onError: (Throwable) -> Unit
-    ) {
-        viewModelScope.launch {
-            when (val result = quickScanUseCase(imageUri)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    onComplete(result.data)
-                }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    // ✅ НОВОЕ: Обработка ошибок квоты
-                    val errorMsg = result.exception.message ?: "Unknown error"
-                    
-                    if (errorMsg.contains("quota", ignoreCase = true)) {
-                        _errorMessage.value = "⚠️ API quota exceeded. Please wait 1 hour or upgrade your plan."
-                    } else if (errorMsg.contains("Invalid API key", ignoreCase = true)) {
-                        _errorMessage.value = "❌ Invalid API key. Please check your settings."
-                    } else {
-                        _errorMessage.value = "❌ Error: $errorMsg"
-                    }
-                    
-                    onError(result.exception)
-                }
-                else -> Unit
-            }
-        }
-    }
-
-    // ✅ НОВОЕ: Очистка ошибки
-    fun clearError() {
-        _errorMessage.value = ""
     }
 }
