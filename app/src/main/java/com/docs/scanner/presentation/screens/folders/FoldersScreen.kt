@@ -20,6 +20,7 @@ import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.usecase.*
 import com.docs.scanner.presentation.components.*
+import com.docs.scanner.util.Debouncer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -36,7 +37,12 @@ fun FoldersScreen(
     onQuickScanComplete: (Long) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
     var isProcessing by remember { mutableStateOf(false) }
+
+    // ✅ НОВОЕ: Debouncer для всех кнопок
+    val cameraDebouncer = remember { Debouncer(800L, viewModel.viewModelScope) }
+    val galleryDebouncer = remember { Debouncer(800L, viewModel.viewModelScope) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -65,23 +71,47 @@ fun FoldersScreen(
             TopAppBar(
                 title = { Text("Document Scanner") },
                 actions = {
-                    IconButton(onClick = onSearchClick) {
+                    // ✅ Search с debounce
+                    IconButton(
+                        onClick = { 
+                            cameraDebouncer.invoke { onSearchClick() }
+                        }
+                    ) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
 
-                    IconButton(onClick = onTermsClick) {
+                    // ✅ Terms с debounce
+                    IconButton(
+                        onClick = { 
+                            cameraDebouncer.invoke { onTermsClick() }
+                        }
+                    ) {
                         Icon(Icons.Default.Event, contentDescription = "Terms")
                     }
 
+                    // ✅ Camera с debounce
                     IconButton(
-                        onClick = onCameraClick,
+                        onClick = {
+                            cameraDebouncer.invoke {
+                                if (!isProcessing) {
+                                    onCameraClick()
+                                }
+                            }
+                        },
                         enabled = !isProcessing
                     ) {
                         Icon(Icons.Default.CameraAlt, contentDescription = "Camera")
                     }
 
+                    // ✅ Gallery с debounce
                     IconButton(
-                        onClick = { galleryLauncher.launch("image/*") },
+                        onClick = {
+                            galleryDebouncer.invoke {
+                                if (!isProcessing) {
+                                    galleryLauncher.launch("image/*")
+                                }
+                            }
+                        },
                         enabled = !isProcessing
                     ) {
                         if (isProcessing) {
@@ -106,6 +136,21 @@ fun FoldersScreen(
         floatingActionButton = {
             FloatingActionButton(onClick = { showCreateDialog = true }) {
                 Icon(Icons.Default.Add, contentDescription = "Create Folder")
+            }
+        },
+        snackbarHost = {
+            // ✅ НОВОЕ: Snackbar для ошибок
+            if (errorMessage.isNotEmpty()) {
+                Snackbar(
+                    modifier = Modifier.padding(16.dp),
+                    action = {
+                        TextButton(onClick = { viewModel.clearError() }) {
+                            Text("OK")
+                        }
+                    }
+                ) {
+                    Text(errorMessage)
+                }
             }
         }
     ) { padding ->
@@ -165,25 +210,26 @@ fun FoldersScreen(
                     )
                 }
             }
-        }
 
-        if (isProcessing) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Card(
-                    elevation = CardDefaults.cardElevation(8.dp)
+            // ✅ НОВОЕ: Processing overlay
+            if (isProcessing) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    Card(
+                        elevation = CardDefaults.cardElevation(8.dp)
                     ) {
-                        CircularProgressIndicator()
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Processing document...")
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator()
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("Processing document...")
+                        }
                     }
                 }
             }
@@ -323,6 +369,10 @@ class FoldersViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<FoldersUiState>(FoldersUiState.Loading)
     val uiState: StateFlow<FoldersUiState> = _uiState.asStateFlow()
 
+    // ✅ НОВОЕ: Error message state
+    private val _errorMessage = MutableStateFlow("")
+    val errorMessage: StateFlow<String> = _errorMessage.asStateFlow()
+
     init {
         loadFolders()
     }
@@ -367,14 +417,30 @@ class FoldersViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             when (val result = quickScanUseCase(imageUri)) {
-                is com.docs.scanner.domain.model.Result.Success ->
+                is com.docs.scanner.domain.model.Result.Success -> {
                     onComplete(result.data)
-
-                is com.docs.scanner.domain.model.Result.Error ->
+                }
+                is com.docs.scanner.domain.model.Result.Error -> {
+                    // ✅ НОВОЕ: Обработка ошибок квоты
+                    val errorMsg = result.exception.message ?: "Unknown error"
+                    
+                    if (errorMsg.contains("quota", ignoreCase = true)) {
+                        _errorMessage.value = "⚠️ API quota exceeded. Please wait 1 hour or upgrade your plan."
+                    } else if (errorMsg.contains("Invalid API key", ignoreCase = true)) {
+                        _errorMessage.value = "❌ Invalid API key. Please check your settings."
+                    } else {
+                        _errorMessage.value = "❌ Error: $errorMsg"
+                    }
+                    
                     onError(result.exception)
-
+                }
                 else -> Unit
             }
         }
+    }
+
+    // ✅ НОВОЕ: Очистка ошибки
+    fun clearError() {
+        _errorMessage.value = ""
     }
 }
