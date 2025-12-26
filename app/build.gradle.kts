@@ -1,19 +1,20 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" // ДОБАВЛЕНО для Compose
     id("dagger.hilt.android.plugin")
     id("kotlin-kapt")
-    id("com.google.devtools.ksp") // <-- БЕЗ ВЕРСИИ!
+    id("com.google.devtools.ksp") // Версия указана в build.gradle (project level)
 }
 
 android {
     namespace = "com.docs.scanner"
-    compileSdk = 34
+    compileSdk = 35 // Обновлено
 
     defaultConfig {
         applicationId = "com.docs.scanner"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 35 // Обновлено
         versionCode = 1
         versionName = "2.1.0"
 
@@ -35,17 +36,19 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    // ИСПРАВЛЕНО: заменён kotlinOptions на compilerOptions
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 
     buildFeatures {
         compose = true
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
-    }
+    // УДАЛЕНО: composeOptions больше не нужен с новым плагином
+    // composeOptions {
+    //     kotlinCompilerExtensionVersion = "1.5.14"
+    // }
 
     packaging {
         resources {
@@ -55,19 +58,19 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
-    implementation("androidx.activity:activity-compose:1.9.2")
-    implementation(platform("androidx.compose:compose-bom:2024.10.00"))
+    implementation("androidx.core:core-ktx:1.15.0") // Обновлено
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7") // Обновлено
+    implementation("androidx.activity:activity-compose:1.9.3") // Обновлено
+    implementation(platform("androidx.compose:compose-bom:2024.12.01")) // Обновлено
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
 
     // Hilt
-    implementation("com.google.dagger:hilt-android:2.51")
-    kapt("com.google.dagger:hilt-android-compiler:2.51")
-    ksp("com.google.dagger:hilt-compiler:2.51")
+    implementation("com.google.dagger:hilt-android:2.52") // Обновлено
+    kapt("com.google.dagger:hilt-android-compiler:2.52") // Обновлено
+    ksp("com.google.dagger:hilt-compiler:2.52") // Обновлено
 
     // Room
     implementation("androidx.room:room-runtime:2.6.1")
@@ -86,15 +89,15 @@ dependencies {
 
     // Google Drive API
     implementation("com.google.android.gms:play-services-auth:21.2.0")
-    implementation("com.google.http-client:google-http-client-gson:1.44.2")
-    implementation("com.google.api-client:google-api-client-android:2.4.0")
-    implementation("com.google.apis:google-api-services-drive:v3-rev20240815-2.0.0")
+    implementation("com.google.http-client:google-http-client-gson:1.45.1") // Обновлено
+    implementation("com.google.api-client:google-api-client-android:2.7.0") // Обновлено
+    implementation("com.google.apis:google-api-services-drive:v3-rev20241108-2.0.0") // Обновлено
 
     // EncryptedSharedPreferences
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0") // Обновлено
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
