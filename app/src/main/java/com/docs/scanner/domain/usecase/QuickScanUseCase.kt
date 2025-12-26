@@ -32,15 +32,15 @@ class QuickScanUseCase @Inject constructor(
             
             // 4. Создать запись с датой в ОПИСАНИИ
             val record = recordRepository.createRecord(
-                folderId = newFolder.id,
+                folderId = newFolder.id,  // ✅ Now newFolder is guaranteed to be non-null
                 name = "New document",
                 description = "Created: $currentDateTime"
             )
             
             // 5. Добавить документ с изображением
-            addDocumentUseCase(record.id, imageUri)
+            addDocumentUseCase(record.id, imageUri)  // ✅ record is guaranteed to be non-null
             
-            Result.Success(record.id)
+            Result.Success(record.id)  // ✅ record.id is accessible
         } catch (e: Exception) {
             android.util.Log.e("QuickScanUseCase", "❌ Error in quick scan", e)
             Result.Error(e)
