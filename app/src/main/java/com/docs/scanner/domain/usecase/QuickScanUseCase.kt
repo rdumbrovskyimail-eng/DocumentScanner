@@ -16,51 +16,36 @@ class QuickScanUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(imageUri: Uri): Result<Long> {
         return try {
-            // 1. Получить список папок из Flow
             val folders = folderRepository.getAllFolders().first()
-            
-            // 2. Найти или создать папку "New Folder"
-            val newFolder = folders.firstOrNull { it.name == "New Folder" }
-                ?: folderRepository.createFolder(
-                    name = "New Folder",
-                    description = "Quick scans"
-                ).let { result ->
-                    when (result) {
-                        is Result.Success -> folderRepository.getFolderById(result.data)
-                        else -> return Result.Error(Exception("Failed to create folder"))
-                    }
-                } ?: return Result.Error(Exception("Failed to create folder"))
-            
-            // 3. Создать форматированную дату и время
-            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-            val currentDateTime = dateFormat.format(Date())
-            
-            // 4. Создать запись с датой в ОПИСАНИИ
+
+            val quickFolder = folders.firstOrNull { it.name == "Quick Scans" }
+                ?: folderRepository.createFolder("Quick Scans", "Automatically created for quick scans")
+                    .let { result ->
+                        if (result is Result.Success) {
+                            folderRepository.getFolderById(result.data)
+                        } else {
+                            return result as Result.Error
+                        }
+                    } ?: return Result.Error(Exception("Failed to get/create folder"))
+
+            val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
+
             val recordResult = recordRepository.createRecord(
-                folderId = newFolder.id,
-                name = "New document",
-                description = "Created: $currentDateTime"
+                folderId = quickFolder.id,
+                name = "Scan $dateStr",
+                description = "Quick scan at $dateStr"
             )
-            
+
             val recordId = when (recordResult) {
                 is Result.Success -> recordResult.data
-                is Result.Error -> return Result.Error(
-                    Exception("Failed to create record: ${recordResult.exception.message}")
-                )
-                else -> return Result.Error(Exception("Failed to create record"))
+                is Result.Error -> return recordResult
             }
-            
-            // 5. Добавить документ с изображением
-            when (val documentResult = addDocumentUseCase(recordId, imageUri)) {
+
+            when (val docResult = addDocumentUseCase(recordId, imageUri)) {
                 is Result.Success -> Result.Success(recordId)
-                is Result.Error -> Result.Error(
-                    Exception("Failed to add document: ${documentResult.exception.message}")
-                )
-                else -> Result.Error(Exception("Failed to add document"))
+                is Result.Error -> Result.Error(docResult.exception)
             }
-            
         } catch (e: Exception) {
-            android.util.Log.e("QuickScanUseCase", "❌ Error in quick scan", e)
             Result.Error(e)
         }
     }
