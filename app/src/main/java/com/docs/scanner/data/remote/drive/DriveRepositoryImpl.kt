@@ -5,8 +5,8 @@ import com.docs.scanner.domain.model.Result
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
-import com.google.api.client.extensions.android.http.AndroidHttp
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
+import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
@@ -65,7 +65,7 @@ class DriveRepositoryImpl @Inject constructor(
             selectedAccount = account.account
         }
 
-        return Drive.Builder(AndroidHttp.newCompatibleTransport(), GsonFactory.getDefaultInstance(), credential)
+        return Drive.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), credential)
             .setApplicationName("Document Scanner")
             .build()
     }
@@ -134,7 +134,7 @@ class DriveRepositoryImpl @Inject constructor(
                     fileId = file.id,
                     fileName = file.name ?: "unknown",
                     createdDate = date,
-                    sizeBytes = file.size ?: 0L
+                    sizeBytes = file.size?.toLong() ?: 0L
                 )
             }
         }
@@ -147,7 +147,7 @@ class DriveRepositoryImpl @Inject constructor(
             // ✅ Создаём резервную копию текущей БД перед восстановлением
             val dbFile = context.getDatabasePath(databaseName)
             if (dbFile.exists()) {
-                val backupDb = File(dbFile.parent, "\( {dbFile.name}.pre_restore_ \){System.currentTimeMillis()}")
+                val backupDb = File(dbFile.parent, "${dbFile.name}.pre_restore_${System.currentTimeMillis()}")
                 dbFile.copyTo(backupDb, overwrite = true)
 
                 // Очищаем WAL/SHM файлы
