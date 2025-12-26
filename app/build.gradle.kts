@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose") // БЕЗ ВЕРСИИ (берется из корневого файла)
+    id("org.jetbrains.kotlin.plugin.compose") // БЕЗ ВЕРСИИ
     id("dagger.hilt.android.plugin")
     id("kotlin-kapt")
     id("com.google.devtools.ksp")
@@ -36,8 +36,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    kotlinOptions {
+        jvmTarget = "17"
     }
 
     buildFeatures {
@@ -52,12 +52,12 @@ android {
 }
 
 dependencies {
-    // AndroidX Core - ПОСЛЕДНЯЯ ВЕРСИЯ 1.17.0
+    // AndroidX Core - ПОСЛЕДНЯЯ ВЕРСИЯ
     implementation("androidx.core:core-ktx:1.17.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0") // ОБНОВЛЕНО
-    implementation("androidx.activity:activity-compose:1.12.2") // ОБНОВЛЕНО
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    implementation("androidx.activity:activity-compose:1.12.2")
     
-    // Compose BOM - ПОСЛЕДНЯЯ ВЕРСИЯ 2025.12.00 (17 декабря 2025)
+    // Compose BOM - ПОСЛЕДНЯЯ ВЕРСИЯ 2025.12.00
     implementation(platform("androidx.compose:compose-bom:2025.12.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -69,23 +69,23 @@ dependencies {
     kapt("com.google.dagger:hilt-android-compiler:2.57.2")
     ksp("com.google.dagger:hilt-compiler:2.57.2")
 
-    // Room - ПОСЛЕДНЯЯ СТАБИЛЬНАЯ ВЕРСИЯ 2.8.0 (10 сентября 2025)
+    // Room - ПОСЛЕДНЯЯ ВЕРСИЯ 2.8.0
     implementation("androidx.room:room-runtime:2.8.0")
     implementation("androidx.room:room-ktx:2.8.0")
     ksp("androidx.room:room-compiler:2.8.0")
 
-    // Coil 3 - ПОСЛЕДНЯЯ ВЕРСИЯ 3.3.0 (22 июля 2025)
+    // Coil 3 - ПОСЛЕДНЯЯ ВЕРСИЯ 3.3.0
     implementation("io.coil-kt.coil3:coil-compose:3.3.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
 
     // ML Kit Document Scanner
     implementation("com.google.mlkit:document-scanner:16.0.0-beta1")
 
-    // Retrofit & Gson - последние версии
+    // Retrofit & Gson
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
 
-    // Google Drive API - обновлены до последних версий
+    // Google Drive API
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.google.http-client:google-http-client-gson:1.45.1")
     implementation("com.google.api-client:google-api-client-android:2.7.0")
@@ -94,7 +94,7 @@ dependencies {
     // EncryptedSharedPreferences
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-    // Coroutines - последняя стабильная версия
+    // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     // Debug зависимости
