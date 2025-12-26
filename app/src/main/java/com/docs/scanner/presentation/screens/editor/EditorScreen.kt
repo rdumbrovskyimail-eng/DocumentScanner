@@ -20,6 +20,7 @@ import com.docs.scanner.domain.model.Document
 import com.docs.scanner.presentation.components.*
 import com.docs.scanner.presentation.screens.editor.components.*
 import com.docs.scanner.presentation.theme.*
+import com.docs.scanner.util.Debouncer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,9 +33,16 @@ fun EditorScreen(
     val uiState by viewModel.uiState.collectAsState()
     val record by viewModel.record.collectAsState()
     val folderName by viewModel.folderName.collectAsState(initial = null)
+    val errorMessage by viewModel.errorMessage.collectAsState()
     
     var showEditNameDialog by remember { mutableStateOf(false) }
     var editingDocument by remember { mutableStateOf<Document?>(null) }
+    
+    // ✅ НОВОЕ: Snackbar state
+    val snackbarHostState = remember { SnackbarHostState() }
+    
+    // ✅ НОВОЕ: Debouncer для кнопок
+    val galleryDebouncer = remember { Debouncer(800L, viewModel.viewModelScope) }
     
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -46,6 +54,17 @@ fun EditorScreen(
     }
     
     val listState = rememberLazyListState()
+    
+    // ✅ НОВОЕ: Показываем ошибку в Snackbar
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let { message ->
+            snackbarHostState.showSnackbar(
+                message = message,
+                duration = SnackbarDuration.Long
+            )
+            viewModel.clearError()
+        }
+    }
     
     LaunchedEffect(recordId) {
         android.util.Log.d("EditorScreen", "🔄 Loading record: $recordId")
@@ -63,7 +82,6 @@ fun EditorScreen(
                 },
                 onMenuClick = { 
                     android.util.Log.d("EditorScreen", "⋮ Menu clicked")
-                    // TODO: Menu
                 }
             )
         },
@@ -71,13 +89,26 @@ fun EditorScreen(
             FloatingActionButtons(
                 onCameraClick = { 
                     android.util.Log.d("EditorScreen", "📸 Camera clicked")
-                    // TODO: Camera
                 },
                 onGalleryClick = { 
-                    android.util.Log.d("EditorScreen", "🖼️ Gallery clicked")
-                    galleryLauncher.launch("image/*") 
+                    galleryDebouncer.invoke {
+                        android.util.Log.d("EditorScreen", "🖼️ Gallery clicked")
+                        galleryLauncher.launch("image/*")
+                    }
                 }
             )
+        },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = when {
+                        data.visuals.message.contains("⚠️") -> MaterialTheme.colorScheme.errorContainer
+                        data.visuals.message.contains("✅") -> MaterialTheme.colorScheme.primaryContainer
+                        else -> MaterialTheme.colorScheme.surfaceVariant
+                    }
+                )
+            }
         }
     ) { padding ->
         Box(
@@ -124,7 +155,6 @@ fun EditorScreen(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // ✅ DOCUMENT HEADER
                         item(key = "header") {
                             DocumentHeader(
                                 recordName = record?.name ?: "Document",
@@ -136,12 +166,10 @@ fun EditorScreen(
                             )
                         }
                         
-                        // ✅ DIVIDER
                         item(key = "divider") {
                             SimpleDivider()
                         }
                         
-                        // ✅ DOCUMENTS
                         items(
                             items = documents,
                             key = { "doc_${it.id}" }
@@ -149,7 +177,6 @@ fun EditorScreen(
                             Column(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                // Pagination indicator
                                 if (documents.size > 1) {
                                     Text(
                                         text = "Page ${documents.indexOf(document) + 1} of ${documents.size}",
@@ -159,7 +186,6 @@ fun EditorScreen(
                                     )
                                 }
                                 
-                                // ✅ G-CONTAINER
                                 GContainerLayout(
                                     previewContent = {
                                         DocumentPreview(
@@ -190,12 +216,10 @@ fun EditorScreen(
                                     }
                                 )
                                 
-                                // ✅ TRANSLATION FIELD
                                 TranslationField(
                                     translatedText = document.translatedText
                                 )
                                 
-                                // ✅ ACTION BUTTONS (для перевода)
                                 if (!document.translatedText.isNullOrBlank()) {
                                     ActionButtonsRow(
                                         text = document.translatedText ?: "",
@@ -206,7 +230,6 @@ fun EditorScreen(
                                     )
                                 }
                                 
-                                // ✅ SMART DIVIDER
                                 if (document != documents.lastOrNull()) {
                                     SmartDivider(
                                         modifier = Modifier.padding(vertical = 16.dp)
@@ -231,7 +254,6 @@ fun EditorScreen(
         }
     }
     
-    // ✅ EDIT NAME DIALOG
     if (showEditNameDialog && record != null) {
         var newName by remember { mutableStateOf(record!!.name) }
         var newDescription by remember { mutableStateOf(record!!.description ?: "") }
@@ -279,7 +301,6 @@ fun EditorScreen(
         )
     }
     
-    // ✅ FULLSCREEN TEXT EDITOR
     editingDocument?.let { doc ->
         FullscreenTextEditor(
             initialText = doc.originalText ?: "",
@@ -295,10 +316,6 @@ fun EditorScreen(
         )
     }
 }
-
-// ============================================
-// GOOGLE DOCS TOP BAR
-// ============================================
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -349,10 +366,6 @@ private fun GoogleDocsTopBar(
         }
     }
 }
-
-// ============================================
-// DOCUMENT HEADER
-// ============================================
 
 @Composable
 private fun DocumentHeader(
