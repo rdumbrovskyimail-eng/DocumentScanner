@@ -14,7 +14,10 @@ data class GeminiRequest(
 ) {
     data class Content(
         @SerializedName("parts")
-        val parts: List<Part>
+        val parts: List<Part>,
+        
+        @SerializedName("role")
+        val role: String = "user"
     )
     
     data class Part(
@@ -27,7 +30,13 @@ data class GeminiRequest(
         val temperature: Float,
         
         @SerializedName("maxOutputTokens")
-        val maxOutputTokens: Int
+        val maxOutputTokens: Int,
+        
+        @SerializedName("topP")
+        val topP: Float = 0.95f,
+        
+        @SerializedName("topK")
+        val topK: Int = 40
     )
     
     data class SafetySetting(
