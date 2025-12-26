@@ -15,12 +15,15 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 2
-        versionName = "2.0.0"
+        versionName = "2.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
+        
+        // ✅ НОВОЕ: BuildConfig для определения режима
+        buildConfigField("boolean", "DEBUG", "true")
     }
 
     buildTypes {
@@ -31,10 +34,16 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            
+            // ✅ НОВОЕ: Отключаем DEBUG флаг в release
+            buildConfigField("boolean", "DEBUG", "false")
         }
         debug {
             isMinifyEnabled = false
             applicationIdSuffix = ".debug"
+            
+            // ✅ DEBUG флаг уже true по умолчанию
+            buildConfigField("boolean", "DEBUG", "true")
         }
     }
 
@@ -55,7 +64,7 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = true
+        buildConfig = true // ✅ Включаем BuildConfig
     }
 
     packaging {
