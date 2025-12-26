@@ -165,7 +165,7 @@ dependencies {
 }
 
 // ============================================
-# KSP CONFIGURATION
+// KSP CONFIGURATION
 // ============================================
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
