@@ -33,10 +33,16 @@ class AddDocumentUseCase @Inject constructor(
                         is Result.Error -> {
                             documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
                         }
+                        is Result.Loading -> {
+                            // Обработка состояния загрузки
+                        }
                     }
                 }
                 is Result.Error -> {
                     documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
+                }
+                is Result.Loading -> {
+                    // Обработка состояния загрузки
                 }
             }
 
