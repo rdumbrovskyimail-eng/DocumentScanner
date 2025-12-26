@@ -7,6 +7,7 @@ import android.net.Uri
 import com.docs.scanner.data.local.database.dao.*
 import com.docs.scanner.data.local.database.entities.*
 import com.docs.scanner.data.local.preferences.SettingsDataStore
+import com.docs.scanner.data.local.security.EncryptedKeyStorage
 import com.docs.scanner.data.remote.gemini.GeminiTranslator
 import com.docs.scanner.data.remote.mlkit.MLKitScanner
 import com.docs.scanner.domain.model.*
@@ -233,7 +234,6 @@ class DocumentRepositoryImpl @Inject constructor(
         return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
     }
 
-    // ✅ ДОБАВЛЕНА РЕАЛИЗАЦИЯ searchEverywhere
     override fun searchEverywhere(query: String): Flow<List<Document>> {
         return documentDao.searchEverywhereWithNames(query).map { documentsWithNames ->
             documentsWithNames.map { docWithNames ->
@@ -321,7 +321,7 @@ class DocumentRepositoryImpl @Inject constructor(
 class ScannerRepositoryImpl @Inject constructor(
     private val mlKitScanner: MLKitScanner,
     private val geminiTranslator: GeminiTranslator,
-    private val settingsRepository: SettingsRepository
+    private val encryptedKeyStorage: EncryptedKeyStorage
 ) : ScannerRepository {
     
     override suspend fun scanImage(imageUri: Uri): Result<String> {
@@ -329,15 +329,15 @@ class ScannerRepositoryImpl @Inject constructor(
     }
     
     override suspend fun translateText(text: String): Result<String> {
-        val apiKey = settingsRepository.getApiKey()
-            ?: return Result.Error(Exception("API key not set"))
+        val apiKey = encryptedKeyStorage.getActiveApiKey()
+            ?: return Result.Error(Exception("No active Gemini API key. Please add one in Settings."))
         
         return geminiTranslator.translate(text, apiKey)
     }
     
     override suspend fun fixOcrText(text: String): Result<String> {
-        val apiKey = settingsRepository.getApiKey()
-            ?: return Result.Error(Exception("API key not set"))
+        val apiKey = encryptedKeyStorage.getActiveApiKey()
+            ?: return Result.Error(Exception("No active Gemini API key. Please add one in Settings."))
         
         return geminiTranslator.fixOcrText(text, apiKey)
     }
