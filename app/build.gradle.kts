@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("dagger.hilt.android.plugin")
     id("kotlin-kapt")
-    id("com.google.devtools.ksp") version "1.9.23-1.0.20"
+    id("com.google.devtools.ksp") // <-- БЕЗ ВЕРСИИ!
 }
 
 android {
@@ -77,14 +77,14 @@ dependencies {
     // Coil for images
     implementation("io.coil-kt:coil-compose:2.7.0")
 
-    // ML Kit
+    // ML Kit Document Scanner
     implementation("com.google.mlkit:document-scanner:16.0.0-beta1")
 
     // Retrofit & Gson
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
 
-    // Google Drive
+    // Google Drive API
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.google.http-client:google-http-client-gson:1.44.2")
     implementation("com.google.api-client:google-api-client-android:2.4.0")
