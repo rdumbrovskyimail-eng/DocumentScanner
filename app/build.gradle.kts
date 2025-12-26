@@ -78,18 +78,18 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-compose:3.3.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
 
-    // ML Kit Document Scanner
-    implementation("com.google.mlkit:document-scanner:16.0.0-beta1")
+    // ML Kit Document Scanner - ИСПРАВЛЕНО (правильный пакет)
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
 
     // Retrofit & Gson
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
 
-    // Google Drive API
+    // Google Drive API - ИСПРАВЛЕНО (последняя версия от 10 декабря 2025)
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.google.http-client:google-http-client-gson:1.45.1")
     implementation("com.google.api-client:google-api-client-android:2.7.0")
-    implementation("com.google.apis:google-api-services-drive:v3-rev20241215-2.0.0")
+    implementation("com.google.apis:google-api-services-drive:v3-rev20251210-2.0.0")
 
     // EncryptedSharedPreferences
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
