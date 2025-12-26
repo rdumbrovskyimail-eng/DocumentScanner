@@ -30,6 +30,9 @@ class RetryTranslationUseCase @Inject constructor(
                     documentRepository.updateProcessingStatus(documentId, ProcessingStatus.ERROR)
                     Result.Error(result.exception)
                 }
+                is Result.Loading -> {
+                    Result.Success(Unit)
+                }
             }
         } catch (e: Exception) {
             Result.Error(e)
