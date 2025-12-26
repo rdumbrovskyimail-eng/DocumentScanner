@@ -17,6 +17,15 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
+data class SearchResult(
+    val documentId: Long,
+    val recordId: Long,
+    val recordName: String,
+    val folderName: String,
+    val matchedText: String,
+    val isOriginal: Boolean
+)
+
 @Composable
 fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
@@ -40,7 +49,7 @@ fun SearchScreen(
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
                                 IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
-                                    Icon(Icons.Default.Clear, "Clear")
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear")
                                 }
                             }
                         }
@@ -48,7 +57,7 @@ fun SearchScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -56,8 +65,9 @@ fun SearchScreen(
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
-                isSearching -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-
+                isSearching -> {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                }
                 searchQuery.isBlank() -> {
                     Column(
                         modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -71,7 +81,6 @@ fun SearchScreen(
                         Text("Enter text to search in original and translated documents", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-
                 searchResults.isEmpty() -> {
                     Column(
                         modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -85,7 +94,6 @@ fun SearchScreen(
                         Text("Try different keywords", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-
                 else -> {
                     LazyColumn(
                         contentPadding = PaddingValues(16.dp),
@@ -93,14 +101,15 @@ fun SearchScreen(
                     ) {
                         item {
                             Text(
-                                "\( {searchResults.size} result \){if (searchResults.size > 1) "s" else ""}",
+                                text = "\( {searchResults.size} result \){if (searchResults.size != 1) "s" else ""} found",
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        items(searchResults, key = { it.recordId }) { result ->
+                        items(searchResults, key = { it.documentId }) { result ->
                             SearchResultCard(
                                 result = result,
-                                query = searchQuery,
+                                searchQuery = searchQuery,
                                 onClick = { onDocumentClick(result.recordId) }
                             )
                         }
@@ -114,42 +123,51 @@ fun SearchScreen(
 @Composable
 private fun SearchResultCard(
     result: SearchResult,
-    query: String,
+    searchQuery: String,
     onClick: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("\( {result.folderName} › \){result.recordName}", color = MaterialTheme.colorScheme.primary)
+            Text(
+                text = "\( {result.folderName} › \){result.recordName}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
             Spacer(Modifier.height(8.dp))
             Text(
-                buildAnnotatedString {
+                text = buildAnnotatedString {
                     val text = result.matchedText
-                    if (query.isNotBlank()) {
-                        val lowerText = text.lowercase()
-                        val lowerQuery = query.lowercase()
-                        var start = lowerText.indexOf(lowerQuery)
-                        var lastEnd = 0
-                        while (start != -1) {
-                            append(text.substring(lastEnd, start))
-                            withStyle(SpanStyle(background = Color.Yellow)) {
-                                append(text.substring(start, start + query.length))
+                    val query = searchQuery.trim()
+                    if (query.isNotEmpty()) {
+                        var startIndex = text.indexOf(query, ignoreCase = true)
+                        var lastIndex = 0
+                        while (startIndex != -1) {
+                            append(text.substring(lastIndex, startIndex))
+                            withStyle(style = SpanStyle(background = Color.Yellow)) {
+                                append(text.substring(startIndex, startIndex + query.length))
                             }
-                            lastEnd = start + query.length
-                            start = lowerText.indexOf(lowerQuery, lastEnd)
+                            lastIndex = startIndex + query.length
+                            startIndex = text.indexOf(query, lastIndex, ignoreCase = true)
                         }
-                        append(text.substring(lastEnd))
+                        append(text.substring(lastIndex))
                     } else {
                         append(text)
                     }
                 },
+                style = MaterialTheme.typography.bodyMedium,
                 maxLines = 3,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                if (result.isOriginal) "Original text" else "Translation",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelSmall
+                text = if (result.isOriginal) "Original text" else "Translation",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
