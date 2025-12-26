@@ -19,31 +19,31 @@ class QuickScanUseCase @Inject constructor(
             val folders = folderRepository.getAllFolders().first()
 
             val quickFolder = folders.firstOrNull { it.name == "Quick Scans" }
-                ?: folderRepository.createFolder("Quick Scans", "Automatically created for quick scans")
-                    .let { result ->
-                        if (result is Result.Success) {
-                            folderRepository.getFolderById(result.data)
-                        } else {
-                            return result as Result.Error
-                        }
-                    } ?: return Result.Error(Exception("Failed to get/create folder"))
+                ?: when (val createResult = folderRepository.createFolder("Quick Scans", "Automatically created for quick scans")) {
+                    is Result.Success -> {
+                        folderRepository.getFolderById(createResult.data)
+                            ?: return Result.Error(Exception("Failed to get created folder"))
+                    }
+                    is Result.Error -> return createResult
+                    is Result.Loading -> return Result.Error(Exception("Unexpected loading state"))
+                }
 
             val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
 
-            val recordResult = recordRepository.createRecord(
+            val recordId = when (val recordResult = recordRepository.createRecord(
                 folderId = quickFolder.id,
                 name = "Scan $dateStr",
                 description = "Quick scan at $dateStr"
-            )
-
-            val recordId = when (recordResult) {
+            )) {
                 is Result.Success -> recordResult.data
                 is Result.Error -> return recordResult
+                is Result.Loading -> return Result.Error(Exception("Unexpected loading state"))
             }
 
             when (val docResult = addDocumentUseCase(recordId, imageUri)) {
                 is Result.Success -> Result.Success(recordId)
                 is Result.Error -> Result.Error(docResult.exception)
+                is Result.Loading -> Result.Error(Exception("Unexpected loading state"))
             }
         } catch (e: Exception) {
             Result.Error(e)
