@@ -8,24 +8,24 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.pow
 
-/**
- * ✅ Gemini 2.0 Flash Exp (2.5 Flash Lite) API Wrapper
- * - Sliding Window Rate Limiting (15 RPM)
- * - Exponential Backoff для 429 ошибок
- * - Thread-safe реализация
- */
 @Singleton
 class GeminiApi @Inject constructor(
     private val api: GeminiApiService
 ) {
     private val requestTimestamps = ConcurrentLinkedQueue<Long>()
     private val rateLimitMutex = Mutex()
+    private var quotaExceeded = false
+    private var quotaResetTime = 0L
     
     private suspend fun checkRateLimit() {
+        // ✅ НОВОЕ: Проверка квоты
+        if (quotaExceeded && System.currentTimeMillis() < quotaResetTime) {
+            throw QuotaExceededException("API quota exceeded. Reset at: $quotaResetTime")
+        }
+        
         rateLimitMutex.withLock {
             val now = System.currentTimeMillis()
             
-            // Удаляем запросы старше 1 минуты
             while (requestTimestamps.isNotEmpty()) {
                 val oldest = requestTimestamps.peek()
                 if (now - oldest > RATE_LIMIT_WINDOW_MS) {
@@ -35,7 +35,6 @@ class GeminiApi @Inject constructor(
                 }
             }
             
-            // Если лимит достигнут, ждём
             if (requestTimestamps.size >= MAX_REQUESTS_PER_MINUTE) {
                 val oldestRequest = requestTimestamps.peek()!!
                 val waitTime = RATE_LIMIT_WINDOW_MS - (now - oldestRequest)
@@ -52,8 +51,8 @@ class GeminiApi @Inject constructor(
     }
     
     private suspend fun exponentialBackoff(attempt: Int): Long {
-        val baseDelay = 1000L
-        val maxDelay = 32000L
+        val baseDelay = 2000L // ✅ Увеличено с 1000L
+        val maxDelay = 64000L // ✅ Увеличено с 32000L
         val delay = (baseDelay * 2.0.pow(attempt)).toLong().coerceAtMost(maxDelay)
         val jitter = (delay * 0.2 * (Math.random() - 0.5)).toLong()
         val finalDelay = delay + jitter
@@ -68,6 +67,11 @@ class GeminiApi @Inject constructor(
         if (apiKey.isBlank()) return GeminiResult.Failed("API key is required")
         if (text.isBlank()) return GeminiResult.Failed("Input text is empty")
         if (!isValidApiKey(apiKey)) return GeminiResult.Failed("Invalid API key format")
+        
+        // ✅ НОВОЕ: Проверка квоты перед запросом
+        if (quotaExceeded) {
+            return GeminiResult.Failed("API quota exceeded. Try again later.")
+        }
         
         var lastError: Exception? = null
         
@@ -94,20 +98,31 @@ class GeminiApi @Inject constructor(
                 val response = api.generateContent(apiKey, request)
                 
                 if (response.isSuccessful) {
+                    // ✅ Сброс флага квоты при успехе
+                    quotaExceeded = false
                     return sanitizeResponse(response.body())
                 } else {
                     when (response.code()) {
                         429 -> {
+                            // ✅ НОВОЕ: Установка флага квоты
+                            quotaExceeded = true
+                            quotaResetTime = System.currentTimeMillis() + 3600000 // 1 час
+                            
                             if (attempt < maxRetries - 1) {
                                 exponentialBackoff(attempt)
                                 return@repeat
                             }
-                            lastError = Exception("Rate limit exceeded after $maxRetries attempts")
+                            return GeminiResult.Failed("⚠️ API quota exceeded. Please wait 1 hour or upgrade your plan.")
                         }
                         401, 403 -> return GeminiResult.Failed("Invalid API key")
-                        else -> lastError = Exception("HTTP ${response.code()}: ${response.errorBody()?.string()}")
+                        else -> {
+                            val errorBody = response.errorBody()?.string()
+                            lastError = Exception("HTTP ${response.code()}: $errorBody")
+                        }
                     }
                 }
+            } catch (e: QuotaExceededException) {
+                return GeminiResult.Failed(e.message ?: "Quota exceeded")
             } catch (e: Exception) {
                 lastError = e
                 if (attempt < maxRetries - 1) {
@@ -124,6 +139,11 @@ class GeminiApi @Inject constructor(
         if (text.isBlank()) return GeminiResult.Failed("Input text is empty")
         if (!isValidApiKey(apiKey)) return GeminiResult.Failed("Invalid API key format")
         if (text.length > 10000) return GeminiResult.Failed("Text too long (max 10000 chars)")
+        
+        // ✅ НОВОЕ: Проверка квоты перед запросом
+        if (quotaExceeded) {
+            return GeminiResult.Failed("API quota exceeded. Try again later.")
+        }
         
         var lastError: Exception? = null
         
@@ -151,20 +171,31 @@ class GeminiApi @Inject constructor(
                 val response = api.generateContent(apiKey, request)
                 
                 if (response.isSuccessful) {
+                    // ✅ Сброс флага квоты при успехе
+                    quotaExceeded = false
                     return sanitizeResponse(response.body())
                 } else {
                     when (response.code()) {
                         429 -> {
+                            // ✅ НОВОЕ: Установка флага квоты
+                            quotaExceeded = true
+                            quotaResetTime = System.currentTimeMillis() + 3600000 // 1 час
+                            
                             if (attempt < maxRetries - 1) {
                                 exponentialBackoff(attempt)
                                 return@repeat
                             }
-                            lastError = Exception("Rate limit exceeded after $maxRetries attempts")
+                            return GeminiResult.Failed("⚠️ API quota exceeded. Please wait 1 hour or upgrade your plan.")
                         }
                         401, 403 -> return GeminiResult.Failed("Invalid API key")
-                        else -> lastError = Exception("HTTP ${response.code()}: ${response.errorBody()?.string()}")
+                        else -> {
+                            val errorBody = response.errorBody()?.string()
+                            lastError = Exception("HTTP ${response.code()}: $errorBody")
+                        }
                     }
                 }
+            } catch (e: QuotaExceededException) {
+                return GeminiResult.Failed(e.message ?: "Quota exceeded")
             } catch (e: Exception) {
                 lastError = e
                 if (attempt < maxRetries - 1) {
@@ -233,8 +264,13 @@ class GeminiApi @Inject constructor(
         return key.matches(Regex("^AIza[A-Za-z0-9_-]{35}$"))
     }
     
+    // ✅ НОВОЕ: Функция сброса квоты вручную
+    fun resetQuota() {
+        quotaExceeded = false
+        quotaResetTime = 0L
+    }
+    
     companion object {
-        // ✅ Правильное название модели в API для Gemini 2.5 Flash Lite
         private const val GEMINI_MODEL = "gemini-2.0-flash-exp"
         private const val MAX_TOKENS = 8192
         private const val TEMPERATURE = 0.7f
@@ -242,3 +278,6 @@ class GeminiApi @Inject constructor(
         private const val RATE_LIMIT_WINDOW_MS = 60_000L
     }
 }
+
+// ✅ НОВОЕ: Custom исключение для квоты
+class QuotaExceededException(message: String) : Exception(message)
