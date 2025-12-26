@@ -24,23 +24,41 @@ class QuickScanUseCase @Inject constructor(
                 ?: folderRepository.createFolder(
                     name = "New Folder",
                     description = "Quick scans"
-                ) ?: return Result.Error(Exception("Failed to create folder"))
+                ).let { result ->
+                    when (result) {
+                        is Result.Success -> folderRepository.getFolderById(result.data)
+                        else -> return Result.Error(Exception("Failed to create folder"))
+                    }
+                } ?: return Result.Error(Exception("Failed to create folder"))
             
             // 3. Создать форматированную дату и время
             val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
             val currentDateTime = dateFormat.format(Date())
             
             // 4. Создать запись с датой в ОПИСАНИИ
-            val record = recordRepository.createRecord(
+            val recordResult = recordRepository.createRecord(
                 folderId = newFolder.id,
                 name = "New document",
                 description = "Created: $currentDateTime"
-            ) ?: return Result.Error(Exception("Failed to create record"))
+            )
+            
+            val recordId = when (recordResult) {
+                is Result.Success -> recordResult.data
+                is Result.Error -> return Result.Error(
+                    Exception("Failed to create record: ${recordResult.exception.message}")
+                )
+                else -> return Result.Error(Exception("Failed to create record"))
+            }
             
             // 5. Добавить документ с изображением
-            addDocumentUseCase(record.id, imageUri)
+            when (val documentResult = addDocumentUseCase(recordId, imageUri)) {
+                is Result.Success -> Result.Success(recordId)
+                is Result.Error -> Result.Error(
+                    Exception("Failed to add document: ${documentResult.exception.message}")
+                )
+                else -> Result.Error(Exception("Failed to add document"))
+            }
             
-            Result.Success(record.id)
         } catch (e: Exception) {
             android.util.Log.e("QuickScanUseCase", "❌ Error in quick scan", e)
             Result.Error(e)
