@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.repository.DocumentRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -27,6 +28,9 @@ class SearchViewModel @Inject constructor(
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
     
+    // ✅ НОВОЕ: Job для отмены предыдущего поиска
+    private var searchJob: Job? = null
+    
     // Thread-safe кэш с LRU
     private val searchCache = Collections.synchronizedMap(
         object : LinkedHashMap<String, List<SearchResult>>(
@@ -45,7 +49,7 @@ class SearchViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             _searchQuery
-                .debounce(300)
+                .debounce(500) // ✅ Увеличен debounce с 300ms до 500ms
                 .distinctUntilChanged()
                 .collectLatest { query ->
                     performSearch(query)
@@ -54,6 +58,8 @@ class SearchViewModel @Inject constructor(
     }
     
     fun onSearchQueryChange(query: String) {
+        // ✅ НОВОЕ: Отменяем предыдущий поиск
+        searchJob?.cancel()
         _searchQuery.value = query
     }
     
@@ -76,42 +82,55 @@ class SearchViewModel @Inject constructor(
         }
         
         if (cached != null) {
+            android.util.Log.d("SearchViewModel", "✅ Cache hit for: $query")
             _searchResults.value = cached
             return
         }
         
-        _isSearching.value = true
-        
-        try {
-            documentRepository.searchEverywhereWithNames(query)
-                .catch { e ->
-                    println("❌ Search error: ${e.message}")
-                    _searchResults.value = emptyList()
-                }
-                .collect { documents ->
-                    val results = documents.take(MAX_RESULTS).map { doc ->
-                        SearchResult(
-                            documentId = doc.id,
-                            recordId = doc.recordId,
-                            recordName = doc.recordName,
-                            folderName = doc.folderName,
-                            matchedText = doc.originalText ?: doc.translatedText ?: "",
-                            isOriginal = doc.originalText?.contains(query, ignoreCase = true) == true
-                        )
+        // ✅ НОВОЕ: Создаём новый Job для этого поиска
+        searchJob = viewModelScope.launch {
+            _isSearching.value = true
+            
+            try {
+                android.util.Log.d("SearchViewModel", "🔍 Searching for: $query")
+                
+                documentRepository.searchEverywhereWithNames(query)
+                    .catch { e ->
+                        // ✅ ИСПРАВЛЕНО: Игнорируем CancellationException
+                        if (e !is kotlinx.coroutines.CancellationException) {
+                            android.util.Log.e("SearchViewModel", "❌ Search error: ${e.message}")
+                        }
+                        _searchResults.value = emptyList()
                     }
-                    
-                    _searchResults.value = results
-                    
-                    // Thread-safe запись в кэш
-                    cacheMutex.withLock {
-                        searchCache[query.lowercase()] = results
+                    .collect { documents ->
+                        val results = documents.take(MAX_RESULTS).map { doc ->
+                            SearchResult(
+                                documentId = doc.id,
+                                recordId = doc.recordId,
+                                recordName = doc.recordName,
+                                folderName = doc.folderName,
+                                matchedText = doc.originalText ?: doc.translatedText ?: "",
+                                isOriginal = doc.originalText?.contains(query, ignoreCase = true) == true
+                            )
+                        }
+                        
+                        android.util.Log.d("SearchViewModel", "✅ Found ${results.size} results")
+                        _searchResults.value = results
+                        
+                        // Thread-safe запись в кэш
+                        cacheMutex.withLock {
+                            searchCache[query.lowercase()] = results
+                        }
                     }
-                }
-        } catch (e: Exception) {
-            println("❌ Search error: ${e.message}")
-            _searchResults.value = emptyList()
-        } finally {
-            _isSearching.value = false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // ✅ ИСПРАВЛЕНО: Нормальная отмена поиска
+                android.util.Log.d("SearchViewModel", "🚫 Search cancelled for: $query")
+            } catch (e: Exception) {
+                android.util.Log.e("SearchViewModel", "❌ Search error: ${e.message}")
+                _searchResults.value = emptyList()
+            } finally {
+                _isSearching.value = false
+            }
         }
     }
     
@@ -120,7 +139,13 @@ class SearchViewModel @Inject constructor(
             cacheMutex.withLock {
                 searchCache.clear()
             }
+            android.util.Log.d("SearchViewModel", "🧹 Cache cleared")
         }
+    }
+    
+    override fun onCleared() {
+        super.onCleared()
+        searchJob?.cancel()
     }
     
     companion object {
