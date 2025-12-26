@@ -1,6 +1,7 @@
 package com.docs.scanner.di
 
 import android.content.Context
+import com.docs.scanner.BuildConfig
 import com.docs.scanner.data.remote.gemini.GeminiApiService
 import com.docs.scanner.data.remote.mlkit.MLKitScanner
 import com.google.gson.Gson
@@ -34,22 +35,31 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
-        val loggingInterceptor = HttpLoggingInterceptor { message ->
-            if (!message.contains("key=") && !message.contains("AIza")) {
-                android.util.Log.d("HTTP", message)
-            }
-        }.apply {
-            level = HttpLoggingInterceptor.Level.BODY
-        }
-        
-        return OkHttpClient.Builder()
-            .addInterceptor(loggingInterceptor)
+        val builder = OkHttpClient.Builder()
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .callTimeout(120, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
-            .build()
+        
+        // ✅ ИСПРАВЛЕНО: HTTP logging только в DEBUG режиме
+        if (BuildConfig.DEBUG) {
+            val loggingInterceptor = HttpLoggingInterceptor { message ->
+                // ✅ Не логируем API ключи
+                if (!message.contains("key=") && !message.contains("AIza")) {
+                    android.util.Log.d("HTTP", message)
+                }
+            }.apply {
+                level = HttpLoggingInterceptor.Level.BODY
+            }
+            
+            builder.addInterceptor(loggingInterceptor)
+            android.util.Log.d("NetworkModule", "✅ HTTP logging enabled (DEBUG mode)")
+        } else {
+            android.util.Log.d("NetworkModule", "🔒 HTTP logging disabled (RELEASE mode)")
+        }
+        
+        return builder.build()
     }
     
     @Provides
