@@ -101,7 +101,7 @@ fun SearchScreen(
                     ) {
                         item {
                             Text(
-                                text = "\( {searchResults.size} result \){if (searchResults.size != 1) "s" else ""} found",
+                                text = "${searchResults.size} result${if (searchResults.size != 1) "s" else ""} found",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -134,7 +134,7 @@ private fun SearchResultCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "\( {result.folderName} › \){result.recordName}",
+                text = "${result.folderName} › ${result.recordName}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary
             )
