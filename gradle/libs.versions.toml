@@ -55,7 +55,7 @@ play-services-auth = "21.3.0"
 # ============================================
 google-api-client = "2.8.0"
 google-http-client = "1.45.1"
-google-api-services-drive = "v3-rev20241215-2.0.0"
+google-api-services-drive = "v3-rev20240914-2.0.0"
 
 # ============================================
 # SECURITY
