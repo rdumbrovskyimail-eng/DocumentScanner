@@ -11,16 +11,15 @@ import com.docs.scanner.data.local.database.entities.*
         RecordEntity::class,
         DocumentEntity::class,
         TermEntity::class,
-        TranslationCacheEntity::class // ✅ ADDED
-        // ❌ REMOVED: ApiKeyEntity (moved to EncryptedSharedPreferences)
+        TranslationCacheEntity::class
     ],
-    version = 4, // ✅ UPDATED from 3 to 4
-    exportSchema = true
+    version = 4,
+    exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun folderDao(): FolderDao
     abstract fun recordDao(): RecordDao
     abstract fun documentDao(): DocumentDao
     abstract fun termDao(): TermDao
-    abstract fun translationCacheDao(): TranslationCacheDao // ✅ ADDED
+    abstract fun translationCacheDao(): TranslationCacheDao
 }
