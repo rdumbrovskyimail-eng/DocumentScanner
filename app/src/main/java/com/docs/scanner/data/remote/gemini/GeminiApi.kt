@@ -1,5 +1,6 @@
 package com.docs.scanner.data.remote.gemini
 
+import com.google.gson.Gson
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -11,6 +12,23 @@ import kotlin.math.pow
 
 class QuotaExceededException(message: String) : Exception(message)
 
+/**
+ * Gemini API wrapper with rate limiting, retry logic, and error handling.
+ * 
+ * Session 4 fixes:
+ * - ✅ Added language parameters (targetLanguage, sourceLanguage)
+ * - ✅ Added model parameter support
+ * - ✅ Added error response parsing
+ * - ✅ Added statistics tracking
+ * - ✅ Improved prompt templates
+ * 
+ * Features:
+ * - Rate limiting: 15 requests per minute (Gemini free tier)
+ * - Exponential backoff with jitter
+ * - Quota management with 1-hour reset
+ * - Safety settings bypass (for translation)
+ * - Response sanitization
+ */
 @Singleton
 class GeminiApi @Inject constructor(
     private val api: GeminiApiService
@@ -23,6 +41,11 @@ class GeminiApi @Inject constructor(
     
     @Volatile
     private var quotaResetTime = 0L
+    
+    // ✅ NEW: Statistics tracking
+    private var totalRequests = 0
+    private var totalFailures = 0
+    private var totalQuotaExceeded = 0
 
     private companion object {
         const val RATE_LIMIT_WINDOW_MS = 60_000L
@@ -30,6 +53,10 @@ class GeminiApi @Inject constructor(
         const val QUOTA_RESET_DURATION_MS = 3600_000L
         const val INITIAL_BACKOFF_MS = 1000L
         const val MAX_BACKOFF_MS = 32_000L
+        
+        // ✅ NEW: Model versions
+        const val DEFAULT_MODEL = "gemini-2.0-flash-exp"
+        const val FALLBACK_MODEL = "gemini-1.5-flash"
     }
 
     private suspend fun checkRateLimit() {
@@ -51,6 +78,10 @@ class GeminiApi @Inject constructor(
                 val oldestRequest = requestTimestamps.peek()!!
                 val waitTime = RATE_LIMIT_WINDOW_MS - (now - oldestRequest) + 100L // +100ms буфер
                 if (waitTime > 0) {
+                    android.util.Log.d(
+                        "GeminiApi",
+                        "⏳ Rate limit reached, waiting ${waitTime}ms"
+                    )
                     delay(waitTime)
                 }
                 requestTimestamps.poll()
@@ -62,10 +93,35 @@ class GeminiApi @Inject constructor(
 
     private suspend fun exponentialBackoff(attempt: Int) {
         val delayMs = (INITIAL_BACKOFF_MS * 2.0.pow(attempt.toDouble())).toLong()
-        delay(min(delayMs, MAX_BACKOFF_MS))
+        val actualDelay = min(delayMs, MAX_BACKOFF_MS)
+        android.util.Log.d(
+            "GeminiApi",
+            "⏳ Backing off for ${actualDelay}ms (attempt $attempt)"
+        )
+        delay(actualDelay)
     }
 
-    suspend fun translateText(text: String, apiKey: String, maxRetries: Int = 3): GeminiResult {
+    /**
+     * Translate text using Gemini API.
+     * 
+     * ✅ NEW: Added language parameters
+     * 
+     * @param text Text to translate
+     * @param apiKey Gemini API key
+     * @param targetLanguage Target language (e.g., "Russian", "English", "Chinese")
+     * @param sourceLanguage Source language or null for auto-detection
+     * @param maxRetries Maximum retry attempts (default: 3)
+     * @return GeminiResult with translated text
+     */
+    suspend fun translateText(
+        text: String, 
+        apiKey: String,
+        targetLanguage: String = "Russian",
+        sourceLanguage: String? = null,
+        maxRetries: Int = 3
+    ): GeminiResult {
+        totalRequests++
+        
         if (text.isBlank()) return GeminiResult.Failed("Text is empty")
         if (!isValidApiKey(apiKey)) return GeminiResult.Failed("Invalid API key format")
 
@@ -73,14 +129,17 @@ class GeminiApi @Inject constructor(
             try {
                 checkRateLimit()
 
-                val prompt = """
-                    Переведи текст на русский язык.
-                    Верни ТОЛЬКО перевод без пояснений, комментариев или дополнительного текста.
-                    Если текст уже на русском языке — верни его без изменений.
-                    
-                    Текст:
-                    $text
-                """.trimIndent()
+                // ✅ IMPROVED: Better prompt with language parameters
+                val prompt = buildString {
+                    append("Translate the text to $targetLanguage.")
+                    if (sourceLanguage != null) {
+                        append("\nSource language: $sourceLanguage")
+                    }
+                    append("\nReturn ONLY the translation without explanations.")
+                    append("\nIf text is already in $targetLanguage, return it unchanged.")
+                    append("\n\nText:\n")
+                    append(text)
+                }
 
                 val request = GeminiRequest(
                     contents = listOf(
@@ -97,32 +156,55 @@ class GeminiApi @Inject constructor(
                     safetySettings = createSafetySettings()
                 )
 
-                val response = api.generateContent(apiKey, request)
+                val response = api.generateContent(
+                    model = DEFAULT_MODEL,
+                    apiKey = apiKey,
+                    request = request
+                )
                 
                 if (response.isSuccessful) {
                     quotaExceeded = false
                     return sanitizeResponse(response.body())
                 }
 
-                return handleErrorResponse(response.code(), attempt, maxRetries)
+                // ✅ NEW: Parse error body
+                return handleErrorResponse(response.code(), response.errorBody()?.string(), attempt, maxRetries)
                 
             } catch (e: QuotaExceededException) {
+                totalQuotaExceeded++
                 if (attempt == maxRetries - 1) {
+                    totalFailures++
                     return GeminiResult.Failed("Quota exceeded. Try again later.")
                 }
                 exponentialBackoff(attempt)
             } catch (e: Exception) {
                 if (attempt == maxRetries - 1) {
+                    totalFailures++
                     return GeminiResult.Failed(e.message ?: "Network error")
                 }
                 exponentialBackoff(attempt)
             }
         }
         
+        totalFailures++
         return GeminiResult.Failed("Max retries exceeded")
     }
 
-    suspend fun fixOcrText(text: String, apiKey: String, maxRetries: Int = 3): GeminiResult {
+    /**
+     * Fix OCR errors using Gemini API.
+     * 
+     * @param text Raw OCR text with potential errors
+     * @param apiKey Gemini API key
+     * @param maxRetries Maximum retry attempts
+     * @return GeminiResult with corrected text
+     */
+    suspend fun fixOcrText(
+        text: String, 
+        apiKey: String, 
+        maxRetries: Int = 3
+    ): GeminiResult {
+        totalRequests++
+        
         if (text.isBlank()) return GeminiResult.Failed("Text is empty")
         if (!isValidApiKey(apiKey)) return GeminiResult.Failed("Invalid API key format")
 
@@ -131,12 +213,12 @@ class GeminiApi @Inject constructor(
                 checkRateLimit()
 
                 val prompt = """
-                    Исправь ошибки распознавания текста (OCR).
-                    Верни ТОЛЬКО исправленный текст без пояснений.
-                    Сохрани оригинальную структуру, форматирование и разбиение на абзацы.
-                    Исправь только очевидные ошибки OCR (перепутанные буквы, лишние символы).
+                    Fix OCR recognition errors in this text.
+                    Return ONLY the corrected text without explanations.
+                    Preserve original structure, formatting, and paragraph breaks.
+                    Fix only obvious OCR errors (confused letters, extra symbols).
                     
-                    Текст:
+                    Text:
                     $text
                 """.trimIndent()
 
@@ -155,55 +237,93 @@ class GeminiApi @Inject constructor(
                     safetySettings = createSafetySettings()
                 )
 
-                val response = api.generateContent(apiKey, request)
+                val response = api.generateContent(
+                    model = DEFAULT_MODEL,
+                    apiKey = apiKey,
+                    request = request
+                )
                 
                 if (response.isSuccessful) {
                     quotaExceeded = false
                     return sanitizeResponse(response.body())
                 }
 
-                return handleErrorResponse(response.code(), attempt, maxRetries)
+                return handleErrorResponse(response.code(), response.errorBody()?.string(), attempt, maxRetries)
                 
             } catch (e: QuotaExceededException) {
+                totalQuotaExceeded++
                 if (attempt == maxRetries - 1) {
+                    totalFailures++
                     return GeminiResult.Failed("Quota exceeded. Try again later.")
                 }
                 exponentialBackoff(attempt)
             } catch (e: Exception) {
                 if (attempt == maxRetries - 1) {
+                    totalFailures++
                     return GeminiResult.Failed(e.message ?: "Network error")
                 }
                 exponentialBackoff(attempt)
             }
         }
         
+        totalFailures++
         return GeminiResult.Failed("Max retries exceeded")
     }
 
+    /**
+     * Handle HTTP error responses with detailed error parsing.
+     * 
+     * ✅ NEW: Parse error body from API
+     */
     private suspend fun handleErrorResponse(
-        code: Int, 
+        code: Int,
+        errorBody: String?,
         attempt: Int, 
         maxRetries: Int
     ): GeminiResult {
+        // ✅ Try to parse error message from response
+        val errorMessage = try {
+            errorBody?.let { body ->
+                val error = Gson().fromJson(body, GeminiErrorResponse::class.java)
+                error.error.message
+            }
+        } catch (e: Exception) {
+            null
+        }
+        
         return when (code) {
             429 -> {
                 quotaExceeded = true
                 quotaResetTime = System.currentTimeMillis() + QUOTA_RESET_DURATION_MS
+                totalQuotaExceeded++
+                
                 if (attempt == maxRetries - 1) {
-                    GeminiResult.Failed("Quota exceeded. Try again in 1 hour.")
+                    GeminiResult.Failed(
+                        errorMessage ?: "Quota exceeded. Try again in 1 hour."
+                    )
                 } else {
                     exponentialBackoff(attempt)
                     GeminiResult.Failed("Retrying...")
                 }
             }
-            401, 403 -> GeminiResult.Failed("Invalid or expired API key")
-            400 -> GeminiResult.Failed("Bad request. Check input parameters.")
+            401, 403 -> {
+                GeminiResult.Failed(
+                    errorMessage ?: "Invalid or expired API key"
+                )
+            }
+            400 -> {
+                GeminiResult.Failed(
+                    errorMessage ?: "Bad request. Check input parameters."
+                )
+            }
             500, 503 -> {
                 if (attempt < maxRetries - 1) {
                     exponentialBackoff(attempt)
                     GeminiResult.Failed("Retrying...")
                 } else {
-                    GeminiResult.Failed("Server error. Try again later.")
+                    GeminiResult.Failed(
+                        errorMessage ?: "Server error. Try again later."
+                    )
                 }
             }
             else -> {
@@ -211,7 +331,9 @@ class GeminiApi @Inject constructor(
                     exponentialBackoff(attempt)
                     GeminiResult.Failed("Retrying...")
                 } else {
-                    GeminiResult.Failed("HTTP error: $code")
+                    GeminiResult.Failed(
+                        errorMessage ?: "HTTP error: $code"
+                    )
                 }
             }
         }
@@ -264,4 +386,42 @@ class GeminiApi @Inject constructor(
     private fun isValidApiKey(key: String): Boolean {
         return key.matches(Regex("^AIza[A-Za-z0-9_-]{35}$"))
     }
+    
+    /**
+     * Get API usage statistics.
+     * 
+     * ✅ NEW: For monitoring and debugging (Session 4)
+     */
+    fun getStatistics(): ApiStatistics {
+        return ApiStatistics(
+            totalRequests = totalRequests,
+            totalFailures = totalFailures,
+            quotaExceeded = totalQuotaExceeded,
+            currentQueueSize = requestTimestamps.size,
+            quotaResetTime = if (quotaExceeded) quotaResetTime else null
+        )
+    }
+    
+    data class ApiStatistics(
+        val totalRequests: Int,
+        val totalFailures: Int,
+        val quotaExceeded: Int,
+        val currentQueueSize: Int,
+        val quotaResetTime: Long?
+    )
 }
+
+/**
+ * Error response from Gemini API.
+ * 
+ * ✅ NEW: For parsing error details (Session 4)
+ */
+data class GeminiErrorResponse(
+    val error: ErrorDetail
+)
+
+data class ErrorDetail(
+    val code: Int,
+    val message: String,
+    val status: String
+)
