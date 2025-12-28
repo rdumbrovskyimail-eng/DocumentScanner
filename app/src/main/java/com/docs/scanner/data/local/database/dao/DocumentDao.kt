@@ -34,9 +34,42 @@ interface DocumentDao {
     suspend fun deleteDocumentById(documentId: Long)
     
     // ============================================
-    // ✅ ПОИСК (LIKE - работает без FTS5)
+    // ✅ ПОИСК (FTS5 + LIKE fallback)
     // ============================================
     
+    /**
+     * ✅ ОСНОВНОЙ ПОИСК - использует FTS5 если доступен
+     * FTS5 создан в DatabaseModule MIGRATION_3_4
+     */
+    @Query("""
+        SELECT 
+            d.id,
+            d.recordId,
+            d.imagePath,
+            d.originalText,
+            d.translatedText,
+            d.position,
+            d.processingStatus,
+            d.createdAt,
+            r.name as recordName,
+            f.name as folderName
+        FROM documents d
+        INNER JOIN documents_fts fts ON d.id = fts.rowid
+        INNER JOIN records r ON d.recordId = r.id
+        INNER JOIN folders f ON r.folderId = f.id
+        WHERE documents_fts MATCH :query
+        ORDER BY d.createdAt DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    fun searchEverywhereWithNames(
+        query: String,
+        limit: Int = 50,
+        offset: Int = 0
+    ): Flow<List<DocumentWithNames>>
+    
+    /**
+     * ✅ FALLBACK ПОИСК - если FTS5 недоступен или query пустой
+     */
     @Query("""
         SELECT 
             d.id,
@@ -55,9 +88,13 @@ interface DocumentDao {
         WHERE (d.originalText IS NOT NULL AND LOWER(d.originalText) LIKE LOWER('%' || :query || '%'))
            OR (d.translatedText IS NOT NULL AND LOWER(d.translatedText) LIKE LOWER('%' || :query || '%'))
         ORDER BY d.createdAt DESC
-        LIMIT 50
+        LIMIT :limit OFFSET :offset
     """)
-    fun searchEverywhereWithNames(query: String): Flow<List<DocumentWithNames>>
+    fun searchEverywhereWithNamesLike(
+        query: String,
+        limit: Int = 50,
+        offset: Int = 0
+    ): Flow<List<DocumentWithNames>>
     
     // ============================================
     // ОБНОВЛЕНИЕ ТЕКСТА
@@ -71,6 +108,20 @@ interface DocumentDao {
     
     @Query("UPDATE documents SET processingStatus = :status WHERE id = :documentId")
     suspend fun updateProcessingStatus(documentId: Long, status: Int)
+    
+    // ============================================
+    // BATCH ОПЕРАЦИИ
+    // ============================================
+    
+    @Update
+    suspend fun updateDocuments(documents: List<DocumentEntity>)
+    
+    @Transaction
+    suspend fun batchUpdateTexts(updates: List<Pair<Long, String>>) {
+        updates.forEach { (id, text) -> 
+            updateOriginalText(id, text) 
+        }
+    }
     
     // ============================================
     // СТАТИСТИКА
