@@ -21,14 +21,15 @@ import javax.inject.Singleton
 /**
  * Database module with complete migration chain.
  * 
- * Session 2 & 3 fixes:
+ * Current database version: 6
+ * 
+ * Session 2, 3 & 4 fixes:
  * - ✅ Added MIGRATION_4_5 (language-aware cache)
+ * - ✅ Added MIGRATION_5_6 (FIX FTS5 triggers - DELETE+INSERT instead of UPDATE)
  * - ✅ Fixed FTS5 triggers (COALESCE for NULL)
  * - ✅ Fixed api_keys migration (one-time check with SharedPrefs)
  * - ✅ Added DROP TABLE in MIGRATION_3_4
  * - ✅ Improved backup cleanup
- * 
- * Current database version: 5
  * 
  * Migration history:
  * v1: Initial schema (folders, records, documents)
@@ -36,6 +37,7 @@ import javax.inject.Singleton
  * v3: Added api_keys table
  * v4: Added translation_cache + FTS5 + migrated api_keys to encrypted
  * v5: Updated translation_cache with language fields
+ * v6: Fixed FTS5 UPDATE trigger (DELETE+INSERT pattern)
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -143,7 +145,6 @@ object DatabaseModule {
                 android.util.Log.d("Migration", "  ✅ FTS5 table populated")
                 
                 // 4. Create triggers to keep FTS5 in sync
-                // ✅ FIX: Use COALESCE to handle NULL values
                 db.execSQL("""
                     CREATE TRIGGER documents_ai AFTER INSERT ON documents BEGIN
                         INSERT INTO documents_fts(rowid, originalText, translatedText)
@@ -155,6 +156,7 @@ object DatabaseModule {
                     END
                 """)
                 
+                // ⚠️ NOTE: This UPDATE trigger has a bug (will be fixed in v6)
                 db.execSQL("""
                     CREATE TRIGGER documents_au AFTER UPDATE ON documents BEGIN
                         UPDATE documents_fts 
@@ -179,7 +181,7 @@ object DatabaseModule {
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_translation_cache_timestamp ON translation_cache(timestamp)")
                 android.util.Log.d("Migration", "  ✅ Indices created")
                 
-                // 6. ✅ FIX: DROP api_keys table (will be migrated in callback)
+                // 6. DROP api_keys table (will be migrated in callback)
                 db.execSQL("DROP TABLE IF EXISTS api_keys")
                 android.util.Log.d("Migration", "  ✅ api_keys table dropped (migrated to EncryptedStorage)")
                 
@@ -194,7 +196,6 @@ object DatabaseModule {
     
     // ============================================
     // MIGRATION 4 → 5: Language-aware translation cache
-    // ✅ NEW: Session 3 critical fix
     // ============================================
     
     private val MIGRATION_4_5 = object : Migration(4, 5) {
@@ -216,7 +217,6 @@ object DatabaseModule {
                 android.util.Log.d("Migration", "  ✅ New table created")
                 
                 // Step 2: Migrate existing data with default languages
-                // ⚠️ Old entries will have "auto"→"ru" (acceptable default)
                 db.execSQL("""
                     INSERT INTO translation_cache_new 
                         (cacheKey, originalText, translatedText, sourceLanguage, targetLanguage, timestamp)
@@ -252,6 +252,47 @@ object DatabaseModule {
         }
     }
     
+    // ============================================
+    // MIGRATION 5 → 6: FIX FTS5 UPDATE TRIGGER
+    // ✅ CRITICAL FIX: FTS5 doesn't support UPDATE, use DELETE+INSERT
+    // ============================================
+    
+    private val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            try {
+                android.util.Log.d("Migration", "🔄 Migrating 5→6: Fixing FTS5 UPDATE trigger")
+                
+                // Step 1: Drop the buggy UPDATE trigger
+                db.execSQL("DROP TRIGGER IF EXISTS documents_au")
+                android.util.Log.d("Migration", "  ✅ Old UPDATE trigger dropped")
+                
+                // Step 2: Create corrected UPDATE trigger (DELETE + INSERT pattern)
+                db.execSQL("""
+                    CREATE TRIGGER documents_au AFTER UPDATE ON documents BEGIN
+                        DELETE FROM documents_fts WHERE rowid = old.id;
+                        INSERT INTO documents_fts(rowid, originalText, translatedText)
+                        VALUES (
+                            new.id,
+                            COALESCE(new.originalText, ''),
+                            COALESCE(new.translatedText, '')
+                        );
+                    END
+                """)
+                android.util.Log.d("Migration", "  ✅ New UPDATE trigger created (DELETE+INSERT pattern)")
+                
+                // Step 3: Rebuild FTS5 index to ensure consistency
+                db.execSQL("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
+                android.util.Log.d("Migration", "  ✅ FTS5 index rebuilt")
+                
+                android.util.Log.d("Migration", "✅ Migration 5→6 complete - FTS5 is now fully functional!")
+                
+            } catch (e: Exception) {
+                android.util.Log.e("Migration", "❌ Migration 5→6 failed", e)
+                throw e
+            }
+        }
+    }
+    
     @Provides
     @Singleton
     fun provideDatabase(
@@ -267,12 +308,13 @@ object DatabaseModule {
                 MIGRATION_1_2,
                 MIGRATION_2_3,
                 MIGRATION_3_4,
-                MIGRATION_4_5  // ✅ NEW
+                MIGRATION_4_5,
+                MIGRATION_5_6  // ✅ NEW - FIX FTS5 TRIGGER
             )
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     super.onCreate(db)
-                    android.util.Log.d("Database", "✅ Database created (v5)")
+                    android.util.Log.d("Database", "✅ Database created (v6)")
                     
                     // Enable foreign keys
                     db.execSQL("PRAGMA foreign_keys=ON")
@@ -285,7 +327,7 @@ object DatabaseModule {
                     // Enable foreign keys
                     db.execSQL("PRAGMA foreign_keys=ON")
                     
-                    // ✅ FIX: One-time API key migration with SharedPreferences check
+                    // One-time API key migration
                     CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
                         val prefs = context.getSharedPreferences("db_migration", Context.MODE_PRIVATE)
                         val migrated = prefs.getBoolean("api_keys_migrated_v4", false)
@@ -329,7 +371,7 @@ object DatabaseModule {
             }
             
             // Check if already migrated
-            if (encryptedStorage.getAllKeys().isNotEmpty()) {
+            if (encryptedKeyStorage.getAllKeys().isNotEmpty()) {
                 android.util.Log.d("Database", "ℹ️ API keys already in encrypted storage")
                 return
             }
@@ -359,10 +401,10 @@ object DatabaseModule {
             
             if (keys.isNotEmpty()) {
                 // Save to encrypted storage
-                encryptedStorage.saveAllKeys(keys)
+                encryptedKeyStorage.saveAllKeys(keys)
                 
-                // ✅ FIX: Verify migration success
-                val savedKeys = encryptedStorage.getAllKeys()
+                // Verify migration success
+                val savedKeys = encryptedKeyStorage.getAllKeys()
                 if (savedKeys.size != keys.size) {
                     throw IllegalStateException(
                         "Migration failed: saved ${savedKeys.size}, expected ${keys.size}"
@@ -371,7 +413,7 @@ object DatabaseModule {
                 
                 // Set active key
                 keys.find { it.isActive }?.let {
-                    encryptedStorage.setActiveApiKey(it.key)
+                    encryptedKeyStorage.setActiveApiKey(it.key)
                 }
                 
                 android.util.Log.d("Database", "✅ Migrated ${keys.size} API keys to encrypted storage")
@@ -458,6 +500,4 @@ object DatabaseModule {
     fun provideTranslationCacheDao(database: AppDatabase): TranslationCacheDao {
         return database.translationCacheDao()
     }
-    
-    // ✅ NOTE: ApiKeyDao removed - no longer needed after v4 migration
 }
