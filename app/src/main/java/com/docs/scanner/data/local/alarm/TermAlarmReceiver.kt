@@ -1,15 +1,12 @@
 package com.docs.scanner.data.local.alarm
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.media.AudioAttributes
 import android.media.RingtoneManager
-import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.docs.scanner.presentation.MainActivity
 
 class TermAlarmReceiver : BroadcastReceiver() {
@@ -19,47 +16,21 @@ class TermAlarmReceiver : BroadcastReceiver() {
         val title = intent.getStringExtra("title") ?: "Term Reminder"
         val description = intent.getStringExtra("description")
         val isMainAlarm = intent.getBooleanExtra("is_main_alarm", false)
+        val offset = intent.getIntExtra("notification_offset", 0) // ✅ Уникальный offset
         
-        showNotification(context, termId, title, description, isMainAlarm)
+        showNotification(context, termId, offset, title, description, isMainAlarm)
     }
     
     private fun showNotification(
         context: Context,
         termId: Long,
+        offset: Int,
         title: String,
         description: String?,
         isMainAlarm: Boolean
     ) {
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) 
-            as NotificationManager
-        
-        // Создаем канал уведомлений
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val importance = if (isMainAlarm) {
-                NotificationManager.IMPORTANCE_HIGH
-            } else {
-                NotificationManager.IMPORTANCE_DEFAULT
-            }
-            
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Term Reminders",
-                importance
-            ).apply {
-                enableVibration(isMainAlarm)
-                if (isMainAlarm) {
-                    vibrationPattern = longArrayOf(0, 500, 250, 500, 250, 500)
-                    setSound(
-                        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ALARM)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .build()
-                    )
-                }
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
+        // ✅ УНИКАЛЬНЫЙ NOTIFICATION ID (каждое напоминание = отдельное уведомление)
+        val notificationId = (termId.toInt() * 1000 + offset)
         
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -68,7 +39,7 @@ class TermAlarmReceiver : BroadcastReceiver() {
         
         val pendingIntent = PendingIntent.getActivity(
             context,
-            termId.toInt(),
+            notificationId,
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -89,7 +60,12 @@ class TermAlarmReceiver : BroadcastReceiver() {
                 .setFullScreenIntent(pendingIntent, true)
         }
         
-        notificationManager.notify(termId.toInt(), builder.build())
+        try {
+            NotificationManagerCompat.from(context).notify(notificationId, builder.build())
+            println("✅ Notification shown: ID=$notificationId, main=$isMainAlarm")
+        } catch (e: SecurityException) {
+            println("❌ Notification permission denied: ${e.message}")
+        }
     }
     
     companion object {
