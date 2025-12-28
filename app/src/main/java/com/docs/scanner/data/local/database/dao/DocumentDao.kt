@@ -34,16 +34,13 @@ interface DocumentDao {
     suspend fun deleteDocumentById(documentId: Long)
     
     // ============================================
-    // ✅ ПОИСК (FTS5 + LIKE fallback)
+    // ✅ ПОИСК (FTS4 + LIKE fallback)
     // ============================================
     
     /**
-     * ✅ ОСНОВНОЙ ПОИСК - использует FTS5
-     * 
-     * @SuppressWarnings - отключает валидацию Room для FTS5 таблицы
-     * FTS5 создаётся через миграции, Room не может её валидировать на этапе компиляции
+     * ✅ ОСНОВНОЙ ПОИСК - использует FTS4
+     * Теперь Room знает о documents_fts через DocumentsFtsEntity
      */
-    @SuppressWarnings(RoomWarnings.CURSOR_MISMATCH)
     @Query("""
         SELECT 
             d.id,
@@ -71,7 +68,7 @@ interface DocumentDao {
     ): Flow<List<DocumentWithNames>>
     
     /**
-     * ✅ FALLBACK ПОИСК - если FTS5 недоступен или query пустой
+     * ✅ FALLBACK ПОИСК - если FTS недоступен или query пустой
      */
     @Query("""
         SELECT 
