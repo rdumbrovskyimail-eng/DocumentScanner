@@ -2,52 +2,113 @@ package com.docs.scanner.data.remote.mlkit
 
 import android.content.Context
 import android.net.Uri
+import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
+import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * ✅ ИСПРАВЛЕНО: Добавлено управление lifecycle и освобождение ресурсов
- * 
  * ML Kit OCR Scanner с поддержкой ВСЕХ языков
- * - Латиница (English, German, Polish, French, Spanish...)
- * - Кириллица (Russian, Ukrainian, Serbian, Bulgarian...)
- * - Китайский, Японский, Корейский
- * - Деvanagari, Арабская вязь
+ * - LATIN: English, German, Polish, French, Spanish, Russian, Ukrainian...
+ * - CHINESE: 繁體中文, 简体中文 (~10MB)
+ * - JAPANESE: 日本語
+ * - KOREAN: 한국어
+ * - DEVANAGARI: हिन्दी, नेपाली, मराठी...
  * 
- * Model: ~10MB, скачивается автоматически при первом использовании
+ * Model скачивается автоматически при первом использовании
  */
 @Singleton
 class MLKitScanner @Inject constructor(
-    private val context: Context
+    private val context: Context,
+    private val settingsDataStore: SettingsDataStore // ✅ ДОБАВЛЕНО для выбора языка
 ) {
     
-    // ✅ ИСПРАВЛЕНО: Lazy инициализация + volatile для thread-safety
     @Volatile
     private var recognizer: TextRecognizer? = null
     
-    private fun getRecognizer(): TextRecognizer {
-        return recognizer ?: synchronized(this) {
-            recognizer ?: TextRecognition.getClient(
+    @Volatile
+    private var currentLanguage: OcrLanguage? = null
+    
+    /**
+     * ✅ ЯЗЫКОВЫЕ МОДЕЛИ
+     */
+    enum class OcrLanguage {
+        LATIN,      // Default: Latin + Cyrillic
+        CHINESE,    // + Chinese characters (~10MB)
+        JAPANESE,   // + Japanese
+        KOREAN,     // + Korean
+        DEVANAGARI  // + Indian scripts
+    }
+    
+    private fun getRecognizerForLanguage(language: OcrLanguage): TextRecognizer {
+        return when (language) {
+            OcrLanguage.LATIN -> TextRecognition.getClient(
+                TextRecognizerOptions.DEFAULT_OPTIONS
+            )
+            OcrLanguage.CHINESE -> TextRecognition.getClient(
                 ChineseTextRecognizerOptions.Builder().build()
-            ).also { recognizer = it }
+            )
+            OcrLanguage.JAPANESE -> TextRecognition.getClient(
+                JapaneseTextRecognizerOptions.Builder().build()
+            )
+            OcrLanguage.KOREAN -> TextRecognition.getClient(
+                KoreanTextRecognizerOptions.Builder().build()
+            )
+            OcrLanguage.DEVANAGARI -> TextRecognition.getClient(
+                DevanagariTextRecognizerOptions.Builder().build()
+            )
+        }
+    }
+    
+    /**
+     * ✅ ПОЛУЧИТЬ RECOGNIZER с учетом настроек
+     */
+    private suspend fun getRecognizer(): TextRecognizer {
+        // Получить выбранный язык из настроек
+        val languageStr = try {
+            settingsDataStore.ocrLanguage.first()
+        } catch (e: Exception) {
+            "CHINESE" // Default
+        }
+        
+        val language = try {
+            OcrLanguage.valueOf(languageStr)
+        } catch (e: Exception) {
+            OcrLanguage.CHINESE // Default fallback
+        }
+        
+        // Если язык изменился - переинициализировать
+        if (currentLanguage != language) {
+            recognizer?.close()
+            recognizer = null
+            currentLanguage = language
+        }
+        
+        return recognizer ?: synchronized(this) {
+            recognizer ?: getRecognizerForLanguage(language).also { 
+                recognizer = it 
+                println("✅ MLKit initialized: $language")
+            }
         }
     }
     
     /**
      * Сканирует изображение и извлекает текст
-     * 
-     * @param imageUri URI изображения (file://, content://)
-     * @return Result.Success(text) или Result.Error(exception)
      */
     suspend fun scanImage(imageUri: Uri): com.docs.scanner.domain.model.Result<String> {
         return try {
             val image = InputImage.fromFilePath(context, imageUri)
-            val visionText = getRecognizer().process(image).await()
+            val recognizer = getRecognizer()
+            val visionText = recognizer.process(image).await()
             val extractedText = visionText.text.trim()
             
             if (extractedText.isEmpty()) {
@@ -67,13 +128,12 @@ class MLKitScanner @Inject constructor(
     
     /**
      * Сканирует изображение с подробной информацией
-     * 
-     * @return List<TextBlock> с текстом, confidence и количеством строк
      */
     suspend fun scanImageDetailed(imageUri: Uri): com.docs.scanner.domain.model.Result<List<TextBlock>> {
         return try {
             val image = InputImage.fromFilePath(context, imageUri)
-            val visionText = getRecognizer().process(image).await()
+            val recognizer = getRecognizer()
+            val visionText = recognizer.process(image).await()
             
             val blocks = visionText.textBlocks.map { block ->
                 TextBlock(
@@ -99,18 +159,17 @@ class MLKitScanner @Inject constructor(
     }
     
     /**
-     * ✅ ИСПРАВЛЕНО: Освобождает ресурсы (~10MB)
-     * Вызывается автоматически при уничтожении Singleton
+     * Освобождает ресурсы (~10MB для Chinese model)
      */
     fun close() {
         recognizer?.close()
         recognizer = null
-        println("✅ MLKitScanner: Resources released (~10MB)")
+        currentLanguage = null
+        println("✅ MLKitScanner: Resources released")
     }
     
     /**
-     * ✅ ДОБАВЛЕНО: Принудительная переинициализация
-     * Используется если ML Kit модель повреждена
+     * Принудительная переинициализация
      */
     fun reinitialize() {
         close()
@@ -123,8 +182,5 @@ class MLKitScanner @Inject constructor(
         val boundingBox: android.graphics.Rect?
     )
     
-    // ✅ ДОБАВЛЕНО: Cleanup при уничтожении приложения
-    protected fun finalize() {
-        close()
-    }
+    // ❌ УДАЛЕНО deprecated finalize()
 }
