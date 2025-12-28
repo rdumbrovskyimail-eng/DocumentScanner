@@ -18,32 +18,70 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import javax.inject.Singleton
 
-/**
- * Database module with complete migration chain.
- * 
- * Current database version: 6
- * 
- * Session 2, 3 & 4 fixes:
- * - ✅ Added MIGRATION_4_5 (language-aware cache)
- * - ✅ Added MIGRATION_5_6 (FIX FTS5 triggers - DELETE+INSERT instead of UPDATE)
- * - ✅ Fixed FTS5 triggers (COALESCE for NULL)
- * - ✅ Fixed api_keys migration (one-time check with SharedPrefs)
- * - ✅ Added DROP TABLE in MIGRATION_3_4
- * - ✅ Improved backup cleanup
- * 
- * Migration history:
- * v1: Initial schema (folders, records, documents)
- * v2: Added terms table
- * v3: Added api_keys table
- * v4: Added translation_cache + FTS5 + migrated api_keys to encrypted
- * v5: Updated translation_cache with language fields
- * v6: Fixed FTS5 UPDATE trigger (DELETE+INSERT pattern)
- */
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
     
     private const val DATABASE_NAME = "document_scanner.db"
+    
+    // ============================================
+    // 🔧 HELPER: CREATE FTS5 TABLE + TRIGGERS
+    // ============================================
+    
+    private fun createFtsTableAndTriggers(db: SupportSQLiteDatabase) {
+        // 1. Create FTS5 virtual table
+        db.execSQL("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts 
+            USING fts5(
+                originalText, 
+                translatedText, 
+                content=documents,
+                content_rowid=id
+            )
+        """)
+        
+        // 2. Populate FTS5 with existing data
+        db.execSQL("""
+            INSERT INTO documents_fts(rowid, originalText, translatedText)
+            SELECT id, 
+                   COALESCE(originalText, ''), 
+                   COALESCE(translatedText, '')
+            FROM documents
+            WHERE originalText IS NOT NULL OR translatedText IS NOT NULL
+        """)
+        
+        // 3. Create INSERT trigger
+        db.execSQL("""
+            CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents BEGIN
+                INSERT INTO documents_fts(rowid, originalText, translatedText)
+                VALUES (
+                    new.id, 
+                    COALESCE(new.originalText, ''), 
+                    COALESCE(new.translatedText, '')
+                );
+            END
+        """)
+        
+        // 4. Create UPDATE trigger (DELETE+INSERT pattern)
+        db.execSQL("""
+            CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents BEGIN
+                DELETE FROM documents_fts WHERE rowid = old.id;
+                INSERT INTO documents_fts(rowid, originalText, translatedText)
+                VALUES (
+                    new.id,
+                    COALESCE(new.originalText, ''),
+                    COALESCE(new.translatedText, '')
+                );
+            END
+        """)
+        
+        // 5. Create DELETE trigger
+        db.execSQL("""
+            CREATE TRIGGER IF NOT EXISTS documents_ad AFTER DELETE ON documents BEGIN
+                DELETE FROM documents_fts WHERE rowid = old.id;
+            END
+        """)
+    }
     
     // ============================================
     // MIGRATION 1 → 2: Added terms table
@@ -119,71 +157,19 @@ object DatabaseModule {
                         `timestamp` INTEGER NOT NULL
                     )
                 """)
-                android.util.Log.d("Migration", "  ✅ translation_cache table created")
                 
-                // 2. Create FTS5 virtual table for full-text search
-                db.execSQL("""
-                    CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts 
-                    USING fts5(
-                        originalText, 
-                        translatedText, 
-                        content=documents,
-                        content_rowid=id
-                    )
-                """)
-                android.util.Log.d("Migration", "  ✅ FTS5 table created")
+                // 2. Create FTS5 + triggers using helper
+                createFtsTableAndTriggers(db)
                 
-                // 3. Populate FTS5 with existing data
-                db.execSQL("""
-                    INSERT INTO documents_fts(rowid, originalText, translatedText)
-                    SELECT id, 
-                           COALESCE(originalText, ''), 
-                           COALESCE(translatedText, '')
-                    FROM documents
-                    WHERE originalText IS NOT NULL OR translatedText IS NOT NULL
-                """)
-                android.util.Log.d("Migration", "  ✅ FTS5 table populated")
-                
-                // 4. Create triggers to keep FTS5 in sync
-                db.execSQL("""
-                    CREATE TRIGGER documents_ai AFTER INSERT ON documents BEGIN
-                        INSERT INTO documents_fts(rowid, originalText, translatedText)
-                        VALUES (
-                            new.id, 
-                            COALESCE(new.originalText, ''), 
-                            COALESCE(new.translatedText, '')
-                        );
-                    END
-                """)
-                
-                // ⚠️ NOTE: This UPDATE trigger has a bug (will be fixed in v6)
-                db.execSQL("""
-                    CREATE TRIGGER documents_au AFTER UPDATE ON documents BEGIN
-                        UPDATE documents_fts 
-                        SET originalText = COALESCE(new.originalText, ''),
-                            translatedText = COALESCE(new.translatedText, '')
-                        WHERE rowid = new.id;
-                    END
-                """)
-                
-                db.execSQL("""
-                    CREATE TRIGGER documents_ad AFTER DELETE ON documents BEGIN
-                        DELETE FROM documents_fts WHERE rowid = old.id;
-                    END
-                """)
-                android.util.Log.d("Migration", "  ✅ FTS5 triggers created")
-                
-                // 5. Create indices for better performance
+                // 3. Create indices
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_documents_recordId ON documents(recordId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(processingStatus)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_documents_createdAt ON documents(createdAt)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_records_folderId ON records(folderId)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_translation_cache_timestamp ON translation_cache(timestamp)")
-                android.util.Log.d("Migration", "  ✅ Indices created")
                 
-                // 6. DROP api_keys table (will be migrated in callback)
+                // 4. DROP api_keys table
                 db.execSQL("DROP TABLE IF EXISTS api_keys")
-                android.util.Log.d("Migration", "  ✅ api_keys table dropped (migrated to EncryptedStorage)")
                 
                 android.util.Log.d("Migration", "✅ Migration 3→4 complete")
                 
@@ -203,7 +189,6 @@ object DatabaseModule {
             try {
                 android.util.Log.d("Migration", "🔄 Migrating 4→5: Language-aware cache")
                 
-                // Step 1: Create new table with language fields
                 db.execSQL("""
                     CREATE TABLE translation_cache_new (
                         cacheKey TEXT PRIMARY KEY NOT NULL,
@@ -214,9 +199,7 @@ object DatabaseModule {
                         timestamp INTEGER NOT NULL
                     )
                 """)
-                android.util.Log.d("Migration", "  ✅ New table created")
                 
-                // Step 2: Migrate existing data with default languages
                 db.execSQL("""
                     INSERT INTO translation_cache_new 
                         (cacheKey, originalText, translatedText, sourceLanguage, targetLanguage, timestamp)
@@ -229,19 +212,10 @@ object DatabaseModule {
                         timestamp
                     FROM translation_cache
                 """)
-                android.util.Log.d("Migration", "  ✅ Data migrated")
                 
-                // Step 3: Drop old table
                 db.execSQL("DROP TABLE translation_cache")
-                android.util.Log.d("Migration", "  ✅ Old table dropped")
-                
-                // Step 4: Rename new table
                 db.execSQL("ALTER TABLE translation_cache_new RENAME TO translation_cache")
-                android.util.Log.d("Migration", "  ✅ Table renamed")
-                
-                // Step 5: Create index
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_cache_timestamp ON translation_cache(timestamp)")
-                android.util.Log.d("Migration", "  ✅ Index created")
                 
                 android.util.Log.d("Migration", "✅ Migration 4→5 complete")
                 
@@ -254,7 +228,6 @@ object DatabaseModule {
     
     // ============================================
     // MIGRATION 5 → 6: FIX FTS5 UPDATE TRIGGER
-    // ✅ CRITICAL FIX: FTS5 doesn't support UPDATE, use DELETE+INSERT
     // ============================================
     
     private val MIGRATION_5_6 = object : Migration(5, 6) {
@@ -262,11 +235,10 @@ object DatabaseModule {
             try {
                 android.util.Log.d("Migration", "🔄 Migrating 5→6: Fixing FTS5 UPDATE trigger")
                 
-                // Step 1: Drop the buggy UPDATE trigger
+                // Drop old trigger
                 db.execSQL("DROP TRIGGER IF EXISTS documents_au")
-                android.util.Log.d("Migration", "  ✅ Old UPDATE trigger dropped")
                 
-                // Step 2: Create corrected UPDATE trigger (DELETE + INSERT pattern)
+                // Create corrected UPDATE trigger
                 db.execSQL("""
                     CREATE TRIGGER documents_au AFTER UPDATE ON documents BEGIN
                         DELETE FROM documents_fts WHERE rowid = old.id;
@@ -278,13 +250,11 @@ object DatabaseModule {
                         );
                     END
                 """)
-                android.util.Log.d("Migration", "  ✅ New UPDATE trigger created (DELETE+INSERT pattern)")
                 
-                // Step 3: Rebuild FTS5 index to ensure consistency
+                // Rebuild FTS5 index
                 db.execSQL("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
-                android.util.Log.d("Migration", "  ✅ FTS5 index rebuilt")
                 
-                android.util.Log.d("Migration", "✅ Migration 5→6 complete - FTS5 is now fully functional!")
+                android.util.Log.d("Migration", "✅ Migration 5→6 complete")
                 
             } catch (e: Exception) {
                 android.util.Log.e("Migration", "❌ Migration 5→6 failed", e)
@@ -309,7 +279,7 @@ object DatabaseModule {
                 MIGRATION_2_3,
                 MIGRATION_3_4,
                 MIGRATION_4_5,
-                MIGRATION_5_6  // ✅ NEW - FIX FTS5 TRIGGER
+                MIGRATION_5_6
             )
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onCreate(db: SupportSQLiteDatabase) {
@@ -318,6 +288,14 @@ object DatabaseModule {
                     
                     // Enable foreign keys
                     db.execSQL("PRAGMA foreign_keys=ON")
+                    
+                    // ✅ CREATE FTS5 TABLE + TRIGGERS (for fresh installs)
+                    try {
+                        createFtsTableAndTriggers(db)
+                        android.util.Log.d("Database", "✅ FTS5 table and triggers created")
+                    } catch (e: Exception) {
+                        android.util.Log.e("Database", "❌ Failed to create FTS5", e)
+                    }
                 }
                 
                 override fun onOpen(db: SupportSQLiteDatabase) {
@@ -336,8 +314,6 @@ object DatabaseModule {
                             migrateApiKeysToEncrypted(db, encryptedKeyStorage, context)
                             prefs.edit().putBoolean("api_keys_migrated_v4", true).apply()
                             android.util.Log.d("Database", "✅ API key migration flag set")
-                        } else {
-                            android.util.Log.d("Database", "ℹ️ API key migration already done or not needed")
                         }
                     }
                     
@@ -360,23 +336,20 @@ object DatabaseModule {
         try {
             android.util.Log.d("Database", "🔄 Starting API key migration...")
             
-            // Check if api_keys table exists
             val cursor = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='api_keys'")
             val tableExists = cursor.moveToFirst()
             cursor.close()
             
             if (!tableExists) {
-                android.util.Log.d("Database", "ℹ️ api_keys table not found (already migrated)")
+                android.util.Log.d("Database", "ℹ️ api_keys table not found")
                 return
             }
             
-            // Check if already migrated
-            if (encryptedKeyStorage.getAllKeys().isNotEmpty()) {
+            if (encryptedStorage.getAllKeys().isNotEmpty()) {
                 android.util.Log.d("Database", "ℹ️ API keys already in encrypted storage")
                 return
             }
             
-            // Read keys from database
             val keysCursor = db.query("SELECT id, key, label, isActive, createdAt FROM api_keys")
             val keys = mutableListOf<com.docs.scanner.data.local.security.ApiKeyData>()
             
@@ -400,34 +373,25 @@ object DatabaseModule {
             keysCursor.close()
             
             if (keys.isNotEmpty()) {
-                // Save to encrypted storage
-                encryptedKeyStorage.saveAllKeys(keys)
+                encryptedStorage.saveAllKeys(keys)
                 
-                // Verify migration success
-                val savedKeys = encryptedKeyStorage.getAllKeys()
+                val savedKeys = encryptedStorage.getAllKeys()
                 if (savedKeys.size != keys.size) {
                     throw IllegalStateException(
                         "Migration failed: saved ${savedKeys.size}, expected ${keys.size}"
                     )
                 }
                 
-                // Set active key
                 keys.find { it.isActive }?.let {
-                    encryptedKeyStorage.setActiveApiKey(it.key)
+                    encryptedStorage.setActiveApiKey(it.key)
                 }
                 
-                android.util.Log.d("Database", "✅ Migrated ${keys.size} API keys to encrypted storage")
-                
-                // Drop api_keys table ONLY if successful
+                android.util.Log.d("Database", "✅ Migrated ${keys.size} API keys")
                 db.execSQL("DROP TABLE IF EXISTS api_keys")
-                android.util.Log.d("Database", "✅ api_keys table dropped")
-            } else {
-                android.util.Log.d("Database", "ℹ️ No API keys to migrate")
             }
             
         } catch (e: Exception) {
             android.util.Log.e("Database", "⚠️ API keys migration failed: ${e.message}", e)
-            // Don't throw - allow app to continue
         }
     }
     
@@ -439,7 +403,6 @@ object DatabaseModule {
         try {
             val dbFile = context.getDatabasePath(DATABASE_NAME)
             if (!dbFile.exists()) {
-                android.util.Log.d("Database", "ℹ️ No database file to backup")
                 return
             }
             
@@ -451,7 +414,6 @@ object DatabaseModule {
             dbFile.copyTo(backupFile, overwrite = false)
             android.util.Log.d("Database", "✅ Backup created: ${backupFile.name}")
             
-            // Clean old backups (keep last 5)
             dbFile.parentFile?.listFiles { file ->
                 file.name.startsWith("${DATABASE_NAME}.backup_")
             }?.sortedByDescending { it.lastModified() }
@@ -463,7 +425,6 @@ object DatabaseModule {
                 }
         } catch (e: Exception) {
             android.util.Log.w("Database", "⚠️ Failed to create backup: ${e.message}")
-            // Don't throw - non-critical
         }
     }
     
