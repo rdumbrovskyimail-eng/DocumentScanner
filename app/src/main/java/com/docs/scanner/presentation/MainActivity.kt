@@ -22,7 +22,12 @@ class MainActivity : ComponentActivity() {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* handled */ }
+    ) { results ->
+        // Log results for debugging
+        results.forEach { (permission, granted) ->
+            println("Permission $permission: ${if (granted) "✅ granted" else "❌ denied"}")
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +50,13 @@ class MainActivity : ComponentActivity() {
     private fun requestNecessaryPermissions() {
         val permissions = mutableListOf<String>()
 
+        // ✅ CAMERA permission (КРИТИЧНО!)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) !=
+            PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.CAMERA)
+        }
+
+        // Notifications (Android 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED) {
@@ -56,12 +68,13 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // ✅ SCHEDULE_EXACT_ALARM (Android 12+) - отдельный Intent
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (!android.app.AlarmManager.AlarmManagerCompat.canScheduleExactAlarms(
-                    getSystemService(ALARM_SERVICE) as android.app.AlarmManager
-                )) {
-                // Точные будильники требуют отдельного запроса через Settings
-                // Можно открыть Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
+            val alarmManager = getSystemService(ALARM_SERVICE) as android.app.AlarmManager
+            if (!alarmManager.canScheduleExactAlarms()) {
+                // Пользователь должен включить в Settings вручную
+                // Можно показать диалог с объяснением и кнопкой открытия Settings
+                println("⚠️ Exact alarms not allowed. User must enable in Settings.")
             }
         }
 
