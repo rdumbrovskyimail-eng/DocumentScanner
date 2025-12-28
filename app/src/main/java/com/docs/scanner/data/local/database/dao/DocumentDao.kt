@@ -2,7 +2,7 @@ package com.docs.scanner.data.local.database.dao
 
 import androidx.room.*
 import com.docs.scanner.data.local.database.entities.DocumentEntity
-import com.docs.scanner.domain.model.DocumentWithNames
+import com.docs.scanner.data.local.database.dto.DocumentWithNames  // ✅ ИСПРАВЛЕН ИМПОРТ
 import kotlinx.coroutines.flow.Flow
 
 @Dao
