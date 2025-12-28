@@ -25,61 +25,18 @@ object DatabaseModule {
     private const val DATABASE_NAME = "document_scanner.db"
     
     // ============================================
-    // 🔧 HELPER: CREATE FTS5 TABLE + TRIGGERS
+    // 🔧 HELPER: POPULATE EXISTING FTS DATA
     // ============================================
     
-    private fun createFtsTableAndTriggers(db: SupportSQLiteDatabase) {
-        // 1. Create FTS5 virtual table
+    private fun populateFtsData(db: SupportSQLiteDatabase) {
+        // Only populate if documents exist
         db.execSQL("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts 
-            USING fts5(
-                originalText, 
-                translatedText, 
-                content=documents,
-                content_rowid=id
-            )
-        """)
-        
-        // 2. Populate FTS5 with existing data
-        db.execSQL("""
-            INSERT INTO documents_fts(rowid, originalText, translatedText)
+            INSERT OR IGNORE INTO documents_fts(rowid, originalText, translatedText)
             SELECT id, 
-                   COALESCE(originalText, ''), 
-                   COALESCE(translatedText, '')
+                   originalText, 
+                   translatedText
             FROM documents
             WHERE originalText IS NOT NULL OR translatedText IS NOT NULL
-        """)
-        
-        // 3. Create INSERT trigger
-        db.execSQL("""
-            CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents BEGIN
-                INSERT INTO documents_fts(rowid, originalText, translatedText)
-                VALUES (
-                    new.id, 
-                    COALESCE(new.originalText, ''), 
-                    COALESCE(new.translatedText, '')
-                );
-            END
-        """)
-        
-        // 4. Create UPDATE trigger (DELETE+INSERT pattern)
-        db.execSQL("""
-            CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents BEGIN
-                DELETE FROM documents_fts WHERE rowid = old.id;
-                INSERT INTO documents_fts(rowid, originalText, translatedText)
-                VALUES (
-                    new.id,
-                    COALESCE(new.originalText, ''),
-                    COALESCE(new.translatedText, '')
-                );
-            END
-        """)
-        
-        // 5. Create DELETE trigger
-        db.execSQL("""
-            CREATE TRIGGER IF NOT EXISTS documents_ad AFTER DELETE ON documents BEGIN
-                DELETE FROM documents_fts WHERE rowid = old.id;
-            END
         """)
     }
     
@@ -158,8 +115,8 @@ object DatabaseModule {
                     )
                 """)
                 
-                // 2. Create FTS5 + triggers using helper
-                createFtsTableAndTriggers(db)
+                // 2. Populate FTS with existing data (Room creates table automatically)
+                populateFtsData(db)
                 
                 // 3. Create indices
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_documents_recordId ON documents(recordId)")
@@ -289,12 +246,12 @@ object DatabaseModule {
                     // Enable foreign keys
                     db.execSQL("PRAGMA foreign_keys=ON")
                     
-                    // ✅ CREATE FTS5 TABLE + TRIGGERS (for fresh installs)
+                    // ✅ POPULATE FTS with existing data (Room creates table automatically)
                     try {
-                        createFtsTableAndTriggers(db)
-                        android.util.Log.d("Database", "✅ FTS5 table and triggers created")
+                        populateFtsData(db)
+                        android.util.Log.d("Database", "✅ FTS table populated")
                     } catch (e: Exception) {
-                        android.util.Log.e("Database", "❌ Failed to create FTS5", e)
+                        android.util.Log.e("Database", "❌ Failed to populate FTS", e)
                     }
                 }
                 
