@@ -15,7 +15,24 @@ data class Folder(
     val recordCount: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    // ✅ ДОБАВИТЬ validation (Session 6 Problem #6)
+    init {
+        require(name.isNotBlank()) { "Folder name cannot be blank" }
+        require(name.length <= MAX_NAME_LENGTH) { 
+            "Folder name too long (max $MAX_NAME_LENGTH characters)" 
+        }
+        require(recordCount >= 0) { "Record count cannot be negative" }
+    }
+    
+    fun isValid(): Boolean {
+        return name.isNotBlank() && name.length <= MAX_NAME_LENGTH
+    }
+    
+    companion object {
+        const val MAX_NAME_LENGTH = 100
+    }
+}
 
 data class Record(
     val id: Long = 0,
@@ -26,7 +43,19 @@ data class Record(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
+    // ✅ ДОБАВИТЬ validation (Session 6 Problem #6)
+    init {
+        require(folderId > 0) { "Invalid folder ID: $folderId" }
+        require(name.isNotBlank()) { "Record name cannot be blank" }
+        require(name.length <= MAX_NAME_LENGTH) { 
+            "Record name too long (max $MAX_NAME_LENGTH characters)" 
+        }
+        require(documentCount >= 0) { "Document count cannot be negative" }
+    }
+    
     companion object {
+        const val MAX_NAME_LENGTH = 100  // ✅ ДОБАВИТЬ
+        
         /**
          * Factory method for Quick Scan records.
          * 
@@ -61,8 +90,19 @@ data class Document(
     val translatedText: String? = null,
     val position: Int = 0,
     val processingStatus: ProcessingStatus = ProcessingStatus.INITIAL,
-    val createdAt: Long = System.currentTimeMillis()
-)
+    val createdAt: Long = System.currentTimeMillis(),
+    
+    // ✅ ДОБАВИТЬ для search results (Session 6 Problem #1)
+    val recordName: String? = null,
+    val folderName: String? = null
+) {
+    // ✅ ДОБАВИТЬ validation (Session 6 Problem #6)
+    init {
+        require(recordId > 0) { "Invalid record ID: $recordId" }
+        require(imagePath.isNotBlank()) { "Image path cannot be blank" }
+        require(position >= 0) { "Position cannot be negative" }
+    }
+}
 
 /**
  * Document processing status.
