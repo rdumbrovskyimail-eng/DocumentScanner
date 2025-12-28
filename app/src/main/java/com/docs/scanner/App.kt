@@ -1,7 +1,11 @@
 package com.docs.scanner
 
 import android.app.Application
-import com.docs.scanner.BuildConfig
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.media.AudioAttributes
+import android.media.RingtoneManager
+import android.os.Build
 import com.docs.scanner.util.LogcatCollector
 import dagger.hilt.android.HiltAndroidApp
 
@@ -13,10 +17,13 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // ✅ КРИТИЧНО: LogcatCollector только в DEBUG!
+        // ✅ Debug tools только в DEBUG режиме
         if (BuildConfig.DEBUG) {
             initializeDebugTools()
         }
+
+        // ✅ Notification channels (всегда, для production)
+        createNotificationChannels()
     }
 
     private fun initializeDebugTools() {
@@ -31,9 +38,37 @@ class App : Application() {
         println("🔧 Debug tools initialized")
     }
 
+    private fun createNotificationChannels() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "term_reminders",
+                "Term Reminders",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notifications for term deadlines"
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 500, 250, 500)
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+            }
+
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager?.createNotificationChannel(channel)
+            
+            println("✅ Notification channel created")
+        }
+    }
+
     override fun onTerminate() {
         super.onTerminate()
         if (BuildConfig.DEBUG) {
             logcatCollector?.stopCollecting()
+            println("🔧 Debug tools terminated")
         }
     }
+}
