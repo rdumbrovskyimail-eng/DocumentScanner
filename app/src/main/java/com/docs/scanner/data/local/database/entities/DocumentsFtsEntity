@@ -4,10 +4,10 @@ import androidx.room.Entity
 import androidx.room.Fts4
 
 /**
- * FTS5 Virtual Table для полнотекстового поиска.
+ * FTS4 Virtual Table для полнотекстового поиска.
  * 
  * ⚠️ ВАЖНО: 
- * - Используем @Fts4 (а не @Fts5) для совместимости
+ * - Используем @Fts4 (не @Fts5) для лучшей совместимости
  * - contentEntity связывает FTS с основной таблицей documents
  * - Room автоматически создаст триггеры для синхронизации
  */
