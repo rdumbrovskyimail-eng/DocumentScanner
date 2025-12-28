@@ -1,0 +1,27 @@
+package com.docs.scanner.domain.model
+
+/**
+ * Application constants.
+ * 
+ * Session 6 + 10 requirement: Avoid hardcoded strings for localization.
+ */
+object FolderConstants {
+    /**
+     * Special folder ID for Quick Scans.
+     * Use -1 to indicate system folder.
+     */
+    const val QUICK_SCANS_FOLDER_ID = -1L
+    
+    /**
+     * Fallback name if localization unavailable.
+     */
+    const val QUICK_SCANS_NAME_DEFAULT = "Quick Scans"
+}
+
+object RecordConstants {
+    /**
+     * Date format for quick scan records.
+     * Example: "2024-12-28 14:30"
+     */
+    const val QUICK_SCAN_DATE_FORMAT = "yyyy-MM-dd HH:mm"
+}
