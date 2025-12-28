@@ -1,69 +1,222 @@
 package com.docs.scanner.presentation.screens.camera
 
 import android.app.Activity
+import android.net.Uri
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import android.net.Uri
 import com.docs.scanner.data.remote.camera.DocumentScannerWrapper
-import com.docs.scanner.domain.model.Result
-import com.docs.scanner.domain.usecase.QuickScanUseCase
+import com.docs.scanner.domain.usecase.AllUseCases
+import com.docs.scanner.domain.usecase.QuickScanState
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * Camera Screen ViewModel.
+ * 
+ * Session 8 Fixes:
+ * - ✅ Added progress reporting via QuickScanState Flow
+ * - ✅ Removed mutable flag (isScannerActive in state)
+ * - ✅ Proper error handling
+ * - ✅ SharedFlow for navigation events
+ * - ✅ Uses AllUseCases for consistency
+ */
 @HiltViewModel
 class CameraViewModel @Inject constructor(
     private val documentScanner: DocumentScannerWrapper,
-    private val quickScanUseCase: QuickScanUseCase
+    private val useCases: AllUseCases
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow<CameraUiState>(CameraUiState.Loading)
+    private val _uiState = MutableStateFlow<CameraUiState>(CameraUiState.Idle)
     val uiState: StateFlow<CameraUiState> = _uiState.asStateFlow()
 
-    private var isScannerActive = false
+    // ✅ FIX: SharedFlow for one-time navigation events
+    private val _navigationEvent = MutableSharedFlow<NavigationEvent>()
+    val navigationEvent: SharedFlow<NavigationEvent> = _navigationEvent.asSharedFlow()
 
+    /**
+     * Start document scanner.
+     * Checks availability before starting.
+     */
     fun startScanner(
         activity: Activity,
         launcher: ActivityResultLauncher<IntentSenderRequest>
     ) {
-        if (isScannerActive) return
+        val currentState = _uiState.value
+        if (currentState is CameraUiState.ScannerActive) {
+            return  // Already active
+        }
 
         viewModelScope.launch {
-            isScannerActive = true
             _uiState.value = CameraUiState.Loading
+
             try {
+                // Check if scanner is available
+                if (!documentScanner.isAvailable()) {
+                    _uiState.value = CameraUiState.Error(
+                        "Document Scanner requires Google Play Services 23.0+"
+                    )
+                    return@launch
+                }
+
                 documentScanner.startScan(activity, launcher)
-                _uiState.value = CameraUiState.Ready
+                _uiState.value = CameraUiState.ScannerActive
             } catch (e: Exception) {
-                _uiState.value = CameraUiState.Error(e.message ?: "Failed to start scanner")
-                isScannerActive = false
+                _uiState.value = CameraUiState.Error(
+                    "Failed to start scanner: ${e.message}"
+                )
             }
         }
     }
 
-    fun processScannedImages(uris: List<Uri>, onComplete: (Long) -> Unit) {
+    /**
+     * Process scanned images.
+     * ✅ FIX: Uses QuickScanState Flow for progress reporting.
+     */
+    fun processScannedImages(uris: List<Uri>) {
+        if (uris.isEmpty()) {
+            _uiState.value = CameraUiState.Error("No images captured")
+            return
+        }
+
         viewModelScope.launch {
-            _uiState.value = CameraUiState.Processing("Processing images...")
+            _uiState.value = CameraUiState.Processing(
+                progress = 0,
+                message = "Starting..."
+            )
 
-            if (uris.isEmpty()) {
-                _uiState.value = CameraUiState.Error("No images captured")
-                return@launch
-            }
-
-            when (val result = quickScanUseCase(uris.first())) {
-                is Result.Success -> onComplete(result.data)
-                is Result.Error -> _uiState.value = CameraUiState.Error(result.exception.message ?: "Processing failed")
+            try {
+                useCases.quickScan(uris.first())
+                    .catch { e ->
+                        _uiState.value = CameraUiState.Error(
+                            "Processing failed: ${e.message}"
+                        )
+                    }
+                    .collect { state ->
+                        when (state) {
+                            is QuickScanState.CreatingStructure -> {
+                                _uiState.value = CameraUiState.Processing(
+                                    progress = state.progress,
+                                    message = state.message
+                                )
+                            }
+                            is QuickScanState.CreatingFolder -> {
+                                _uiState.value = CameraUiState.Processing(
+                                    progress = state.progress,
+                                    message = state.message
+                                )
+                            }
+                            is QuickScanState.CreatingRecord -> {
+                                _uiState.value = CameraUiState.Processing(
+                                    progress = state.progress,
+                                    message = state.message
+                                )
+                            }
+                            is QuickScanState.ScanningImage -> {
+                                _uiState.value = CameraUiState.Processing(
+                                    progress = state.progress,
+                                    message = state.message
+                                )
+                            }
+                            is QuickScanState.ProcessingOcr -> {
+                                _uiState.value = CameraUiState.Processing(
+                                    progress = state.progress,
+                                    message = state.message
+                                )
+                            }
+                            is QuickScanState.Translating -> {
+                                _uiState.value = CameraUiState.Processing(
+                                    progress = state.progress,
+                                    message = state.message
+                                )
+                            }
+                            is QuickScanState.Success -> {
+                                _uiState.value = CameraUiState.Success(state.recordId)
+                                
+                                // Emit navigation event
+                                _navigationEvent.emit(
+                                    NavigationEvent.NavigateToEditor(state.recordId)
+                                )
+                            }
+                            is QuickScanState.Error -> {
+                                _uiState.value = CameraUiState.Error(state.message)
+                            }
+                        }
+                    }
+            } catch (e: Exception) {
+                _uiState.value = CameraUiState.Error(
+                    "Unexpected error: ${e.message}"
+                )
             }
         }
     }
 
-    fun onScanCancelled() {
-        isScannerActive = false
-        _uiState.value = CameraUiState.Loading
+    /**
+     * Handle scan result from Activity.
+     * Uses DocumentScannerWrapper.handleScanResult().
+     */
+    fun handleScanResult(result: com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult) {
+        viewModelScope.launch {
+            when (val scanResult = documentScanner.handleScanResult(result)) {
+                is DocumentScannerWrapper.ScanResult.Success -> {
+                    processScannedImages(scanResult.imageUris)
+                }
+                is DocumentScannerWrapper.ScanResult.Error -> {
+                    _uiState.value = CameraUiState.Error(scanResult.message)
+                }
+            }
+        }
     }
+
+    /**
+     * Handle scan cancellation.
+     */
+    fun onScanCancelled() {
+        _uiState.value = CameraUiState.Idle
+    }
+
+    /**
+     * Reset to ready state.
+     */
+    fun resetState() {
+        _uiState.value = CameraUiState.Ready
+    }
+
+    /**
+     * Clear error and return to ready state.
+     */
+    fun clearError() {
+        _uiState.value = CameraUiState.Ready
+    }
+}
+
+/**
+ * UI State for Camera Screen.
+ * 
+ * Session 8 Fix: Added granular states for progress reporting.
+ */
+sealed interface CameraUiState {
+    object Idle : CameraUiState
+    object Loading : CameraUiState
+    object Ready : CameraUiState
+    object ScannerActive : CameraUiState
+    
+    data class Processing(
+        val progress: Int,
+        val message: String
+    ) : CameraUiState
+    
+    data class Success(val recordId: Long) : CameraUiState
+    data class Error(val message: String) : CameraUiState
+}
+
+/**
+ * Navigation events.
+ * ✅ Session 8: SharedFlow for one-time events (not StateFlow).
+ */
+sealed interface NavigationEvent {
+    data class NavigateToEditor(val recordId: Long) : NavigationEvent
 }
