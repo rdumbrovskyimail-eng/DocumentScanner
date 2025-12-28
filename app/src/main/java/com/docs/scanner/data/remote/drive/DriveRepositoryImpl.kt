@@ -1,11 +1,16 @@
 package com.docs.scanner.data.remote.drive
 
 import android.content.Context
+import android.content.Intent
+import com.docs.scanner.BuildConfig
 import com.docs.scanner.domain.model.Result
+import com.google.android.gms.auth.UserRecoverableAuthException
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
+import com.google.api.client.googleapis.json.GoogleJsonResponseException
+import com.google.api.client.http.FileContent
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
@@ -27,7 +32,7 @@ interface DriveRepository {
     suspend fun isSignedIn(): Boolean
     suspend fun signIn(): Result<String>
     suspend fun signOut()
-    suspend fun uploadBackup(): Result<String>
+    suspend fun uploadBackup(onProgress: ((Long, Long) -> Unit)? = null): Result<String>
     suspend fun listBackups(): Result<List<BackupInfo>>
     suspend fun restoreBackup(fileId: String): Result<Unit>
 }
@@ -39,6 +44,13 @@ data class BackupInfo(
     val sizeBytes: Long
 )
 
+// ✅ НОВЫЙ: Result с auth support
+sealed class DriveResult<out T> {
+    data class Success<T>(val data: T) : DriveResult<T>()
+    data class Error(val exception: Exception) : DriveResult<Nothing>()
+    data class RequiresAuth(val intent: Intent) : DriveResult<Nothing>()  // ✅ НОВЫЙ
+}
+
 @Singleton
 class DriveRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context
@@ -48,11 +60,19 @@ class DriveRepositoryImpl @Inject constructor(
     private val backupFolderName = "DocumentScanner Backup"
     private val databaseName = "document_scanner.db"
 
-    private suspend fun <T> safeApiCall(call: suspend () -> T): Result<T> {
+    // ✅ УЛУЧШЕНО: Обработка UserRecoverableAuthException
+    private suspend fun <T> safeApiCall(call: suspend () -> T): DriveResult<T> {
         return try {
-            Result.Success(call())
+            DriveResult.Success(call())
+        } catch (e: UserRecoverableAuthException) {
+            // ✅ Специальная обработка для auth
+            DriveResult.RequiresAuth(e.intent)
+        } catch (e: GoogleJsonResponseException) {
+            DriveResult.Error(Exception("Drive API error: ${e.message}", e))
+        } catch (e: IOException) {
+            DriveResult.Error(Exception("Network error: ${e.message}", e))
         } catch (e: Exception) {
-            Result.Error(Exception("Drive API error: ${e.message}", e))
+            DriveResult.Error(Exception("Unknown error: ${e.message}", e))
         }
     }
 
@@ -89,8 +109,11 @@ class DriveRepositoryImpl @Inject constructor(
         driveService = null
     }
 
-    override suspend fun uploadBackup(): Result<String> = withContext(Dispatchers.IO) {
-        safeApiCall {
+    // ✅ УЛУЧШЕНО: Chunked upload + progress + auto-cleanup
+    override suspend fun uploadBackup(
+        onProgress: ((Long, Long) -> Unit)?
+    ): Result<String> = withContext(Dispatchers.IO) {
+        when (val result = safeApiCall {
             val drive = driveService ?: getDriveService() ?: throw Exception("Not signed in")
 
             val timestamp = System.currentTimeMillis()
@@ -98,6 +121,14 @@ class DriveRepositoryImpl @Inject constructor(
 
             try {
                 createBackupZip(backupZip)
+                
+                val fileSize = backupZip.length()
+                
+                // ✅ ПРОВЕРИТЬ место в Drive
+                if (!checkDriveSpace(drive, fileSize)) {
+                    throw Exception("Not enough space in Google Drive")
+                }
+                
                 val folderId = getOrCreateBackupFolder(drive)
 
                 val fileMetadata = com.google.api.services.drive.model.File().apply {
@@ -105,20 +136,98 @@ class DriveRepositoryImpl @Inject constructor(
                     parents = listOf(folderId)
                 }
 
-                val mediaContent = com.google.api.client.http.FileContent("application/zip", backupZip)
-                val file = drive.files().create(fileMetadata, mediaContent)
-                    .setFields("id")
-                    .execute()
-
-                file.id
+                // ✅ CHUNKED UPLOAD для файлов > 5MB
+                val fileId = if (fileSize > 5 * 1024 * 1024) {
+                    val mediaContent = FileContent("application/zip", backupZip)
+                    
+                    val request = drive.files().create(fileMetadata, mediaContent)
+                        .setFields("id")
+                    
+                    val uploader = request.mediaHttpUploader
+                    uploader.isDirectUploadEnabled = false
+                    uploader.chunkSize = 1024 * 1024  // 1MB chunks
+                    
+                    uploader.setProgressListener { progress ->
+                        val uploaded = progress.numBytesUploaded
+                        onProgress?.invoke(uploaded, fileSize)
+                        println("📤 Upload progress: $uploaded / $fileSize bytes")
+                    }
+                    
+                    request.execute().id
+                } else {
+                    val mediaContent = FileContent("application/zip", backupZip)
+                    drive.files().create(fileMetadata, mediaContent)
+                        .setFields("id")
+                        .execute().id
+                }
+                
+                // ✅ AUTO-CLEANUP старых backup'ов (оставить только 10)
+                cleanupOldBackups(drive, folderId)
+                
+                fileId
             } finally {
                 if (backupZip.exists()) backupZip.delete()
             }
+        }) {
+            is DriveResult.Success -> Result.Success(result.data)
+            is DriveResult.Error -> Result.Error(result.exception)
+            is DriveResult.RequiresAuth -> Result.Error(
+                Exception("Authentication required. Please re-authorize the app.")
+            )
+        }
+    }
+    
+    // ✅ НОВАЯ ФУНКЦИЯ: Проверка свободного места
+    private suspend fun checkDriveSpace(drive: Drive, requiredBytes: Long): Boolean {
+        return try {
+            val about = drive.about().get()
+                .setFields("storageQuota")
+                .execute()
+            
+            val quota = about.storageQuota
+            val used = quota.usage ?: 0L
+            val total = quota.limit ?: Long.MAX_VALUE
+            val available = total - used
+            
+            println("💾 Drive space: ${available / 1024 / 1024} MB available")
+            available >= requiredBytes
+        } catch (e: Exception) {
+            println("⚠️ Failed to check Drive space: ${e.message}")
+            true // Продолжаем если не можем проверить
+        }
+    }
+    
+    // ✅ НОВАЯ ФУНКЦИЯ: Автоочистка старых backup'ов
+    private suspend fun cleanupOldBackups(drive: Drive, folderId: String) {
+        try {
+            val result = drive.files().list()
+                .setQ("'$folderId' in parents and trashed = false")
+                .setOrderBy("createdTime desc")
+                .setFields("files(id, name, createdTime)")
+                .execute()
+            
+            val allBackups = result.files
+            if (allBackups.size > MAX_BACKUPS) {
+                val toDelete = allBackups.drop(MAX_BACKUPS)
+                
+                toDelete.forEach { file ->
+                    try {
+                        drive.files().delete(file.id).execute()
+                        println("🗑️ Deleted old backup: ${file.name}")
+                    } catch (e: Exception) {
+                        println("⚠️ Failed to delete backup ${file.name}: ${e.message}")
+                    }
+                }
+                
+                println("✅ Cleaned up ${toDelete.size} old backups")
+            }
+        } catch (e: Exception) {
+            println("⚠️ Failed to cleanup old backups: ${e.message}")
         }
     }
 
     override suspend fun listBackups(): Result<List<BackupInfo>> = withContext(Dispatchers.IO) {
-        safeApiCall {
+        when (val result = safeApiCall {
             val drive = driveService ?: getDriveService() ?: throw Exception("Not signed in")
             val folderId = getOrCreateBackupFolder(drive)
 
@@ -137,20 +246,24 @@ class DriveRepositoryImpl @Inject constructor(
                     sizeBytes = file.size?.toLong() ?: 0L
                 )
             }
+        }) {
+            is DriveResult.Success -> Result.Success(result.data)
+            is DriveResult.Error -> Result.Error(result.exception)
+            is DriveResult.RequiresAuth -> Result.Error(
+                Exception("Authentication required")
+            )
         }
     }
 
     override suspend fun restoreBackup(fileId: String): Result<Unit> = withContext(Dispatchers.IO) {
-        safeApiCall {
+        when (val result = safeApiCall {
             val drive = driveService ?: getDriveService() ?: throw Exception("Not signed in")
 
-            // ✅ Создаём резервную копию текущей БД перед восстановлением
             val dbFile = context.getDatabasePath(databaseName)
             if (dbFile.exists()) {
                 val backupDb = File(dbFile.parent, "${dbFile.name}.pre_restore_${System.currentTimeMillis()}")
                 dbFile.copyTo(backupDb, overwrite = true)
 
-                // Очищаем WAL/SHM файлы
                 File(dbFile.parent, "$databaseName-wal").delete()
                 File(dbFile.parent, "$databaseName-shm").delete()
             }
@@ -165,6 +278,12 @@ class DriveRepositoryImpl @Inject constructor(
             } finally {
                 if (tempZip.exists()) tempZip.delete()
             }
+        }) {
+            is DriveResult.Success -> Result.Success(Unit)
+            is DriveResult.Error -> Result.Error(result.exception)
+            is DriveResult.RequiresAuth -> Result.Error(
+                Exception("Authentication required")
+            )
         }
     }
 
@@ -185,25 +304,23 @@ class DriveRepositoryImpl @Inject constructor(
         }
     }
 
+    // ✅ ИСПОЛЬЗОВАТЬ BuildConfig.VERSION_NAME вместо hardcoded
     private fun createBackupZip(zipFile: File) {
         val dbFile = context.getDatabasePath(databaseName)
         val documentsDir = File(context.filesDir, "documents")
 
         ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zip ->
-            // База данных
             if (dbFile.exists()) {
                 addToZip(zip, dbFile, "database.db")
             }
 
-            // Документы
             documentsDir.walkTopDown().filter { it.isFile }.forEach { file ->
                 val relativePath = file.relativeTo(context.filesDir).path
                 addToZip(zip, file, relativePath)
             }
 
-            // manifest.json
             val manifest = JSONObject().apply {
-                put("app_version", "2.1.0")
+                put("app_version", BuildConfig.VERSION_NAME)  // ✅ ИСПОЛЬЗОВАТЬ BuildConfig
                 put("backup_date", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()))
                 put("timestamp", System.currentTimeMillis())
                 put("db_version", 4)
@@ -243,7 +360,7 @@ class DriveRepositoryImpl @Inject constructor(
                     }
 
                     name.startsWith("documents/") -> {
-                        if (!manifestValid) continue // Пропускаем файлы если manifest не валиден
+                        if (!manifestValid) continue
                         val file = File(context.filesDir, name)
                         file.parentFile?.mkdirs()
                         FileOutputStream(file).use { output -> zip.copyTo(output) }
@@ -260,5 +377,9 @@ class DriveRepositoryImpl @Inject constructor(
         zip.putNextEntry(ZipEntry(entryName))
         FileInputStream(file).use { it.copyTo(zip) }
         zip.closeEntry()
+    }
+    
+    companion object {
+        private const val MAX_BACKUPS = 10
     }
 }
