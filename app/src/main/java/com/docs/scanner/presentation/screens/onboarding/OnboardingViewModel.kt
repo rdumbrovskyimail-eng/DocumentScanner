@@ -16,9 +16,10 @@ import javax.inject.Inject
  * 
  * Session 8 Fix:
  * - ✅ Moved from OnboardingScreen.kt to separate file
- * - ✅ Uses EncryptedKeyStorage for API key (Session 3 fix)
- * - ✅ Added validation
- * - ✅ Better error handling
+ * - ✅ Uses EncryptedKeyStorage for API key
+ * - ✅ Added UI State pattern
+ * - ✅ Removed callback parameters
+ * - ✅ Auto-check first launch in init
  */
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
@@ -26,28 +27,35 @@ class OnboardingViewModel @Inject constructor(
     private val encryptedKeyStorage: EncryptedKeyStorage
 ) : ViewModel() {
 
+    private val _uiState = MutableStateFlow<OnboardingUiState>(OnboardingUiState.CheckingFirstLaunch)
+    val uiState: StateFlow<OnboardingUiState> = _uiState.asStateFlow()
+
     private val _apiKey = MutableStateFlow("")
     val apiKey: StateFlow<String> = _apiKey.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    private val _errorMessage = MutableStateFlow<String?>(null)
-    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+    init {
+        checkFirstLaunch()
+    }
 
     /**
      * Check if this is first launch.
      * If not, navigate directly to main screen.
      */
-    fun checkFirstLaunch(onNotFirstLaunch: () -> Unit) {
+    private fun checkFirstLaunch() {
         viewModelScope.launch {
+            _uiState.value = OnboardingUiState.CheckingFirstLaunch
+            
             try {
                 val isFirstLaunch = settingsRepository.isFirstLaunch()
-                if (!isFirstLaunch) {
-                    onNotFirstLaunch()
+                _uiState.value = if (isFirstLaunch) {
+                    OnboardingUiState.ShowOnboarding
+                } else {
+                    OnboardingUiState.NavigateToMain
                 }
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to check first launch status"
+                _uiState.value = OnboardingUiState.Error(
+                    "Failed to check first launch status: ${e.message}"
+                )
             }
         }
     }
@@ -59,53 +67,45 @@ class OnboardingViewModel @Inject constructor(
         _apiKey.value = key
         
         // Clear error when user types
-        if (_errorMessage.value != null) {
-            _errorMessage.value = null
+        if (_uiState.value is OnboardingUiState.Error) {
+            _uiState.value = OnboardingUiState.ShowOnboarding
         }
     }
 
     /**
      * Save API key and mark onboarding complete.
      */
-    fun saveAndContinue(onComplete: () -> Unit) {
+    fun saveAndContinue() {
         val key = _apiKey.value.trim()
 
         // Validation
         if (key.isBlank()) {
-            _errorMessage.value = "API key cannot be empty"
+            _uiState.value = OnboardingUiState.Error("API key cannot be empty")
             return
         }
 
         if (!isValidApiKey(key)) {
-            _errorMessage.value = "Invalid API key format. Must start with 'AIza' and be 39 characters long."
+            _uiState.value = OnboardingUiState.Error(
+                "Invalid API key format. Must start with 'AIza' and be 39 characters long."
+            )
             return
         }
 
         viewModelScope.launch {
-            _isLoading.value = true
-            _errorMessage.value = null
+            _uiState.value = OnboardingUiState.Saving
 
             try {
-                // Save to encrypted storage (Session 3)
+                // Save to encrypted storage
                 encryptedKeyStorage.setActiveApiKey(key)
-
-                // Save to DataStore for backward compatibility
-                // ⚠️ NOTE: settingsRepository.setApiKey() should be REMOVED in Session 3
-                // For now keeping for compatibility
-                try {
-                    settingsRepository.setApiKey(key)
-                } catch (e: Exception) {
-                    // Ignore if method doesn't exist after Session 3 fix
-                }
 
                 // Mark onboarding complete
                 settingsRepository.setFirstLaunchCompleted()
 
-                onComplete()
+                _uiState.value = OnboardingUiState.Success
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to save API key: ${e.message}"
-            } finally {
-                _isLoading.value = false
+                _uiState.value = OnboardingUiState.Error(
+                    "Failed to save API key: ${e.message}"
+                )
             }
         }
     }
@@ -119,9 +119,21 @@ class OnboardingViewModel @Inject constructor(
     }
 
     /**
-     * Clear error message.
+     * Reset error state to show onboarding.
      */
-    fun clearError() {
-        _errorMessage.value = null
+    fun resetToOnboarding() {
+        _uiState.value = OnboardingUiState.ShowOnboarding
     }
+}
+
+/**
+ * UI State for Onboarding Screen.
+ */
+sealed interface OnboardingUiState {
+    data object CheckingFirstLaunch : OnboardingUiState
+    data object ShowOnboarding : OnboardingUiState
+    data object Saving : OnboardingUiState
+    data object Success : OnboardingUiState
+    data object NavigateToMain : OnboardingUiState
+    data class Error(val message: String) : OnboardingUiState
 }
