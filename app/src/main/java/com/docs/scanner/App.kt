@@ -1,27 +1,39 @@
 package com.docs.scanner
 
 import android.app.Application
+import com.docs.scanner.BuildConfig
 import com.docs.scanner.util.LogcatCollector
 import dagger.hilt.android.HiltAndroidApp
 
 @HiltAndroidApp
 class App : Application() {
 
-    private lateinit var logcatCollector: LogcatCollector
+    private var logcatCollector: LogcatCollector? = null
 
     override fun onCreate() {
         super.onCreate()
 
-        logcatCollector = LogcatCollector.getInstance(this)
-        logcatCollector.startCollecting()
+        // ✅ КРИТИЧНО: LogcatCollector только в DEBUG!
+        if (BuildConfig.DEBUG) {
+            initializeDebugTools()
+        }
+    }
+
+    private fun initializeDebugTools() {
+        logcatCollector = LogcatCollector.getInstance(this).apply {
+            startCollecting()
+        }
 
         Runtime.getRuntime().addShutdownHook(Thread {
-            logcatCollector.forceSave()
+            logcatCollector?.forceSave()
         })
+
+        println("🔧 Debug tools initialized")
     }
 
     override fun onTerminate() {
         super.onTerminate()
-        logcatCollector.stopCollecting()
+        if (BuildConfig.DEBUG) {
+            logcatCollector?.stopCollecting()
+        }
     }
-}
