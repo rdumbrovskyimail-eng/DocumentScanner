@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+<!-- ADD these lines to res/values/strings.xml: -->
+
+<!-- Quick Scans -->
+<string name="quick_scans">Quick Scans</string>
+<string name="quick_scans_description">Automatically created for quick scans</string>
     <string name="app_name">Document Scanner</string>
 </resources>
