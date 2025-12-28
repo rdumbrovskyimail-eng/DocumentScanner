@@ -8,20 +8,17 @@ import com.docs.scanner.data.local.database.entities.*
 /**
  * Main Room database for DocumentScanner app.
  * 
- * Session 2, 3 & 4 fixes:
- * - ✅ Updated version 5 → 6
- * - ✅ Fixed FTS5 UPDATE trigger (DELETE+INSERT pattern)
- * - ✅ Changed exportSchema false → true (for migration tracking)
- * - ✅ Removed ApiKeyEntity (migrated to EncryptedStorage in v4)
- * - ✅ Updated TranslationCacheEntity (now with language fields)
+ * ✅ FTS5 Entity Added:
+ * - DocumentsFtsEntity: Virtual table for full-text search
+ * - Room will auto-create triggers for sync
  * 
  * Database schema:
  * - FolderEntity: Folder hierarchy
  * - RecordEntity: Document records within folders
  * - DocumentEntity: Scanned document pages
+ * - DocumentsFtsEntity: FTS virtual table (linked to DocumentEntity)
  * - TermEntity: Term/deadline reminders
  * - TranslationCacheEntity: Translation cache with language awareness
- * - documents_fts: FTS5 virtual table (created in migration, fixed in v6)
  * 
  * Version history:
  * v1: Initial schema (folders, records, documents)
@@ -29,21 +26,18 @@ import com.docs.scanner.data.local.database.entities.*
  * v3: Added api_keys table (now removed)
  * v4: Added translation_cache + FTS5, migrated api_keys to encrypted
  * v5: Updated translation_cache with language fields
- * v6: Fixed FTS5 UPDATE trigger (DELETE+INSERT pattern) ← CURRENT
- * 
- * Migration chain: MIGRATION_1_2 → MIGRATION_2_3 → MIGRATION_3_4 → MIGRATION_4_5 → MIGRATION_5_6
- * 
- * Schema location: app/schemas/ (for version control)
+ * v6: Fixed FTS5 UPDATE trigger (DELETE+INSERT pattern)
  */
 @Database(
     entities = [
         FolderEntity::class,
         RecordEntity::class,
         DocumentEntity::class,
+        DocumentsFtsEntity::class,  // ✅ ADDED FTS ENTITY
         TermEntity::class,
         TranslationCacheEntity::class
     ],
-    version = 6,  // ✅ UPDATED from 5
+    version = 6,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
