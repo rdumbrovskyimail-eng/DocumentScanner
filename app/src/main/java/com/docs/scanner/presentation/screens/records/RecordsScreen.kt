@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle  // ✅ ДОБАВЛЕНО
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.model.Record
@@ -33,9 +34,10 @@ fun RecordsScreen(
     onBackClick: () -> Unit,
     onRecordClick: (Long) -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val folderName by viewModel.folderName.collectAsState()
-    val allFolders by viewModel.allFolders.collectAsState()
+    // ✅ ИСПРАВЛЕНО: collectAsState() → collectAsStateWithLifecycle()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val folderName by viewModel.folderName.collectAsStateWithLifecycle()
+    val allFolders by viewModel.allFolders.collectAsStateWithLifecycle()
     
     var showCreateDialog by remember { mutableStateOf(false) }
     var editingRecord by remember { mutableStateOf<Record?>(null) }
@@ -175,7 +177,7 @@ fun RecordsScreen(
         )
     }
     
-    // ✅ Edit menu (центрированное)
+    // Edit menu
     editingRecord?.let { record ->
         var showMenu by remember { mutableStateOf(true) }
         var showRenameDialog by remember { mutableStateOf(false) }
@@ -202,7 +204,6 @@ fun RecordsScreen(
                     }
                 )
                 
-                // ✅ НОВОЕ: Move to folder
                 DropdownMenuItem(
                     text = { Text("Move to folder") },
                     onClick = {
@@ -229,7 +230,7 @@ fun RecordsScreen(
             }
         }
         
-        // ✅ Rename dialog с Description
+        // Rename dialog
         if (showRenameDialog) {
             var newName by remember { mutableStateOf(record.name) }
             var newDescription by remember { mutableStateOf(record.description ?: "") }
@@ -293,7 +294,7 @@ fun RecordsScreen(
         }
     }
     
-    // ✅ Move dialog
+    // Move dialog
     showMoveDialog?.let { record ->
         AlertDialog(
             onDismissRequest = { showMoveDialog = null },
@@ -396,7 +397,8 @@ private fun RecordCard(
     }
 }
 
-sealed interface RecordsUiState {data object Loading : RecordsUiState
+sealed interface RecordsUiState {
+    data object Loading : RecordsUiState
     data object Empty : RecordsUiState
     data class Success(val records: List<Record>) : RecordsUiState
     data class Error(val message: String) : RecordsUiState
@@ -408,7 +410,7 @@ class RecordsViewModel @Inject constructor(
     private val createRecordUseCase: CreateRecordUseCase,
     private val updateRecordUseCase: UpdateRecordUseCase,
     private val deleteRecordUseCase: DeleteRecordUseCase,
-    private val getFoldersUseCase: GetFoldersUseCase,  // ✅ ДОБАВЛЕНО
+    private val getFoldersUseCase: GetFoldersUseCase,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     
@@ -420,7 +422,6 @@ class RecordsViewModel @Inject constructor(
     private val _folderName = MutableStateFlow("Records")
     val folderName: StateFlow<String> = _folderName.asStateFlow()
     
-    // ✅ ДОБАВЛЕНО: Все папки для Move dialog
     val allFolders: StateFlow<List<Folder>> = getFoldersUseCase()
         .stateIn(
             scope = viewModelScope,
@@ -466,15 +467,12 @@ class RecordsViewModel @Inject constructor(
         }
     }
     
-    // ✅ НОВОЕ: Перемещение записи
     fun moveRecord(recordId: Long, newFolderId: Long) {
         viewModelScope.launch {
             try {
-                // Получаем запись
                 val allRecords = (uiState.value as? RecordsUiState.Success)?.records ?: return@launch
                 val record = allRecords.find { it.id == recordId } ?: return@launch
                 
-                // Обновляем folderId
                 updateRecordUseCase(record.copy(folderId = newFolderId))
                 
                 println("✅ Record moved to folder $newFolderId")
@@ -484,4 +482,3 @@ class RecordsViewModel @Inject constructor(
         }
     }
 }
-
