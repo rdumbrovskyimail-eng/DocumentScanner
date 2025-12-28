@@ -1,5 +1,6 @@
 package com.docs.scanner.presentation.navigation
 
+import android.util.Log
 import androidx.compose.runtime.*
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -16,6 +17,8 @@ import com.docs.scanner.presentation.screens.records.RecordsScreen
 import com.docs.scanner.presentation.screens.search.SearchScreen
 import com.docs.scanner.presentation.screens.settings.SettingsScreen
 import com.docs.scanner.presentation.screens.terms.TermsScreen
+
+private const val TAG = "NavGraph"
 
 @Composable
 fun NavGraph(
@@ -38,7 +41,9 @@ fun NavGraph(
         composable(Screen.Folders.route) {
             FoldersScreen(
                 onFolderClick = { folderId ->
-                    navController.navigate(Screen.Records.createRoute(folderId))
+                    safeNavigate(navController) {
+                        navigate(Screen.Records.createRoute(folderId))
+                    }
                 },
                 onSettingsClick = {
                     navController.navigate(Screen.Settings.route)
@@ -53,7 +58,9 @@ fun NavGraph(
                     navController.navigate(Screen.Camera.route)
                 },
                 onQuickScanComplete = { recordId ->
-                    navController.navigate(Screen.Editor.createRoute(recordId))
+                    safeNavigate(navController) {
+                        navigate(Screen.Editor.createRoute(recordId))
+                    }
                 }
             )
         }
@@ -62,12 +69,25 @@ fun NavGraph(
             route = Screen.Records.route,
             arguments = listOf(navArgument("folderId") { type = NavType.LongType })
         ) { backStackEntry ->
-            val folderId = backStackEntry.arguments?.getLong("folderId") ?: return@composable
+            val folderId = backStackEntry.arguments?.getLong("folderId") ?: run {
+                Log.e(TAG, "Missing folderId parameter")
+                navController.popBackStack()
+                return@composable
+            }
+            
+            if (folderId <= 0) {
+                Log.e(TAG, "Invalid folderId: $folderId")
+                navController.popBackStack()
+                return@composable
+            }
+            
             RecordsScreen(
                 folderId = folderId,
                 onBackClick = { navController.popBackStack() },
                 onRecordClick = { recordId ->
-                    navController.navigate(Screen.Editor.createRoute(recordId))
+                    safeNavigate(navController) {
+                        navigate(Screen.Editor.createRoute(recordId))
+                    }
                 }
             )
         }
@@ -76,12 +96,25 @@ fun NavGraph(
             route = Screen.Editor.route,
             arguments = listOf(navArgument("recordId") { type = NavType.LongType })
         ) { backStackEntry ->
-            val recordId = backStackEntry.arguments?.getLong("recordId") ?: return@composable
+            val recordId = backStackEntry.arguments?.getLong("recordId") ?: run {
+                Log.e(TAG, "Missing recordId parameter")
+                navController.popBackStack()
+                return@composable
+            }
+            
+            if (recordId <= 0) {
+                Log.e(TAG, "Invalid recordId: $recordId")
+                navController.popBackStack()
+                return@composable
+            }
+            
             EditorScreen(
                 recordId = recordId,
                 onBackClick = { navController.popBackStack() },
                 onImageClick = { documentId ->
-                    navController.navigate(Screen.ImageViewer.createRoute(documentId))
+                    safeNavigate(navController) {
+                        navigate(Screen.ImageViewer.createRoute(documentId))
+                    }
                 }
             )
         }
@@ -89,8 +122,10 @@ fun NavGraph(
         composable(Screen.Camera.route) {
             CameraScreen(
                 onScanComplete = { recordId ->
-                    navController.navigate(Screen.Editor.createRoute(recordId)) {
-                        popUpTo(Screen.Folders.route) { inclusive = false }
+                    safeNavigate(navController) {
+                        navigate(Screen.Editor.createRoute(recordId)) {
+                            popUpTo(Screen.Folders.route) { inclusive = false }
+                        }
                     }
                 },
                 onBackClick = { navController.popBackStack() }
@@ -101,7 +136,9 @@ fun NavGraph(
             SearchScreen(
                 onBackClick = { navController.popBackStack() },
                 onDocumentClick = { recordId ->
-                    navController.navigate(Screen.Editor.createRoute(recordId))
+                    safeNavigate(navController) {
+                        navigate(Screen.Editor.createRoute(recordId))
+                    }
                 }
             )
         }
@@ -122,11 +159,38 @@ fun NavGraph(
             route = Screen.ImageViewer.route,
             arguments = listOf(navArgument("documentId") { type = NavType.LongType })
         ) { backStackEntry ->
-            val documentId = backStackEntry.arguments?.getLong("documentId") ?: return@composable
+            val documentId = backStackEntry.arguments?.getLong("documentId") ?: run {
+                Log.e(TAG, "Missing documentId parameter")
+                navController.popBackStack()
+                return@composable
+            }
+            
+            if (documentId <= 0) {
+                Log.e(TAG, "Invalid documentId: $documentId")
+                navController.popBackStack()
+                return@composable
+            }
+            
             ImageViewerScreen(
                 documentId = documentId,
                 onBackClick = { navController.popBackStack() }
             )
         }
+    }
+}
+
+/**
+ * Safe navigation wrapper that catches IllegalArgumentException
+ * from Screen.createRoute() validation.
+ */
+private fun safeNavigate(
+    navController: NavHostController,
+    block: NavHostController.() -> Unit
+) {
+    try {
+        navController.block()
+    } catch (e: IllegalArgumentException) {
+        Log.e(TAG, "Navigation error: ${e.message}", e)
+        // Stay on current screen instead of crashing
     }
 }
