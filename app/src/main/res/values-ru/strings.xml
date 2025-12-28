@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Quick Scans -->
+    <string name="quick_scans">Быстрые сканы</string>
+    <string name="quick_scans_description">Автоматически создано для быстрых сканов</string>
+</resources>
