@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle  // ✅ ДОБАВЛЕН
 import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
 import com.docs.scanner.domain.model.Document
@@ -33,7 +34,8 @@ fun ImageViewerScreen(
     viewModel: ImageViewerViewModel = hiltViewModel(),
     onBackClick: () -> Unit
 ) {
-    val document by viewModel.document.collectAsState()
+    // ✅ ИСПРАВЛЕНО: collectAsState() → collectAsStateWithLifecycle()
+    val document by viewModel.document.collectAsStateWithLifecycle()
     
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -165,6 +167,7 @@ fun ImageViewerScreen(
     }
 }
 
+// ⚠️ TODO Session 9 Problem #4: Переместить в presentation/viewmodels/ImageViewerViewModel.kt
 @HiltViewModel
 class ImageViewerViewModel @Inject constructor(
     private val documentRepository: DocumentRepository,
