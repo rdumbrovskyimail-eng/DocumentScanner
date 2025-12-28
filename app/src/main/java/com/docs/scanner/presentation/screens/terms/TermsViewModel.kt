@@ -2,75 +2,216 @@ package com.docs.scanner.presentation.screens.terms
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.docs.scanner.data.local.alarm.AlarmSchedulerWrapper
-import com.docs.scanner.data.local.database.entities.TermEntity
-import com.docs.scanner.data.repository.TermRepository
+import com.docs.scanner.domain.model.Term
+import com.docs.scanner.domain.usecase.AllUseCases
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * Terms Screen ViewModel.
+ * 
+ * Session 8 Fixes:
+ * - ✅ Removed direct TermRepository injection
+ * - ✅ Uses Term Use Cases (GetUpcomingTerms, CreateTerm, etc.)
+ * - ✅ Added TermsUiState for better state management
+ * - ✅ Removed business logic (alarm scheduling moved to Use Case)
+ * - ✅ Uses domain model Term instead of TermEntity
+ */
 @HiltViewModel
 class TermsViewModel @Inject constructor(
-    private val termRepository: TermRepository,
-    private val alarmScheduler: AlarmSchedulerWrapper  // ✅ Используем Wrapper
+    private val useCases: AllUseCases
 ) : ViewModel() {
 
-    val upcomingTerms: StateFlow<List<TermEntity>> = termRepository.getUpcomingTerms()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+    // ✅ FIX: Single UiState instead of 2 separate StateFlows
+    private val _uiState = MutableStateFlow<TermsUiState>(TermsUiState.Loading)
+    val uiState: StateFlow<TermsUiState> = _uiState.asStateFlow()
 
-    val completedTerms: StateFlow<List<TermEntity>> = termRepository.getCompletedTerms()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+    init {
+        loadTerms()
+    }
 
-    fun createTerm(title: String, dueDate: Long, reminderMinutesBefore: Int) {
+    /**
+     * Load upcoming and completed terms.
+     */
+    private fun loadTerms() {
         viewModelScope.launch {
-            val term = TermEntity(
-                title = title,
-                dueDate = dueDate,  // ✅ Правильное поле
-                reminderMinutesBefore = reminderMinutesBefore,
-                isCompleted = false,
-                createdAt = System.currentTimeMillis()
-            )
-            
-            val termId = termRepository.insertTerm(term)
-            
-            // Schedule alarm if reminder is set
-            if (reminderMinutesBefore > 0) {
-                val reminderTime = dueDate - (reminderMinutesBefore * 60 * 1000)
-                if (reminderTime > System.currentTimeMillis()) {
-                    alarmScheduler.schedule(
-                        termId = termId.toInt(),
-                        title = title,
-                        triggerTime = reminderTime
+            _uiState.value = TermsUiState.Loading
+
+            try {
+                combine(
+                    useCases.getUpcomingTerms(),
+                    useCases.getCompletedTerms()
+                ) { upcoming, completed ->
+                    TermsUiState.Success(
+                        upcomingTerms = upcoming,
+                        completedTerms = completed
                     )
+                }.collect { state ->
+                    _uiState.value = state
                 }
+            } catch (e: Exception) {
+                _uiState.value = TermsUiState.Error(
+                    "Failed to load terms: ${e.message}"
+                )
             }
         }
     }
 
-    fun completeTerm(term: TermEntity) {
+    /**
+     * Create new term.
+     * 
+     * @param title Term title
+     * @param description Optional description
+     * @param dueDate Due date timestamp
+     * @param reminderMinutesBefore Minutes before due date for reminder
+     */
+    fun createTerm(
+        title: String,
+        description: String? = null,
+        dueDate: Long,
+        reminderMinutesBefore: Int = 0
+    ) {
+        if (title.isBlank()) {
+            updateErrorMessage("Title cannot be empty")
+            return
+        }
+
+        if (dueDate <= System.currentTimeMillis()) {
+            updateErrorMessage("Due date must be in the future")
+            return
+        }
+
         viewModelScope.launch {
-            termRepository.updateTerm(term.copy(isCompleted = true))
-            // Cancel alarm when completed
-            alarmScheduler.cancel(term.id.toInt())
+            val term = Term(
+                title = title.trim(),
+                description = description?.takeIf { it.isNotBlank() },
+                dueDate = dueDate,
+                reminderMinutesBefore = reminderMinutesBefore,
+                isCompleted = false
+            )
+
+            when (val result = useCases.createTerm(term)) {
+                is com.docs.scanner.domain.model.Result.Success -> {
+                    // Terms auto-refresh via Flow
+                    // Alarms scheduled in Use Case
+                }
+                is com.docs.scanner.domain.model.Result.Error -> {
+                    updateErrorMessage("Failed to create term: ${result.exception.message}")
+                }
+                else -> {}
+            }
         }
     }
 
-    fun deleteTerm(term: TermEntity) {
+    /**
+     * Update existing term.
+     */
+    fun updateTerm(term: Term) {
         viewModelScope.launch {
-            termRepository.deleteTerm(term)
-            // Cancel alarm when deleted
-            alarmScheduler.cancel(term.id.toInt())
+            when (val result = useCases.updateTerm(term)) {
+                is com.docs.scanner.domain.model.Result.Success -> {
+                    // Auto-refresh via Flow
+                }
+                is com.docs.scanner.domain.model.Result.Error -> {
+                    updateErrorMessage("Failed to update term: ${result.exception.message}")
+                }
+                else -> {}
+            }
         }
     }
+
+    /**
+     * Mark term as completed.
+     * Uses dedicated Use Case for completion logic.
+     */
+    fun completeTerm(termId: Long) {
+        viewModelScope.launch {
+            when (val result = useCases.markTermCompleted(termId, completed = true)) {
+                is com.docs.scanner.domain.model.Result.Success -> {
+                    // Auto-refresh via Flow
+                    // Alarms cancelled in Use Case
+                }
+                is com.docs.scanner.domain.model.Result.Error -> {
+                    updateErrorMessage("Failed to complete term: ${result.exception.message}")
+                }
+                else -> {}
+            }
+        }
+    }
+
+    /**
+     * Toggle term completion status.
+     */
+    fun toggleTermCompletion(term: Term) {
+        viewModelScope.launch {
+            when (val result = useCases.markTermCompleted(term.id, !term.isCompleted)) {
+                is com.docs.scanner.domain.model.Result.Success -> {
+                    // Auto-refresh via Flow
+                }
+                is com.docs.scanner.domain.model.Result.Error -> {
+                    updateErrorMessage("Failed to toggle term: ${result.exception.message}")
+                }
+                else -> {}
+            }
+        }
+    }
+
+    /**
+     * Delete term.
+     */
+    fun deleteTerm(term: Term) {
+        viewModelScope.launch {
+            when (val result = useCases.deleteTerm(term)) {
+                is com.docs.scanner.domain.model.Result.Success -> {
+                    // Auto-refresh via Flow
+                    // Alarms cancelled in Use Case
+                }
+                is com.docs.scanner.domain.model.Result.Error -> {
+                    updateErrorMessage("Failed to delete term: ${result.exception.message}")
+                }
+                else -> {}
+            }
+        }
+    }
+
+    /**
+     * Clear error message.
+     */
+    fun clearError() {
+        val currentState = _uiState.value
+        if (currentState is TermsUiState.Success) {
+            _uiState.value = currentState.copy(errorMessage = null)
+        }
+    }
+
+    /**
+     * Helper to update error message in Success state.
+     */
+    private fun updateErrorMessage(message: String) {
+        val currentState = _uiState.value
+        if (currentState is TermsUiState.Success) {
+            _uiState.value = currentState.copy(errorMessage = message)
+        } else {
+            _uiState.value = TermsUiState.Error(message)
+        }
+    }
+}
+
+/**
+ * UI State for Terms Screen.
+ * 
+ * Session 8: Consolidated from 2 separate StateFlows.
+ */
+sealed interface TermsUiState {
+    object Loading : TermsUiState
+    
+    data class Success(
+        val upcomingTerms: List<Term>,
+        val completedTerms: List<Term>,
+        val errorMessage: String? = null
+    ) : TermsUiState
+    
+    data class Error(val message: String) : TermsUiState
 }
