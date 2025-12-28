@@ -80,6 +80,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
+    
+    // ✅ ДОБАВЛЕНО: FIX MEMORY LEAKS (Session 9 Critical Problem #1)
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
 
     // ============================================
     // COMPOSE
