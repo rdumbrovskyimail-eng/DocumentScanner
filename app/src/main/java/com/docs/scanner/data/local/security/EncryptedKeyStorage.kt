@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,133 +36,160 @@ class EncryptedKeyStorage @Inject constructor(
     }
     
     // ============================================
-    // ACTIVE KEY
+    // ACTIVE KEY (with error handling)
     // ============================================
     
     fun getActiveApiKey(): String? {
-        return encryptedPrefs.getString(KEY_ACTIVE_API_KEY, null)
+        return try {
+            encryptedPrefs.getString(KEY_ACTIVE_API_KEY, null)
+        } catch (e: Exception) {
+            println("⚠️ Failed to decrypt active API key: ${e.message}")
+            attemptRecovery()
+            null
+        }
     }
     
     fun setActiveApiKey(key: String) {
-        encryptedPrefs.edit().putString(KEY_ACTIVE_API_KEY, key).apply()
+        // ✅ ДОБАВЛЕНО: Validation (Session 3 Problem #4)
+        require(key.isNotBlank()) { "API key cannot be blank" }
+        require(key.length >= 30) { "API key too short" }
+        require(key.startsWith("AIza")) { "Invalid Gemini API key format" }
+        
+        try {
+            encryptedPrefs.edit().putString(KEY_ACTIVE_API_KEY, key).apply()
+        } catch (e: Exception) {
+            println("❌ Failed to encrypt API key: ${e.message}")
+            throw IllegalStateException("Cannot save API key securely", e)
+        }
     }
     
     fun removeActiveApiKey() {
-        encryptedPrefs.edit().remove(KEY_ACTIVE_API_KEY).apply()
+        try {
+            encryptedPrefs.edit().remove(KEY_ACTIVE_API_KEY).apply()
+        } catch (e: Exception) {
+            println("⚠️ Failed to remove active API key: ${e.message}")
+        }
     }
     
     // ============================================
-    // ALL KEYS (JSON format)
+    // ALL KEYS (JSON format with Gson)
     // ============================================
     
     fun getAllKeys(): List<ApiKeyData> {
-        val json = encryptedPrefs.getString(KEY_API_KEYS_JSON, null) ?: return emptyList()
         return try {
+            val json = encryptedPrefs.getString(KEY_API_KEYS_JSON, null) ?: return emptyList()
             parseApiKeysJson(json)
         } catch (e: Exception) {
+            println("⚠️ Failed to get all API keys: ${e.message}")
             emptyList()
         }
     }
     
     fun saveAllKeys(keys: List<ApiKeyData>) {
-        val json = serializeApiKeysJson(keys)
-        encryptedPrefs.edit().putString(KEY_API_KEYS_JSON, json).apply()
+        try {
+            val json = serializeApiKeysJson(keys)
+            encryptedPrefs.edit().putString(KEY_API_KEYS_JSON, json).apply()
+        } catch (e: Exception) {
+            println("❌ Failed to save API keys: ${e.message}")
+            throw IllegalStateException("Cannot save API keys securely", e)
+        }
     }
     
     fun addKey(key: ApiKeyData) {
-        val currentKeys = getAllKeys().toMutableList()
-        
-        // Деактивировать все остальные ключи
-        val updatedKeys = currentKeys.map { it.copy(isActive = false) }.toMutableList()
-        
-        // Добавить новый активный ключ
-        updatedKeys.add(key.copy(isActive = true))
-        
-        saveAllKeys(updatedKeys)
-        setActiveApiKey(key.key)
+        try {
+            val currentKeys = getAllKeys().toMutableList()
+            
+            // Деактивировать все остальные ключи
+            val updatedKeys = currentKeys.map { it.copy(isActive = false) }.toMutableList()
+            
+            // Добавить новый активный ключ
+            updatedKeys.add(key.copy(isActive = true))
+            
+            saveAllKeys(updatedKeys)
+            setActiveApiKey(key.key)
+        } catch (e: Exception) {
+            println("❌ Failed to add API key: ${e.message}")
+            throw e
+        }
     }
     
     fun activateKey(keyId: String) {
-        val keys = getAllKeys()
-        val updatedKeys = keys.map { 
-            if (it.id == keyId) {
-                setActiveApiKey(it.key)
-                it.copy(isActive = true)
-            } else {
-                it.copy(isActive = false)
+        try {
+            val keys = getAllKeys()
+            val updatedKeys = keys.map { 
+                if (it.id == keyId) {
+                    setActiveApiKey(it.key)
+                    it.copy(isActive = true)
+                } else {
+                    it.copy(isActive = false)
+                }
             }
+            saveAllKeys(updatedKeys)
+        } catch (e: Exception) {
+            println("❌ Failed to activate key: ${e.message}")
+            throw e
         }
-        saveAllKeys(updatedKeys)
     }
     
     fun deleteKey(keyId: String) {
-        val keys = getAllKeys()
-        val updatedKeys = keys.filter { it.id != keyId }
-        
-        // Если удаляем активный ключ, очищаем активный
-        val deletedKey = keys.find { it.id == keyId }
-        if (deletedKey?.isActive == true) {
-            removeActiveApiKey()
+        try {
+            val keys = getAllKeys()
+            val updatedKeys = keys.filter { it.id != keyId }
+            
+            // Если удаляем активный ключ, очищаем активный
+            val deletedKey = keys.find { it.id == keyId }
+            if (deletedKey?.isActive == true) {
+                removeActiveApiKey()
+            }
+            
+            saveAllKeys(updatedKeys)
+        } catch (e: Exception) {
+            println("❌ Failed to delete key: ${e.message}")
+            throw e
         }
-        
-        saveAllKeys(updatedKeys)
     }
     
     fun clear() {
-        encryptedPrefs.edit().clear().apply()
+        try {
+            encryptedPrefs.edit().clear().apply()
+            println("✅ Cleared all encrypted storage")
+        } catch (e: Exception) {
+            println("❌ Failed to clear storage: ${e.message}")
+        }
+    }
+    
+    // ✅ ДОБАВЛЕНО: Recovery mechanism (Session 3 Problem #4)
+    private fun attemptRecovery() {
+        try {
+            println("🔧 Attempting to recover encrypted storage...")
+            encryptedPrefs.edit().clear().apply()
+            println("✅ Cleared corrupted encrypted storage")
+        } catch (e: Exception) {
+            println("❌ Recovery failed: ${e.message}")
+        }
     }
     
     // ============================================
-    // JSON SERIALIZATION (Simple implementation)
+    // JSON SERIALIZATION (Using Gson - Session 3 Problem #4)
     // ============================================
     
+    // ✅ ИСПРАВЛЕНО: Используем Gson вместо custom parser (Session 3 Problem #4)
     private fun parseApiKeysJson(json: String): List<ApiKeyData> {
-        // Simple JSON parsing without external library
-        // Format: [{"id":"uuid","key":"AIza...","label":"Work","isActive":true,"createdAt":123}]
-        
-        val result = mutableListOf<ApiKeyData>()
-        val items = json.trim().removeSurrounding("[", "]").split("},")
-        
-        items.forEach { item ->
-            try {
-                val cleanItem = item.trim().removeSuffix("}").removePrefix("{")
-                val parts = cleanItem.split(",")
-                
-                var id = ""
-                var key = ""
-                var label: String? = null
-                var isActive = false
-                var createdAt = 0L
-                
-                parts.forEach { part ->
-                    val (k, v) = part.split(":").map { it.trim().removeSurrounding("\"") }
-                    when (k) {
-                        "id" -> id = v
-                        "key" -> key = v
-                        "label" -> label = v.takeIf { it != "null" }
-                        "isActive" -> isActive = v.toBoolean()
-                        "createdAt" -> createdAt = v.toLong()
-                    }
-                }
-                
-                if (id.isNotEmpty() && key.isNotEmpty()) {
-                    result.add(ApiKeyData(id, key, label, isActive, createdAt))
-                }
-            } catch (e: Exception) {
-                // Skip malformed entries
-            }
+        return try {
+            val type = object : TypeToken<List<ApiKeyData>>() {}.type
+            Gson().fromJson(json, type) ?: emptyList()
+        } catch (e: Exception) {
+            println("⚠️ Failed to parse API keys JSON: ${e.message}")
+            emptyList()
         }
-        
-        return result
     }
     
     private fun serializeApiKeysJson(keys: List<ApiKeyData>): String {
-        return keys.joinToString(
-            separator = ",",
-            prefix = "[",
-            postfix = "]"
-        ) { key ->
-            """{"id":"${key.id}","key":"${key.key}","label":${if (key.label != null) "\"${key.label}\"" else "null"},"isActive":${key.isActive},"createdAt":${key.createdAt}}"""
+        return try {
+            Gson().toJson(keys)
+        } catch (e: Exception) {
+            println("❌ Failed to serialize API keys: ${e.message}")
+            "[]"
         }
     }
 }
