@@ -1,17 +1,44 @@
 package com.docs.scanner.domain.usecase
 
+// ============================================
+// DOCUMENT USE CASES
+// ============================================
+import com.docs.scanner.domain.usecase.document.CreateDocumentUseCase
+import com.docs.scanner.domain.usecase.document.DeleteDocumentUseCase
 import com.docs.scanner.domain.usecase.document.GetDocumentByIdUseCase
+import com.docs.scanner.domain.usecase.document.GetDocumentsUseCase
 import com.docs.scanner.domain.usecase.document.SearchDocumentsUseCase
 import com.docs.scanner.domain.usecase.document.UpdateDocumentUseCase
+
+// ============================================
+// FOLDER USE CASES
+// ============================================
+import com.docs.scanner.domain.usecase.folder.CreateFolderUseCase
+import com.docs.scanner.domain.usecase.folder.DeleteFolderUseCase
 import com.docs.scanner.domain.usecase.folder.GetFolderByIdUseCase
+import com.docs.scanner.domain.usecase.folder.GetFoldersUseCase
+import com.docs.scanner.domain.usecase.folder.UpdateFolderUseCase
+
+// ============================================
+// RECORD USE CASES
+// ============================================
+import com.docs.scanner.domain.usecase.record.CreateRecordUseCase
+import com.docs.scanner.domain.usecase.record.DeleteRecordUseCase
 import com.docs.scanner.domain.usecase.record.GetRecordByIdUseCase
+import com.docs.scanner.domain.usecase.record.GetRecordsUseCase
 import com.docs.scanner.domain.usecase.record.MoveRecordToFolderUseCase
+import com.docs.scanner.domain.usecase.record.UpdateRecordUseCase
+
+// ============================================
+// TERM USE CASES
+// ============================================
 import com.docs.scanner.domain.usecase.term.CreateTermUseCase
 import com.docs.scanner.domain.usecase.term.DeleteTermUseCase
 import com.docs.scanner.domain.usecase.term.GetCompletedTermsUseCase
 import com.docs.scanner.domain.usecase.term.GetUpcomingTermsUseCase
 import com.docs.scanner.domain.usecase.term.MarkTermCompletedUseCase
 import com.docs.scanner.domain.usecase.term.UpdateTermUseCase
+
 import javax.inject.Inject
 
 /**
