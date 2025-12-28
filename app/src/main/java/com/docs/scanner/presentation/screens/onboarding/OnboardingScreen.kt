@@ -18,7 +18,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle  // ✅ ДОБАВЛЕН
 import androidx.lifecycle.viewModelScope
+import com.docs.scanner.data.local.security.EncryptedKeyStorage  // ✅ ДОБАВЛЕН
 import com.docs.scanner.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,8 +35,10 @@ fun OnboardingScreen(
     onComplete: () -> Unit
 ) {
     val context = LocalContext.current
-    val apiKey by viewModel.apiKey.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    
+    // ✅ ИСПРАВЛЕНО: collectAsState() → collectAsStateWithLifecycle()
+    val apiKey by viewModel.apiKey.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     
     LaunchedEffect(Unit) {
         viewModel.checkFirstLaunch {
@@ -119,9 +123,7 @@ fun OnboardingScreen(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer
                 )
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
-                ) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = "Gemini API Key Required",
                         style = MaterialTheme.typography.titleMedium,
@@ -174,7 +176,6 @@ fun OnboardingScreen(
                     
                     TextButton(
                         onClick = { 
-                            // ✅ ИСПРАВЛЕНО: Открывает браузер
                             val intent = Intent(Intent.ACTION_VIEW).apply {
                                 data = Uri.parse("https://aistudio.google.com/app/apikey")
                             }
@@ -251,9 +252,11 @@ private fun FeatureItem(
     }
 }
 
+// ⚠️ TODO Session 9 Problem #4: Переместить в presentation/viewmodels/OnboardingViewModel.kt
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val encryptedKeyStorage: EncryptedKeyStorage  // ✅ ДОБАВЛЕН (SECURITY!)
 ) : ViewModel() {
     
     private val _apiKey = MutableStateFlow("")
@@ -280,7 +283,8 @@ class OnboardingViewModel @Inject constructor(
             _isLoading.value = true
             
             try {
-                settingsRepository.setApiKey(_apiKey.value)
+                // ✅ ИСПРАВЛЕНО SECURITY: EncryptedKeyStorage вместо SettingsRepository!
+                encryptedKeyStorage.setActiveApiKey(_apiKey.value)
                 settingsRepository.setFirstLaunchCompleted()
                 onComplete()
             } catch (e: Exception) {
