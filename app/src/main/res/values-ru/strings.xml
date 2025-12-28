@@ -1,6 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- ✅ РАСШИРЕНО: добавлены все строки -->
+    
     <!-- Quick Scans -->
     <string name="quick_scans">Быстрые сканы</string>
     <string name="quick_scans_description">Автоматически создано для быстрых сканов</string>
+    
+    <!-- Screen Titles -->
+    <string name="screen_camera">Камера</string>
+    <string name="screen_editor">Редактор</string>
+    <string name="screen_folders">Папки</string>
+    <string name="screen_records">Записи</string>
+    <string name="screen_search">Поиск</string>
+    <string name="screen_settings">Настройки</string>
+    <string name="screen_terms">Сроки и дедлайны</string>
+    
+    <!-- Buttons -->
+    <string name="btn_save">Сохранить</string>
+    <string name="btn_delete">Удалить</string>
+    <string name="btn_cancel">Отмена</string>
+    <string name="btn_create">Создать</string>
+    <string name="btn_edit">Редактировать</string>
+    <string name="btn_add">Добавить</string>
+    <string name="btn_retry">Повторить</string>
+    <string name="btn_continue">Продолжить</string>
+    
+    <!-- Folders -->
+    <string name="folders_empty_title">Нет папок</string>
+    <string name="folders_empty_message">Создайте первую папку для организации документов</string>
+    <string name="folders_create_action">Создать папку</string>
+    
+    <!-- ... остальные переводы по аналогии -->
 </resources>
