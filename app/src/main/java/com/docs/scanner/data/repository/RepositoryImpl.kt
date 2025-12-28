@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import com.docs.scanner.data.cache.TranslationCacheManager
 import com.docs.scanner.data.local.database.dao.*
 import com.docs.scanner.data.local.database.entities.*
 import com.docs.scanner.data.local.preferences.SettingsDataStore
@@ -13,8 +14,11 @@ import com.docs.scanner.data.remote.mlkit.MLKitScanner
 import com.docs.scanner.domain.model.*
 import com.docs.scanner.domain.repository.*
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -235,25 +239,27 @@ class DocumentRepositoryImpl @Inject constructor(
     }
 
     override fun searchEverywhere(query: String): Flow<List<Document>> {
-        return documentDao.searchEverywhereWithNames(query).map { documentsWithNames ->
-            documentsWithNames.map { docWithNames ->
-                Document(
-                    id = docWithNames.id,
-                    recordId = docWithNames.recordId,
-                    imagePath = docWithNames.imagePath,
-                    imageFile = null,
-                    originalText = docWithNames.originalText,
-                    translatedText = docWithNames.translatedText,
-                    position = 0,
-                    processingStatus = ProcessingStatus.fromInt(docWithNames.processingStatus),
-                    createdAt = docWithNames.createdAt
-                )
+        // ✅ FTS5 поиск с fallback на LIKE
+        return try {
+            documentDao.searchEverywhereWithNames(query).map { documentsWithNames ->
+                documentsWithNames.map { it.toDomainDocument() }
+            }
+        } catch (e: Exception) {
+            // Fallback на LIKE если FTS5 не работает
+            println("⚠️ FTS5 search failed, using LIKE fallback: ${e.message}")
+            documentDao.searchEverywhereWithNamesLike(query).map { documentsWithNames ->
+                documentsWithNames.map { it.toDomainDocument() }
             }
         }
     }
 
     override fun searchEverywhereWithNames(query: String): Flow<List<DocumentWithNames>> {
-        return documentDao.searchEverywhereWithNames(query)
+        return try {
+            documentDao.searchEverywhereWithNames(query)
+        } catch (e: Exception) {
+            println("⚠️ FTS5 search failed, using LIKE fallback: ${e.message}")
+            documentDao.searchEverywhereWithNamesLike(query)
+        }
     }
     
     override suspend fun updateDocument(document: Document): Result<Unit> {
@@ -318,26 +324,78 @@ class DocumentRepositoryImpl @Inject constructor(
     }
 }
 
+// ✅ ИСПРАВЛЕНО: TranslationCache integration
 class ScannerRepositoryImpl @Inject constructor(
     private val mlKitScanner: MLKitScanner,
     private val geminiTranslator: GeminiTranslator,
-    private val encryptedKeyStorage: EncryptedKeyStorage
+    private val encryptedKeyStorage: EncryptedKeyStorage,
+    private val translationCacheManager: TranslationCacheManager, // ✅ ДОБАВЛЕНО
+    private val settingsDataStore: SettingsDataStore // ✅ ДОБАВЛЕНО для target language
 ) : ScannerRepository {
     
     override suspend fun scanImage(imageUri: Uri): Result<String> {
         return mlKitScanner.scanImage(imageUri)
     }
     
-    override suspend fun translateText(text: String): Result<String> {
-        val apiKey = encryptedKeyStorage.getActiveApiKey()
-            ?: return Result.Error(Exception("No active Gemini API key. Please add one in Settings."))
+    override suspend fun translateText(
+        text: String,
+        targetLanguage: String // ✅ ДОБАВЛЕНО
+    ): Result<String> = withContext(Dispatchers.IO) {
+        if (text.isBlank()) {
+            return@withContext Result.Error(Exception("Text cannot be empty"))
+        }
         
-        return geminiTranslator.translate(text, apiKey)
+        // ✅ 1. CHECK CACHE
+        try {
+            val cached = translationCacheManager.getCachedTranslation(
+                text = text,
+                sourceLang = "auto",
+                targetLang = targetLanguage,
+                maxAgeDays = 30
+            )
+            
+            if (cached != null) {
+                println("✅ Cache HIT: Translation from cache")
+                return@withContext Result.Success(cached)
+            }
+            
+            println("⚠️ Cache MISS: Calling API")
+        } catch (e: Exception) {
+            println("⚠️ Cache read error: ${e.message}")
+        }
+        
+        // ✅ 2. GET API KEY
+        val apiKey = encryptedKeyStorage.getActiveApiKey()
+            ?: return@withContext Result.Error(Exception("No API key found. Please add it in settings."))
+        
+        // ✅ 3. CALL API
+        val result = geminiTranslator.translate(text, targetLanguage, apiKey)
+        
+        // ✅ 4. SAVE TO CACHE
+        if (result is Result.Success) {
+            try {
+                translationCacheManager.cacheTranslation(
+                    originalText = text,
+                    translatedText = result.data,
+                    sourceLang = "auto",
+                    targetLang = targetLanguage
+                )
+                println("✅ Translation cached")
+            } catch (e: Exception) {
+                println("⚠️ Failed to cache translation: ${e.message}")
+            }
+        }
+        
+        return@withContext result
     }
     
     override suspend fun fixOcrText(text: String): Result<String> {
+        if (text.isBlank()) {
+            return Result.Error(Exception("Text cannot be empty"))
+        }
+        
         val apiKey = encryptedKeyStorage.getActiveApiKey()
-            ?: return Result.Error(Exception("No active Gemini API key. Please add one in Settings."))
+            ?: return Result.Error(Exception("No API key found"))
         
         return geminiTranslator.fixOcrText(text, apiKey)
     }
@@ -347,13 +405,9 @@ class SettingsRepositoryImpl @Inject constructor(
     private val dataStore: SettingsDataStore
 ) : SettingsRepository {
     
-    override suspend fun getApiKey(): String? {
-        return dataStore.getGeminiApiKey()
-    }
-    
-    override suspend fun setApiKey(key: String) {
-        dataStore.setGeminiApiKey(key)
-    }
+    // ❌ УДАЛЕНО: API ключи теперь только в EncryptedKeyStorage!
+    // override suspend fun getApiKey(): String?
+    // override suspend fun setApiKey(key: String)
     
     override suspend fun isFirstLaunch(): Boolean {
         return dataStore.getIsFirstLaunch()
@@ -363,6 +417,10 @@ class SettingsRepositoryImpl @Inject constructor(
         dataStore.setFirstLaunchCompleted()
     }
 }
+
+// ============================================
+// MAPPERS
+// ============================================
 
 private fun com.docs.scanner.data.local.database.dao.FolderWithCount.toDomain() = Folder(
     id = id,
@@ -402,4 +460,19 @@ fun DocumentEntity.toDomain() = Document(
     position = position,
     processingStatus = ProcessingStatus.fromInt(processingStatus),
     createdAt = createdAt
+)
+
+// ✅ НОВЫЙ MAPPER: DocumentWithNames → Document
+private fun DocumentWithNames.toDomainDocument() = Document(
+    id = id,
+    recordId = recordId,
+    imagePath = imagePath,
+    imageFile = null,
+    originalText = originalText,
+    translatedText = translatedText,
+    position = position,
+    processingStatus = ProcessingStatus.fromInt(processingStatus),
+    createdAt = createdAt,
+    recordName = recordName, // ✅ Добавлены search fields
+    folderName = folderName
 )
