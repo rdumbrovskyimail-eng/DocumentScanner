@@ -16,7 +16,23 @@ class AlarmScheduler @Inject constructor(
 ) {
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
     
+    // ✅ НОВАЯ ФУНКЦИЯ: Проверка разрешения
+    fun canScheduleExactAlarms(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            alarmManager.canScheduleExactAlarms()
+        } else {
+            true // До Android 12 разрешение не требуется
+        }
+    }
+    
     fun scheduleTerm(term: TermEntity) {
+        // ✅ ПРОВЕРКА РАЗРЕШЕНИЯ
+        if (!canScheduleExactAlarms()) {
+            println("❌ Cannot schedule exact alarms. Permission denied.")
+            // TODO: Показать пользователю диалог с просьбой включить в Settings
+            return
+        }
+        
         val now = System.currentTimeMillis()
         val termTime = term.dueDate
         val timeUntilTerm = termTime - now
@@ -76,16 +92,21 @@ class AlarmScheduler @Inject constructor(
         }
         
         // Планируем все напоминания
+        var successCount = 0
         reminders.forEach { reminder ->
-            scheduleAlarm(
+            if (scheduleAlarm(
                 termId = term.id,
                 time = reminder.time,
                 title = reminder.message,
                 description = term.description,
                 requestCode = term.id.toInt() * 1000 + reminder.offset,
                 isMainAlarm = reminder.offset == 100
-            )
+            )) {
+                successCount++
+            }
         }
+        
+        println("✅ Scheduled $successCount/${reminders.size} alarms for term ${term.id}")
     }
     
     fun cancelTerm(termId: Long) {
@@ -95,6 +116,7 @@ class AlarmScheduler @Inject constructor(
         }
     }
     
+    // ✅ ВОЗВРАЩАЕТ Boolean (успех/неудача)
     private fun scheduleAlarm(
         termId: Long,
         time: Long,
@@ -102,9 +124,9 @@ class AlarmScheduler @Inject constructor(
         description: String?,
         requestCode: Int,
         isMainAlarm: Boolean = false
-    ) {
+    ): Boolean {
         if (time <= System.currentTimeMillis()) {
-            return
+            return false
         }
         
         val intent = Intent(context, TermAlarmReceiver::class.java).apply {
@@ -112,6 +134,7 @@ class AlarmScheduler @Inject constructor(
             putExtra("title", title)
             putExtra("description", description)
             putExtra("is_main_alarm", isMainAlarm)
+            putExtra("notification_offset", requestCode % 1000) // ✅ Для уникальности notification ID
         }
         
         val pendingIntent = PendingIntent.getBroadcast(
@@ -121,7 +144,7 @@ class AlarmScheduler @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
-        try {
+        return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (alarmManager.canScheduleExactAlarms()) {
                     alarmManager.setExactAndAllowWhileIdle(
@@ -129,7 +152,7 @@ class AlarmScheduler @Inject constructor(
                         time,
                         pendingIntent
                     )
-                    println("✅ Scheduled exact alarm for $time (main=$isMainAlarm)")
+                    true
                 } else {
                     // Fallback: неточный будильник
                     alarmManager.setAndAllowWhileIdle(
@@ -138,6 +161,7 @@ class AlarmScheduler @Inject constructor(
                         pendingIntent
                     )
                     println("⚠️ Scheduled inexact alarm (no permission)")
+                    false
                 }
             } else {
                 alarmManager.setExactAndAllowWhileIdle(
@@ -145,11 +169,12 @@ class AlarmScheduler @Inject constructor(
                     time,
                     pendingIntent
                 )
-                println("✅ Scheduled exact alarm for $time")
+                true
             }
         } catch (e: Exception) {
             e.printStackTrace()
             println("❌ Failed to schedule alarm: ${e.message}")
+            false
         }
     }
     
