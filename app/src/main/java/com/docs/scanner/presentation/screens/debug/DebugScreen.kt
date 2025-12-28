@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle  // ✅ ДОБАВЛЕН
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.data.local.logger.DebugLog
 import com.docs.scanner.data.local.logger.DebugLogger
@@ -25,7 +26,8 @@ fun DebugScreen(
     viewModel: DebugViewModel = hiltViewModel(),
     onBackClick: () -> Unit
 ) {
-    val logs by viewModel.logs.collectAsState()
+    // ✅ ИСПРАВЛЕНО: collectAsState() → collectAsStateWithLifecycle()
+    val logs by viewModel.logs.collectAsStateWithLifecycle()
     
     Scaffold(
         topBar = {
@@ -74,9 +76,7 @@ private fun LogItem(log: DebugLog) {
             }
         )
     ) {
-        Column(
-            modifier = Modifier.padding(8.dp)
-        ) {
+        Column(modifier = Modifier.padding(8.dp)) {
             Row {
                 Text(
                     text = log.level.name,
