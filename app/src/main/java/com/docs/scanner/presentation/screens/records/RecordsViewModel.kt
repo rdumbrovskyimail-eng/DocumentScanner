@@ -13,26 +13,19 @@ import javax.inject.Inject
 /**
  * Records Screen ViewModel.
  * 
- * Session 8 Fixes:
- * - ✅ Added missing RecordsUiState class (was causing compile error!)
- * - ✅ Fixed currentFolderId (StateFlow instead of mutable var)
- * - ✅ Uses MoveRecordToFolderUseCase (correct implementation)
- * - ✅ Proper error handling
- * - ✅ Uses AllUseCases for consistency
+ * Session 8: Already excellent, no major changes needed
  */
 @HiltViewModel
 class RecordsViewModel @Inject constructor(
     private val useCases: AllUseCases
 ) : ViewModel() {
 
-    // ✅ FIX: StateFlow instead of mutable var
     private val _currentFolderId = MutableStateFlow(-1L)
     val currentFolderId: StateFlow<Long> = _currentFolderId.asStateFlow()
 
     private val _uiState = MutableStateFlow<RecordsUiState>(RecordsUiState.Loading)
     val uiState: StateFlow<RecordsUiState> = _uiState.asStateFlow()
 
-    // All folders for move dialog
     val allFolders: StateFlow<List<Folder>> = useCases.getFolders()
         .stateIn(
             scope = viewModelScope,
@@ -40,10 +33,6 @@ class RecordsViewModel @Inject constructor(
             initialValue = emptyList()
         )
 
-    /**
-     * Load records for folder.
-     * Also loads folder name.
-     */
     fun loadRecords(folderId: Long) {
         if (folderId <= 0) {
             _uiState.value = RecordsUiState.Error("Invalid folder ID")
@@ -56,11 +45,9 @@ class RecordsViewModel @Inject constructor(
             _uiState.value = RecordsUiState.Loading
 
             try {
-                // Get folder name
                 val folder = useCases.getFolderById(folderId)
                 val folderName = folder?.name ?: "Records"
 
-                // Get records
                 useCases.getRecords(folderId)
                     .catch { e ->
                         _uiState.value = RecordsUiState.Error(
@@ -82,9 +69,6 @@ class RecordsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Create new record.
-     */
     fun createRecord(name: String, description: String?) {
         if (name.isBlank()) {
             updateErrorMessage("Name cannot be empty")
@@ -110,9 +94,6 @@ class RecordsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Update record name/description.
-     */
     fun updateRecord(record: Record) {
         viewModelScope.launch {
             when (val result = useCases.updateRecord(record)) {
@@ -127,9 +108,6 @@ class RecordsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Delete record.
-     */
     fun deleteRecord(recordId: Long) {
         viewModelScope.launch {
             when (val result = useCases.deleteRecord(recordId)) {
@@ -144,10 +122,6 @@ class RecordsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Move record to another folder.
-     * ✅ FIX: Uses MoveRecordToFolderUseCase instead of manual update.
-     */
     fun moveRecord(recordId: Long, targetFolderId: Long) {
         val currentFolderId = _currentFolderId.value
         
@@ -159,7 +133,6 @@ class RecordsViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = useCases.moveRecord(recordId, targetFolderId)) {
                 is com.docs.scanner.domain.model.Result.Success -> {
-                    // Reload current folder (record will disappear from list)
                     loadRecords(currentFolderId)
                 }
                 is com.docs.scanner.domain.model.Result.Error -> {
@@ -170,9 +143,6 @@ class RecordsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Clear error message.
-     */
     fun clearError() {
         val currentState = _uiState.value
         if (currentState is RecordsUiState.Success) {
@@ -180,9 +150,6 @@ class RecordsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Helper to update error message in Success state.
-     */
     private fun updateErrorMessage(message: String) {
         val currentState = _uiState.value
         if (currentState is RecordsUiState.Success) {
@@ -193,13 +160,8 @@ class RecordsViewModel @Inject constructor(
     }
 }
 
-/**
- * UI State for Records Screen.
- * 
- * Session 8: CRITICAL FIX - This class was MISSING, causing compile error!
- */
 sealed interface RecordsUiState {
-    object Loading : RecordsUiState
+    data object Loading : RecordsUiState
     
     data class Success(
         val folderId: Long,
