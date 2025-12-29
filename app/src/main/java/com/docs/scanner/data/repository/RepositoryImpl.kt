@@ -239,13 +239,11 @@ class DocumentRepositoryImpl @Inject constructor(
     }
 
     override fun searchEverywhere(query: String): Flow<List<Document>> {
-        // ✅ FTS5 поиск с fallback на LIKE
         return try {
             documentDao.searchEverywhereWithNames(query).map { documentsWithNames ->
                 documentsWithNames.map { it.toDomainDocument() }
             }
         } catch (e: Exception) {
-            // Fallback на LIKE если FTS5 не работает
             println("⚠️ FTS5 search failed, using LIKE fallback: ${e.message}")
             documentDao.searchEverywhereWithNamesLike(query).map { documentsWithNames ->
                 documentsWithNames.map { it.toDomainDocument() }
@@ -324,25 +322,31 @@ class DocumentRepositoryImpl @Inject constructor(
     }
 }
 
-// ✅ ИСПРАВЛЕНО: TranslationCache integration
+// ✅ ИСПРАВЛЕНО: Убран второй параметр targetLanguage
 class ScannerRepositoryImpl @Inject constructor(
     private val mlKitScanner: MLKitScanner,
     private val geminiTranslator: GeminiTranslator,
     private val encryptedKeyStorage: EncryptedKeyStorage,
-    private val translationCacheManager: TranslationCacheManager, // ✅ ДОБАВЛЕНО
-    private val settingsDataStore: SettingsDataStore // ✅ ДОБАВЛЕНО для target language
+    private val translationCacheManager: TranslationCacheManager,
+    private val settingsDataStore: SettingsDataStore
 ) : ScannerRepository {
     
     override suspend fun scanImage(imageUri: Uri): Result<String> {
         return mlKitScanner.scanImage(imageUri)
     }
     
-    override suspend fun translateText(
-        text: String,
-        targetLanguage: String // ✅ ДОБАВЛЕНО
-    ): Result<String> = withContext(Dispatchers.IO) {
+    // ✅ ИСПРАВЛЕНО: Только один параметр text
+    override suspend fun translateText(text: String): Result<String> = withContext(Dispatchers.IO) {
         if (text.isBlank()) {
             return@withContext Result.Error(Exception("Text cannot be empty"))
+        }
+        
+        // ✅ Получаем targetLanguage из настроек
+        val targetLanguage = try {
+            settingsDataStore.getTargetLanguage().first() ?: "ru"
+        } catch (e: Exception) {
+            println("⚠️ Failed to get target language from settings, using 'ru': ${e.message}")
+            "ru"
         }
         
         // ✅ 1. CHECK CACHE
@@ -405,9 +409,14 @@ class SettingsRepositoryImpl @Inject constructor(
     private val dataStore: SettingsDataStore
 ) : SettingsRepository {
     
-    // ❌ УДАЛЕНО: API ключи теперь только в EncryptedKeyStorage!
-    // override suspend fun getApiKey(): String?
-    // override suspend fun setApiKey(key: String)
+    override suspend fun getApiKey(): String? {
+        // Deprecated: API keys now in EncryptedKeyStorage
+        return null
+    }
+    
+    override suspend fun setApiKey(key: String) {
+        // Deprecated: API keys now in EncryptedKeyStorage
+    }
     
     override suspend fun isFirstLaunch(): Boolean {
         return dataStore.getIsFirstLaunch()
@@ -454,7 +463,6 @@ fun DocumentEntity.toDomain() = Document(
     id = id,
     recordId = recordId,
     imagePath = imagePath,
-    imageFile = null,
     originalText = originalText,
     translatedText = translatedText,
     position = position,
@@ -462,17 +470,15 @@ fun DocumentEntity.toDomain() = Document(
     createdAt = createdAt
 )
 
-// ✅ НОВЫЙ MAPPER: DocumentWithNames → Document
 private fun DocumentWithNames.toDomainDocument() = Document(
     id = id,
     recordId = recordId,
     imagePath = imagePath,
-    imageFile = null,
     originalText = originalText,
     translatedText = translatedText,
     position = position,
     processingStatus = ProcessingStatus.fromInt(processingStatus),
     createdAt = createdAt,
-    recordName = recordName, // ✅ Добавлены search fields
+    recordName = recordName,
     folderName = folderName
 )
