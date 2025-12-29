@@ -39,6 +39,15 @@ import com.docs.scanner.domain.usecase.term.GetUpcomingTermsUseCase
 import com.docs.scanner.domain.usecase.term.MarkTermCompletedUseCase
 import com.docs.scanner.domain.usecase.term.UpdateTermUseCase
 
+// ============================================
+// OTHER USE CASES (в корне usecase/)
+// ============================================
+import com.docs.scanner.domain.usecase.AddDocumentUseCase
+import com.docs.scanner.domain.usecase.BatchOperationsUseCase
+import com.docs.scanner.domain.usecase.FixOcrUseCase
+import com.docs.scanner.domain.usecase.QuickScanUseCase
+import com.docs.scanner.domain.usecase.RetryTranslationUseCase
+
 import javax.inject.Inject
 
 /**
