@@ -34,12 +34,12 @@ interface DocumentDao {
     suspend fun deleteDocumentById(documentId: Long)
     
     // ============================================
-    // ✅ ПОИСК (FTS4 + LIKE fallback)
+    // ⚠️ ПОИСК (LIKE fallback - FTS5 temporarily disabled)
     // ============================================
     
     /**
-     * ✅ ОСНОВНОЙ ПОИСК - использует FTS4
-     * Теперь Room знает о documents_fts через DocumentsFtsEntity
+     * ⚠️ TEMPORARY: Using LIKE search instead of FTS5
+     * FTS5 will be re-enabled once KSP issues are resolved
      */
     @Query("""
         SELECT 
@@ -54,10 +54,10 @@ interface DocumentDao {
             r.name as recordName,
             f.name as folderName
         FROM documents d
-        INNER JOIN documents_fts fts ON d.id = fts.rowid
         INNER JOIN records r ON d.recordId = r.id
         INNER JOIN folders f ON r.folderId = f.id
-        WHERE documents_fts MATCH :query
+        WHERE (d.originalText IS NOT NULL AND LOWER(d.originalText) LIKE LOWER('%' || :query || '%'))
+           OR (d.translatedText IS NOT NULL AND LOWER(d.translatedText) LIKE LOWER('%' || :query || '%'))
         ORDER BY d.createdAt DESC
         LIMIT :limit OFFSET :offset
     """)
@@ -68,7 +68,7 @@ interface DocumentDao {
     ): Flow<List<DocumentWithNames>>
     
     /**
-     * ✅ FALLBACK ПОИСК - если FTS недоступен или query пустой
+     * Same as above - kept for compatibility
      */
     @Query("""
         SELECT 
