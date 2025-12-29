@@ -13,8 +13,9 @@ import javax.inject.Inject
 /**
  * Records Screen ViewModel.
  * 
- * Session 8: Already excellent, no major changes needed
+ * ⚠️ TEMPORARILY DISABLED FOR DEBUGGING
  */
+/*
 @HiltViewModel
 class RecordsViewModel @Inject constructor(
     private val useCases: AllUseCases
@@ -172,3 +173,4 @@ sealed interface RecordsUiState {
     
     data class Error(val message: String) : RecordsUiState
 }
+*/
