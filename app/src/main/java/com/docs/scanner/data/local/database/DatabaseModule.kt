@@ -26,10 +26,14 @@ object DatabaseModule {
     
     // ============================================
     // 🔧 HELPER: POPULATE EXISTING FTS DATA
+    // ⚠️ TEMPORARILY DISABLED - FTS entity causing issues
     // ============================================
     
     private fun populateFtsData(db: SupportSQLiteDatabase) {
-        // Only populate if documents exist
+        // ⚠️ TEMPORARILY DISABLED
+        // FTS table exists in DB but Room doesn't know about it yet
+        // Uncomment when DocumentsFtsEntity is re-enabled
+        /*
         db.execSQL("""
             INSERT OR IGNORE INTO documents_fts(rowid, originalText, translatedText)
             SELECT id, 
@@ -38,6 +42,7 @@ object DatabaseModule {
             FROM documents
             WHERE originalText IS NOT NULL OR translatedText IS NOT NULL
         """)
+        */
     }
     
     // ============================================
@@ -115,8 +120,8 @@ object DatabaseModule {
                     )
                 """)
                 
-                // 2. Populate FTS with existing data (Room creates table automatically)
-                populateFtsData(db)
+                // 2. ⚠️ SKIP FTS population (temporarily disabled)
+                // populateFtsData(db)
                 
                 // 3. Create indices
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_documents_recordId ON documents(recordId)")
@@ -185,6 +190,7 @@ object DatabaseModule {
     
     // ============================================
     // MIGRATION 5 → 6: FIX FTS5 UPDATE TRIGGER
+    // ⚠️ NOTE: FTS operations temporarily commented out
     // ============================================
     
     private val MIGRATION_5_6 = object : Migration(5, 6) {
@@ -192,10 +198,14 @@ object DatabaseModule {
             try {
                 android.util.Log.d("Migration", "🔄 Migrating 5→6: Fixing FTS5 UPDATE trigger")
                 
-                // Drop old trigger
+                // ⚠️ FTS operations temporarily disabled
+                // FTS table still exists, but we skip trigger updates for now
+                
+                // Drop old trigger (if exists)
                 db.execSQL("DROP TRIGGER IF EXISTS documents_au")
                 
-                // Create corrected UPDATE trigger
+                // ⚠️ TEMPORARILY SKIP trigger recreation
+                /*
                 db.execSQL("""
                     CREATE TRIGGER documents_au AFTER UPDATE ON documents BEGIN
                         DELETE FROM documents_fts WHERE rowid = old.id;
@@ -210,8 +220,9 @@ object DatabaseModule {
                 
                 // Rebuild FTS5 index
                 db.execSQL("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
+                */
                 
-                android.util.Log.d("Migration", "✅ Migration 5→6 complete")
+                android.util.Log.d("Migration", "✅ Migration 5→6 complete (FTS temporarily disabled)")
                 
             } catch (e: Exception) {
                 android.util.Log.e("Migration", "❌ Migration 5→6 failed", e)
@@ -246,13 +257,15 @@ object DatabaseModule {
                     // Enable foreign keys
                     db.execSQL("PRAGMA foreign_keys=ON")
                     
-                    // ✅ POPULATE FTS with existing data (Room creates table automatically)
+                    // ⚠️ SKIP FTS population (temporarily disabled)
+                    /*
                     try {
                         populateFtsData(db)
                         android.util.Log.d("Database", "✅ FTS table populated")
                     } catch (e: Exception) {
                         android.util.Log.e("Database", "❌ Failed to populate FTS", e)
                     }
+                    */
                 }
                 
                 override fun onOpen(db: SupportSQLiteDatabase) {
