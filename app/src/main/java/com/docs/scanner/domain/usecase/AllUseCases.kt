@@ -1,16 +1,6 @@
 package com.docs.scanner.domain.usecase
 
 // ============================================
-// DOCUMENT USE CASES
-// ============================================
-// import com.docs.scanner.domain.usecase.document.CreateDocumentUseCase
-// import com.docs.scanner.domain.usecase.document.DeleteDocumentUseCase
-import com.docs.scanner.domain.usecase.document.GetDocumentByIdUseCase
-import com.docs.scanner.domain.usecase.document.GetDocumentsUseCase
-// import com.docs.scanner.domain.usecase.document.SearchDocumentsUseCase
-import com.docs.scanner.domain.usecase.document.UpdateDocumentUseCase
-
-// ============================================
 // FOLDER USE CASES
 // ============================================
 import com.docs.scanner.domain.usecase.folder.CreateFolderUseCase
@@ -29,34 +19,12 @@ import com.docs.scanner.domain.usecase.record.GetRecordsUseCase
 import com.docs.scanner.domain.usecase.record.MoveRecordToFolderUseCase
 import com.docs.scanner.domain.usecase.record.UpdateRecordUseCase
 
-// ============================================
-// TERM USE CASES
-// ============================================
-// import com.docs.scanner.domain.usecase.term.CreateTermUseCase
-// import com.docs.scanner.domain.usecase.term.DeleteTermUseCase
-// import com.docs.scanner.domain.usecase.term.GetCompletedTermsUseCase
-// import com.docs.scanner.domain.usecase.term.GetUpcomingTermsUseCase
-// import com.docs.scanner.domain.usecase.term.MarkTermCompletedUseCase
-// import com.docs.scanner.domain.usecase.term.UpdateTermUseCase
-
-// ============================================
-// OTHER USE CASES (в корне usecase/)
-// ============================================
-// import com.docs.scanner.domain.usecase.AddDocumentUseCase
-// import com.docs.scanner.domain.usecase.BatchOperationsUseCase
-// import com.docs.scanner.domain.usecase.FixOcrUseCase
-// import com.docs.scanner.domain.usecase.QuickScanUseCase
-// import com.docs.scanner.domain.usecase.RetryTranslationUseCase
-
 import javax.inject.Inject
 
 /**
  * Container for all Use Cases.
  * 
- * ⚠️ TEMPORARY: Most use cases disabled for debugging
- * 
- * ⚠️ IMPORTANT: Must be a regular class, not data class!
- * Data classes cause Dagger type resolution issues with @Inject constructors.
+ * ⚠️ TESTING: Only Folders and Records enabled
  */
 class AllUseCases @Inject constructor(
     // ============================================
@@ -76,33 +44,5 @@ class AllUseCases @Inject constructor(
     val createRecord: CreateRecordUseCase,
     val updateRecord: UpdateRecordUseCase,
     val deleteRecord: DeleteRecordUseCase,
-    val moveRecord: MoveRecordToFolderUseCase,
-    
-    // ============================================
-    // DOCUMENTS (3 Use Cases) ✅ MINIMAL
-    // ============================================
-    val getDocuments: GetDocumentsUseCase,
-    val getDocumentById: GetDocumentByIdUseCase,
-    val updateDocument: UpdateDocumentUseCase
-    
-    // ❌ TEMPORARILY DISABLED - TESTING FOR CIRCULAR DEPENDENCY
-    /*
-    val addDocument: AddDocumentUseCase,
-    val deleteDocument: DeleteDocumentUseCase,
-    val searchDocuments: SearchDocumentsUseCase,
-    val fixOcr: FixOcrUseCase,
-    val retryTranslation: RetryTranslationUseCase,
-    val batchOperations: BatchOperationsUseCase,
-    
-    // TERMS (6 Use Cases)
-    val getUpcomingTerms: GetUpcomingTermsUseCase,
-    val getCompletedTerms: GetCompletedTermsUseCase,
-    val createTerm: CreateTermUseCase,
-    val updateTerm: UpdateTermUseCase,
-    val deleteTerm: DeleteTermUseCase,
-    val markTermCompleted: MarkTermCompletedUseCase,
-    
-    // QUICK SCAN (1 Use Case)
-    val quickScan: QuickScanUseCase
-    */
+    val moveRecord: MoveRecordToFolderUseCase
 )
