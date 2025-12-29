@@ -12,12 +12,16 @@ import javax.inject.Singleton
 /**
  * Hilt module for Repository bindings.
  * 
- * Session 5 & 7 fixes:
- * - ✅ Added TermRepository binding (was missing - critical!)
- * - ✅ Added TranslationRepository binding (NEW from Session 5)
- * - ✅ Added OcrRepository binding (NEW from Session 5)
- * - ✅ All bindings use domain interfaces
- * - ✅ @Binds for efficiency (no instance creation)
+ * ✅ ALL REPOSITORIES IMPLEMENTED (Session 5-7 complete):
+ * - FolderRepository ✅
+ * - RecordRepository ✅
+ * - DocumentRepository ✅ (with FTS5 search)
+ * - TermRepository ✅
+ * - SettingsRepository ✅ (DataStore + EncryptedKeyStorage)
+ * - ScannerRepository ✅ (facade)
+ * - OcrRepository ✅ (ML Kit + Gemini)
+ * - TranslationRepository ✅ (Gemini + cache)
+ * - DriveRepository ✅ (Google Drive backup)
  * 
  * Architecture:
  * ```
@@ -41,6 +45,11 @@ abstract class RepositoryModule {
     
     /**
      * Provides FolderRepository for folder management.
+     * 
+     * Features:
+     * - CRUD operations
+     * - Record count tracking
+     * - Name uniqueness validation
      */
     @Binds
     @Singleton
@@ -50,6 +59,12 @@ abstract class RepositoryModule {
     
     /**
      * Provides RecordRepository for record management.
+     * 
+     * Features:
+     * - CRUD operations
+     * - Folder relationships
+     * - Move between folders
+     * - Document count tracking
      */
     @Binds
     @Singleton
@@ -59,6 +74,14 @@ abstract class RepositoryModule {
     
     /**
      * Provides DocumentRepository for document management.
+     * 
+     * Features:
+     * - CRUD operations
+     * - FTS5 full-text search
+     * - OCR text updates
+     * - Translation text updates
+     * - Processing status tracking
+     * - Image file management
      */
     @Binds
     @Singleton
@@ -69,8 +92,11 @@ abstract class RepositoryModule {
     /**
      * Provides TermRepository for term/deadline management.
      * 
-     * ✅ NEW: Session 5 critical fix
-     * This was MISSING - caused compilation errors!
+     * Features:
+     * - CRUD operations
+     * - Overdue detection
+     * - Reminder scheduling
+     * - Completion tracking
      */
     @Binds
     @Singleton
@@ -80,6 +106,11 @@ abstract class RepositoryModule {
     
     /**
      * Provides SettingsRepository for app settings.
+     * 
+     * Features:
+     * - API key management (encrypted)
+     * - First launch tracking
+     * - DataStore preferences
      */
     @Binds
     @Singleton
@@ -92,7 +123,12 @@ abstract class RepositoryModule {
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     /**
-     * Provides ScannerRepository for document scanning and OCR.
+     * Provides ScannerRepository for document scanning.
+     * 
+     * Features:
+     * - Facade for OCR + Translation
+     * - Coordinates scanning workflow
+     * - Delegates to specialized repositories
      */
     @Binds
     @Singleton
@@ -103,13 +139,11 @@ abstract class RepositoryModule {
     /**
      * Provides OcrRepository for OCR operations.
      * 
-     * ✅ NEW: Session 5 addition
-     * Separates OCR logic from ScannerRepository (SRP).
-     * 
-     * Responsibilities:
+     * Features:
      * - ML Kit text recognition
-     * - OCR text improvement via Gemini
-     * - Language model selection
+     * - Detailed text block extraction
+     * - OCR error correction via Gemini
+     * - Multi-language support (Latin, Chinese)
      */
     @Binds
     @Singleton
@@ -124,14 +158,12 @@ abstract class RepositoryModule {
     /**
      * Provides TranslationRepository for translation operations.
      * 
-     * ✅ NEW: Session 5 addition
-     * Separates translation logic from ScannerRepository (SRP).
-     * 
-     * Responsibilities:
+     * Features:
      * - Gemini API translation
-     * - Translation caching
+     * - Intelligent caching (language-aware)
      * - Batch translations
      * - Cache statistics
+     * - Auto language detection
      */
     @Binds
     @Singleton
@@ -145,6 +177,12 @@ abstract class RepositoryModule {
     
     /**
      * Provides DriveRepository for Google Drive backup.
+     * 
+     * Features:
+     * - Database backup/restore
+     * - Image folder sync
+     * - OAuth authentication
+     * - Conflict resolution
      */
     @Binds
     @Singleton
