@@ -8,13 +8,15 @@ import com.docs.scanner.data.local.database.entities.*
 /**
  * Main Room database for DocumentScanner app.
  * 
- * ⚠️ TEMPORARY: FTS5 disabled for debugging KSP issues
- * Will be re-enabled once build is stable.
+ * ✅ FTS5 Entity Added:
+ * - DocumentsFtsEntity: Virtual table for full-text search
+ * - Room will auto-create triggers for sync
  * 
  * Database schema:
  * - FolderEntity: Folder hierarchy
  * - RecordEntity: Document records within folders
  * - DocumentEntity: Scanned document pages
+ * - DocumentsFtsEntity: FTS virtual table (linked to DocumentEntity)
  * - TermEntity: Term/deadline reminders
  * - TranslationCacheEntity: Translation cache with language awareness
  * 
@@ -22,16 +24,16 @@ import com.docs.scanner.data.local.database.entities.*
  * v1: Initial schema (folders, records, documents)
  * v2: Added terms table
  * v3: Added api_keys table (now removed)
- * v4: Added translation_cache, migrated api_keys to encrypted
+ * v4: Added translation_cache + FTS5, migrated api_keys to encrypted
  * v5: Updated translation_cache with language fields
- * v6: FTS5 temporarily disabled
+ * v6: Fixed FTS5 UPDATE trigger (DELETE+INSERT pattern)
  */
 @Database(
     entities = [
         FolderEntity::class,
         RecordEntity::class,
         DocumentEntity::class,
-        // DocumentsFtsEntity::class,  // ⚠️ TEMPORARILY DISABLED
+        DocumentsFtsEntity::class,  // ✅ ADDED FTS ENTITY
         TermEntity::class,
         TranslationCacheEntity::class
     ],
