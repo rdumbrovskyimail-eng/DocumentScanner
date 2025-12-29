@@ -9,15 +9,15 @@ import com.docs.scanner.data.local.database.entities.*
 /**
  * Main Room database for DocumentScanner app.
  * 
- * ✅ FTS5 Entity Added:
- * - DocumentsFtsEntity: Virtual table for full-text search
- * - Room will auto-create triggers for sync
+ * ⚠️ TEMPORARY: FTS5 Entity disabled for debugging KSP issues
+ * The FTS table still exists in the database (created by migrations),
+ * but Room temporarily doesn't know about it until we fix the entity definition.
  * 
  * Database schema:
  * - FolderEntity: Folder hierarchy
  * - RecordEntity: Document records within folders
  * - DocumentEntity: Scanned document pages
- * - DocumentsFtsEntity: FTS virtual table (linked to DocumentEntity)
+ * - DocumentsFtsEntity: FTS virtual table (TEMPORARILY DISABLED)
  * - TermEntity: Term/deadline reminders
  * - TranslationCacheEntity: Translation cache with language awareness
  * 
@@ -27,21 +27,21 @@ import com.docs.scanner.data.local.database.entities.*
  * v3: Added api_keys table (now removed)
  * v4: Added translation_cache + FTS5, migrated api_keys to encrypted
  * v5: Updated translation_cache with language fields
- * v6: Fixed FTS5 UPDATE trigger (DELETE+INSERT pattern) + TypeConverters added
+ * v6: Fixed FTS5 UPDATE trigger + TypeConverters added
  */
 @Database(
     entities = [
         FolderEntity::class,
         RecordEntity::class,
         DocumentEntity::class,
-        DocumentsFtsEntity::class,  // ✅ ADDED FTS ENTITY
+        // DocumentsFtsEntity::class,  // ⚠️ TEMPORARILY DISABLED - causing KSP generation issues
         TermEntity::class,
         TranslationCacheEntity::class
     ],
     version = 6,
     exportSchema = true
 )
-@TypeConverters(Converters::class)  // ✅ ДОБАВЛЕНО - критически важно для преобразования типов!
+@TypeConverters(Converters::class)  // ✅ Type converters for Date and List<String>
 abstract class AppDatabase : RoomDatabase() {
     
     abstract fun folderDao(): FolderDao
