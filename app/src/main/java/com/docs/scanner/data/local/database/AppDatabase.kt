@@ -2,6 +2,7 @@ package com.docs.scanner.data.local.database
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import com.docs.scanner.data.local.database.dao.*
 import com.docs.scanner.data.local.database.entities.*
 
@@ -26,7 +27,7 @@ import com.docs.scanner.data.local.database.entities.*
  * v3: Added api_keys table (now removed)
  * v4: Added translation_cache + FTS5, migrated api_keys to encrypted
  * v5: Updated translation_cache with language fields
- * v6: Fixed FTS5 UPDATE trigger (DELETE+INSERT pattern)
+ * v6: Fixed FTS5 UPDATE trigger (DELETE+INSERT pattern) + TypeConverters added
  */
 @Database(
     entities = [
@@ -40,6 +41,7 @@ import com.docs.scanner.data.local.database.entities.*
     version = 6,
     exportSchema = true
 )
+@TypeConverters(Converters::class)  // ✅ ДОБАВЛЕНО - критически важно для преобразования типов!
 abstract class AppDatabase : RoomDatabase() {
     
     abstract fun folderDao(): FolderDao
