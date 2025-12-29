@@ -13,9 +13,8 @@ import javax.inject.Inject
 /**
  * Records Screen ViewModel.
  * 
- * ⚠️ TEMPORARILY DISABLED FOR DEBUGGING
+ * Session 8: Temporarily simplified for testing
  */
-/*
 @HiltViewModel
 class RecordsViewModel @Inject constructor(
     private val useCases: AllUseCases
@@ -27,13 +26,16 @@ class RecordsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<RecordsUiState>(RecordsUiState.Loading)
     val uiState: StateFlow<RecordsUiState> = _uiState.asStateFlow()
 
-    val allFolders: StateFlow<List<Folder>> = useCases.getFolders()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+    // ⚠️ TEMPORARILY COMMENTED - useCases is empty
+    // val allFolders: StateFlow<List<Folder>> = useCases.getFolders()
+    //     .stateIn(
+    //         scope = viewModelScope,
+    //         started = SharingStarted.WhileSubscribed(5000),
+    //         initialValue = emptyList()
+    //     )
 
+    // ⚠️ ALL METHODS TEMPORARILY COMMENTED - useCases is empty
+    /*
     fun loadRecords(folderId: Long) {
         if (folderId <= 0) {
             _uiState.value = RecordsUiState.Error("Invalid folder ID")
@@ -159,6 +161,7 @@ class RecordsViewModel @Inject constructor(
             _uiState.value = RecordsUiState.Error(message)
         }
     }
+    */
 }
 
 sealed interface RecordsUiState {
@@ -173,4 +176,3 @@ sealed interface RecordsUiState {
     
     data class Error(val message: String) : RecordsUiState
 }
-*/
