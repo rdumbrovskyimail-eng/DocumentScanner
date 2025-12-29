@@ -5,7 +5,7 @@ import java.util.*
 
 /**
  * Domain models.
- * Session 6 + 11 fixes applied.
+ * Session 6 + 11 + Repository fixes applied.
  */
 
 data class Folder(
@@ -16,7 +16,7 @@ data class Folder(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
-    // ✅ ДОБАВИТЬ validation (Session 6 Problem #6)
+    // ✅ Validation (Session 6 Problem #6)
     init {
         require(name.isNotBlank()) { "Folder name cannot be blank" }
         require(name.length <= MAX_NAME_LENGTH) { 
@@ -43,7 +43,7 @@ data class Record(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
-    // ✅ ДОБАВИТЬ validation (Session 6 Problem #6)
+    // ✅ Validation (Session 6 Problem #6)
     init {
         require(folderId > 0) { "Invalid folder ID: $folderId" }
         require(name.isNotBlank()) { "Record name cannot be blank" }
@@ -54,7 +54,7 @@ data class Record(
     }
     
     companion object {
-        const val MAX_NAME_LENGTH = 100  // ✅ ДОБАВИТЬ
+        const val MAX_NAME_LENGTH = 100
         
         /**
          * Factory method for Quick Scan records.
@@ -85,22 +85,67 @@ data class Document(
     val id: Long = 0,
     val recordId: Long,
     val imagePath: String,
-    // ❌ REMOVED: val imageFile: File? = null  (Android dependency in domain)
     val originalText: String? = null,
     val translatedText: String? = null,
     val position: Int = 0,
     val processingStatus: ProcessingStatus = ProcessingStatus.INITIAL,
     val createdAt: Long = System.currentTimeMillis(),
     
-    // ✅ ДОБАВИТЬ для search results (Session 6 Problem #1)
+    // ✅ For search results (Session 6 Problem #1)
     val recordName: String? = null,
     val folderName: String? = null
 ) {
-    // ✅ ДОБАВИТЬ validation (Session 6 Problem #6)
+    // ✅ Validation (Session 6 Problem #6)
     init {
         require(recordId > 0) { "Invalid record ID: $recordId" }
         require(imagePath.isNotBlank()) { "Image path cannot be blank" }
         require(position >= 0) { "Position cannot be negative" }
+    }
+}
+
+/**
+ * Document with parent names for search results.
+ * 
+ * ✅ NEW: Added for FTS5 search results
+ * Used when displaying search results to show full path:
+ * "Folder Name > Record Name > Document"
+ */
+data class DocumentWithNames(
+    val id: Long,
+    val recordId: Long,
+    val imagePath: String,
+    val originalText: String?,
+    val translatedText: String?,
+    val position: Int,
+    val processingStatus: ProcessingStatus,
+    val createdAt: Long,
+    val recordName: String,
+    val folderName: String
+) {
+    /**
+     * Get full path string.
+     * Example: "Work Documents > Invoice 2024"
+     */
+    fun getFullPath(): String {
+        return "$folderName > $recordName"
+    }
+    
+    /**
+     * Convert to regular Document (without names).
+     */
+    fun toDocument(): Document {
+        return Document(
+            id = id,
+            recordId = recordId,
+            imagePath = imagePath,
+            originalText = originalText,
+            translatedText = translatedText,
+            position = position,
+            processingStatus = processingStatus,
+            createdAt = createdAt,
+            recordName = recordName,
+            folderName = folderName
+        )
     }
 }
 
@@ -113,9 +158,9 @@ enum class ProcessingStatus(val value: Int) {
     INITIAL(0),
     OCR_IN_PROGRESS(1),
     OCR_COMPLETE(2),
-    OCR_FAILED(3),               // ✅ ADDED
+    OCR_FAILED(3),
     TRANSLATION_IN_PROGRESS(4),
-    TRANSLATION_FAILED(5),        // ✅ ADDED
+    TRANSLATION_FAILED(5),
     COMPLETE(6),
     ERROR(-1);
     
@@ -133,8 +178,47 @@ enum class ProcessingStatus(val value: Int) {
     }
 }
 
+/**
+ * Result wrapper for repository operations.
+ * 
+ * Replaces Kotlin's Result type to avoid conflicts and provide better control.
+ */
 sealed class Result<out T> {
     data class Success<T>(val data: T) : Result<T>()
     data class Error(val exception: Exception, val message: String? = null) : Result<Nothing>()
     data object Loading : Result<Nothing>()
+    
+    /**
+     * Check if result is successful.
+     */
+    val isSuccess: Boolean
+        get() = this is Success
+    
+    /**
+     * Check if result is error.
+     */
+    val isError: Boolean
+        get() = this is Error
+    
+    /**
+     * Check if result is loading.
+     */
+    val isLoading: Boolean
+        get() = this is Loading
+    
+    /**
+     * Get data or null.
+     */
+    fun getOrNull(): T? = when (this) {
+        is Success -> data
+        else -> null
+    }
+    
+    /**
+     * Get error or null.
+     */
+    fun errorOrNull(): Exception? = when (this) {
+        is Error -> exception
+        else -> null
+    }
 }
