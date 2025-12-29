@@ -322,7 +322,6 @@ class DocumentRepositoryImpl @Inject constructor(
     }
 }
 
-// ✅ ИСПРАВЛЕНО: Убран второй параметр targetLanguage
 class ScannerRepositoryImpl @Inject constructor(
     private val mlKitScanner: MLKitScanner,
     private val geminiTranslator: GeminiTranslator,
@@ -335,21 +334,20 @@ class ScannerRepositoryImpl @Inject constructor(
         return mlKitScanner.scanImage(imageUri)
     }
     
-    // ✅ ИСПРАВЛЕНО: Только один параметр text
     override suspend fun translateText(text: String): Result<String> = withContext(Dispatchers.IO) {
         if (text.isBlank()) {
             return@withContext Result.Error(Exception("Text cannot be empty"))
         }
         
-        // ✅ Получаем targetLanguage из настроек
+        // ✅ ИСПРАВЛЕНО: используем translationTarget вместо getTargetLanguage
         val targetLanguage = try {
-            settingsDataStore.getTargetLanguage().first() ?: "ru"
+            settingsDataStore.translationTarget.first()
         } catch (e: Exception) {
-            println("⚠️ Failed to get target language from settings, using 'ru': ${e.message}")
-            "ru"
+            println("⚠️ Failed to get target language from settings, using 'en': ${e.message}")
+            "en"
         }
         
-        // ✅ 1. CHECK CACHE
+        // 1. CHECK CACHE
         try {
             val cached = translationCacheManager.getCachedTranslation(
                 text = text,
@@ -368,14 +366,14 @@ class ScannerRepositoryImpl @Inject constructor(
             println("⚠️ Cache read error: ${e.message}")
         }
         
-        // ✅ 2. GET API KEY
+        // 2. GET API KEY
         val apiKey = encryptedKeyStorage.getActiveApiKey()
             ?: return@withContext Result.Error(Exception("No API key found. Please add it in settings."))
         
-        // ✅ 3. CALL API
+        // 3. CALL API
         val result = geminiTranslator.translate(text, targetLanguage, apiKey)
         
-        // ✅ 4. SAVE TO CACHE
+        // 4. SAVE TO CACHE
         if (result is Result.Success) {
             try {
                 translationCacheManager.cacheTranslation(
@@ -410,12 +408,11 @@ class SettingsRepositoryImpl @Inject constructor(
 ) : SettingsRepository {
     
     override suspend fun getApiKey(): String? {
-        // Deprecated: API keys now in EncryptedKeyStorage
         return null
     }
     
     override suspend fun setApiKey(key: String) {
-        // Deprecated: API keys now in EncryptedKeyStorage
+        // Deprecated: Use EncryptedKeyStorage
     }
     
     override suspend fun isFirstLaunch(): Boolean {
