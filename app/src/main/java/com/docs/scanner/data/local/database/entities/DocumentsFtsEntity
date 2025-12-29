@@ -1,20 +1,23 @@
 package com.docs.scanner.data.local.database.entities
 
-import androidx.room.Fts5
+import androidx.room.Entity
+import androidx.room.Fts4
 
 /**
- * FTS5 Virtual Table для полнотекстового поиска.
+ * FTS4 Virtual Table для полнотекстового поиска.
  * 
- * ✅ FTS5 преимущества:
- * - Лучшая производительность
- * - Поддержка BM25 ранжирования
- * - Более эффективная индексация
+ * ✅ FTS4 преимущества:
+ * - Полнотекстовый поиск с поддержкой токенизации
  * - contentEntity связывает FTS с основной таблицей documents
  * - Room автоматически создаст триггеры для синхронизации
  * 
- * ⚠️ ВАЖНО: Используем ТОЛЬКО @Fts5, без @Entity!
+ * ⚠️ ВАЖНО: 
+ * - Используем @Fts4 вместо @Fts5 (лучшая поддержка в Room)
+ * - Нужен @Entity для регистрации в базе данных
+ * - tableName должно совпадать с тем, что используется в миграциях
  */
-@Fts5(contentEntity = DocumentEntity::class)
+@Entity(tableName = "documents_fts")
+@Fts4(contentEntity = DocumentEntity::class)
 data class DocumentsFtsEntity(
     val originalText: String?,
     val translatedText: String?
