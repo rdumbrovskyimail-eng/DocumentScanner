@@ -5,7 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.domain.usecase.AllUseCases
-// import dagger.hilt.android.lifecycle.HiltViewModel  // ❌ ВРЕМЕННО ЗАКОММЕНТИРОВАНО
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -14,10 +14,8 @@ import javax.inject.Inject
  * Records Screen ViewModel.
  * 
  * Session 8: Already excellent, no major changes needed
- * 
- * ⚠️ TEMPORARY: @HiltViewModel disabled for debugging
  */
-// @HiltViewModel  // ❌ ВРЕМЕННО ОТКЛЮЧЕНО ДЛЯ ОТЛАДКИ
+@HiltViewModel
 class RecordsViewModel @Inject constructor(
     private val useCases: AllUseCases
 ) : ViewModel() {
