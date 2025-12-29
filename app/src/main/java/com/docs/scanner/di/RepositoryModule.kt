@@ -12,11 +12,6 @@ import javax.inject.Singleton
 /**
  * Hilt module for Repository bindings.
  * 
- * ⚠️ TEMPORARY: All bindings commented out to debug Room KSP issue
- * 
- * Issue: Room cannot generate AppDatabase before Hilt processes this module.
- * Once Room generation works, uncomment bindings one by one.
- * 
  * ✅ ALL REPOSITORIES IMPLEMENTED (Session 5-7 complete):
  * - FolderRepository ✅
  * - RecordRepository ✅
@@ -33,99 +28,99 @@ import javax.inject.Singleton
 abstract class RepositoryModule {
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // LOCAL DATA REPOSITORIES - TEMPORARILY DISABLED
+    // LOCAL DATA REPOSITORIES
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
-//    /**
-//     * Provides FolderRepository for folder management.
-//     */
-//    @Binds
-//    @Singleton
-//    abstract fun bindFolderRepository(
-//        impl: FolderRepositoryImpl
-//    ): FolderRepository
-//    
-//    /**
-//     * Provides RecordRepository for record management.
-//     */
-//    @Binds
-//    @Singleton
-//    abstract fun bindRecordRepository(
-//        impl: RecordRepositoryImpl
-//    ): RecordRepository
-//    
-//    /**
-//     * Provides DocumentRepository for document management.
-//     */
-//    @Binds
-//    @Singleton
-//    abstract fun bindDocumentRepository(
-//        impl: DocumentRepositoryImpl
-//    ): DocumentRepository
-//    
-//    /**
-//     * Provides TermRepository for term/deadline management.
-//     */
-//    @Binds
-//    @Singleton
-//    abstract fun bindTermRepository(
-//        impl: TermRepositoryImpl
-//    ): TermRepository
-//    
-//    /**
-//     * Provides SettingsRepository for app settings.
-//     */
-//    @Binds
-//    @Singleton
-//    abstract fun bindSettingsRepository(
-//        impl: SettingsRepositoryImpl
-//    ): SettingsRepository
-//    
-//    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//    // SCANNER & OCR REPOSITORIES - TEMPORARILY DISABLED
-//    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//    
-//    /**
-//     * Provides ScannerRepository for document scanning.
-//     */
-//    @Binds
-//    @Singleton
-//    abstract fun bindScannerRepository(
-//        impl: ScannerRepositoryImpl
-//    ): ScannerRepository
-//    
-//    /**
-//     * Provides OcrRepository for OCR operations.
-//     */
-//    @Binds
-//    @Singleton
-//    abstract fun bindOcrRepository(
-//        impl: OcrRepositoryImpl
-//    ): OcrRepository
-//    
-//    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//    // TRANSLATION REPOSITORY - TEMPORARILY DISABLED
-//    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//    
-//    /**
-//     * Provides TranslationRepository for translation operations.
-//     */
-//    @Binds
-//    @Singleton
-//    abstract fun bindTranslationRepository(
-//        impl: TranslationRepositoryImpl
-//    ): TranslationRepository
-//    
-//    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//    // REMOTE REPOSITORIES - TEMPORARILY DISABLED
-//    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//    
-//    /**
-//     * Provides DriveRepository for Google Drive backup.
-//     */
-//    @Binds
-//    @Singleton
-//    abstract fun bindDriveRepository(
-//        impl: DriveRepositoryImpl
-//    ): DriveRepository
+    /**
+     * Provides FolderRepository for folder management.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindFolderRepository(
+        impl: FolderRepositoryImpl
+    ): FolderRepository
+    
+    /**
+     * Provides RecordRepository for record management.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindRecordRepository(
+        impl: RecordRepositoryImpl
+    ): RecordRepository
+    
+    /**
+     * Provides DocumentRepository for document management.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindDocumentRepository(
+        impl: DocumentRepositoryImpl
+    ): DocumentRepository
+    
+    /**
+     * Provides TermRepository for term/deadline management.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindTermRepository(
+        impl: TermRepositoryImpl
+    ): TermRepository
+    
+    /**
+     * Provides SettingsRepository for app settings.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindSettingsRepository(
+        impl: SettingsRepositoryImpl
+    ): SettingsRepository
+    
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // SCANNER & OCR REPOSITORIES
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    /**
+     * Provides ScannerRepository for document scanning.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindScannerRepository(
+        impl: ScannerRepositoryImpl
+    ): ScannerRepository
+    
+    /**
+     * Provides OcrRepository for OCR operations.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindOcrRepository(
+        impl: OcrRepositoryImpl
+    ): OcrRepository
+    
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // TRANSLATION REPOSITORY
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    /**
+     * Provides TranslationRepository for translation operations.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindTranslationRepository(
+        impl: TranslationRepositoryImpl
+    ): TranslationRepository
+    
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // REMOTE REPOSITORIES
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    /**
+     * Provides DriveRepository for Google Drive backup.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindDriveRepository(
+        impl: DriveRepositoryImpl
+    ): DriveRepository
 }
