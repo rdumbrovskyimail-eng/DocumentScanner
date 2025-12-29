@@ -15,7 +15,7 @@ import javax.inject.Inject
  * 
  * Session 8: Already excellent, no major changes needed
  */
-@HiltViewModel
+//@HiltViewModel
 class RecordsViewModel @Inject constructor(
     private val useCases: AllUseCases
 ) : ViewModel() {
