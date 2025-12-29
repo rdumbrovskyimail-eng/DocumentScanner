@@ -107,3 +107,4 @@ class AllUseCases @Inject constructor(
     val quickScan: QuickScanUseCase
 )
 
+
