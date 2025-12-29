@@ -1,6 +1,7 @@
 package com.docs.scanner.data.local.database
 
 import androidx.room.TypeConverter
+import java.util.Date
 
 /**
  * Room Type Converters.
@@ -11,22 +12,16 @@ import androidx.room.TypeConverter
  * For any custom types, you need to provide converters to tell Room how to store them.
  * 
  * Current status:
- * - All entities use primitive types only (String, Long, Int, Boolean)
- * - This file is kept for future use when custom types are needed
- * 
- * Examples of when you'd need converters:
- * - Date objects → convert to/from Long (timestamp)
- * - List<String> → convert to/from JSON string
- * - Custom objects → convert to/from JSON
- * - Enums → convert to/from String/Int
+ * - Date converters: ✅ Enabled
+ * - List<String> converters: ✅ Enabled
+ * - JSON converters: ❌ Disabled (requires Gson dependency)
  */
 class Converters {
     
     // ============================================
-    // EXAMPLE: Date conversions (commented out, not needed yet)
+    // Date conversions
     // ============================================
     
-    /*
     @TypeConverter
     fun fromTimestamp(value: Long?): Date? {
         return value?.let { Date(it) }
@@ -36,13 +31,11 @@ class Converters {
     fun dateToTimestamp(date: Date?): Long? {
         return date?.time
     }
-    */
     
     // ============================================
-    // EXAMPLE: List<String> conversions (commented out, not needed yet)
+    // List<String> conversions
     // ============================================
     
-    /*
     @TypeConverter
     fun fromStringList(value: List<String>?): String? {
         return value?.joinToString(",")
@@ -52,10 +45,9 @@ class Converters {
     fun toStringList(value: String?): List<String>? {
         return value?.split(",")?.map { it.trim() }
     }
-    */
     
     // ============================================
-    // EXAMPLE: JSON conversions (commented out, not needed yet)
+    // JSON conversions (requires Gson - add to build.gradle if needed)
     // ============================================
     
     /*
