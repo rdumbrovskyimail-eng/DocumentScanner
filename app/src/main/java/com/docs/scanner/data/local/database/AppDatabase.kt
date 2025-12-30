@@ -9,15 +9,24 @@ import com.docs.scanner.data.local.database.entities.*
 /**
  * Main Room database for DocumentScanner app.
  * 
- * ⚠️ DEBUGGING MODE: Minimal entities to isolate KSP issue
+ * ✅ ИСПРАВЛЕНО: Все entities и DAOs включены
+ * 
+ * Версия БД: 6
+ * 
+ * Entities:
+ * - FolderEntity: Папки для организации записей
+ * - RecordEntity: Записи (группы документов)
+ * - DocumentEntity: Отдельные документы/изображения
+ * - TermEntity: Термины/напоминания
+ * - TranslationCacheEntity: Кэш переводов
  */
 @Database(
     entities = [
         FolderEntity::class,
-        // RecordEntity::class,  // ⚠️ TEMPORARILY DISABLED
-        // DocumentEntity::class,  // ⚠️ TEMPORARILY DISABLED
-        // TermEntity::class,  // ⚠️ TEMPORARILY DISABLED
-        // TranslationCacheEntity::class  // ⚠️ TEMPORARILY DISABLED
+        RecordEntity::class,
+        DocumentEntity::class,
+        TermEntity::class,
+        TranslationCacheEntity::class
     ],
     version = 6,
     exportSchema = true
@@ -26,8 +35,8 @@ import com.docs.scanner.data.local.database.entities.*
 abstract class AppDatabase : RoomDatabase() {
     
     abstract fun folderDao(): FolderDao
-    // abstract fun recordDao(): RecordDao  // ⚠️ TEMPORARILY DISABLED
-    // abstract fun documentDao(): DocumentDao  // ⚠️ TEMPORARILY DISABLED
-    // abstract fun termDao(): TermDao  // ⚠️ TEMPORARILY DISABLED
-    // abstract fun translationCacheDao(): TranslationCacheDao  // ⚠️ TEMPORARILY DISABLED
+    abstract fun recordDao(): RecordDao
+    abstract fun documentDao(): DocumentDao
+    abstract fun termDao(): TermDao
+    abstract fun translationCacheDao(): TranslationCacheDao
 }
