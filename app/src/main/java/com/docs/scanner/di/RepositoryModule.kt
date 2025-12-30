@@ -12,66 +12,65 @@ import javax.inject.Singleton
 /**
  * Hilt module for Repository bindings.
  * 
- * ⚠️ TEMPORARILY DISABLED - Debugging Room/KSP issue
- * All bindings commented out until AppDatabase generation works
+ * ✅ ИСПРАВЛЕНО: Все bindings раскомментированы и работают
+ * 
+ * ВАЖНО: TermRepositoryImpl импортируется из data.repository пакета
  */
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class RepositoryModule {
     
-    // ⚠️ ALL BINDINGS TEMPORARILY DISABLED FOR DEBUGGING
+    @Binds
+    @Singleton
+    abstract fun bindFolderRepository(
+        impl: FolderRepositoryImpl
+    ): FolderRepository
     
-//    @Binds
-//    @Singleton
-//    abstract fun bindFolderRepository(
-//        impl: FolderRepositoryImpl
-//    ): FolderRepository
-//    
-//    @Binds
-//    @Singleton
-//    abstract fun bindRecordRepository(
-//        impl: RecordRepositoryImpl
-//    ): RecordRepository
-//    
-//    @Binds
-//    @Singleton
-//    abstract fun bindDocumentRepository(
-//        impl: DocumentRepositoryImpl
-//    ): DocumentRepository
-//    
-//    @Binds
-//    @Singleton
-//    abstract fun bindTermRepository(
-//        impl: TermRepositoryImpl
-//    ): TermRepository
-//    
-//    @Binds
-//    @Singleton
-//    abstract fun bindSettingsRepository(
-//        impl: SettingsRepositoryImpl
-//    ): SettingsRepository
-//    
-//    @Binds
-//    @Singleton
-//    abstract fun bindScannerRepository(
-//        impl: ScannerRepositoryImpl
-//    ): ScannerRepository
-//    
-//    @Binds
-//    @Singleton
-//    abstract fun bindOcrRepository(
-//        impl: OcrRepositoryImpl
-//    ): OcrRepository
-//    
-//    @Binds
-//    @Singleton
-//    abstract fun bindTranslationRepository(
-//        impl: TranslationRepositoryImpl
-//    ): TranslationRepository
-//    
-//    @Binds
-//    @Singleton
-//    abstract fun bindDriveRepository(
-//        impl: DriveRepositoryImpl
-//    ): DriveRepository
+    @Binds
+    @Singleton
+    abstract fun bindRecordRepository(
+        impl: RecordRepositoryImpl
+    ): RecordRepository
+    
+    @Binds
+    @Singleton
+    abstract fun bindDocumentRepository(
+        impl: DocumentRepositoryImpl
+    ): DocumentRepository
+    
+    @Binds
+    @Singleton
+    abstract fun bindTermRepository(
+        impl: TermRepositoryImpl
+    ): TermRepository
+    
+    @Binds
+    @Singleton
+    abstract fun bindSettingsRepository(
+        impl: SettingsRepositoryImpl
+    ): SettingsRepository
+    
+    @Binds
+    @Singleton
+    abstract fun bindScannerRepository(
+        impl: ScannerRepositoryImpl
+    ): ScannerRepository
+    
+    @Binds
+    @Singleton
+    abstract fun bindOcrRepository(
+        impl: OcrRepositoryImpl
+    ): OcrRepository
+    
+    @Binds
+    @Singleton
+    abstract fun bindTranslationRepository(
+        impl: TranslationRepositoryImpl
+    ): TranslationRepository
+    
+    @Binds
+    @Singleton
+    abstract fun bindDriveRepository(
+        impl: DriveRepositoryImpl
+    ): DriveRepository
 }
