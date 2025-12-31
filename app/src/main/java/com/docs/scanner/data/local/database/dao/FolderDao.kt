@@ -1,20 +1,72 @@
 package com.docs.scanner.data.local.database.dao
 
-import androidx.room.*
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
 import com.docs.scanner.data.local.database.entities.FolderEntity
+import com.docs.scanner.domain.model.Folder
 import kotlinx.coroutines.flow.Flow
 
 /**
- * ✅ ИСПРАВЛЕНО: JOIN вместо N+1 queries
- * Производительность улучшена в 10-50x
+ * Data Access Object for Folder entity.
+ * 
+ * Provides all database operations for folders including:
+ * - CRUD operations
+ * - Folder with record count (optimized JOIN query)
+ * - Search
+ * - Batch operations
  */
 @Dao
 interface FolderDao {
+
+    // ══════════════════════════════════════════════════════════════
+    // BASIC CRUD
+    // ══════════════════════════════════════════════════════════════
+    
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(folder: FolderEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(folders: List<FolderEntity>): List<Long>
+
+    @Update
+    suspend fun update(folder: FolderEntity)
+
+    @Update
+    suspend fun updateAll(folders: List<FolderEntity>)
+
+    @Delete
+    suspend fun delete(folder: FolderEntity)
+
+    @Query("DELETE FROM folders WHERE id = :folderId")
+    suspend fun deleteById(folderId: Long)
+
+    @Query("DELETE FROM folders WHERE id IN (:folderIds)")
+    suspend fun deleteByIds(folderIds: List<Long>)
+
+    // ══════════════════════════════════════════════════════════════
+    // SELECT - Single
+    // ══════════════════════════════════════════════════════════════
+    
+    @Query("SELECT * FROM folders WHERE id = :folderId")
+    suspend fun getById(folderId: Long): FolderEntity?
+
+    @Query("SELECT * FROM folders WHERE id = :folderId")
+    fun getByIdFlow(folderId: Long): Flow<FolderEntity?>
+
+    // ══════════════════════════════════════════════════════════════
+    // SELECT - Lists (with record count - OPTIMIZED!)
+    // ══════════════════════════════════════════════════════════════
     
     /**
-     * ✅ ИСПРАВЛЕНО: Одним запросом вместо N+1
-     * Раньше: SELECT folders + N × (SELECT COUNT(*) FROM records)
-     * Теперь: SELECT folders LEFT JOIN records GROUP BY
+     * Get all folders with record count in single query.
+     * 
+     * OPTIMIZED: Uses LEFT JOIN instead of N+1 queries.
+     * Before: SELECT folders + N × (SELECT COUNT(*) FROM records)
+     * After: Single query with JOIN and GROUP BY
      */
     @Query("""
         SELECT 
@@ -27,25 +79,12 @@ interface FolderDao {
         FROM folders f
         LEFT JOIN records r ON f.id = r.folderId
         GROUP BY f.id
-        ORDER BY f.createdAt DESC
+        ORDER BY f.updatedAt DESC
     """)
-    fun getAllFoldersWithCounts(): Flow<List<FolderWithCount>>
-    
+    fun getAllWithRecordCount(): Flow<List<FolderWithCount>>
+
     /**
-     * ✅ ОСТАВЛЕНО: Для обратной совместимости
-     * Но рекомендуется использовать getAllFoldersWithCounts()
-     */
-    @Query("SELECT * FROM folders ORDER BY createdAt DESC")
-    fun getAllFolders(): Flow<List<FolderEntity>>
-    
-    @Query("SELECT * FROM folders WHERE id = :folderId")
-    suspend fun getFolderById(folderId: Long): FolderEntity?
-    
-    @Query("SELECT * FROM folders WHERE id = :folderId")
-    fun getFolderByIdFlow(folderId: Long): Flow<FolderEntity?>
-    
-    /**
-     * ✅ ДОБАВЛЕНО: Получить папку с количеством записей
+     * Get single folder with record count.
      */
     @Query("""
         SELECT 
@@ -60,44 +99,44 @@ interface FolderDao {
         WHERE f.id = :folderId
         GROUP BY f.id
     """)
-    suspend fun getFolderWithCount(folderId: Long): FolderWithCount?
+    suspend fun getByIdWithRecordCount(folderId: Long): FolderWithCount?
+
+    /**
+     * Get all folders without record count (for simple lists).
+     */
+    @Query("SELECT * FROM folders ORDER BY updatedAt DESC")
+    fun getAll(): Flow<List<FolderEntity>>
+
+    // ══════════════════════════════════════════════════════════════
+    // SEARCH
+    // ══════════════════════════════════════════════════════════════
     
-    @Query("SELECT * FROM folders WHERE name LIKE '%' || :query || '%' ORDER BY createdAt DESC")
-    fun searchFolders(query: String): Flow<List<FolderEntity>>
+    @Query("""
+        SELECT * FROM folders 
+        WHERE LOWER(name) LIKE LOWER('%' || :query || '%')
+           OR LOWER(description) LIKE LOWER('%' || :query || '%')
+        ORDER BY updatedAt DESC
+    """)
+    fun search(query: String): Flow<List<FolderEntity>>
+
+    // ══════════════════════════════════════════════════════════════
+    // VALIDATION
+    // ══════════════════════════════════════════════════════════════
     
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertFolder(folder: FolderEntity): Long
-    
-    @Update
-    suspend fun updateFolder(folder: FolderEntity)
-    
-    @Delete
-    suspend fun deleteFolder(folder: FolderEntity)
-    
-    @Query("DELETE FROM folders WHERE id = :folderId")
-    suspend fun deleteFolderById(folderId: Long)
+    @Query("SELECT EXISTS(SELECT 1 FROM folders WHERE LOWER(name) = LOWER(:name) AND id != :excludeId)")
+    suspend fun isNameExists(name: String, excludeId: Long = 0): Boolean
+
+    // ══════════════════════════════════════════════════════════════
+    // COUNTS
+    // ══════════════════════════════════════════════════════════════
     
     @Query("SELECT COUNT(*) FROM folders")
-    suspend fun getFolderCount(): Int
-    
-    @Query("SELECT EXISTS(SELECT 1 FROM folders WHERE name = :name AND id != :excludeId)")
-    suspend fun isFolderNameExists(name: String, excludeId: Long = 0): Boolean
-    
-    /**
-     * ✅ ДОБАВЛЕНО: Batch операции
-     */
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertFolders(folders: List<FolderEntity>): List<Long>
-    
-    @Update
-    suspend fun updateFolders(folders: List<FolderEntity>)
-    
-    @Query("DELETE FROM folders WHERE id IN (:folderIds)")
-    suspend fun deleteFoldersByIds(folderIds: List<Long>)
+    suspend fun getTotalCount(): Int
 }
 
 /**
- * ✅ ДОБАВЛЕНО: Data class для результата JOIN
+ * Data class for folder with record count.
+ * Used by JOIN queries to avoid N+1 problem.
  */
 data class FolderWithCount(
     val id: Long,
@@ -106,4 +145,16 @@ data class FolderWithCount(
     val createdAt: Long,
     val updatedAt: Long,
     val recordCount: Int
-)
+) {
+    /**
+     * Convert to domain model.
+     */
+    fun toDomain(): Folder = Folder(
+        id = id,
+        name = name,
+        description = description,
+        recordCount = recordCount,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
+}
