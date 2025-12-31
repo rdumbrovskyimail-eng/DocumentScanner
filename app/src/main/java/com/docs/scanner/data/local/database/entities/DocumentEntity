@@ -1,12 +1,28 @@
 package com.docs.scanner.data.local.database.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.docs.scanner.domain.model.Document
+import com.docs.scanner.domain.model.ProcessingStatus
 
 /**
- * Document Entity - represents a scanned document page
+ * Room entity for Document (scanned image with OCR/translation).
+ * 
+ * ## Relationships
+ * - Belongs to [RecordEntity] via `recordId`
+ * - Cascade delete: when record deleted, all documents deleted
+ * 
+ * ## Indices
+ * - `recordId`: For efficient lookup by record
+ * - `processingStatus`: For filtering by status
+ * - `createdAt`: For sorting by date
+ * 
+ * ## FTS Integration
+ * - Linked to [DocumentFtsEntity] for full-text search
+ * - Triggers auto-sync FTS when originalText/translatedText change
  */
 @Entity(
     tableName = "documents",
@@ -19,30 +35,64 @@ import androidx.room.PrimaryKey
         )
     ],
     indices = [
-        Index("recordId"),
-        Index("processingStatus"),
-        Index("createdAt")
+        Index(value = ["recordId"]),
+        Index(value = ["processingStatus"]),
+        Index(value = ["createdAt"])
     ]
 )
 data class DocumentEntity(
     @PrimaryKey(autoGenerate = true)
+    @ColumnInfo(name = "id")
     val id: Long = 0,
     
+    @ColumnInfo(name = "recordId")
     val recordId: Long,
     
-    // Image data
+    @ColumnInfo(name = "imagePath")
     val imagePath: String,
-    val thumbnailPath: String? = null,
     
-    // OCR results
+    @ColumnInfo(name = "originalText")
     val originalText: String? = null,
+    
+    @ColumnInfo(name = "translatedText")
     val translatedText: String? = null,
     
-    // Processing status
-    val processingStatus: String = "PENDING", // PENDING, PROCESSING, COMPLETED, FAILED
+    @ColumnInfo(name = "position")
+    val position: Int = 0,
     
-    // Metadata
-    val pageNumber: Int = 1,
-    val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
-)
+    @ColumnInfo(name = "processingStatus")
+    val processingStatus: Int = ProcessingStatus.INITIAL.value,
+    
+    @ColumnInfo(name = "createdAt")
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    /**
+     * Convert to domain model.
+     */
+    fun toDomain(): Document = Document(
+        id = id,
+        recordId = recordId,
+        imagePath = imagePath,
+        originalText = originalText,
+        translatedText = translatedText,
+        position = position,
+        processingStatus = ProcessingStatus.fromInt(processingStatus),
+        createdAt = createdAt
+    )
+
+    companion object {
+        /**
+         * Create entity from domain model.
+         */
+        fun fromDomain(document: Document): DocumentEntity = DocumentEntity(
+            id = document.id,
+            recordId = document.recordId,
+            imagePath = document.imagePath,
+            originalText = document.originalText,
+            translatedText = document.translatedText,
+            position = document.position,
+            processingStatus = document.processingStatus.value,
+            createdAt = document.createdAt
+        )
+    }
+}
