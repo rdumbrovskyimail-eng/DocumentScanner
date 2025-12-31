@@ -1,13 +1,28 @@
 package com.docs.scanner.domain.model
 
-import java.text.SimpleDateFormat
-import java.util.*
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /**
- * Domain models.
- * Session 6 + 11 + Repository fixes applied.
+ * Domain models for Clean Architecture.
+ * 
+ * These models are used in:
+ * - Use Cases (domain layer)
+ * - ViewModels (presentation layer)
+ * 
+ * Data layer uses Entity classes which are mapped to these models.
  */
 
+// ══════════════════════════════════════════════════════════════════════════════
+// FOLDER
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Domain model for Folder.
+ * 
+ * Represents a container for records.
+ */
 data class Folder(
     val id: Long = 0,
     val name: String,
@@ -16,7 +31,6 @@ data class Folder(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
-    // ✅ Validation (Session 6 Problem #6)
     init {
         require(name.isNotBlank()) { "Folder name cannot be blank" }
         require(name.length <= MAX_NAME_LENGTH) { 
@@ -25,15 +39,22 @@ data class Folder(
         require(recordCount >= 0) { "Record count cannot be negative" }
     }
     
-    fun isValid(): Boolean {
-        return name.isNotBlank() && name.length <= MAX_NAME_LENGTH
-    }
+    fun isValid(): Boolean = name.isNotBlank() && name.length <= MAX_NAME_LENGTH
     
     companion object {
         const val MAX_NAME_LENGTH = 100
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// RECORD
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Domain model for Record.
+ * 
+ * Represents a container for documents within a folder.
+ */
 data class Record(
     val id: Long = 0,
     val folderId: Long,
@@ -43,9 +64,12 @@ data class Record(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
-    // ✅ Validation (Session 6 Problem #6)
     init {
-        require(folderId > 0) { "Invalid folder ID: $folderId" }
+        // FIX E1: Allow QUICK_SCANS_FOLDER_ID (-1) for quick scans
+        require(folderId != 0L) { "Folder ID cannot be zero" }
+        require(folderId > 0 || folderId == FolderConstants.QUICK_SCANS_FOLDER_ID) {
+            "Invalid folder ID: $folderId"
+        }
         require(name.isNotBlank()) { "Record name cannot be blank" }
         require(name.length <= MAX_NAME_LENGTH) { 
             "Record name too long (max $MAX_NAME_LENGTH characters)" 
@@ -58,29 +82,34 @@ data class Record(
         
         /**
          * Factory method for Quick Scan records.
-         * 
-         * Creates auto-generated name: "Scan 2024-12-28 14:30"
-         * 
-         * @param folderId Folder ID (typically Quick Scans folder)
-         * @return New Record instance
+         * Uses thread-safe DateTimeFormatter instead of SimpleDateFormat.
          */
-        fun createQuickScanRecord(folderId: Long): Record {
-            val timestamp = System.currentTimeMillis()
-            val dateStr = SimpleDateFormat(
-                RecordConstants.QUICK_SCAN_DATE_FORMAT,
-                Locale.getDefault()
-            ).format(Date(timestamp))
+        fun createQuickScanRecord(folderId: Long = FolderConstants.QUICK_SCANS_FOLDER_ID): Record {
+            val now = Instant.now()
+            val formatter = DateTimeFormatter
+                .ofPattern(RecordConstants.QUICK_SCAN_DATE_FORMAT)
+                .withZone(ZoneId.systemDefault())
+            val dateStr = formatter.format(now)
             
             return Record(
                 folderId = folderId,
                 name = "Scan $dateStr",
                 description = "Quick scan at $dateStr",
-                createdAt = timestamp
+                createdAt = now.toEpochMilli()
             )
         }
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// DOCUMENT
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Domain model for Document.
+ * 
+ * Represents a scanned document image with OCR text and translation.
+ */
 data class Document(
     val id: Long = 0,
     val recordId: Long,
@@ -90,25 +119,47 @@ data class Document(
     val position: Int = 0,
     val processingStatus: ProcessingStatus = ProcessingStatus.INITIAL,
     val createdAt: Long = System.currentTimeMillis(),
-    
-    // ✅ For search results (Session 6 Problem #1)
     val recordName: String? = null,
     val folderName: String? = null
 ) {
-    // ✅ Validation (Session 6 Problem #6)
     init {
         require(recordId > 0) { "Invalid record ID: $recordId" }
         require(imagePath.isNotBlank()) { "Image path cannot be blank" }
         require(position >= 0) { "Position cannot be negative" }
     }
+    
+    /**
+     * Check if document has OCR text.
+     */
+    val hasOcrText: Boolean
+        get() = !originalText.isNullOrBlank()
+    
+    /**
+     * Check if document has translation.
+     */
+    val hasTranslation: Boolean
+        get() = !translatedText.isNullOrBlank()
+    
+    /**
+     * Check if document processing is complete.
+     */
+    val isProcessingComplete: Boolean
+        get() = processingStatus == ProcessingStatus.COMPLETE
+    
+    /**
+     * Check if document has an error.
+     */
+    val hasError: Boolean
+        get() = processingStatus.isError
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// DOCUMENT WITH NAMES (for search results)
+// ══════════════════════════════════════════════════════════════════════════════
+
 /**
- * Document with parent names for search results.
- * 
- * ✅ NEW: Added for FTS5 search results
- * Used when displaying search results to show full path:
- * "Folder Name > Record Name > Document"
+ * Document with parent folder and record names.
+ * Used for displaying search results with full path.
  */
 data class DocumentWithNames(
     val id: Long,
@@ -126,33 +177,32 @@ data class DocumentWithNames(
      * Get full path string.
      * Example: "Work Documents > Invoice 2024"
      */
-    fun getFullPath(): String {
-        return "$folderName > $recordName"
-    }
+    fun getFullPath(): String = "$folderName > $recordName"
     
     /**
-     * Convert to regular Document (without names).
+     * Convert to regular Document.
      */
-    fun toDocument(): Document {
-        return Document(
-            id = id,
-            recordId = recordId,
-            imagePath = imagePath,
-            originalText = originalText,
-            translatedText = translatedText,
-            position = position,
-            processingStatus = processingStatus,
-            createdAt = createdAt,
-            recordName = recordName,
-            folderName = folderName
-        )
-    }
+    fun toDocument(): Document = Document(
+        id = id,
+        recordId = recordId,
+        imagePath = imagePath,
+        originalText = originalText,
+        translatedText = translatedText,
+        position = position,
+        processingStatus = processingStatus,
+        createdAt = createdAt,
+        recordName = recordName,
+        folderName = folderName
+    )
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PROCESSING STATUS
+// ══════════════════════════════════════════════════════════════════════════════
 
 /**
  * Document processing status.
- * 
- * Session 6 enhancement: Added explicit failed states.
+ * FIX E4: Added CANCELLED state.
  */
 enum class ProcessingStatus(val value: Int) {
     INITIAL(0),
@@ -162,10 +212,11 @@ enum class ProcessingStatus(val value: Int) {
     TRANSLATION_IN_PROGRESS(4),
     TRANSLATION_FAILED(5),
     COMPLETE(6),
+    CANCELLED(7),
     ERROR(-1);
     
     val isError: Boolean
-        get() = value < 0 || this == OCR_FAILED || this == TRANSLATION_FAILED
+        get() = this == ERROR || this == OCR_FAILED || this == TRANSLATION_FAILED
     
     val isInProgress: Boolean
         get() = this == OCR_IN_PROGRESS || this == TRANSLATION_IN_PROGRESS
@@ -173,52 +224,59 @@ enum class ProcessingStatus(val value: Int) {
     val isComplete: Boolean
         get() = this == COMPLETE
     
+    val isCancelled: Boolean
+        get() = this == CANCELLED
+    
     companion object {
-        fun fromInt(value: Int) = entries.find { it.value == value } ?: INITIAL
+        fun fromInt(value: Int): ProcessingStatus = 
+            entries.find { it.value == value } ?: INITIAL
     }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RESULT WRAPPER
+// ══════════════════════════════════════════════════════════════════════════════
 
 /**
  * Result wrapper for repository operations.
  * 
- * Replaces Kotlin's Result type to avoid conflicts and provide better control.
+ * FIX E9: Renamed to avoid conflict with kotlin.Result
  */
 sealed class Result<out T> {
     data class Success<T>(val data: T) : Result<T>()
     data class Error(val exception: Exception, val message: String? = null) : Result<Nothing>()
     data object Loading : Result<Nothing>()
     
-    /**
-     * Check if result is successful.
-     */
-    val isSuccess: Boolean
-        get() = this is Success
+    val isSuccess: Boolean get() = this is Success
+    val isError: Boolean get() = this is Error
+    val isLoading: Boolean get() = this is Loading
+    
+    fun getOrNull(): T? = (this as? Success)?.data
+    fun errorOrNull(): Exception? = (this as? Error)?.exception
+    fun messageOrNull(): String? = (this as? Error)?.let { it.message ?: it.exception.message }
     
     /**
-     * Check if result is error.
+     * Map success value to another type.
      */
-    val isError: Boolean
-        get() = this is Error
-    
-    /**
-     * Check if result is loading.
-     */
-    val isLoading: Boolean
-        get() = this is Loading
-    
-    /**
-     * Get data or null.
-     */
-    fun getOrNull(): T? = when (this) {
-        is Success -> data
-        else -> null
+    inline fun <R> map(transform: (T) -> R): Result<R> = when (this) {
+        is Success -> Success(transform(data))
+        is Error -> this
+        is Loading -> this
     }
     
     /**
-     * Get error or null.
+     * Execute action on success.
      */
-    fun errorOrNull(): Exception? = when (this) {
-        is Error -> exception
-        else -> null
+    inline fun onSuccess(action: (T) -> Unit): Result<T> {
+        if (this is Success) action(data)
+        return this
+    }
+    
+    /**
+     * Execute action on error.
+     */
+    inline fun onError(action: (Exception) -> Unit): Result<T> {
+        if (this is Error) action(exception)
+        return this
     }
 }
