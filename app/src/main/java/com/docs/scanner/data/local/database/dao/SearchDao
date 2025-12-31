@@ -1,0 +1,130 @@
+package com.docs.scanner.data.local.database.dao
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import com.docs.scanner.data.local.database.entities.SearchHistoryEntity
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * Data Access Object for search history and FTS operations.
+ * 
+ * Provides:
+ * - Search history CRUD
+ * - FTS utilities (rebuild, optimize)
+ * - Combined search across entities
+ */
+@Dao
+interface SearchDao {
+
+    // ══════════════════════════════════════════════════════════════
+    // SEARCH HISTORY
+    // ══════════════════════════════════════════════════════════════
+    
+    /**
+     * Insert or update search query in history.
+     * Uses REPLACE to update timestamp if query exists.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSearchQuery(entry: SearchHistoryEntity): Long
+
+    /**
+     * Get recent search history.
+     */
+    @Query("""
+        SELECT * FROM search_history 
+        ORDER BY timestamp DESC 
+        LIMIT :limit
+    """)
+    fun getRecentSearches(limit: Int = 10): Flow<List<SearchHistoryEntity>>
+
+    /**
+     * Get search suggestions based on partial query.
+     */
+    @Query("""
+        SELECT * FROM search_history 
+        WHERE LOWER(query) LIKE LOWER(:prefix || '%')
+        ORDER BY timestamp DESC 
+        LIMIT :limit
+    """)
+    fun getSearchSuggestions(prefix: String, limit: Int = 5): Flow<List<SearchHistoryEntity>>
+
+    /**
+     * Delete single search entry.
+     */
+    @Query("DELETE FROM search_history WHERE id = :entryId")
+    suspend fun deleteSearchEntry(entryId: Long)
+
+    /**
+     * Delete search entry by query text.
+     */
+    @Query("DELETE FROM search_history WHERE query = :query")
+    suspend fun deleteSearchByQuery(query: String)
+
+    /**
+     * Clear all search history.
+     */
+    @Query("DELETE FROM search_history")
+    suspend fun clearSearchHistory()
+
+    /**
+     * Delete old search entries (cleanup).
+     */
+    @Query("DELETE FROM search_history WHERE timestamp < :expiryTimestamp")
+    suspend fun deleteOldSearches(expiryTimestamp: Long)
+
+    /**
+     * Keep only N most recent entries.
+     */
+    @Query("""
+        DELETE FROM search_history 
+        WHERE id NOT IN (
+            SELECT id FROM search_history 
+            ORDER BY timestamp DESC 
+            LIMIT :keepCount
+        )
+    """)
+    suspend fun trimHistory(keepCount: Int = 50)
+
+    // ══════════════════════════════════════════════════════════════
+    // SEARCH STATISTICS
+    // ══════════════════════════════════════════════════════════════
+    
+    @Query("SELECT COUNT(*) FROM search_history")
+    suspend fun getSearchHistoryCount(): Int
+
+    @Query("""
+        SELECT query FROM search_history 
+        GROUP BY query 
+        ORDER BY COUNT(*) DESC 
+        LIMIT :limit
+    """)
+    suspend fun getMostSearchedQueries(limit: Int = 10): List<String>
+
+    // ══════════════════════════════════════════════════════════════
+    // FTS UTILITIES (for maintenance)
+    // ══════════════════════════════════════════════════════════════
+    
+    /**
+     * Check if FTS table exists and is populated.
+     */
+    @Query("SELECT COUNT(*) FROM documents_fts")
+    suspend fun getFtsEntryCount(): Int
+
+    /**
+     * Rebuild FTS index.
+     * Call after bulk inserts or if search results are incorrect.
+     * 
+     * Note: This is a special FTS4 command.
+     */
+    @Query("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
+    suspend fun rebuildFtsIndex()
+
+    /**
+     * Optimize FTS index.
+     * Call periodically for better search performance.
+     */
+    @Query("INSERT INTO documents_fts(documents_fts) VALUES('optimize')")
+    suspend fun optimizeFtsIndex()
+}
