@@ -10,253 +10,225 @@ import com.docs.scanner.data.local.database.entities.TermEntity
 import kotlinx.coroutines.flow.Flow
 
 /**
- * DAO for Term operations.
+ * Data Access Object for Term entity.
  * 
- * Session 2 & 3 fixes:
- * - ✅ Added getOverdueTerms()
- * - ✅ Added getTermsNeedingReminder()
- * - ✅ Added getUpcomingCount()
- * - ✅ Added getOverdueCount()
- * - ✅ Added indexes hint for queries
- * - ✅ Fixed naming consistency (insert, update, delete)
- * 
- * Index requirements (from TermEntity):
- * - dueDate [INDEX] - for sorting by date
- * - isCompleted [INDEX] - for filtering completed/upcoming
+ * Provides all database operations for deadline reminders.
+ * All methods that return Flow are reactive and will emit updates.
  */
 @Dao
 interface TermDao {
-    
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // QUERY OPERATIONS
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    
-    /**
-     * Get all upcoming (not completed) terms.
-     * Only returns terms with due date in the future.
-     * 
-     * @param currentTime Current timestamp (default: now)
-     * @return Flow of upcoming terms, sorted by due date (earliest first)
-     */
-    @Query("""
-        SELECT * FROM terms 
-        WHERE isCompleted = 0 
-        AND dueDate >= :currentTime 
-        ORDER BY dueDate ASC
-    """)
-    fun getUpcomingTerms(
-        currentTime: Long = System.currentTimeMillis()
-    ): Flow<List<TermEntity>>
+
+    // ══════════════════════════════════════════════════════════════
+    // INSERT OPERATIONS
+    // ══════════════════════════════════════════════════════════════
     
     /**
-     * Get all completed terms.
-     * 
-     * @return Flow of completed terms, sorted by due date (most recent first)
-     */
-    @Query("""
-        SELECT * FROM terms 
-        WHERE isCompleted = 1 
-        ORDER BY dueDate DESC
-    """)
-    fun getCompletedTerms(): Flow<List<TermEntity>>
-    
-    /**
-     * Get overdue terms (not completed and past due date).
-     * 
-     * ✅ NEW: Session 2 addition
-     * 
-     * @param currentTime Current timestamp (default: now)
-     * @return Flow of overdue terms, sorted by due date (most overdue first)
-     */
-    @Query("""
-        SELECT * FROM terms 
-        WHERE isCompleted = 0 
-        AND dueDate < :currentTime 
-        ORDER BY dueDate ASC
-    """)
-    fun getOverdueTerms(
-        currentTime: Long = System.currentTimeMillis()
-    ): Flow<List<TermEntity>>
-    
-    /**
-     * Get terms needing reminder notification.
-     * 
-     * ✅ NEW: Session 2 addition
-     * 
-     * Returns terms where:
-     * - Not completed
-     * - Has reminder set (reminderMinutesBefore > 0)
-     * - Reminder time reached but term not yet due
-     * 
-     * @param currentTime Current timestamp (default: now)
-     * @return Flow of terms needing reminder, sorted by due date
-     */
-    @Query("""
-        SELECT * FROM terms 
-        WHERE isCompleted = 0 
-        AND reminderMinutesBefore > 0
-        AND dueDate - (reminderMinutesBefore * 60000) <= :currentTime
-        AND dueDate > :currentTime
-        ORDER BY dueDate ASC
-    """)
-    fun getTermsNeedingReminder(
-        currentTime: Long = System.currentTimeMillis()
-    ): Flow<List<TermEntity>>
-    
-    /**
-     * Get term by ID.
-     * 
-     * @param termId Term ID
-     * @return Term or null if not found
-     */
-    @Query("SELECT * FROM terms WHERE id = :termId")
-    suspend fun getTermById(termId: Long): TermEntity?
-    
-    /**
-     * Get count of upcoming terms.
-     * 
-     * ✅ NEW: Session 2 addition
-     * 
-     * @param currentTime Current timestamp (default: now)
-     * @return Number of upcoming (not completed) terms
-     */
-    @Query("""
-        SELECT COUNT(*) FROM terms 
-        WHERE isCompleted = 0 
-        AND dueDate >= :currentTime
-    """)
-    suspend fun getUpcomingCount(
-        currentTime: Long = System.currentTimeMillis()
-    ): Int
-    
-    /**
-     * Get count of overdue terms.
-     * 
-     * ✅ NEW: Session 2 addition
-     * 
-     * @param currentTime Current timestamp (default: now)
-     * @return Number of overdue terms
-     */
-    @Query("""
-        SELECT COUNT(*) FROM terms 
-        WHERE isCompleted = 0 
-        AND dueDate < :currentTime
-    """)
-    suspend fun getOverdueCount(
-        currentTime: Long = System.currentTimeMillis()
-    ): Int
-    
-    /**
-     * Get all terms (for debugging).
-     * 
-     * @return Flow of all terms
-     */
-    @Query("SELECT * FROM terms ORDER BY dueDate ASC")
-    fun getAllTerms(): Flow<List<TermEntity>>
-    
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // WRITE OPERATIONS
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    
-    /**
-     * Insert new term.
-     * 
-     * @param term Term to insert
-     * @return ID of inserted term
+     * Insert a new term.
+     * @return ID of the inserted term
      */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(term: TermEntity): Long
-    
+
     /**
-     * Insert multiple terms (batch operation).
-     * 
-     * ✅ NEW: For bulk operations
-     * 
-     * @param terms Terms to insert
-     * @return List of inserted term IDs
+     * Insert multiple terms.
+     * @return List of inserted IDs
      */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(terms: List<TermEntity>): List<Long>
+
+    // ══════════════════════════════════════════════════════════════
+    // UPDATE OPERATIONS
+    // ══════════════════════════════════════════════════════════════
     
     /**
-     * Update existing term.
-     * 
-     * @param term Term to update (must have valid ID)
+     * Update an existing term.
      */
     @Update
     suspend fun update(term: TermEntity)
-    
+
     /**
-     * Update multiple terms (batch operation).
-     * 
-     * ✅ NEW: For bulk operations
-     * 
-     * @param terms Terms to update
-     */
-    @Update
-    suspend fun updateAll(terms: List<TermEntity>)
-    
-    /**
-     * Mark term as completed/uncompleted.
-     * 
+     * Mark term as completed or uncompleted.
      * @param termId Term ID
-     * @param completed true to mark completed, false to mark uncompleted
+     * @param completed true = completed, false = uncompleted
+     * @param completedAt Timestamp when completed (null if uncompleted)
      */
-    @Query("UPDATE terms SET isCompleted = :completed WHERE id = :termId")
-    suspend fun markCompleted(termId: Long, completed: Boolean)
+    @Query("""
+        UPDATE terms 
+        SET is_completed = :completed, 
+            completed_at = :completedAt 
+        WHERE id = :termId
+    """)
+    suspend fun markCompleted(termId: Long, completed: Boolean, completedAt: Long?)
+
+    // ══════════════════════════════════════════════════════════════
+    // DELETE OPERATIONS
+    // ══════════════════════════════════════════════════════════════
     
     /**
-     * Mark multiple terms as completed.
-     * 
-     * ✅ NEW: For bulk operations
-     * 
-     * @param termIds List of term IDs
-     * @param completed Completion status
-     */
-    @Query("UPDATE terms SET isCompleted = :completed WHERE id IN (:termIds)")
-    suspend fun markCompletedBatch(termIds: List<Long>, completed: Boolean)
-    
-    /**
-     * Delete term.
-     * 
-     * @param term Term to delete
+     * Delete a term.
      */
     @Delete
     suspend fun delete(term: TermEntity)
-    
+
     /**
      * Delete term by ID.
-     * 
-     * @param termId Term ID to delete
      */
     @Query("DELETE FROM terms WHERE id = :termId")
     suspend fun deleteById(termId: Long)
-    
-    /**
-     * Delete multiple terms by IDs (batch operation).
-     * 
-     * ✅ NEW: For bulk operations
-     * 
-     * @param termIds List of term IDs to delete
-     */
-    @Query("DELETE FROM terms WHERE id IN (:termIds)")
-    suspend fun deleteByIds(termIds: List<Long>)
-    
+
     /**
      * Delete all completed terms.
-     * 
-     * ✅ NEW: For cleanup
-     * 
-     * @return Number of deleted terms
      */
-    @Query("DELETE FROM terms WHERE isCompleted = 1")
-    suspend fun deleteAllCompleted(): Int
-    
+    @Query("DELETE FROM terms WHERE is_completed = 1")
+    suspend fun deleteAllCompleted()
+
     /**
-     * Delete all terms (use with caution!).
-     * 
-     * @return Number of deleted terms
+     * Delete all terms.
      */
     @Query("DELETE FROM terms")
-    suspend fun deleteAll(): Int
+    suspend fun deleteAll()
+
+    // ══════════════════════════════════════════════════════════════
+    // SELECT - Single Item
+    // ══════════════════════════════════════════════════════════════
+    
+    /**
+     * Get term by ID (one-shot).
+     */
+    @Query("SELECT * FROM terms WHERE id = :termId")
+    suspend fun getById(termId: Long): TermEntity?
+
+    /**
+     * Get term by ID (reactive Flow).
+     */
+    @Query("SELECT * FROM terms WHERE id = :termId")
+    fun getByIdFlow(termId: Long): Flow<TermEntity?>
+
+    // ══════════════════════════════════════════════════════════════
+    // SELECT - Lists (Reactive Flow)
+    // ══════════════════════════════════════════════════════════════
+    
+    /**
+     * Get all terms ordered by due date.
+     */
+    @Query("SELECT * FROM terms ORDER BY due_date ASC")
+    fun getAllTerms(): Flow<List<TermEntity>>
+
+    /**
+     * Get upcoming (not completed) terms.
+     */
+    @Query("""
+        SELECT * FROM terms 
+        WHERE is_completed = 0 
+        ORDER BY due_date ASC
+    """)
+    fun getUpcomingTerms(): Flow<List<TermEntity>>
+
+    /**
+     * Get completed terms ordered by completion date.
+     */
+    @Query("""
+        SELECT * FROM terms 
+        WHERE is_completed = 1 
+        ORDER BY completed_at DESC
+    """)
+    fun getCompletedTerms(): Flow<List<TermEntity>>
+
+    /**
+     * Get overdue terms (not completed and past due date).
+     * 
+     * @param currentTime Current timestamp in milliseconds
+     */
+    @Query("""
+        SELECT * FROM terms 
+        WHERE is_completed = 0 
+        AND due_date < :currentTime
+        ORDER BY due_date ASC
+    """)
+    fun getOverdueTerms(currentTime: Long): Flow<List<TermEntity>>
+
+    /**
+     * Get terms that need reminder notification.
+     * 
+     * Returns terms where:
+     * - Not completed
+     * - Has reminder set (reminder_minutes_before > 0)
+     * - Reminder time has passed (due_date - reminder <= current)
+     * - Due date not yet passed (due_date > current)
+     * 
+     * @param currentTime Current timestamp in milliseconds
+     */
+    @Query("""
+        SELECT * FROM terms 
+        WHERE is_completed = 0 
+        AND reminder_minutes_before > 0
+        AND (due_date - reminder_minutes_before * 60000) <= :currentTime
+        AND due_date > :currentTime
+        ORDER BY due_date ASC
+    """)
+    fun getTermsNeedingReminder(currentTime: Long): Flow<List<TermEntity>>
+
+    /**
+     * Get terms due within a date range.
+     */
+    @Query("""
+        SELECT * FROM terms 
+        WHERE due_date BETWEEN :startTime AND :endTime
+        ORDER BY due_date ASC
+    """)
+    fun getTermsInDateRange(startTime: Long, endTime: Long): Flow<List<TermEntity>>
+
+    /**
+     * Get upcoming terms due within a date range.
+     */
+    @Query("""
+        SELECT * FROM terms 
+        WHERE is_completed = 0 
+        AND due_date BETWEEN :startTime AND :endTime
+        ORDER BY due_date ASC
+    """)
+    fun getUpcomingTermsInDateRange(startTime: Long, endTime: Long): Flow<List<TermEntity>>
+
+    // ══════════════════════════════════════════════════════════════
+    // COUNT OPERATIONS
+    // ══════════════════════════════════════════════════════════════
+    
+    /**
+     * Get total count of all terms.
+     */
+    @Query("SELECT COUNT(*) FROM terms")
+    suspend fun getTotalCount(): Int
+
+    /**
+     * Get count of upcoming (not completed) terms.
+     */
+    @Query("SELECT COUNT(*) FROM terms WHERE is_completed = 0")
+    suspend fun getUpcomingCount(): Int
+
+    /**
+     * Get count of completed terms.
+     */
+    @Query("SELECT COUNT(*) FROM terms WHERE is_completed = 1")
+    suspend fun getCompletedCount(): Int
+
+    /**
+     * Get count of overdue terms.
+     * 
+     * @param currentTime Current timestamp in milliseconds
+     */
+    @Query("SELECT COUNT(*) FROM terms WHERE is_completed = 0 AND due_date < :currentTime")
+    suspend fun getOverdueCount(currentTime: Long): Int
+
+    /**
+     * Get count of terms due today.
+     * 
+     * @param startOfDay Start of today (00:00:00) in milliseconds
+     * @param endOfDay End of today (23:59:59) in milliseconds
+     */
+    @Query("""
+        SELECT COUNT(*) FROM terms 
+        WHERE is_completed = 0 
+        AND due_date BETWEEN :startOfDay AND :endOfDay
+    """)
+    suspend fun getDueTodayCount(startOfDay: Long, endOfDay: Long): Int
 }
