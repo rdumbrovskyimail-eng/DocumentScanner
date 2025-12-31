@@ -1,24 +1,37 @@
 package com.docs.scanner.data.local.database.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Fts4
 
 /**
- * FTS4 Virtual Table для полнотекстового поиска.
+ * FTS4 Virtual Table for full-text search on documents.
  * 
- * ✅ FTS4 преимущества:
- * - Полнотекстовый поиск с поддержкой токенизации
- * - contentEntity связывает FTS с основной таблицей documents
- * - Room автоматически создаст триггеры для синхронизации
+ * ## Why FTS4 instead of FTS5?
+ * - Better Room support (FTS5 has some quirks)
+ * - contentEntity automatically creates triggers
+ * - Sufficient for our use case
  * 
- * ⚠️ ВАЖНО: 
- * - Используем @Fts4 вместо @Fts5 (лучшая поддержка в Room)
- * - Нужен @Entity для регистрации в базе данных
- * - tableName должно совпадать с тем, что используется в миграциях
+ * ## How it works
+ * 1. Room creates `documents_fts` virtual table
+ * 2. Room creates triggers to sync with `documents` table:
+ *    - INSERT trigger: copies text to FTS
+ *    - UPDATE trigger: updates FTS
+ *    - DELETE trigger: removes from FTS
+ * 3. Search queries use FTS MATCH for fast full-text search
+ * 
+ * ## Search syntax
+ * - Simple: `MATCH 'hello'`
+ * - Phrase: `MATCH '"hello world"'`
+ * - Prefix: `MATCH 'hel*'`
+ * - Boolean: `MATCH 'hello AND world'`
  */
 @Entity(tableName = "documents_fts")
 @Fts4(contentEntity = DocumentEntity::class)
-data class DocumentsFtsEntity(
+data class DocumentFtsEntity(
+    @ColumnInfo(name = "originalText")
     val originalText: String?,
+    
+    @ColumnInfo(name = "translatedText")
     val translatedText: String?
 )
