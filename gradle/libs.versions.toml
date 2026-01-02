@@ -1,90 +1,77 @@
 # ================================================================================
 # DocumentScanner - libs.versions.toml
 # Version Catalog (Gradle 9.x / Kotlin 2.1 / Android 2026)
+# Version: 5.0.0 - Final Gold Master
 # ================================================================================
 
 [versions]
-# ================================================================================
-# CORE & TOOLS
-# ================================================================================
-agp = "8.9.0"                     # Android Gradle Plugin (Syncs with Gradle 9)
-kotlin = "2.1.20"                 # Kotlin K2 Stable
-ksp = "2.1.20-1.0.30"             # KSP must match Kotlin version exactly
+# --- Core & Tools ---
+agp = "8.9.0"
+kotlin = "2.1.20"
+ksp = "2.1.20-1.0.30"
+desugar-jdk = "2.1.4"
 
-# ================================================================================
-# ANDROID FRAMEWORK
-# ================================================================================
+# --- Android Framework ---
 androidx-core = "1.16.0"
+androidx-appcompat = "1.7.1"
 androidx-lifecycle = "2.9.0"
 androidx-activity = "1.10.0"
 androidx-navigation = "2.9.0"
-androidx-appcompat = "1.7.1"
-androidx-splashscreen = "1.1.0"
-androidx-biometric = "1.2.0"      # Stable in 2026
+androidx-splashscreen = "1.2.0"
+androidx-biometric = "1.2.0"
+androidx-material = "1.13.0"
 
-# ================================================================================
-# COMPOSE (Version Controlled by BOM)
-# ================================================================================
-# Note: Compose Compiler is now tied to Kotlin version (2.1.20)
-compose-bom = "2026.01.00"        # Актуальный BOM для 2026
+# --- Compose ---
+compose-bom = "2026.01.00"
 
-# ================================================================================
-# ARCHITECTURE & DI
-# ================================================================================
+# --- Architecture ---
 hilt = "2.55"
 hilt-navigation = "1.2.1"
-room = "2.7.0"                    # Room with KMP support
+room = "2.7.0"
 
-# ================================================================================
-# NETWORKING & DATA
-# ================================================================================
+# --- Networking ---
 retrofit = "2.12.0"
-okhttp = "5.0.0"                  # OkHttp 5 stable
+okhttp = "5.0.0-alpha.14"
 kotlinx-serialization = "1.8.0"
 datastore = "1.1.2"
+coroutines = "1.10.1"
 
-# ================================================================================
-# ML & DOCUMENT PROCESSING
-# ================================================================================
+# --- ML Kit ---
 mlkit-text = "17.0.0"
-mlkit-document-scanner = "16.1.0" # Stable release
+mlkit-document-scanner = "16.1.0"
 coil = "3.1.0"
 
-# ================================================================================
-# GOOGLE INTEGRATIONS
-# ================================================================================
-play-services-auth = "21.4.0"
+# --- Cloud & AI ---
+firebase-bom = "33.8.0"
 google-api-drive = "v3-rev20251201-2.0.0"
-google-api-client = "2.8.0"
+google-api-client = "2.7.0"
+google-http-client = "1.45.0"
+play-services-auth = "21.4.0"
 
-# ================================================================================
-# UTILS & LOGGING
-# ================================================================================
-coroutines = "1.10.1"
-datetime = "0.7.0"
+# --- Security ---
+security-crypto = "1.1.0-alpha06"
+
+# --- Utils ---
 timber = "5.0.1"
-leakcanary = "3.0.0"              # Memory leak detection
+leakcanary = "2.14"
 
-# ================================================================================
-# TESTING
-# ================================================================================
-junit = "4.13.2"                  # Legacy support
+# --- Testing ---
+junit = "4.13.2"
 junit5 = "5.12.0"
-espresso = "3.7.0"
 mockk = "1.14.0"
 turbine = "1.3.0"
 truth = "1.5.0"
-
-# ================================================================================
-# LIBRARIES
-# ================================================================================
+espresso = "3.7.0"
+androidx-test-junit = "1.2.1"
 
 [libraries]
 # --- Core ---
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidx-core" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "androidx-appcompat" }
+androidx-material = { group = "com.google.android.material", name = "material", version.ref = "androidx-material" }
 androidx-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "androidx-splashscreen" }
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "androidx-biometric" }
+desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugar-jdk" }
 
 # --- Lifecycle ---
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
@@ -101,18 +88,29 @@ androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-toolin
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-compose-material-icons = { group = "androidx.compose.material", name = "material-icons-extended" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "androidx-activity" }
 
-# --- Room ---
-androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
-androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
-androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+# --- Firebase ---
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebase-bom" }
+firebase-vertexai = { group = "com.google.firebase", name = "firebase-vertexai" }
+firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics" }
+
+# --- Google Drive ---
+play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "play-services-auth" }
+google-api-services-drive = { group = "com.google.apis", name = "google-api-services-drive", version.ref = "google-api-drive" }
+google-api-client-android = { group = "com.google.api-client", name = "google-api-client-android", version.ref = "google-api-client" }
+google-http-client-gson = { group = "com.google.http-client", name = "google-http-client-gson", version.ref = "google-http-client" }
+
+# --- ML Kit ---
+mlkit-document-scanner = { group = "com.google.android.gms", name = "play-services-mlkit-document-scanner", version.ref = "mlkit-document-scanner" }
+mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkit-text" }
 
 # --- Hilt ---
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
 androidx-hilt-navigation = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hilt-navigation" }
 
-# --- Networking (Pure Kotlin Serialization) ---
+# --- Networking ---
 retrofit-core = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
 retrofit-kotlinx-serialization = { group = "com.squareup.retrofit2", name = "converter-kotlinx-serialization", version.ref = "retrofit" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
@@ -123,20 +121,12 @@ kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
-# --- DataStore ---
-androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
-
-# --- Date & Time ---
-kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "datetime" }
-
-# --- ML Kit ---
-mlkit-document-scanner = { group = "com.google.android.gms", name = "play-services-mlkit-document-scanner", version.ref = "mlkit-document-scanner" }
-mlkit-text = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkit-text" }
-
-# --- Google Drive ---
-google-drive-services = { group = "com.google.apis", name = "google-api-services-drive", version.ref = "google-api-drive" }
-google-api-client = { group = "com.google.api-client", name = "google-api-client-android", version.ref = "google-api-client" }
-play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "play-services-auth" }
+# --- Data ---
+room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+datastore-prefs = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "security-crypto" }
 
 # --- Tools ---
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
@@ -148,12 +138,12 @@ leakcanary = { group = "com.squareup.leakcanary", name = "leakcanary-android", v
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version.ref = "junit5" }
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
-truth = { group = "com.google.truth", name = "truth", version.ref = "truth" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
-
-# ================================================================================
-# BUNDLES
-# ================================================================================
+truth = { group = "com.google.truth", name = "truth", version.ref = "truth" }
+androidx-test-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidx-test-junit" }
+espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
+androidx-compose-ui-test = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 
 [bundles]
 compose = [
@@ -162,9 +152,17 @@ compose = [
     "androidx-compose-ui-tooling-preview",
     "androidx-compose-material3",
     "androidx-compose-material-icons",
+    "androidx-activity-compose",
     "androidx-lifecycle-runtime-compose",
     "androidx-lifecycle-viewmodel-compose",
     "androidx-navigation-compose"
+]
+
+google-drive = [
+    "play-services-auth",
+    "google-api-services-drive",
+    "google-api-client-android",
+    "google-http-client-gson"
 ]
 
 networking = [
@@ -174,28 +172,23 @@ networking = [
     "kotlinx-serialization-json"
 ]
 
-google-drive = [
-    "google-drive-services",
-    "google-api-client",
-    "play-services-auth"
-]
-
 coroutines = [
     "kotlinx-coroutines-core",
     "kotlinx-coroutines-android"
 ]
 
+room = [
+    "room-runtime",
+    "room-ktx"
+]
+
 testing = [
     "junit-jupiter",
     "mockk",
-    "truth",
     "turbine",
+    "truth",
     "kotlinx-coroutines-test"
 ]
-
-# ================================================================================
-# PLUGINS
-# ================================================================================
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -205,3 +198,4 @@ kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+google-services = { id = "com.google.gms.google-services", version = "4.4.2" }
