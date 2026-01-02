@@ -1,66 +1,84 @@
 package com.docs.scanner.data.local.database
 
 import androidx.room.TypeConverter
-import java.util.Date
+import com.docs.scanner.domain.model.ProcessingStatus
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 
 /**
- * Room Type Converters.
+ * Room TypeConverters for complex types.
  * 
- * ⚠️ CRITICAL: This class MUST be registered in AppDatabase with @TypeConverters
- * 
- * Room can only store primitive types by default (String, Int, Long, Boolean, etc.).
- * For any custom types, you need to provide converters to tell Room how to store them.
- * 
- * Current status:
- * - Date converters: ✅ Enabled
- * - List<String> converters: ✅ Enabled
- * - JSON converters: ❌ Disabled (requires Gson dependency)
+ * Converts between:
+ * - ProcessingStatus enum <-> Int
+ * - List<String> <-> JSON String
+ * - Map<String, String> <-> JSON String
  */
 class Converters {
-    
-    // ============================================
-    // Date conversions
-    // ============================================
-    
-    @TypeConverter
-    fun fromTimestamp(value: Long?): Date? {
-        return value?.let { Date(it) }
-    }
-    
-    @TypeConverter
-    fun dateToTimestamp(date: Date?): Long? {
-        return date?.time
-    }
-    
-    // ============================================
-    // List<String> conversions
-    // ============================================
-    
-    @TypeConverter
-    fun fromStringList(value: List<String>?): String? {
-        return value?.joinToString(",")
-    }
-    
-    @TypeConverter
-    fun toStringList(value: String?): List<String>? {
-        return value?.split(",")?.map { it.trim() }
-    }
-    
-    // ============================================
-    // JSON conversions (requires Gson - add to build.gradle if needed)
-    // ============================================
-    
-    /*
+
     private val gson = Gson()
-    
+
+    // ══════════════════════════════════════════════════════════════
+    // ProcessingStatus
+    // ══════════════════════════════════════════════════════════════
+
     @TypeConverter
-    fun fromJsonToObject(value: String?): MyCustomObject? {
-        return value?.let { gson.fromJson(it, MyCustomObject::class.java) }
+    fun fromProcessingStatus(status: ProcessingStatus): Int {
+        return status.value
     }
-    
+
     @TypeConverter
-    fun objectToJson(obj: MyCustomObject?): String? {
-        return obj?.let { gson.toJson(it) }
+    fun toProcessingStatus(value: Int): ProcessingStatus {
+        return ProcessingStatus.fromInt(value)
     }
-    */
+
+    // ══════════════════════════════════════════════════════════════
+    // List<String>
+    // ══════════════════════════════════════════════════════════════
+
+    @TypeConverter
+    fun fromStringList(list: List<String>?): String? {
+        return list?.let { gson.toJson(it) }
+    }
+
+    @TypeConverter
+    fun toStringList(json: String?): List<String>? {
+        return json?.let {
+            val type = object : TypeToken<List<String>>() {}.type
+            gson.fromJson(it, type)
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // Map<String, String>
+    // ══════════════════════════════════════════════════════════════
+
+    @TypeConverter
+    fun fromStringMap(map: Map<String, String>?): String? {
+        return map?.let { gson.toJson(it) }
+    }
+
+    @TypeConverter
+    fun toStringMap(json: String?): Map<String, String>? {
+        return json?.let {
+            val type = object : TypeToken<Map<String, String>>() {}.type
+            gson.fromJson(it, type)
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // Long List (for backup file IDs, etc.)
+    // ══════════════════════════════════════════════════════════════
+
+    @TypeConverter
+    fun fromLongList(list: List<Long>?): String? {
+        return list?.let { gson.toJson(it) }
+    }
+
+    @TypeConverter
+    fun toLongList(json: String?): List<Long>? {
+        return json?.let {
+            val type = object : TypeToken<List<Long>>() {}.type
+            gson.fromJson(it, type)
+        }
+    }
 }
