@@ -1,163 +1,154 @@
+# ================================================================================
+# DocumentScanner - ProGuard Rules
+# Optimized for R8 Full Mode + Android 2026 Standards
+# Version: 5.0.0 - Final Gold Master
+# ================================================================================
+
 # ============================================
-# KOTLIN
+# KOTLIN & COROUTINES
 # ============================================
--dontwarn kotlin.**
--keepclassmembers class **$WhenMappings {
-    <fields>;
-}
 -keep class kotlin.Metadata { *; }
--keepclassmembers class kotlin.Metadata {
-    public <methods>;
-}
-
-# ============================================
-# COROUTINES
-# ============================================
--keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
--keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
--keepclassmembers class kotlinx.coroutines.** {
-    volatile <fields>;
-}
-
-# ✅ НОВОЕ: Избежать предупреждений о CancellationException
+-keep class kotlin.reflect.** { *; }
 -dontwarn kotlinx.coroutines.CancellationException
+-dontwarn kotlinx.coroutines.flow.**
+
+# Kotlin Serialization
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.AnnotationsKt
+
+-keepclassmembers class kotlinx.serialization.json.** {
+    *** Companion;
+}
+
+-keepclasseswithmembers class * {
+    @kotlinx.serialization.Serializable <init>(...);
+}
+
+-if @kotlinx.serialization.Serializable class **
+-keepclassmembers class <1> {
+    static <1>$Companion Companion;
+}
 
 # ============================================
-# GSON
+# GOOGLE DRIVE & GSON (Legacy Support)
 # ============================================
 -keepattributes Signature
 -keepattributes *Annotation*
+
 -keep class com.google.gson.** { *; }
--keep class * implements com.google.gson.TypeAdapterFactory
--keep class * implements com.google.gson.JsonSerializer
--keep class * implements com.google.gson.JsonDeserializer
--keepclassmembers,allowobfuscation class * {
-    @com.google.gson.annotations.SerializedName <fields>;
-}
+-keep class com.google.api.** { *; }
+-keep class com.google.api.client.** { *; }
+-keep class com.google.api.services.drive.** { *; }
+
+-dontwarn com.google.api.**
+-dontwarn com.google.common.**
+
+-keep class * implements com.google.api.client.json.GenericJson { *; }
 
 # ============================================
-# RETROFIT
+# FIREBASE VERTEX AI & ML KIT
 # ============================================
--keepclasseswithmembers class * {
-    @retrofit2.http.* <methods>;
-}
--keep,allowobfuscation,allowshrinking interface retrofit2.Call
--keep,allowobfuscation,allowshrinking class retrofit2.Response
--keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
-
-# ============================================
-# OKHTTP
-# ============================================
--dontwarn okhttp3.**
--dontwarn okio.**
--keep class okhttp3.** { *; }
--keep interface okhttp3.** { *; }
-
-# ============================================
-# ROOM
-# ============================================
--keep class * extends androidx.room.RoomDatabase
--keep @androidx.room.Entity class *
--dontwarn androidx.room.paging.**
-
-# ============================================
-# ML KIT
-# ============================================
+-keep class com.google.firebase.** { *; }
 -keep class com.google.mlkit.** { *; }
 -keep class com.google.android.gms.** { *; }
+
+-dontwarn com.google.firebase.**
 -dontwarn com.google.mlkit.**
 -dontwarn com.google.android.gms.**
 
 # ============================================
-# GEMINI API MODELS
+# RETROFIT & OKHTTP
 # ============================================
--keep class com.docs.scanner.data.remote.gemini.** { *; }
--keep class com.docs.scanner.domain.model.** { *; }
+-keepattributes Signature, InnerClasses, EnclosingMethod
+-keepattributes RuntimeVisibleAnnotations, RuntimeVisibleParameterAnnotations
+-keepattributes AnnotationDefault
+
+-keepclassmembers,allowshrinking,allowobfuscation interface * {
+    @retrofit2.http.* <methods>;
+}
+
+-dontwarn org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement
+-dontwarn javax.annotation.**
+-dontwarn kotlin.Unit
+
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
 
 # ============================================
-# COMPOSE
+# HILT & DAGGER
+# ============================================
+-keep class dagger.hilt.** { *; }
+-keep class javax.inject.** { *; }
+-keep class * extends dagger.hilt.android.lifecycle.HiltViewModel { *; }
+
+-dontwarn dagger.hilt.**
+-dontwarn com.google.dagger.**
+
+# ============================================
+# ROOM DATABASE
+# ============================================
+-keep class * extends androidx.room.RoomDatabase
+-keep @androidx.room.Entity class *
+-keep @androidx.room.Dao class *
+
+-dontwarn androidx.room.paging.**
+
+# ============================================
+# ANDROIDX & COMPOSE
 # ============================================
 -keep class androidx.compose.** { *; }
--dontwarn androidx.compose.**
+-keep class androidx.lifecycle.** { *; }
+-keep class androidx.navigation.** { *; }
 
-# ✅ НОВОЕ: Compose runtime stability
--keepclassmembers class androidx.compose.runtime.** {
+-dontwarn androidx.compose.**
+-dontwarn androidx.lifecycle.**
+
+# ============================================
+# SECURITY CRYPTO
+# ============================================
+-keep class androidx.security.crypto.** { *; }
+-keep class com.google.crypto.tink.** { *; }
+
+# ============================================
+# COIL IMAGE LOADING
+# ============================================
+-keep class coil3.** { *; }
+-dontwarn coil3.**
+
+# ============================================
+# APP SPECIFIC
+# ============================================
+-keep class com.docs.scanner.BuildConfig { *; }
+-keep class com.docs.scanner.data.model.** { *; }
+-keep class com.docs.scanner.domain.model.** { *; }
+
+-keepclassmembers @kotlinx.serialization.Serializable class com.docs.scanner.** {
     <fields>;
     <methods>;
 }
 
 # ============================================
-# HILT
+# LOGGING REMOVAL (Release)
 # ============================================
--keep class dagger.hilt.** { *; }
--keep class javax.inject.** { *; }
--keep class * extends dagger.hilt.android.lifecycle.HiltViewModel
--keepclasseswithmembers class * {
-    @dagger.hilt.android.lifecycle.HiltViewModel <init>(...);
-}
-
-# ✅ НОВОЕ: ViewModels
--keep class com.docs.scanner.presentation.**.ViewModel { *; }
--keep class com.docs.scanner.presentation.**.*ViewModel { *; }
-
-# ============================================
-# BUILDCONFIG
-# ============================================
-# ✅ НОВОЕ: Keep BuildConfig
--keep class com.docs.scanner.BuildConfig { *; }
-
-# ============================================
-# ENCRYPTED STORAGE
-# ============================================
-# ✅ НОВОЕ: Keep security-crypto classes
--keep class androidx.security.crypto.** { *; }
--keep class com.docs.scanner.data.local.security.** { *; }
-
-# ============================================
-# DATASTORE
-# ============================================
-# ✅ НОВОЕ: Keep DataStore preferences
--keep class androidx.datastore.** { *; }
--keep class com.docs.scanner.data.local.preferences.** { *; }
-
-# ============================================
-# GOOGLE DRIVE API
-# ============================================
-# ✅ НОВОЕ: Keep Google API classes
--keep class com.google.api.** { *; }
--keep class com.google.api.client.** { *; }
--keep class com.google.api.services.drive.** { *; }
--dontwarn com.google.api.**
-
-# ============================================
-# SERIALIZATION
-# ============================================
-# ✅ НОВОЕ: Keep serialized names
--keepclassmembers,allowobfuscation class * {
-    @com.google.gson.annotations.SerializedName <fields>;
-}
-
-# ============================================
-# GENERAL
-# ============================================
-# ✅ НОВОЕ: Remove logging in release
 -assumenosideeffects class android.util.Log {
-    public static int v(...);
-    public static int d(...);
-    public static int i(...);
-    public static int w(...);
+    public static *** v(...);
+    public static *** d(...);
+    public static *** i(...);
 }
 
-# ✅ НОВОЕ: Remove println in release
--assumenosideeffects class java.io.PrintStream {
-    public void println(...);
+-assumenosideeffects class timber.log.Timber {
+    public static *** v(...);
+    public static *** d(...);
 }
 
 # ============================================
-# SUPPRESS WARNINGS
+# OPTIMIZATION FLAGS
 # ============================================
--dontwarn org.bouncycastle.**
--dontwarn org.conscrypt.**
--dontwarn org.openjsse.**
--dontwarn javax.annotation.**
--dontwarn edu.umd.cs.findbugs.annotations.**
+-optimizationpasses 5
+-dontpreverify
+-repackageclasses ''
+-allowaccessmodification
+-optimizations !code/simplification/cast,!field/*,!class/merging/*
