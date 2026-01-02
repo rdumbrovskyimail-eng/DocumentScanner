@@ -5,53 +5,44 @@ import com.docs.scanner.domain.model.Result
 import com.google.mlkit.vision.text.Text.TextBlock
 
 /**
- * Domain repository interface for OCR operations.
+ * Repository interface for OCR operations.
  * 
- * Session 5 addition:
- * - Separates OCR logic from ScannerRepository (SRP)
- * - Handles ML Kit text recognition
- * - OCR text improvement via Gemini
- * 
- * Responsibilities:
- * - Text recognition from images (ML Kit)
- * - Detailed text block extraction
- * - OCR error correction (Gemini)
+ * Provides text extraction from images using ML Kit.
  */
 interface OcrRepository {
     
     /**
-     * Recognize text from image using ML Kit.
+     * Recognize text from image.
      * 
-     * @param imageUri Image URI to process
-     * @return Result with recognized text
+     * @param imageUri URI of the image to scan
+     * @return Result with extracted text
      */
     suspend fun recognizeText(imageUri: Uri): Result<String>
     
     /**
      * Recognize text with detailed block information.
      * 
-     * Returns structured text blocks with:
-     * - Text content
+     * Provides structured output with:
+     * - Text blocks (paragraphs)
+     * - Lines within blocks
      * - Bounding boxes
      * - Confidence scores
-     * - Line/paragraph structure
      * 
-     * @param imageUri Image URI to process
+     * @param imageUri URI of the image to scan
      * @return Result with list of text blocks
      */
     suspend fun recognizeTextDetailed(imageUri: Uri): Result<List<TextBlock>>
     
     /**
-     * Improve OCR text quality using Gemini AI.
+     * Improve OCR text using AI.
      * 
      * Fixes common OCR errors:
-     * - Confused characters (0/O, 1/l, 5/S)
-     * - Extra spaces
-     * - Missing punctuation
-     * - Broken words
+     * - Confused characters (0/O, 1/l/I)
+     * - Broken or merged words
+     * - Extra symbols or noise
      * 
-     * @param rawText Raw OCR text with potential errors
-     * @return Result with corrected text
+     * @param rawText Raw OCR output
+     * @return Result with improved text
      */
     suspend fun improveOcrText(rawText: String): Result<String>
 }
