@@ -1,60 +1,155 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    DocumentScanner - AndroidManifest.xml
+    Манифест приложения по стандартам Android 2026
+
+    Версия: 3.0.0
+    Target SDK: 36 (Android 16)
+    Min SDK: 26 (Android 8.0)
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- ============================================================================
+         PERMISSIONS - NETWORK
+         ============================================================================ -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- ============================================================================
+         PERMISSIONS - CAMERA & MEDIA
+         ============================================================================ -->
     <uses-permission android:name="android.permission.CAMERA" />
+    
+    <!-- Android 13+ (API 33+) - гранулярные разрешения на медиа -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+    
+    <!-- Android 12 и ниже (API 32-) - legacy storage -->
+    <uses-permission 
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+    <uses-permission 
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28"
         tools:ignore="ScopedStorage" />
 
-    <!-- Точные будильники для напоминаний -->
+    <!-- ============================================================================
+         PERMISSIONS - ALARMS & NOTIFICATIONS
+         ============================================================================ -->
+    <!-- Точные будильники (только если действительно нужны!) -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     
-    <!-- ✅ ДОБАВЛЕНО: WAKE_LOCK для работы в Doze mode -->
+    <!-- Wake lock для работы в Doze mode -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     
-    <!-- ✅ ДОБАВЛЕНО: RECEIVE_BOOT_COMPLETED для восстановления alarms -->
+    <!-- Восстановление alarms после перезагрузки -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
+    
+    <!-- Уведомления (обязательно для Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    
+    <!-- Вибрация для уведомлений -->
     <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
 
-    <uses-feature 
-        android:name="android.hardware.camera" 
+    <!-- ============================================================================
+         PERMISSIONS - BIOMETRIC (для защиты приложения)
+         ============================================================================ -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
+    <!-- ============================================================================
+         HARDWARE FEATURES
+         ============================================================================ -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    
+    <uses-feature
+        android:name="android.hardware.camera.autofocus"
         android:required="false" />
 
+    <!-- ============================================================================
+         QUERIES - Package Visibility (Android 11+)
+         ============================================================================ -->
+    <queries>
+        <!-- Для открытия PDF файлов -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/pdf" />
+        </intent>
+        
+        <!-- Для share функциональности -->
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="*/*" />
+        </intent>
+        
+        <!-- Google Drive -->
+        <package android:name="com.google.android.apps.docs" />
+    </queries>
+
+    <!-- ============================================================================
+         APPLICATION
+         ============================================================================ -->
     <application
         android:name=".App"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
-        android:icon="@android:drawable/ic_menu_camera"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:roundIcon="@android:drawable/ic_menu_camera"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.DocumentScanner"
         android:largeHeap="true"
         android:enableOnBackInvokedCallback="true"
-        tools:targetApi="33">
+        android:localeConfig="@xml/locales_config"
+        android:networkSecurityConfig="@xml/network_security_config"
+        tools:targetApi="36">
 
+        <!-- ====================================================================
+             MAIN ACTIVITY
+             ==================================================================== -->
         <activity
             android:name=".presentation.MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.DocumentScanner"
-            android:windowSoftInputMode="adjustResize">
+            android:theme="@style/Theme.DocumentScanner.Splash"
+            android:windowSoftInputMode="adjustResize"
+            android:screenOrientation="portrait"
+            android:launchMode="singleTop">
+            
+            <!-- Main launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            
+            <!-- Deep links -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="docscanner"
+                    android:host="document" />
+            </intent-filter>
+            
+            <!-- Открытие изображений -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
         </activity>
 
+        <!-- ====================================================================
+             FILE PROVIDER
+             ==================================================================== -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -65,18 +160,45 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <meta-data
-            android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="ocr" />
-
-        <!-- ✅ ДОБАВЛЕНО: intent-filter для BOOT_COMPLETED -->
+        <!-- ====================================================================
+             BROADCAST RECEIVERS
+             ==================================================================== -->
         <receiver
             android:name=".data.local.alarm.TermAlarmReceiver"
             android:enabled="true"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+
+        <!-- ====================================================================
+             ML KIT CONFIGURATION
+             ==================================================================== -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ocr,ocr_chinese,ocr_japanese,ocr_korean,ocr_devanagari,langid" />
+
+        <!-- ====================================================================
+             GOOGLE PLAY SERVICES
+             ==================================================================== -->
+        <meta-data
+            android:name="com.google.android.gms.version"
+            android:value="@integer/google_play_services_version" />
+
+        <!-- ====================================================================
+             FIREBASE
+             ==================================================================== -->
+        <meta-data
+            android:name="firebase_analytics_collection_enabled"
+            android:value="false" />
+        
+        <meta-data
+            android:name="firebase_crashlytics_collection_enabled"
+            android:value="false" />
+
     </application>
+
 </manifest>
