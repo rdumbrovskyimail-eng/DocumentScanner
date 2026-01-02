@@ -3,12 +3,13 @@ package com.docs.scanner.domain.model
 /**
  * Application constants.
  * 
- * Session 6 + 10 requirement: Avoid hardcoded strings for localization.
+ * Centralized constants for consistency across the app.
  */
+
 object FolderConstants {
     /**
      * Special folder ID for Quick Scans.
-     * Use -1 to indicate system folder.
+     * Use -1 to indicate system folder (not user-created).
      */
     const val QUICK_SCANS_FOLDER_ID = -1L
     
@@ -16,6 +17,16 @@ object FolderConstants {
      * Fallback name if localization unavailable.
      */
     const val QUICK_SCANS_NAME_DEFAULT = "Quick Scans"
+    
+    /**
+     * Maximum folder name length.
+     */
+    const val MAX_NAME_LENGTH = 100
+    
+    /**
+     * Maximum description length.
+     */
+    const val MAX_DESCRIPTION_LENGTH = 500
 }
 
 object RecordConstants {
@@ -24,4 +35,117 @@ object RecordConstants {
      * Example: "2024-12-28 14:30"
      */
     const val QUICK_SCAN_DATE_FORMAT = "yyyy-MM-dd HH:mm"
+    
+    /**
+     * Maximum record name length.
+     */
+    const val MAX_NAME_LENGTH = 100
+    
+    /**
+     * Maximum description length.
+     */
+    const val MAX_DESCRIPTION_LENGTH = 500
+}
+
+object DocumentConstants {
+    /**
+     * Supported image formats.
+     */
+    val SUPPORTED_IMAGE_FORMATS = listOf("jpg", "jpeg", "png", "webp", "heic")
+    
+    /**
+     * Maximum image size in bytes (10 MB).
+     */
+    const val MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024L
+    
+    /**
+     * Thumbnail size in pixels.
+     */
+    const val THUMBNAIL_SIZE = 256
+    
+    /**
+     * Image quality for compression (0-100).
+     */
+    const val IMAGE_COMPRESSION_QUALITY = 85
+}
+
+object TranslationConstants {
+    /**
+     * Default target language for translation.
+     */
+    const val DEFAULT_TARGET_LANGUAGE = "ru"
+    
+    /**
+     * Auto-detect source language.
+     */
+    const val AUTO_DETECT_LANGUAGE = "auto"
+    
+    /**
+     * Supported target languages with display names.
+     */
+    val SUPPORTED_LANGUAGES = mapOf(
+        "en" to "English",
+        "ru" to "Russian",
+        "zh" to "Chinese (Simplified)",
+        "zh-TW" to "Chinese (Traditional)",
+        "ja" to "Japanese",
+        "ko" to "Korean",
+        "es" to "Spanish",
+        "fr" to "French",
+        "de" to "German",
+        "it" to "Italian",
+        "pt" to "Portuguese",
+        "ar" to "Arabic",
+        "hi" to "Hindi",
+        "uk" to "Ukrainian",
+        "pl" to "Polish",
+        "nl" to "Dutch",
+        "tr" to "Turkish",
+        "vi" to "Vietnamese",
+        "th" to "Thai"
+    )
+    
+    /**
+     * Maximum text length for translation.
+     */
+    const val MAX_TEXT_LENGTH = 30000
+    
+    /**
+     * Cache TTL in days.
+     */
+    const val CACHE_TTL_DAYS = 30
+}
+
+object CacheConstants {
+    /**
+     * Maximum cache entries.
+     */
+    const val MAX_CACHE_ENTRIES = 10_000
+    
+    /**
+     * Default TTL in days.
+     */
+    const val DEFAULT_TTL_DAYS = 30
+    
+    /**
+     * Aggressive cleanup TTL in days.
+     */
+    const val AGGRESSIVE_CLEANUP_TTL_DAYS = 7
+}
+
+object BackupConstants {
+    /**
+     * Maximum number of backups to keep in Google Drive.
+     */
+    const val MAX_BACKUPS = 10
+    
+    /**
+     * Backup folder name in Google Drive.
+     */
+    const val BACKUP_FOLDER_NAME = "DocumentScanner Backup"
+    
+    /**
+     * Database file name.
+     */
+    const val DATABASE_NAME = "document_scanner_database"
 }
