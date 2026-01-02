@@ -1,24 +1,19 @@
 package com.docs.scanner.domain.model
 
-import java.text.SimpleDateFormat
-import java.util.*
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 /**
- * Domain model for Term/Deadline.
+ * Domain model for Term (deadline/reminder).
  * 
- * 🔴 CRITICAL SESSION 5 FIX:
- * This model was MISSING - ViewModels used TermEntity directly!
+ * Used in:
+ * - Use Cases (domain layer)
+ * - ViewModels (presentation layer)
  * 
- * Clean Architecture:
- * - Domain model (this) → Used in ViewModels, Use Cases
- * - Data model (TermEntity) → Used in DAOs, Room database
- * - Mapper converts between them
- * 
- * Benefits:
- * - No Room annotations in domain layer
- * - Can add business logic (validation, computed properties)
- * - Easy to unit test (no Android dependencies)
- * - Repository can change implementation without affecting domain
+ * Mapped from/to TermEntity in data layer.
  */
 data class Term(
     val id: Long = 0,
@@ -27,130 +22,184 @@ data class Term(
     val dueDate: Long,
     val reminderMinutesBefore: Int = 0,
     val isCompleted: Boolean = false,
+    val completedAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis()
 ) {
+    init {
+        require(title.isNotBlank()) { "Term title cannot be blank" }
+        require(title.length <= MAX_TITLE_LENGTH) { 
+            "Term title too long (max $MAX_TITLE_LENGTH characters)" 
+        }
+        require(dueDate > 0) { "Invalid due date" }
+        require(reminderMinutesBefore >= 0) { "Reminder minutes cannot be negative" }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // COMPUTED PROPERTIES
+    // ══════════════════════════════════════════════════════════════
     
     /**
      * Check if term is overdue.
-     * 
-     * @param currentTime Current timestamp (default: now)
-     * @return true if past due date and not completed
      */
-    fun isOverdue(currentTime: Long = System.currentTimeMillis()): Boolean {
-        return !isCompleted && dueDate < currentTime
-    }
+    val isOverdue: Boolean
+        get() = !isCompleted && dueDate < System.currentTimeMillis()
+    
+    /**
+     * Check if term is due today.
+     */
+    val isDueToday: Boolean
+        get() {
+            val now = LocalDateTime.now()
+            val dueDateTime = LocalDateTime.ofInstant(
+                Instant.ofEpochMilli(dueDate),
+                ZoneId.systemDefault()
+            )
+            return now.toLocalDate() == dueDateTime.toLocalDate()
+        }
     
     /**
      * Check if reminder should be shown.
-     * 
-     * @param currentTime Current timestamp (default: now)
-     * @return true if reminder time reached but not yet due
      */
-    fun needsReminder(currentTime: Long = System.currentTimeMillis()): Boolean {
-        if (isCompleted || reminderMinutesBefore <= 0) return false
-        
-        val reminderTime = dueDate - (reminderMinutesBefore * 60 * 1000L)
-        return currentTime >= reminderTime && currentTime < dueDate
-    }
+    val shouldShowReminder: Boolean
+        get() {
+            if (isCompleted || reminderMinutesBefore <= 0) return false
+            val reminderTime = dueDate - (reminderMinutesBefore * 60 * 1000L)
+            val now = System.currentTimeMillis()
+            return now >= reminderTime && now < dueDate
+        }
     
     /**
-     * Get time until due (in milliseconds).
-     * 
-     * @param currentTime Current timestamp (default: now)
-     * @return Milliseconds until due (negative if overdue)
+     * Get days until due date.
+     * Negative if overdue.
      */
-    fun timeUntilDue(currentTime: Long = System.currentTimeMillis()): Long {
-        return dueDate - currentTime
-    }
+    val daysUntilDue: Long
+        get() {
+            val now = Instant.now()
+            val due = Instant.ofEpochMilli(dueDate)
+            return ChronoUnit.DAYS.between(now, due)
+        }
     
     /**
-     * Get time until due in human-readable format.
-     * 
-     * Examples:
-     * - "2 hours"
-     * - "3 days"
-     * - "Overdue by 1 day"
+     * Get hours until due date.
      */
-    fun timeUntilDueFormatted(currentTime: Long = System.currentTimeMillis()): String {
-        val diff = timeUntilDue(currentTime)
-        val absDiff = kotlin.math.abs(diff)
-        
-        val prefix = if (diff < 0) "Overdue by " else ""
-        
-        return when {
-            absDiff < 60 * 1000 -> "${prefix}Less than a minute"
-            absDiff < 60 * 60 * 1000 -> {
-                val minutes = (absDiff / (60 * 1000)).toInt()
-                "$prefix$minutes ${if (minutes == 1) "minute" else "minutes"}"
-            }
-            absDiff < 24 * 60 * 60 * 1000 -> {
-                val hours = (absDiff / (60 * 60 * 1000)).toInt()
-                "$prefix$hours ${if (hours == 1) "hour" else "hours"}"
-            }
-            else -> {
-                val days = (absDiff / (24 * 60 * 60 * 1000)).toInt()
-                "$prefix$days ${if (days == 1) "day" else "days"}"
+    val hoursUntilDue: Long
+        get() {
+            val now = Instant.now()
+            val due = Instant.ofEpochMilli(dueDate)
+            return ChronoUnit.HOURS.between(now, due)
+        }
+    
+    /**
+     * Get human-readable time until due.
+     * Examples: "2 days", "5 hours", "30 minutes", "Overdue"
+     */
+    val timeUntilDueFormatted: String
+        get() {
+            if (isOverdue) return "Overdue"
+            
+            val days = daysUntilDue
+            if (days > 0) return "$days day${if (days > 1) "s" else ""}"
+            
+            val hours = hoursUntilDue
+            if (hours > 0) return "$hours hour${if (hours > 1) "s" else ""}"
+            
+            val minutes = ChronoUnit.MINUTES.between(
+                Instant.now(),
+                Instant.ofEpochMilli(dueDate)
+            )
+            return if (minutes > 0) {
+                "$minutes minute${if (minutes > 1) "s" else ""}"
+            } else {
+                "Due now"
             }
         }
-    }
+
+    // ══════════════════════════════════════════════════════════════
+    // FORMATTING
+    // ══════════════════════════════════════════════════════════════
     
     /**
      * Format due date for display.
-     * 
-     * @param pattern Date format pattern (default: "MMM dd, yyyy HH:mm")
-     * @return Formatted date string
      */
     fun formatDueDate(pattern: String = "MMM dd, yyyy HH:mm"): String {
-        return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(dueDate))
+        val formatter = DateTimeFormatter.ofPattern(pattern)
+        val dateTime = LocalDateTime.ofInstant(
+            Instant.ofEpochMilli(dueDate),
+            ZoneId.systemDefault()
+        )
+        return dateTime.format(formatter)
     }
     
     /**
-     * Validate term data.
-     * 
-     * @return Validation result with error message if invalid
+     * Format completed date for display.
      */
-    fun validate(): ValidationResult {
-        return when {
-            title.isBlank() -> ValidationResult.Error("Title cannot be empty")
-            title.length > MAX_TITLE_LENGTH -> ValidationResult.Error("Title too long (max $MAX_TITLE_LENGTH)")
-            description != null && description.length > MAX_DESCRIPTION_LENGTH -> 
-                ValidationResult.Error("Description too long (max $MAX_DESCRIPTION_LENGTH)")
-            dueDate <= 0 -> ValidationResult.Error("Invalid due date")
-            reminderMinutesBefore < 0 -> ValidationResult.Error("Invalid reminder time")
-            else -> ValidationResult.Valid
+    fun formatCompletedAt(pattern: String = "MMM dd, yyyy HH:mm"): String? {
+        return completedAt?.let { timestamp ->
+            val formatter = DateTimeFormatter.ofPattern(pattern)
+            val dateTime = LocalDateTime.ofInstant(
+                Instant.ofEpochMilli(timestamp),
+                ZoneId.systemDefault()
+            )
+            dateTime.format(formatter)
         }
     }
+
+    // ══════════════════════════════════════════════════════════════
+    // COPY HELPERS
+    // ══════════════════════════════════════════════════════════════
     
+    /**
+     * Mark as completed with current timestamp.
+     */
+    fun markCompleted(): Term = copy(
+        isCompleted = true,
+        completedAt = System.currentTimeMillis()
+    )
+    
+    /**
+     * Mark as not completed.
+     */
+    fun markNotCompleted(): Term = copy(
+        isCompleted = false,
+        completedAt = null
+    )
+    
+    /**
+     * Update reminder time.
+     */
+    fun withReminder(minutesBefore: Int): Term = copy(
+        reminderMinutesBefore = minutesBefore
+    )
+
     companion object {
-        const val MAX_TITLE_LENGTH = 100
-        const val MAX_DESCRIPTION_LENGTH = 500
+        const val MAX_TITLE_LENGTH = 200
+        const val MAX_DESCRIPTION_LENGTH = 1000
+        
+        // Common reminder presets (in minutes)
+        val REMINDER_PRESETS = listOf(
+            0,      // No reminder
+            15,     // 15 minutes
+            30,     // 30 minutes
+            60,     // 1 hour
+            120,    // 2 hours
+            1440,   // 1 day
+            2880,   // 2 days
+            10080   // 1 week
+        )
         
         /**
-         * Create term with validation.
-         * Throws IllegalArgumentException if invalid.
+         * Create a new term with default values.
          */
         fun create(
             title: String,
-            description: String? = null,
             dueDate: Long,
-            reminderMinutesBefore: Int = 0
-        ): Term {
-            val term = Term(
-                title = title.trim(),
-                description = description?.trim(),
-                dueDate = dueDate,
-                reminderMinutesBefore = reminderMinutesBefore
-            )
-            
-            when (val result = term.validate()) {
-                is ValidationResult.Error -> throw IllegalArgumentException(result.message)
-                ValidationResult.Valid -> return term
-            }
-        }
-    }
-    
-    sealed class ValidationResult {
-        object Valid : ValidationResult()
-        data class Error(val message: String) : ValidationResult()
+            description: String? = null,
+            reminderMinutesBefore: Int = 60
+        ): Term = Term(
+            title = title,
+            description = description,
+            dueDate = dueDate,
+            reminderMinutesBefore = reminderMinutesBefore
+        )
     }
 }
