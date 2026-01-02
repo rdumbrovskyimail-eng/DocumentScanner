@@ -1,26 +1,74 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
 }
 
+// ================================================================================
+// GOOGLE SERVICES LOGIC (SAFE)
+// ================================================================================
+val googleServicesFile = rootProject.file("app/google-services.json")
+
+if (googleServicesFile.exists()) {
+    apply(plugin = libs.plugins.google.services.get().pluginId)
+    logger.lifecycle("✓ Google Services: Enabled")
+} else {
+    logger.warn("⚠️  Google Services: Disabled (google-services.json missing)")
+    logger.warn("    Firebase features will be unavailable.")
+}
+
+// ================================================================================
+// SECRETS (Configuration Cache Safe)
+// ================================================================================
+val localProperties = providers.fileContents(
+    rootProject.layout.projectDirectory.file("local.properties")
+).asText.orNull?.let { content ->
+    Properties().apply {
+        load(content.byteInputStream())
+    }
+} ?: Properties()
+
+fun getLocalProperty(key: String): String = 
+    localProperties.getProperty(key) ?: System.getenv(key) ?: ""
+
+// ================================================================================
+// ANDROID CONFIG
+// ================================================================================
 android {
     namespace = "com.docs.scanner"
-    compileSdk = 35  // Стабильная версия вместо 36
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.docs.scanner"
-        minSdk = 24
-        targetSdk = 35
-        versionCode = 2
-        versionName = "2.2.0"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 3
+        versionName = "3.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
         vectorDrawables {
             useSupportLibrary = true
+        }
+
+        buildConfigField("String", "GEMINI_API_KEY", "\"${getLocalProperty("GEMINI_API_KEY")}\"")
+        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${getLocalProperty("GOOGLE_DRIVE_CLIENT_ID")}\"")
+    }
+
+    signingConfigs {
+        create("release") {
+            val keyStoreFile = file(getLocalProperty("RELEASE_STORE_FILE").ifEmpty { "release.keystore" })
+            if (keyStoreFile.exists()) {
+                storeFile = keyStoreFile
+                storePassword = getLocalProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = getLocalProperty("RELEASE_KEY_ALIAS")
+                keyPassword = getLocalProperty("RELEASE_KEY_PASSWORD")
+            }
         }
     }
 
@@ -32,8 +80,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Signing config для release
-            // signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             isMinifyEnabled = false
@@ -43,12 +90,13 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "21"
         freeCompilerArgs += listOf(
             "-opt-in=kotlin.RequiresOptIn",
             "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
@@ -66,133 +114,74 @@ android {
         resources {
             excludes += setOf(
                 "/META-INF/{AL2.0,LGPL2.1}",
-                "/META-INF/LICENSE.md",
-                "/META-INF/LICENSE-notice.md"
+                "/META-INF/LICENSE*",
+                "/META-INF/DEPENDENCIES",
+                "/META-INF/INDEX.LIST"
             )
         }
     }
-    
-    lint {
-        abortOnError = false
-        checkReleaseBuilds = true
-        warningsAsErrors = false
-    }
 }
 
+// ================================================================================
+// DEPENDENCIES
+// ================================================================================
 dependencies {
-    // ══════════════════════════════════════════════════════════════
-    // ANDROIDX CORE
-    // ══════════════════════════════════════════════════════════════
+    // --- Bundles ---
+    implementation(libs.bundles.compose)
+    implementation(libs.bundles.networking)
+    implementation(libs.bundles.room)
+    implementation(libs.bundles.google.drive)
+    implementation(libs.bundles.coroutines)
+
+    // --- Core ---
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.material)
+    implementation(libs.androidx.splashscreen)
+    implementation(libs.androidx.biometric)
     
-    // FIX: Memory leak prevention
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
-
-    // ══════════════════════════════════════════════════════════════
-    // COMPOSE
-    // ══════════════════════════════════════════════════════════════
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.ui.tooling.preview)
-    implementation("com.google.android.material:material:1.12.0")
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons)
-    debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
-
-    // ══════════════════════════════════════════════════════════════
-    // HILT (DEPENDENCY INJECTION)
-    // ══════════════════════════════════════════════════════════════
+    // --- DI ---
     implementation(libs.hilt.android)
-    ksp(libs.hilt.android.compiler)
-    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.hilt.navigation)
+    ksp(libs.hilt.compiler)
+    ksp(libs.room.compiler)
 
-    // ══════════════════════════════════════════════════════════════
-    // ROOM DATABASE
-    // ══════════════════════════════════════════════════════════════
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
-
-    // ══════════════════════════════════════════════════════════════
-    // NETWORKING
-    // ══════════════════════════════════════════════════════════════
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.converter.gson)
-    implementation(libs.okhttp)
-    implementation(libs.okhttp.logging.interceptor)
-    implementation(libs.gson)
-
-    // ══════════════════════════════════════════════════════════════
-    // IMAGE LOADING
-    // ══════════════════════════════════════════════════════════════
+    // --- Image Loading ---
     implementation(libs.coil.compose)
-    implementation(libs.coil.network.okhttp)
+    implementation(libs.coil.network)
 
-    // ══════════════════════════════════════════════════════════════
-    // ML KIT
-    // ══════════════════════════════════════════════════════════════
+    // --- ML Kit ---
     implementation(libs.mlkit.text.recognition)
-    implementation(libs.mlkit.text.recognition.chinese)
     implementation(libs.mlkit.document.scanner)
+    
+    // --- Firebase ---
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.vertexai)
+    implementation(libs.firebase.analytics)
 
-    // ══════════════════════════════════════════════════════════════
-    // FIREBASE AI (GEMINI)
-    // ══════════════════════════════════════════════════════════════
-    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
-    implementation("com.google.firebase:firebase-ai")
+    // --- Data ---
+    implementation(libs.security.crypto)
+    implementation(libs.datastore.prefs)
 
-    // ══════════════════════════════════════════════════════════════
-    // GOOGLE SERVICES
-    // ══════════════════════════════════════════════════════════════
-    implementation(libs.play.services.auth)
-    implementation(libs.google.api.client.android)
-    implementation(libs.google.http.client.gson)
-    implementation(libs.google.api.services.drive)
+    // --- Utils ---
+    implementation(libs.timber)
+    debugImplementation(libs.leakcanary)
 
-    // ══════════════════════════════════════════════════════════════
-    // SECURITY
-    // ══════════════════════════════════════════════════════════════
-    implementation(libs.androidx.security.crypto)
+    // --- Desugaring ---
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 
-    // ══════════════════════════════════════════════════════════════
-    // COROUTINES
-    // ══════════════════════════════════════════════════════════════
-    implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.kotlinx.coroutines.play.services)
-
-    // ══════════════════════════════════════════════════════════════
-    // DATASTORE
-    // ══════════════════════════════════════════════════════════════
-    implementation(libs.androidx.datastore.preferences)
-
-    // ══════════════════════════════════════════════════════════════
-    // LOGGING (FIX: Заменяет println)
-    // ══════════════════════════════════════════════════════════════
-    implementation("com.jakewharton.timber:timber:5.0.1")
-
-    // ══════════════════════════════════════════════════════════════
-    // TESTING (Расширено)
-    // ══════════════════════════════════════════════════════════════
-    testImplementation(libs.junit)
-    testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
-    testImplementation("app.cash.turbine:turbine:1.0.0")
-    androidTestImplementation(libs.androidx.test.ext.junit)
+    // --- Testing ---
+    testImplementation(libs.bundles.testing)
+    androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.compose.ui.test)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
     arg("room.incremental", "true")
-    arg("room.expandProjection", "true")
     arg("room.generateKotlin", "true")
 }
