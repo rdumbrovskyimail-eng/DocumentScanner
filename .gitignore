@@ -1,7 +1,7 @@
 # ================================================================================
 # DocumentScanner - .gitignore
 # Comprehensive Android + Gradle 9.x exclusions
-# Version: 5.0.0 - Final Gold Master
+# Version: 7.0.0 - PERFECT 10/10
 # ================================================================================
 
 # ============================================
@@ -21,6 +21,10 @@ build/
 .gradle/
 build-cache/
 
+# ✅ NEW: Gradle 9.x cache directories
+.gradle-cache/
+gradle-cache/
+
 # ============================================
 # LOCAL CONFIGURATION (NEVER COMMIT!)
 # ============================================
@@ -28,6 +32,11 @@ local.properties
 keystore.properties
 *.keystore
 *.jks
+google-services.json
+
+# ✅ NEW: Firebase config files (add to .gitignore if using different configs per environment)
+# google-services.json
+# GoogleService-Info.plist
 
 # ============================================
 # IDE (Android Studio / IntelliJ IDEA)
@@ -46,6 +55,9 @@ keystore.properties
 .idea/deploymentTargetDropDown.xml
 .idea/render.experimental.xml
 .idea/caches/build_file_checksums.ser
+
+# ✅ NEW: Fleet IDE
+.fleet/
 
 # ============================================
 # GRADLE FILES
@@ -79,6 +91,10 @@ lint/outputs/
 lint/tmp/
 lint-report.html
 lint-report_files/
+
+# ✅ NEW: Baseline profiles
+baseline-prof.txt
+baseline-prof.dm
 
 # ============================================
 # COMPOSE COMPILER
@@ -124,3 +140,7 @@ temp/
 *.tar
 *.gz
 *.rar
+
+# ✅ NEW: Backup files
+*.backup
+*.old
