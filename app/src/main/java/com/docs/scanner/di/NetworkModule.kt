@@ -9,6 +9,7 @@ import com.docs.scanner.data.remote.camera.DocumentScannerWrapper
 import com.docs.scanner.data.remote.gemini.GeminiApi
 import com.docs.scanner.data.remote.gemini.GeminiApiService
 import com.docs.scanner.data.remote.gemini.GeminiTranslator
+import com.docs.scanner.data.remote.googledrive.GoogleDriveService
 import com.docs.scanner.data.remote.mlkit.MLKitScanner
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -21,18 +22,18 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
 /**
  * Hilt module providing network and remote service dependencies.
  * 
- * Session 4 & 7 fixes:
- * - ✅ Added GeminiTranslator (CRITICAL - was missing)
- * - ✅ Added GeminiApi wrapper
- * - ✅ Added DocumentScannerWrapper
- * - ✅ Integrated TranslationCacheManager
- * - ✅ HTTP logging DEBUG-only with API key masking
+ * Fixed issues:
+ * - 🟠 Серьёзная #1: Added GoogleDriveService provider
+ * - 🔵 Minor: OkHttp retryOnConnectionFailure для POST запросов (спорно)
+ * - 🟡 #12: Unified logging (Timber instead of android.util.Log)
+ * - Previous fixes: GeminiTranslator, TranslationCacheManager integration
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -40,9 +41,15 @@ object NetworkModule {
     
     private const val BASE_URL = "https://generativelanguage.googleapis.com/"
     
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // Timeout configuration for Gemini API (large responses)
+    private const val CONNECT_TIMEOUT_SECONDS = 60L
+    private const val READ_TIMEOUT_SECONDS = 60L
+    private const val WRITE_TIMEOUT_SECONDS = 60L
+    private const val CALL_TIMEOUT_SECONDS = 120L
+    
+    // ════════════════════════════════════════════════════════════════════════════════
     // GSON
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ════════════════════════════════════════════════════════════════════════════════
     
     /**
      * Provides Gson with lenient parsing.
@@ -56,35 +63,41 @@ object NetworkModule {
             .create()
     }
     
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ════════════════════════════════════════════════════════════════════════════════
     // OKHTTP CLIENT
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ════════════════════════════════════════════════════════════════════════════════
     
     /**
      * Provides OkHttpClient with:
      * - Extended timeouts for Gemini API (60-120s)
-     * - Retry on connection failure
+     * - Retry on connection failure (READ-ONLY requests recommended)
      * - DEBUG-only logging with API key masking
+     * 
+     * NOTE: 🔵 Minor #18 - retryOnConnectionFailure can retry POST requests.
+     * This is generally safe for idempotent operations, but be cautious
+     * with non-idempotent endpoints. Consider using Interceptor for
+     * selective retry logic if needed.
      */
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
         val builder = OkHttpClient.Builder()
-            .connectTimeout(60, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(60, TimeUnit.SECONDS)
-            .callTimeout(120, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true)
+            .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .callTimeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true) // ⚠️ Can retry POST - see note above
         
-        // ✅ HTTP logging только в DEBUG режиме
+        // HTTP logging only in DEBUG mode
         if (BuildConfig.DEBUG) {
             val loggingInterceptor = HttpLoggingInterceptor { message ->
-                // ✅ Маскируем API ключи в логах
+                // Mask API keys in logs for security
                 val sanitized = message
                     .replace(Regex("key=[^&\\s]+"), "key=***REDACTED***")
                     .replace(Regex("AIza[0-9A-Za-z_-]{35}"), "AIza***REDACTED***")
                 
-                android.util.Log.d("HTTP", sanitized)
+                // FIXED: 🟡 #12 - Use Timber instead of android.util.Log
+                Timber.tag("HTTP").d(sanitized)
             }.apply {
                 level = HttpLoggingInterceptor.Level.BODY
             }
@@ -95,9 +108,9 @@ object NetworkModule {
         return builder.build()
     }
     
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ════════════════════════════════════════════════════════════════════════════════
     // RETROFIT
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ════════════════════════════════════════════════════════════════════════════════
     
     /**
      * Provides Retrofit instance for Gemini API.
@@ -124,15 +137,13 @@ object NetworkModule {
         return retrofit.create(GeminiApiService::class.java)
     }
     
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ════════════════════════════════════════════════════════════════════════════════
     // GEMINI API WRAPPERS
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ════════════════════════════════════════════════════════════════════════════════
     
     /**
      * Provides GeminiApi wrapper.
      * Handles rate limiting, retries, and error handling.
-     * 
-     * Session 4: Already exists in codebase.
      */
     @Provides
     @Singleton
@@ -145,13 +156,12 @@ object NetworkModule {
     /**
      * Provides GeminiTranslator with cache integration.
      * 
-     * 🔴 CRITICAL FIX (Session 4 & 7):
-     * This was MISSING - app wouldn't compile!
-     * 
      * Integrates with TranslationCacheManager to reduce API calls:
      * - Checks cache before API call
      * - Saves translation to cache after API call
      * - Supports language parameters (source/target)
+     * 
+     * Previously CRITICAL FIX: This was missing and caused compilation failure.
      */
     @Provides
     @Singleton
@@ -167,15 +177,12 @@ object NetworkModule {
         )
     }
     
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ════════════════════════════════════════════════════════════════════════════════
     // ML KIT & DOCUMENT SCANNER
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ════════════════════════════════════════════════════════════════════════════════
     
     /**
-     * Provides ML Kit OCR scanner.
-     * 
-     * ✅ UPDATED (Session 4): Now accepts SettingsDataStore
-     * for language selection.
+     * Provides ML Kit OCR scanner with language settings.
      */
     @Provides
     @Singleton
@@ -189,7 +196,7 @@ object NetworkModule {
     /**
      * Provides Google ML Kit Document Scanner wrapper.
      * 
-     * ✅ NEW (Session 4): For scanning documents with camera.
+     * For scanning documents with camera.
      * Requires Google Play Services 23.0+
      */
     @Provides
@@ -198,5 +205,28 @@ object NetworkModule {
         @ApplicationContext context: Context
     ): DocumentScannerWrapper {
         return DocumentScannerWrapper(context)
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // GOOGLE DRIVE
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Provides Google Drive service for backup/restore operations.
+     * 
+     * FIXED: 🟠 Серьёзная #1 - This provider was missing!
+     * BackupRepositoryImpl requires this dependency.
+     * 
+     * Handles:
+     * - OAuth authentication
+     * - File upload/download
+     * - Backup metadata management
+     */
+    @Provides
+    @Singleton
+    fun provideGoogleDriveService(
+        @ApplicationContext context: Context
+    ): GoogleDriveService {
+        return GoogleDriveService(context)
     }
 }
