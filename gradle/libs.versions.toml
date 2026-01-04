@@ -1,6 +1,8 @@
 # ================================================================================
 # DocumentScanner - Unified Dependency Catalog
-# Version: 7.0.0 - PERFECT 10/10 (2026 Standards)
+# Version: 7.0.1 - FIXED (2026 Standards)
+# 
+# ✅ FIX: Исправлена синтаксическая ошибка в bundles.testing
 # ================================================================================
 
 [versions]
@@ -256,13 +258,16 @@ coroutines = [
     "kotlinx-coroutines-play-services"
 ]
 
+# ✅ FIX: Исправлена синтаксическая ошибка
+# БЫЛО: "kotlinx"kotlinx-coroutines-test"
+# СТАЛО: "kotlinx-coroutines-test"
 testing = [
     "junit-jupiter-api",
     "junit-jupiter-params",
     "mockk",
     "turbine",
     "truth",
-    "kotlinx"kotlinx-coroutines-test",
+    "kotlinx-coroutines-test",
     "robolectric"
 ]
 
