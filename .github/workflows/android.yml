@@ -31,6 +31,17 @@ jobs:
       with:
         java-version: '21'
         distribution: 'temurin'
+
+    # ✅ Android SDK (required for compileSdk / build-tools)
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install Android SDK packages
+      run: |
+        sdkmanager --install \
+          "platform-tools" \
+          "platforms;android-36" \
+          "build-tools;36.0.0"
     
     # ✅ Кэширование Gradle
     - name: Cache Gradle packages
@@ -64,7 +75,6 @@ jobs:
     # ✅ Сборка
     - name: Build with Gradle
       id: build
-      continue-on-error: true
       run: ./gradlew assembleDebug --stacktrace
       
     # ⚠️ ВАЖНО: always() чтобы выполнялось даже при ошибке!
@@ -95,7 +105,8 @@ jobs:
     
     # ✅ Отправка успешного уведомления (только если Release создан)
     - name: Send Success Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome == 'success'
+      if: steps.build.outcome == 'success' && steps.create_release.outcome == 'success' && secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != ''
+      continue-on-error: true
       run: |
         APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
         APK_NAME=$(basename "$APK_PATH")
@@ -119,7 +130,8 @@ jobs:
     
     # ⚠️ Уведомление если сборка прошла, но Release не создался
     - name: Send Release Failure Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome != 'success'
+      if: steps.build.outcome == 'success' && steps.create_release.outcome != 'success' && secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != ''
+      continue-on-error: true
       run: |
         APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
         APK_NAME=$(basename "$APK_PATH")
@@ -143,7 +155,8 @@ jobs:
     
     # ❌ Уведомление об ошибке сборки
     - name: Send Build Failure Notification to Telegram
-      if: steps.build.outcome == 'failure'
+      if: steps.build.outcome == 'failure' && secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != ''
+      continue-on-error: true
       run: |
         COMMIT_MSG="${{ github.event.head_commit.message }}"
         

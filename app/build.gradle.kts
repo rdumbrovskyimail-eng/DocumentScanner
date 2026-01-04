@@ -29,14 +29,20 @@ plugins {
 // ════════════════════════════════════════════════════════════════════════════════
 // 🔐 SECRETS MANAGEMENT (Configuration Cache Safe)
 // ════════════════════════════════════════════════════════════════════════════════
-val secrets = providers.fileContents(rootProject.layout.projectDirectory.file("local.properties"))
-    .asText
-    .map { content ->
-        Properties().apply { load(content.byteInputStream()) }
+val secrets = providers.provider {
+    val props = Properties()
+    val localPropertiesFile = rootProject.layout.projectDirectory.file("local.properties").asFile
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { props.load(it) }
     }
+    props
+}
 
 fun getSecret(key: String): String = 
     secrets.orNull?.getProperty(key) ?: System.getenv(key) ?: ""
+
+fun String.escapeForBuildConfigString(): String =
+    replace("\\", "\\\\").replace("\"", "\\\"")
 
 // ════════════════════════════════════════════════════════════════════════════════
 // 🏗️ ANDROID CONFIGURATION
@@ -59,8 +65,8 @@ android {
         resourceConfigurations += setOf("en", "ru", "es", "de", "fr", "it", "pt", "zh")
 
         // 🔐 SECRETS INJECTION
-        buildConfigField("String", "GEMINI_API_KEY", "\"${getSecret("GEMINI_API_KEY")}\"")
-        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${getSecret("GOOGLE_DRIVE_CLIENT_ID")}\"")
+        buildConfigField("String", "GEMINI_API_KEY", "\"${getSecret("GEMINI_API_KEY").escapeForBuildConfigString()}\"")
+        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${getSecret("GOOGLE_DRIVE_CLIENT_ID").escapeForBuildConfigString()}\"")
         
         // Manifest placeholders для Google Auth
         manifestPlaceholders["googleClientId"] = getSecret("GOOGLE_DRIVE_CLIENT_ID")
