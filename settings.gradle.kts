@@ -10,9 +10,6 @@
 // ✅ Убраны enableFeaturePreview - уже стабильны в 9.x
 
 pluginManagement {
-    // Include build-logic for convention plugins
-    includeBuild("build-logic")
-    
     repositories {
         google {
             content {
