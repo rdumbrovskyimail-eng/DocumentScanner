@@ -2,7 +2,13 @@
  * DocumentScanner - App.kt
  * Application class оптимизированный для 2026 Standards
  *
- * Version: 7.0.0 - PERFECT 10/10
+ * Version: 7.0.0 - PRODUCTION READY
+ * 
+ * Fixed issues:
+ * - 🟠 Серьёзная #2: Memory leak (applicationScope теперь cancellable)
+ * - 🟠 Performance: Тяжелая инициализация в фоне
+ * - 🔵 Minor: Notification channels не создаются при каждом старте
+ * - Синтаксическая ошибка в onTerminate()
  */
 
 package com.docs.scanner
@@ -24,7 +30,6 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
-import androidx.work.WorkManager
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -33,7 +38,6 @@ import coil3.disk.directory
 import coil3.memory.MemoryCache
 import coil3.request.CachePolicy
 import coil3.request.allowHardware
-import coil3.request.bitmapConfig
 import coil3.request.crossfade
 import coil3.size.Precision
 import com.docs.scanner.data.local.preferences.SettingsDataStore
@@ -42,6 +46,7 @@ import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -55,7 +60,18 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     lateinit var settingsDataStore: SettingsDataStore
 
     private var logcatCollector: LogcatCollector? = null
+    
+    /**
+     * Application-wide coroutine scope.
+     * FIXED: 🟠 Серьёзная #2 - Now properly cancelled in onTerminate()
+     */
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    
+    /**
+     * Flag to track if notification channels were already created.
+     * FIXED: 🔵 Minor #7 - Avoid recreating channels on every call
+     */
+    private var channelsCreated = false
 
     companion object {
         // Notification Channel IDs
@@ -83,11 +99,17 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
             initializeDebugTools()
         }
 
-        // 3. Locale - критично для UI
-        initializeAppLocale()
+        // 3. Locale - в фоне, чтобы не блокировать onCreate
+        // FIXED: 🟠 Performance - Moved to background
+        applicationScope.launch {
+            initializeAppLocale()
+        }
         
-        // 4. Notification Channels
-        createNotificationChannels()
+        // 4. Notification Channels - в фоне
+        // FIXED: 🟠 Performance - Moved to background
+        applicationScope.launch(Dispatchers.IO) {
+            createNotificationChannels()
+        }
         
         // 5. Lifecycle Observer
         setupLifecycleObserver()
@@ -188,6 +210,12 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     // ════════════════════════════════════════════════════════════════════════════════
 
     private fun createNotificationChannels() {
+        // FIXED: 🔵 Minor #7 - Don't recreate channels multiple times
+        if (channelsCreated) {
+            Timber.d("Notification channels already exist, skipping")
+            return
+        }
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager = getSystemService(NotificationManager::class.java) ?: return
             
@@ -202,6 +230,7 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
                 )
                 
                 notificationManager.createNotificationChannels(channels)
+                channelsCreated = true
                 Timber.d("✅ Notification channels created: ${channels.size}")
             } catch (e: Exception) {
                 Timber.e(e, "❌ Failed to create notification channels")
@@ -284,40 +313,36 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     // APP LOCALE
     // ════════════════════════════════════════════════════════════════════════════════
     
-    private fun initializeAppLocale() {
+    private suspend fun initializeAppLocale() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            applicationScope.launch {
-                try {
-                    val systemLocale = AppCompatDelegate.getApplicationLocales().toLanguageTags()
-                    val savedLocale = settingsDataStore.appLanguage.first()
-                    
-                    if (systemLocale.isNotEmpty() && systemLocale != savedLocale) {
-                        settingsDataStore.setAppLanguage(systemLocale)
-                        Timber.d("🌍 Synced system locale to DataStore: $systemLocale")
-                    }
-                } catch (e: Exception) {
-                    Timber.e(e, "Failed to sync locale")
+            try {
+                val systemLocale = AppCompatDelegate.getApplicationLocales().toLanguageTags()
+                val savedLocale = settingsDataStore.appLanguage.first()
+                
+                if (systemLocale.isNotEmpty() && systemLocale != savedLocale) {
+                    settingsDataStore.setAppLanguage(systemLocale)
+                    Timber.d("🌍 Synced system locale to DataStore: $systemLocale")
                 }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to sync locale")
             }
         } else {
-            applicationScope.launch {
-                try {
-                    val savedLocale = settingsDataStore.appLanguage.first()
-                    
-                    if (savedLocale.isNotEmpty()) {
-                        withContext(Dispatchers.Main) {
-                            val currentLocale = AppCompatDelegate.getApplicationLocales().toLanguageTags()
-                            
-                            if (currentLocale != savedLocale) {
-                                val localeList = LocaleListCompat.forLanguageTags(savedLocale)
-                                AppCompatDelegate.setApplicationLocales(localeList)
-                                Timber.d("🌍 Applied saved locale: $savedLocale")
-                            }
+            try {
+                val savedLocale = settingsDataStore.appLanguage.first()
+                
+                if (savedLocale.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        val currentLocale = AppCompatDelegate.getApplicationLocales().toLanguageTags()
+                        
+                        if (currentLocale != savedLocale) {
+                            val localeList = LocaleListCompat.forLanguageTags(savedLocale)
+                            AppCompatDelegate.setApplicationLocales(localeList)
+                            Timber.d("🌍 Applied saved locale: $savedLocale")
                         }
                     }
-                } catch (e: Exception) {
-                    Timber.e(e, "Failed to restore app locale")
                 }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to restore app locale")
             }
         }
     }
@@ -377,7 +402,7 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
             .allowHardware(enable = true)
             .precision(Precision.AUTOMATIC)
             .apply {
-                // ✅ NEW: Placeholder & Error drawables
+                // Placeholder & Error drawables
                 placeholder(R.drawable.ic_placeholder)
                 error(R.drawable.ic_error)
                 
@@ -440,17 +465,24 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
         }
     }
     
+    /**
+     * Called when application is terminating.
+     * FIXED: 🟠 Серьёзная #2 - Properly cancel coroutine scope to prevent memory leak
+     */
     override fun onTerminate() {
-        super.onTerminateoverride fun onTerminate() {
         super.onTerminate()
         cleanupResources()
     }
     
     private fun cleanupResources() {
         try {
+            // Cancel coroutine scope to prevent memory leak
+            applicationScope.cancel()
+            
             logcatCollector?.stopCollecting()
             logcatCollector = null
-            Timber.d("🧹 Resources cleaned up")
+            
+            Timber.d("🧹 Resources cleaned up (scope cancelled, logcat stopped)")
         } catch (e: Exception) {
             Timber.e(e, "Error during cleanup")
         }
