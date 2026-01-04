@@ -1,8 +1,25 @@
+/**
+ * TranslationCacheManager.kt
+ * Version: 7.0.1 - FIXED (2026 Standards)
+ *
+ * ✅ FIX SERIOUS-1: Исправлены имена методов DAO
+ *    - getCachedTranslation() → getByKey()
+ *    - deleteExpiredCache() → deleteExpired()
+ *    - insertCache() → insert()
+ *    - getCacheCount() → getCount()
+ *    - deleteOldestEntries() → deleteOldest()
+ *    - getCacheStats() → getStats()
+ *
+ * ✅ FIX: Исправлен импорт entities → entity
+ *
+ * Translation cache manager with language-aware caching.
+ */
+
 package com.docs.scanner.data.cache
 
 import androidx.room.Transaction
 import com.docs.scanner.data.local.database.dao.TranslationCacheDao
-import com.docs.scanner.data.local.database.entities.TranslationCacheEntity
+import com.docs.scanner.data.local.database.entity.TranslationCacheEntity  // ✅ FIX: entity, не entities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -13,7 +30,8 @@ import javax.inject.Singleton
  * Translation cache manager with language-aware caching.
  * 
  * Fixed issues:
- * - 🟠 Серьёзная #5: Race condition between deleteOldestEntries and getCacheCount
+ * - ✅ SERIOUS-1: Fixed DAO method names to match TranslationCacheDao
+ * - 🟠 Серьёзная #5: Race condition between deleteOldest and getCount
  * - 🟡 #1: Replaced android.util.Log with Timber
  * - 🟡 #2: MAX_CACHE_ENTRIES = 10_000 now documented
  * 
@@ -85,7 +103,8 @@ class TranslationCacheManager @Inject constructor(
                 tgtLang = targetLang
             )
             
-            val cached = cacheDao.getCachedTranslation(cacheKey)
+            // ✅ FIX: getByKey вместо getCachedTranslation
+            val cached = cacheDao.getByKey(cacheKey)
                 ?: return@withContext null
             
             // Check expiration
@@ -96,7 +115,11 @@ class TranslationCacheManager @Inject constructor(
             
             if (isExpired) {
                 // Delete expired entry
-                cacheDao.deleteExpiredCache(cached.timestamp)
+                // ✅ FIX: deleteExpired вместо deleteExpiredCache
+                // Note: deleteExpired expects a timestamp threshold, not single entry timestamp
+                // We delete all expired entries to be efficient
+                val expiryThreshold = System.currentTimeMillis() - (maxAgeDays * DAY_IN_MILLIS)
+                cacheDao.deleteExpired(expiryThreshold)
                 Timber.d(
                     "⚠️ Cache EXPIRED: ${text.take(30)}... (age: ${calculateAge(cached.timestamp)} days)"
                 )
@@ -148,7 +171,8 @@ class TranslationCacheManager @Inject constructor(
                 timestamp = System.currentTimeMillis()
             )
             
-            cacheDao.insertCache(entity)
+            // ✅ FIX: insert вместо insertCache
+            cacheDao.insert(entity)
             
             Timber.d("✅ Cached: ${originalText.take(30)}... ($sourceLang→$targetLang)")
             
@@ -169,11 +193,11 @@ class TranslationCacheManager @Inject constructor(
         ttlDays: Int = DEFAULT_TTL_DAYS
     ) = withContext(Dispatchers.IO) {
         try {
-            val expiryTimestamp = System.currentTimeMillis() - 
-                (ttlDays * 24 * 60 * 60 * 1000L)
+            val expiryTimestamp = System.currentTimeMillis() - (ttlDays * DAY_IN_MILLIS)
             
-            val deletedCount = cacheDao.deleteExpiredCache(expiryTimestamp)
-            val remainingCount = cacheDao.getCacheCount()
+            // ✅ FIX: deleteExpired и getCount вместо deleteExpiredCache и getCacheCount
+            val deletedCount = cacheDao.deleteExpired(expiryTimestamp)
+            val remainingCount = cacheDao.getCount()
             
             Timber.d("🧹 Cleanup: deleted $deletedCount, remaining $remainingCount")
         } catch (e: Exception) {
@@ -198,7 +222,8 @@ class TranslationCacheManager @Inject constructor(
      */
     suspend fun getCacheStats(): CacheStats = withContext(Dispatchers.IO) {
         try {
-            val stats = cacheDao.getCacheStats()
+            // ✅ FIX: getStats вместо getCacheStats
+            val stats = cacheDao.getStats()
             
             CacheStats(
                 totalEntries = stats.totalEntries,
@@ -224,32 +249,34 @@ class TranslationCacheManager @Inject constructor(
      * 2. If still > MAX: aggressive cleanup (7 days TTL)
      * 
      * Thread-safety: Uses @Transaction to prevent race condition between
-     * deleteOldestEntries and getCacheCount where new entries could be
+     * deleteOldest and getCount where new entries could be
      * added between the two operations.
      */
     @Transaction
     suspend fun checkAndCleanIfNeeded() = withContext(Dispatchers.IO) {
         try {
-            val currentCount = cacheDao.getCacheCount()
+            // ✅ FIX: getCount вместо getCacheCount
+            val currentCount = cacheDao.getCount()
             
             if (currentCount > MAX_CACHE_ENTRIES) {
                 Timber.w("⚠️ Cache full ($currentCount/$MAX_CACHE_ENTRIES). Cleaning...")
                 
                 // Strategy 1: Delete oldest 10%
-                val toDelete = (currentCount * 0.1).toInt().coerceAtLeast(1)
-                cacheDao.deleteOldestEntries(toDelete)
+                val toDelete = (currentCount * CLEANUP_PERCENT).toInt().coerceAtLeast(1)
+                // ✅ FIX: deleteOldest вместо deleteOldestEntries
+                cacheDao.deleteOldest(toDelete)
                 
                 // Strategy 2: If still full, aggressive cleanup
-                val newCount = cacheDao.getCacheCount()
+                val newCount = cacheDao.getCount()
                 if (newCount > MAX_CACHE_ENTRIES) {
-                    Timber.w("⚠️ Still full ($newCount). Aggressive cleanup (7 days TTL)...")
+                    Timber.w("⚠️ Still full ($newCount). Aggressive cleanup ($AGGRESSIVE_TTL_DAYS days TTL)...")
                     
-                    val expiryTimestamp = System.currentTimeMillis() - 
-                        (AGGRESSIVE_TTL_DAYS * 24 * 60 * 60 * 1000L)
-                    cacheDao.deleteExpiredCache(expiryTimestamp)
+                    val expiryTimestamp = System.currentTimeMillis() - (AGGRESSIVE_TTL_DAYS * DAY_IN_MILLIS)
+                    // ✅ FIX: deleteExpired вместо deleteExpiredCache
+                    cacheDao.deleteExpired(expiryTimestamp)
                 }
                 
-                val finalCount = cacheDao.getCacheCount()
+                val finalCount = cacheDao.getCount()
                 Timber.i("✅ Cleanup done: $currentCount → $finalCount entries")
             }
         } catch (e: Exception) {
@@ -262,10 +289,15 @@ class TranslationCacheManager @Inject constructor(
      */
     private fun calculateAge(timestamp: Long): Long {
         val ageMs = System.currentTimeMillis() - timestamp
-        return ageMs / (24 * 60 * 60 * 1000L)
+        return ageMs / DAY_IN_MILLIS
     }
     
     companion object {
+        /**
+         * Milliseconds in one day.
+         */
+        private const val DAY_IN_MILLIS = 24 * 60 * 60 * 1000L
+        
         /**
          * Default time-to-live for cache entries.
          * Entries older than this are considered expired.
@@ -279,9 +311,12 @@ class TranslationCacheManager @Inject constructor(
         private const val AGGRESSIVE_TTL_DAYS = 7
         
         /**
+         * Percentage of entries to delete during cleanup.
+         */
+        private const val CLEANUP_PERCENT = 0.1
+        
+        /**
          * Maximum number of cache entries.
-         * 
-         * 🟡 #2: Magic number documented
          * 
          * Why 10,000?
          * - Average translation: ~200 bytes (original + translated)
