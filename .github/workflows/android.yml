@@ -19,7 +19,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     
     steps:
     - uses: actions/checkout@v4
@@ -38,33 +42,24 @@ jobs:
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
 
+    # ✅ Cache Android SDK components (avoids repeated downloads)
+    - name: Cache Android SDK packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          /usr/local/lib/android/sdk/platform-tools
+          /usr/local/lib/android/sdk/platforms/android-36
+          /usr/local/lib/android/sdk/build-tools/36.0.0
+          /usr/local/lib/android/sdk/licenses
+          /usr/local/lib/android/sdk/cmdline-tools
+        key: ${{ runner.os }}-androidsdk-api36-bt3600-v1
+
     - name: Install Android SDK packages
       run: |
         sdkmanager --install \
           "platform-tools" \
           "platforms;android-36" \
           "build-tools;36.0.0"
-    
-    # ✅ Кэширование Gradle
-    - name: Cache Gradle packages
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-          ~/.gradle/build-cache
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-
-    
-    # ✅ Кэширование Kotlin
-    - name: Cache Kotlin Native
-      uses: actions/cache@v4
-      with:
-        path: ~/.konan
-        key: ${{ runner.os }}-konan-${{ hashFiles('**/*.gradle*') }}
-        restore-keys: |
-          ${{ runner.os }}-konan-
     
     # ✅ Права на gradlew
     - name: Make gradlew executable
@@ -73,11 +68,30 @@ jobs:
     # ✅ Setup Gradle
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-home-cache-cleanup: true
+
+    # ✅ Cache local Gradle build cache directory used by settings.gradle.kts
+    - name: Cache Gradle build-cache directory
+      uses: actions/cache@v4
+      with:
+        path: build-cache
+        key: ${{ runner.os }}-build-cache-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-build-cache-
         
     # ✅ Сборка
     - name: Build with Gradle
       id: build
       run: ./gradlew assembleDebug --stacktrace
+
+    - name: Upload debug APK artifact
+      if: steps.build.outcome == 'success'
+      uses: actions/upload-artifact@v4
+      with:
+        name: debug-apk
+        path: app/build/outputs/apk/debug/*.apk
+        if-no-files-found: error
       
     # ⚠️ ВАЖНО: always() чтобы выполнялось даже при ошибке!
     - name: Get commit info
@@ -87,31 +101,15 @@ jobs:
         echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
         echo "date=$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
         
-    # ✅ Создание Release (только при успехе)
-    - name: Create Release
-      if: github.event_name == 'push' && steps.build.outcome == 'success'
-      id: create_release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: build-${{ steps.commit.outputs.date }}
-        name: Build ${{ steps.commit.outputs.short_sha }}
-        body: |
-          🤖 Автоматическая сборка
-          📱 Commit: ${{ github.event.head_commit.message }}
-          👤 Автор: ${{ github.actor }}
-          🕐 Время: ${{ steps.commit.outputs.date }}
-        files: app/build/outputs/apk/debug/*.apk
-        draft: false
-        prerelease: true
-      continue-on-error: true
-    
-    # ✅ Отправка успешного уведомления (только если Release создан)
+    # ✅ Отправка APK в Telegram (не зависит от Release/Artifacts лимитов)
     - name: Send Success Notification to Telegram
-      if: github.event_name == 'push' && steps.build.outcome == 'success' && steps.create_release.outcome == 'success'
+      if: steps.build.outcome == 'success'
       continue-on-error: true
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        COMMIT_MSG: ${{ github.event.pull_request.title || github.event.head_commit.message || github.sha }}
       run: |
         if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
           echo "Telegram secrets not set; skipping notification."
@@ -121,79 +119,51 @@ jobs:
         APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
         APK_NAME=$(basename "$APK_PATH")
         APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/build-${{ steps.commit.outputs.date }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="✅ <b>APK собран успешно!</b>
+        TEXT="✅ <b>APK собран успешно!</b>
         
         📱 Файл: <code>${APK_NAME}</code>
         📦 Размер: ${APK_SIZE}
-        📝 Commit: ${COMMIT_MSG}
+        📝 Commit/PR: ${COMMIT_MSG}
         👤 Автор: ${{ github.actor }}
         🕐 Время: ${{ steps.commit.outputs.date }}
         #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
         
-        📥 <a href='${RELEASE_URL}'>Скачать APK</a>"
-    
-    # ⚠️ Уведомление если сборка прошла, но Release не создался
-    - name: Send Release Failure Notification to Telegram
-      if: github.event_name == 'push' && steps.build.outcome == 'success' && steps.create_release.outcome != 'success'
-      continue-on-error: true
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: |
-        if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-          echo "Telegram secrets not set; skipping notification."
-          exit 0
-        fi
+        🔗 <a href='${RUN_URL}'>Открыть GitHub Actions run</a>"
         
-        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-        APK_NAME=$(basename "$APK_PATH")
-        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="⚠️ <b>APK собран, но Release не создан!</b>
-        
-        📱 Файл: <code>${APK_NAME}</code>
-        📦 Размер: ${APK_SIZE}
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        ⚠️ Проверьте права доступа к репозиторию
-        🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Посмотреть логи</a>"
+        # Prefer sending the APK directly. If it fails (size limit etc.), fall back to a message with the run link.
+        curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
+          -F chat_id="${TELEGRAM_CHAT_ID}" \
+          -F parse_mode="HTML" \
+          -F caption="${TEXT}" \
+          -F document="@${APK_PATH}" \
+        || curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          -d chat_id="${TELEGRAM_CHAT_ID}" \
+          -d parse_mode="HTML" \
+          --data-urlencode "text=${TEXT}"
     
     # ❌ Уведомление об ошибке сборки
     - name: Send Build Failure Notification to Telegram
-      if: github.event_name == 'push' && steps.build.outcome == 'failure'
+      if: steps.build.outcome == 'failure'
       continue-on-error: true
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        COMMIT_MSG: ${{ github.event.pull_request.title || github.event.head_commit.message || github.sha }}
       run: |
         if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
           echo "Telegram secrets not set; skipping notification."
           exit 0
         fi
-        
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
         
         curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
              -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
              -d parse_mode="HTML" \
              -d text="❌ <b>Сборка упала!</b>
         
-        📝 Commit: ${COMMIT_MSG}
+        📝 Commit/PR: ${COMMIT_MSG}
         👤 Автор: ${{ github.actor }}
         🕐 Время: ${{ steps.commit.outputs.date }}
         #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
         
-        🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Посмотреть логи</a>"
+        🔗 <a href='${RUN_URL}'>Посмотреть логи</a>"
