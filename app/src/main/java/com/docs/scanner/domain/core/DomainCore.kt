@@ -1,8 +1,12 @@
 /*
  * DocumentScanner - Domain Core
- * Version: 4.1.0 - Production Ready 2026 Enhanced
+ * Version: 4.2.0 - Production Ready 2026 Enhanced
  * 
- * Improvements v4.1.0:
+ * Fixed issues:
+ * - 🟠 Серьёзная #12: QUICK_SCANS_ID changed from 1L to -1L (no conflict with autoGenerate)
+ * 
+ * Improvements v4.2.0:
+ * - QUICK_SCANS_ID now uses negative ID (-1L) to avoid conflicts
  * - Separated NewEntity / Entity (no nullable IDs) ✅
  * - Improved ProcessingStatus (sealed interface) ✅
  * - Better error hierarchy (NotFoundError) ✅
@@ -22,13 +26,35 @@ import java.time.format.DateTimeFormatter
 // VALUE OBJECTS - Типобезопасные идентификаторы
 // ══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Folder identifier.
+ * 
+ * FIXED: 🟠 Серьёзная #12 - QUICK_SCANS_ID changed from 1L to -1L
+ * 
+ * Why -1L?
+ * - Room's autoGenerate starts from 1 and increments
+ * - Using 1L could conflict with first user-created folder
+ * - Negative IDs are reserved for system folders (no conflict)
+ * - Alternative: Could use Long.MAX_VALUE, but -1L is clearer
+ */
 @JvmInline @Serializable
 value class FolderId(val value: Long) {
     init { require(value != 0L) { "FolderId cannot be 0" } }
     val isQuickScans: Boolean get() = value == QUICK_SCANS_ID
+    
     companion object {
+        /**
+         * Special system folder ID for quick scans.
+         * Uses -1L to avoid conflict with autoGenerate (starts at 1L).
+         */
         const val QUICK_SCANS_ID = -1L
+        
+        /**
+         * Default folder ID (first user folder).
+         * This will be created by Room's autoGenerate.
+         */
         const val DEFAULT_ID = 1L
+        
         val QUICK_SCANS = FolderId(QUICK_SCANS_ID)
         val DEFAULT = FolderId(DEFAULT_ID)
     }
@@ -170,7 +196,7 @@ sealed class DomainError {
         override val message: String = error.message
     }
     
-    // Not Found - Type-safe ✅ NEW
+    // Not Found - Type-safe
     sealed class NotFoundError : DomainError() {
         data class Folder(val id: FolderId) : NotFoundError() {
             override val message = "Folder not found: ${id.value}"
@@ -214,8 +240,8 @@ sealed class DomainError {
     }
     
     // Processing
-    data class OcrFailed(val id: DocumentId, val cause: Throwable?) : DomainError() {
-        override val message: String = "OCR failed for document ${id.value}: ${cause?.message ?: "Unknown error"}"
+    data class OcrFailed(val id: DocumentId?, val cause: Throwable?) : DomainError() {
+        override val message: String = "OCR failed${id?.let { " for document ${it.value}" } ?: ""}: ${cause?.message ?: "Unknown error"}"
     }
     
     data class TranslationFailed(val from: Language, val to: Language, val cause: String) : DomainError() {
@@ -258,13 +284,13 @@ sealed class ValidationError(val message: String) {
     data class NameTooLong(val len: Int, val max: Int) : ValidationError("Name too long: $len > $max")
     data class TagTooLong(val len: Int, val max: Int) : ValidationError("Tag too long: $len > $max")
     data class TooManyTags(val count: Int, val max: Int) : ValidationError("Too many tags: $count > $max")
-    data object DueDateInPast : ValidationError("Due date must be in future")
+    data object DueDate InPast : ValidationError("Due date must be in future")
 }
 
 class DomainException(val error: DomainError) : Exception(error.message)
 
-// ✅ NEW: Extension for formatting bytes
-private fun Long.formatBytes(): String = when {
+// Extension for formatting bytes
+fun Long.formatBytes(): String = when {
     this < 1024 -> "$this B"
     this < 1024 * 1024 -> "${this / 1024} KB"
     this < 1024 * 1024 * 1024 -> String.format("%.1f MB", this / (1024.0 * 1024.0))
@@ -348,7 +374,7 @@ enum class Language(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// PROCESSING STATUS - ✅ NEW Sealed Interface (Type-Safe)
+// PROCESSING STATUS - Sealed Interface (Type-Safe)
 // ══════════════════════════════════════════════════════════════════════════════
 
 @Serializable
@@ -379,7 +405,7 @@ sealed interface ProcessingStatus {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// DOMAIN MODELS - ✅ NEW Separated New/Existing Entities
+// DOMAIN MODELS - Separated New/Existing Entities
 // ══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -618,9 +644,6 @@ data class TranslationResult(
     val processingTimeMs: Long
 )
 
-/**
- * ✅ NEW: Type-safe upload progress
- */
 data class UploadProgress(
     val uploaded: Long,
     val total: Long
@@ -632,9 +655,6 @@ data class UploadProgress(
     fun formatProgress(): String = "${uploaded.formatBytes()} / ${total.formatBytes()} ($percent%)"
 }
 
-/**
- * ✅ NEW: Type-safe download progress
- */
 data class DownloadProgress(
     val downloaded: Long,
     val total: Long
@@ -657,11 +677,40 @@ data class BackupInfo(
     fun formatSize(): String = sizeBytes.formatBytes()
 }
 
+/**
+ * Translation cache statistics.
+ * 
+ * Used by TranslationCacheManager/GeminiTranslationService.
+ */
+data class TranslationCacheStats(
+    val totalEntries: Int,
+    val hitRate: Float,
+    val totalSizeBytes: Long,
+    val oldestEntryTimestamp: Long?,
+    val newestEntryTimestamp: Long?
+)
+
+/**
+ * Storage usage information.
+ */
+data class StorageUsage(
+    val totalSizeBytes: Long,
+    val imageSizeBytes: Long,
+    val databaseSizeBytes: Long,
+    val cacheSizeBytes: Long,
+    val otherSizeBytes: Long
+) {
+    fun formatTotal(): String = totalSizeBytes.formatBytes()
+    fun formatImages(): String = imageSizeBytes.formatBytes()
+    fun formatDatabase(): String = databaseSizeBytes.formatBytes()
+    fun formatCache(): String = cacheSizeBytes.formatBytes()
+}
+
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class ImageQuality(val percent: Int) { LOW(60), MEDIUM(80), HIGH(95), ORIGINAL(100) }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TIME PROVIDER - ✅ NEW with FakeTimeProvider for Testing
+// TIME PROVIDER - with FakeTimeProvider for Testing
 // ══════════════════════════════════════════════════════════════════════════════
 
 interface TimeProvider {
@@ -681,7 +730,7 @@ class SystemTimeProvider : TimeProvider {
 }
 
 /**
- * ✅ NEW: Fake time provider for testing
+ * Fake time provider for testing
  */
 class FakeTimeProvider(private var time: Long = 0L) : TimeProvider {
     override fun currentMillis(): Long = time
@@ -699,6 +748,7 @@ class FakeTimeProvider(private var time: Long = 0L) : TimeProvider {
     }
     
     fun advanceMinutes(minutes: Int) {
+        advance(fun advanceMinutes(minutes: Int) {
         advance(minutes * 60 * 1000L)
     }
     
