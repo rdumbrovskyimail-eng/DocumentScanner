@@ -1,3 +1,11 @@
+# ================================================================================
+# Android CI/CD Pipeline
+# Version: 7.0.1 - FIXED (2026 Standards)
+#
+# ✅ FIX SERIOUS-7: Java 17 → Java 21
+#    build.gradle.kts требует Java 21 (compileOptions, kotlinOptions.jvmTarget)
+# ================================================================================
+
 name: Android CI
 
 on:
@@ -14,10 +22,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up JDK 17
+    # ✅ FIX SERIOUS-7: Java 21 вместо 17
+    # build.gradle.kts:
+    #   compileOptions { sourceCompatibility = JavaVersion.VERSION_21 }
+    #   kotlinOptions { jvmTarget = "21" }
+    - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
-        java-version: '17'
+        java-version: '21'
         distribution: 'temurin'
     
     # ✅ Кэширование Gradle
