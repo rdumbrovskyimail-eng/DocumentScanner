@@ -1,3 +1,15 @@
+/**
+ * NetworkModule.kt
+ * Version: 7.0.1 - FIXED (2026 Standards)
+ *
+ * ✅ FIX CRITICAL-3: Исправлен провайдер GoogleDriveService
+ *    БЫЛО: return GoogleDriveService(context) - не хватало 4 зависимостей
+ *    СТАЛО: Провайдер удалён, т.к. GoogleDriveService имеет @Inject constructor
+ *           и все его зависимости доступны в Hilt графе
+ *
+ * Hilt module providing network and remote service dependencies.
+ */
+
 package com.docs.scanner.di
 
 import android.content.Context
@@ -9,7 +21,6 @@ import com.docs.scanner.data.remote.camera.DocumentScannerWrapper
 import com.docs.scanner.data.remote.gemini.GeminiApi
 import com.docs.scanner.data.remote.gemini.GeminiApiService
 import com.docs.scanner.data.remote.gemini.GeminiTranslator
-import com.docs.scanner.data.remote.googledrive.GoogleDriveService
 import com.docs.scanner.data.remote.mlkit.MLKitScanner
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -30,10 +41,13 @@ import javax.inject.Singleton
  * Hilt module providing network and remote service dependencies.
  * 
  * Fixed issues:
- * - 🟠 Серьёзная #1: Added GoogleDriveService provider
+ * - ✅ CRITICAL-3: Removed broken GoogleDriveService provider
+ *   GoogleDriveService has @Inject constructor, so Hilt creates it automatically.
+ *   All its dependencies (AppDatabase, DataStore, JsonSerializer, RetryPolicy)
+ *   are already available in the Hilt graph.
+ * 
  * - 🔵 Minor: OkHttp retryOnConnectionFailure для POST запросов (спорно)
  * - 🟡 #12: Unified logging (Timber instead of android.util.Log)
- * - Previous fixes: GeminiTranslator, TranslationCacheManager integration
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -211,22 +225,38 @@ object NetworkModule {
     // GOOGLE DRIVE
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Provides Google Drive service for backup/restore operations.
+    /*
+     * ✅ FIX CRITICAL-3: REMOVED broken provider!
      * 
-     * FIXED: 🟠 Серьёзная #1 - This provider was missing!
-     * BackupRepositoryImpl requires this dependency.
+     * БЫЛО (ОШИБКА):
+     * ```
+     * @Provides
+     * @Singleton
+     * fun provideGoogleDriveService(
+     *     @ApplicationContext context: Context
+     * ): GoogleDriveService {
+     *     return GoogleDriveService(context)  // ❌ Не хватает 4 параметров!
+     * }
+     * ```
      * 
-     * Handles:
-     * - OAuth authentication
-     * - File upload/download
-     * - Backup metadata management
+     * GoogleDriveService имеет конструктор:
+     * ```
+     * class GoogleDriveService @Inject constructor(
+     *     context: Context,
+     *     database: AppDatabase,           // ❌ Не передавался!
+     *     dataStore: DataStore<Preferences>, // ❌ Не передавался!
+     *     jsonSerializer: JsonSerializer,    // ❌ Не передавался!
+     *     retryPolicy: RetryPolicy           // ❌ Не передавался!
+     * )
+     * ```
+     * 
+     * РЕШЕНИЕ: Удалить провайдер.
+     * Поскольку GoogleDriveService имеет @Inject constructor и @Singleton,
+     * Hilt автоматически создаст его, инжектируя все зависимости из графа:
+     * - Context: через @ApplicationContext
+     * - AppDatabase: из DatabaseModule
+     * - DataStore<Preferences>: из DataStoreModule
+     * - JsonSerializer: @Inject constructor + @Singleton (авто-binding)
+     * - RetryPolicy: @Inject constructor + @Singleton (авто-binding)
      */
-    @Provides
-    @Singleton
-    fun provideGoogleDriveService(
-        @ApplicationContext context: Context
-    ): GoogleDriveService {
-        return GoogleDriveService(context)
-    }
 }
