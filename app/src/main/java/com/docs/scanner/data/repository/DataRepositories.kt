@@ -704,7 +704,7 @@ class DocumentRepositoryImpl @Inject constructor(
      * Fixed: documentDao.searchFts(query) - uses FTS4 virtual table
      */
     override fun searchDocuments(query: String): Flow<List<Document>> =
-        documentDao.searchFts(query)
+        documentDao.searchLike(query)
             .map { list -> list.map { it.toDomain() } }
             .flowOn(Dispatchers.IO)
 
@@ -1149,7 +1149,7 @@ class SettingsRepositoryImpl @Inject constructor(
 ) : SettingsRepository {
 
     override fun observeAppLanguage(): Flow<String> =
-        settingsDataStore.language
+        settingsDataStore.appLanguage
             .catch { e ->
                 Timber.e(e, "❌ Error observing app language")
                 emit("en")
@@ -1220,11 +1220,11 @@ class SettingsRepositoryImpl @Inject constructor(
         }
 
     override suspend fun getAppLanguage(): String = 
-        settingsDataStore.language.first()
+        settingsDataStore.appLanguage.first()
 
     override suspend fun setAppLanguage(code: String): DomainResult<Unit> = 
         runCatching {
-            settingsDataStore.saveLanguage(code)
+            settingsDataStore.setAppLanguage(code)
             Timber.d("🌍 App language set to: $code")
         }.toDomainResult()
 
@@ -1233,7 +1233,7 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setDefaultSourceLanguage(lang: Language): DomainResult<Unit> = 
         runCatching {
-            settingsDataStore.saveOcrLanguage(lang.code)
+            settingsDataStore.setOcrLanguage(lang.code)
             Timber.d("🌍 Default source language: ${lang.code}")
         }.toDomainResult()
 
@@ -1242,7 +1242,7 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setTargetLanguage(lang: Language): DomainResult<Unit> = 
         runCatching {
-            settingsDataStore.saveTranslationTarget(lang.code)
+            settingsDataStore.setTranslationTarget(lang.code)
             Timber.d("🌍 Target language: ${lang.code}")
         }.toDomainResult()
 
@@ -1260,7 +1260,7 @@ class SettingsRepositoryImpl @Inject constructor(
                 ThemeMode.DARK -> "dark"
                 ThemeMode.SYSTEM -> "system"
             }
-            settingsDataStore.saveTheme(value)
+            settingsDataStore.setTheme(value)
             Timber.d("🎨 Theme mode: $mode")
         }.toDomainResult()
 
@@ -1269,7 +1269,7 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setAutoTranslateEnabled(enabled: Boolean): DomainResult<Unit> = 
         runCatching {
-            settingsDataStore.saveAutoTranslate(enabled)
+            settingsDataStore.setAutoTranslate(enabled)
             Timber.d("🤖 Auto-translate: $enabled")
         }.toDomainResult()
 
@@ -1838,16 +1838,16 @@ class OcrRepositoryImpl @Inject constructor(
         return mlKitScanner.recognizeTextDetailed(uri)
     }
 
-    override suspend fun detectLanguage(text: String): DomainResult<Language> =
-        DomainResult.Success(Language.AUTO) // TODO: Implement dedicated language detection
+    override suspend fun detectLanguage(imagePath: String): DomainResult<Language> =
+        DomainResult.Success(Language.AUTO) // TODO: Implement language detection from image/text
 
-    override suspend fun improveOcrText(text: String): DomainResult<String> =
+    override suspend fun improveOcrText(text: String, lang: Language): DomainResult<String> =
         geminiTranslator.fixOcrText(text)
 
-    override fun isLanguageSupported(language: Language): Boolean =
-        language.supportsOcr
+    override suspend fun isLanguageSupported(lang: Language): Boolean =
+        lang.supportsOcr
 
-    override fun getSupportedLanguages(): List<Language> =
+    override suspend fun getSupportedLanguages(): List<Language> =
         Language.entries.filter { it.supportsOcr }
     
     private fun convertPathToUri(path: String): Uri {
@@ -1872,15 +1872,18 @@ class TranslationRepositoryImpl @Inject constructor(
 
     override suspend fun translate(
         text: String,
-        sourceLanguage: Language,
-        targetLanguage: Language
+        source: Language,
+        target: Language,
+        useCache: Boolean
     ): DomainResult<TranslationResult> =
-        geminiTranslator.translate(text, sourceLanguage, targetLanguage)
+        // Cache is handled internally by GeminiTranslator/TranslationCacheManager for now.
+        // TODO: Respect useCache by bypassing cache when false.
+        geminiTranslator.translate(text, source, target)
 
     override suspend fun translateBatch(
         texts: List<String>,
-        sourceLanguage: Language,
-        targetLanguage: Language
+        source: Language,
+        target: Language
     ): DomainResult<List<TranslationResult>> = withContext(Dispatchers.IO) {
         if (texts.isEmpty()) {
             return@withContext DomainResult.Success(emptyList())
@@ -1888,7 +1891,7 @@ class TranslationRepositoryImpl @Inject constructor(
         
         val results = mutableListOf<TranslationResult>()
         for (text in texts) {
-            when (val result = geminiTranslator.translate(text, sourceLanguage, targetLanguage)) {
+            when (val result = geminiTranslator.translate(text, source, target)) {
                 is DomainResult.Success -> results.add(result.data)
                 is DomainResult.Failure -> {
                     return@withContext DomainResult.Failure(result.error)
@@ -1902,10 +1905,10 @@ class TranslationRepositoryImpl @Inject constructor(
     override suspend fun detectLanguage(text: String): DomainResult<Language> =
         DomainResult.Success(Language.AUTO) // TODO: Implement
 
-    override fun isLanguagePairSupported(source: Language, target: Language): Boolean =
+    override suspend fun isLanguagePairSupported(source: Language, target: Language): Boolean =
         source.supportsTranslation && target.supportsTranslation
 
-    override fun getSupportedTargetLanguages(source: Language): List<Language> =
+    override suspend fun getSupportedTargetLanguages(source: Language): List<Language> =
         Language.entries.filter { it.supportsTranslation && it != source }
 
     override suspend fun clearCache(): DomainResult<Unit> {
@@ -1913,8 +1916,8 @@ class TranslationRepositoryImpl @Inject constructor(
         return DomainResult.Success(Unit)
     }
 
-    override suspend fun clearOldCache(ttlDays: Int): DomainResult<Int> {
-        val count = geminiTranslator.clearOldCache(ttlDays)
+    override suspend fun clearOldCache(maxAgeDays: Int): DomainResult<Int> {
+        val count = geminiTranslator.clearOldCache(maxAgeDays)
         return DomainResult.Success(count)
     }
 

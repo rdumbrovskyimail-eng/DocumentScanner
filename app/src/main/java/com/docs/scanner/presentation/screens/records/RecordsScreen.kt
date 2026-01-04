@@ -92,10 +92,10 @@ fun RecordsScreen(
                             contentPadding = PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(records, key = { it.id }) { record ->
+                            items(records, key = { it.id.value }) { record ->
                                 RecordCard(
                                     record = record,
-                                    onClick = { onRecordClick(record.id) },
+                                    onClick = { onRecordClick(record.id.value) },
                                     onLongClick = { editingRecord = record },
                                     onDelete = { showDeleteDialog = record }
                                 )

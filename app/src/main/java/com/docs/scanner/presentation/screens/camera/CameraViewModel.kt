@@ -89,7 +89,7 @@ class CameraViewModel @Inject constructor(
             )
 
             try {
-                useCases.quickScan(uris.first())
+                useCases.quickScan(uris.first().toString())
                     .catch { e ->
                         _uiState.value = CameraUiState.Error(
                             "Processing failed: ${e.message}"
@@ -97,52 +97,47 @@ class CameraViewModel @Inject constructor(
                     }
                     .collect { state ->
                         when (state) {
-                            is QuickScanState.CreatingStructure -> {
-                                _uiState.value = CameraUiState.Processing(
-                                    progress = state.progress,
-                                    message = state.message
-                                )
-                            }
-                            is QuickScanState.CreatingFolder -> {
-                                _uiState.value = CameraUiState.Processing(
-                                    progress = state.progress,
-                                    message = state.message
-                                )
-                            }
                             is QuickScanState.CreatingRecord -> {
                                 _uiState.value = CameraUiState.Processing(
-                                    progress = state.progress,
-                                    message = state.message
-                                )
-                            }
-                            is QuickScanState.ScanningImage -> {
-                                _uiState.value = CameraUiState.Processing(
-                                    progress = state.progress,
-                                    message = state.message
-                                )
-                            }
-                            is QuickScanState.ProcessingOcr -> {
-                                _uiState.value = CameraUiState.Processing(
-                                    progress = state.progress,
-                                    message = state.message
-                                )
-                            }
-                            is QuickScanState.Translating -> {
-                                _uiState.value = CameraUiState.Processing(
-                                    progress = state.progress,
-                                    message = state.message
+                                    progress = 20,
+                                    message = "Creating record..."
                                 )
                             }
                             is QuickScanState.Success -> {
-                                _uiState.value = CameraUiState.Success(state.recordId)
+                                _uiState.value = CameraUiState.Success(state.recordId.value)
                                 
                                 // Emit navigation event
                                 _navigationEvent.emit(
-                                    NavigationEvent.NavigateToEditor(state.recordId)
+                                    NavigationEvent.NavigateToEditor(state.recordId.value)
                                 )
                             }
                             is QuickScanState.Error -> {
-                                _uiState.value = CameraUiState.Error(state.message)
+                                _uiState.value = CameraUiState.Error(state.error.message)
+                            }
+                            is QuickScanState.Preparing -> {
+                                _uiState.value = CameraUiState.Processing(
+                                    progress = 5,
+                                    message = "Preparing..."
+                                )
+                            }
+                            is QuickScanState.SavingImage -> {
+                                _uiState.value = CameraUiState.Processing(
+                                    progress = 30 + (state.progress.coerceIn(0, 100) * 20 / 100),
+                                    message = "Saving image..."
+                                )
+                            }
+                            is QuickScanState.Processing -> {
+                                _uiState.value = CameraUiState.Processing(
+                                    progress = 60,
+                                    message = when (state.state) {
+                                        is com.docs.scanner.domain.usecase.ProcessingState.OcrInProgress -> "Running OCR..."
+                                        is com.docs.scanner.domain.usecase.ProcessingState.TranslationInProgress -> "Translating..."
+                                        is com.docs.scanner.domain.usecase.ProcessingState.OcrComplete -> "OCR complete"
+                                        is com.docs.scanner.domain.usecase.ProcessingState.Complete -> "Done"
+                                        is com.docs.scanner.domain.usecase.ProcessingState.Failed -> "Failed"
+                                        is com.docs.scanner.domain.usecase.ProcessingState.Idle -> "Working..."
+                                    }
+                                )
                             }
                         }
                     }
@@ -176,6 +171,10 @@ class CameraViewModel @Inject constructor(
      */
     fun onScanCancelled() {
         _uiState.value = CameraUiState.Idle
+    }
+
+    fun onError(message: String) {
+        _uiState.value = CameraUiState.Error(message)
     }
 
     /**

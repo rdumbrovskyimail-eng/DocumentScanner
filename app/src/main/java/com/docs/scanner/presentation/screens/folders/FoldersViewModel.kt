@@ -130,7 +130,7 @@ class FoldersViewModel @Inject constructor(
             )
 
             try {
-                useCases.quickScan(imageUri)
+                useCases.quickScan(imageUri.toString())
                     .catch { e ->
                         updateErrorMessage("Quick scan failed: ${e.message}")
                         // Reset to folders list
@@ -138,29 +138,23 @@ class FoldersViewModel @Inject constructor(
                     }
                     .collect { state ->
                         when (state) {
-                            is QuickScanState.CreatingStructure,
-                            is QuickScanState.CreatingFolder,
+                            is QuickScanState.Preparing,
                             is QuickScanState.CreatingRecord,
-                            is QuickScanState.ScanningImage,
-                            is QuickScanState.ProcessingOcr,
-                            is QuickScanState.Translating -> {
+                            is QuickScanState.SavingImage,
+                            is QuickScanState.Processing -> {
                                 _uiState.value = FoldersUiState.Processing(
                                     progress = when (state) {
-                                        is QuickScanState.CreatingStructure -> state.progress
-                                        is QuickScanState.CreatingFolder -> state.progress
-                                        is QuickScanState.CreatingRecord -> state.progress
-                                        is QuickScanState.ScanningImage -> state.progress
-                                        is QuickScanState.ProcessingOcr -> state.progress
-                                        is QuickScanState.Translating -> state.progress
+                                        is QuickScanState.Preparing -> 5
+                                        is QuickScanState.CreatingRecord -> 20
+                                        is QuickScanState.SavingImage -> 40 + (state.progress.coerceIn(0, 100) * 20 / 100)
+                                        is QuickScanState.Processing -> 70
                                         else -> 0
                                     },
                                     message = when (state) {
-                                        is QuickScanState.CreatingStructure -> state.message
-                                        is QuickScanState.CreatingFolder -> state.message
-                                        is QuickScanState.CreatingRecord -> state.message
-                                        is QuickScanState.ScanningImage -> state.message
-                                        is QuickScanState.ProcessingOcr -> state.message
-                                        is QuickScanState.Translating -> state.message
+                                        is QuickScanState.Preparing -> "Preparing..."
+                                        is QuickScanState.CreatingRecord -> "Creating record..."
+                                        is QuickScanState.SavingImage -> "Saving image..."
+                                        is QuickScanState.Processing -> "Processing..."
                                         else -> ""
                                     }
                                 )
@@ -168,14 +162,14 @@ class FoldersViewModel @Inject constructor(
                             is QuickScanState.Success -> {
                                 // Emit navigation event
                                 _navigationEvent.emit(
-                                    NavigationEvent.NavigateToEditor(state.recordId)
+                                    NavigationEvent.NavigateToEditor(state.recordId.value)
                                 )
                                 
                                 // Reset UI
                                 loadFolders()
                             }
                             is QuickScanState.Error -> {
-                                updateErrorMessage(state.message)
+                                updateErrorMessage(state.error.message)
                                 loadFolders()
                             }
                         }

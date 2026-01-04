@@ -3,7 +3,7 @@
  * Version: 4.1.0 - Production Ready 2026 Enhanced (FINAL)
  * 
  * Improvements v4.1.0:
- * - Uses New*/Existing entity separation ✅
+ * - Uses New/Existing entity separation ✅
  * - Type-safe error handling ✅
  * - Improved batch operations with generic helper ✅
  * - Better code organization ✅
@@ -11,7 +11,10 @@
 
 package com.docs.scanner.domain.usecase
 
+import android.net.Uri
 import com.docs.scanner.domain.core.*
+import com.docs.scanner.domain.model.Result as LegacyResult
+import com.docs.scanner.domain.model.toLegacyResult
 import com.docs.scanner.domain.repository.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -95,9 +98,12 @@ class ProcessDocumentUseCase @Inject constructor(
     private val settings: SettingsRepository
 ) {
     operator fun invoke(id: DocumentId): Flow<ProcessingState> = flow {
-        val doc = docRepo.getDocumentById(id).getOrElse {
-            emit(ProcessingState.Failed(it, ProcessingState.Stage.OCR))
-            return@flow
+        val doc = when (val res = docRepo.getDocumentById(id)) {
+            is DomainResult.Success -> res.data
+            is DomainResult.Failure -> {
+                emit(ProcessingState.Failed(res.error, ProcessingState.Stage.OCR))
+                return@flow
+            }
         }
         
         // OCR Stage
@@ -463,6 +469,7 @@ class DocumentUseCases @Inject constructor(
     }
     
     suspend fun delete(id: DocumentId): DomainResult<Unit> = repo.deleteDocument(id)
+    suspend fun update(doc: Document): DomainResult<Unit> = repo.updateDocument(doc.copy(updatedAt = time.currentMillis()))
     suspend fun reorder(recordId: RecordId, docIds: List<DocumentId>): DomainResult<Unit> = repo.reorderDocuments(recordId, docIds)
     suspend fun move(id: DocumentId, toRecord: RecordId): DomainResult<Unit> = repo.moveDocument(id, toRecord)
 }
@@ -661,4 +668,127 @@ class AllUseCases @Inject constructor(
 ) {
     /** DSL для функционального стиля */
     suspend operator fun <R> invoke(block: suspend AllUseCases.() -> R): R = block(this)
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Legacy facade (presentation compatibility)
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    fun getFolders(): Flow<List<Folder>> = folders.observeAll()
+
+    suspend fun getFolderById(folderId: Long): Folder? =
+        folders.getById(FolderId(folderId)).getOrNull()
+
+    suspend fun createFolder(name: String, description: String?): LegacyResult<Unit> =
+        folders.create(name, desc = description).map { Unit }.toLegacyResult()
+
+    suspend fun updateFolder(folder: Folder): LegacyResult<Unit> =
+        folders.update(folder).toLegacyResult()
+
+    suspend fun deleteFolder(folderId: Long): LegacyResult<Unit> =
+        folders.delete(FolderId(folderId)).toLegacyResult()
+
+    fun getRecords(folderId: Long): Flow<List<Record>> =
+        records.observeByFolder(FolderId(folderId))
+
+    suspend fun getRecordById(recordId: Long): Record? =
+        records.getById(RecordId(recordId)).getOrNull()
+
+    suspend fun createRecord(folderId: Long, name: String, description: String?): LegacyResult<Unit> =
+        records.create(folderId = FolderId(folderId), name = name, desc = description).map { Unit }.toLegacyResult()
+
+    suspend fun updateRecord(record: Record): LegacyResult<Unit> =
+        records.update(record).toLegacyResult()
+
+    suspend fun deleteRecord(recordId: Long): LegacyResult<Unit> =
+        records.delete(RecordId(recordId)).toLegacyResult()
+
+    suspend fun moveRecord(recordId: Long, targetFolderId: Long): LegacyResult<Unit> =
+        records.move(RecordId(recordId), FolderId(targetFolderId)).toLegacyResult()
+
+    fun getDocuments(recordId: Long): Flow<List<Document>> =
+        documents.observeByRecord(RecordId(recordId))
+
+    suspend fun getDocumentById(documentId: Long): Document? =
+        documents.getById(DocumentId(documentId)).getOrNull()
+
+    suspend fun updateDocument(document: Document): LegacyResult<Unit> =
+        documents.update(document).toLegacyResult()
+
+    suspend fun deleteDocument(documentId: Long): LegacyResult<Unit> =
+        documents.delete(DocumentId(documentId)).toLegacyResult()
+
+    fun searchDocuments(query: String): Flow<List<Document>> = documents.search(query)
+
+    fun addDocument(recordId: Long, imageUri: Uri): Flow<AddDocumentState> = flow {
+        emit(AddDocumentState.Creating(progress = 10, message = "Saving image..."))
+
+        val record = when (val r = records.getById(RecordId(recordId))) {
+            is DomainResult.Success -> r.data
+            is DomainResult.Failure -> {
+                emit(AddDocumentState.Error(message = r.error.message))
+                return@flow
+            }
+        }
+
+        val docId = when (val created = createDocumentFromScan(RecordId(recordId), imageUri.toString(), record.sourceLanguage)) {
+            is DomainResult.Success -> created.data
+            is DomainResult.Failure -> {
+                emit(AddDocumentState.Error(message = created.error.message))
+                return@flow
+            }
+        }
+
+        emit(AddDocumentState.ProcessingOcr(progress = 60, message = "Processing..."))
+
+        processDocument(docId).collect { state ->
+            when (state) {
+                is ProcessingState.OcrInProgress -> emit(AddDocumentState.ProcessingOcr(70, "Running OCR..."))
+                is ProcessingState.TranslationInProgress -> emit(AddDocumentState.Translating(85, "Translating..."))
+                is ProcessingState.Complete -> emit(AddDocumentState.Success(documentId = docId.value))
+                is ProcessingState.Failed -> emit(AddDocumentState.Error(message = state.error.message))
+                else -> {}
+            }
+        }
+    }.cancellable()
+
+    suspend fun fixOcr(documentId: Long): LegacyResult<Unit> {
+        return try {
+            val terminal = processDocument(DocumentId(documentId))
+                .first { it is ProcessingState.Complete || it is ProcessingState.Failed }
+            when (terminal) {
+                is ProcessingState.Complete -> LegacyResult.Success(Unit)
+                is ProcessingState.Failed -> LegacyResult.Error(DomainException(terminal.error))
+                else -> LegacyResult.Success(Unit)
+            }
+        } catch (e: Exception) {
+            LegacyResult.Error(e as? Exception ?: Exception(e))
+        }
+    }
+
+    suspend fun retryTranslation(documentId: Long): LegacyResult<Unit> =
+        translation.retryTranslation(DocumentId(documentId)).map { Unit }.toLegacyResult()
+
+    fun getUpcomingTerms(): Flow<List<Term>> = terms.observeActive()
+    fun getCompletedTerms(): Flow<List<Term>> = terms.observeCompleted()
+
+    suspend fun createTerm(term: Term): LegacyResult<Unit> =
+        terms.create(
+            title = term.title,
+            dueDate = term.dueDate,
+            desc = term.description,
+            reminderMinutes = term.reminderMinutesBefore,
+            priority = term.priority,
+            docId = term.documentId,
+            folderId = term.folderId,
+            color = term.color
+        ).map { Unit }.toLegacyResult()
+
+    suspend fun updateTerm(term: Term): LegacyResult<Unit> =
+        terms.update(term).toLegacyResult()
+
+    suspend fun markTermCompleted(termId: Long, completed: Boolean): LegacyResult<Unit> =
+        (if (completed) terms.complete(TermId(termId)) else terms.uncomplete(TermId(termId))).toLegacyResult()
+
+    suspend fun deleteTerm(term: Term): LegacyResult<Unit> =
+        terms.delete(term.id).toLegacyResult()
 }

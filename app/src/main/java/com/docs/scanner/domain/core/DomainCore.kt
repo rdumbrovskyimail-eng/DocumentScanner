@@ -130,7 +130,7 @@ value class Tag private constructor(val value: String) {
 // DOMAIN RESULT - Functional Error Handling
 // ══════════════════════════════════════════════════════════════════════════════
 
-sealed class DomainResult<out T> {
+sealed class DomainResult<T> {
     data class Success<T>(val data: T) : DomainResult<T>()
     data class Failure<T>(val error: DomainError) : DomainResult<T>()
     
@@ -145,7 +145,7 @@ sealed class DomainResult<out T> {
         is Failure -> throw error.toException()
     }
     
-    fun getOrElse(block: (DomainError) -> T): T = when (this) {
+    inline fun getOrElse(block: (DomainError) -> T): T = when (this) {
         is Success -> data
         is Failure -> block(error)
     }
@@ -253,6 +253,10 @@ sealed class DomainError {
     }
     
     // Infrastructure
+    data object MissingApiKey : DomainError() {
+        override val message: String = "No API key configured"
+    }
+
     data class StorageFailed(val cause: Throwable?) : DomainError() {
         override val message: String = "Storage error: ${cause?.message ?: "Unknown"}"
     }
@@ -284,7 +288,7 @@ sealed class ValidationError(val message: String) {
     data class NameTooLong(val len: Int, val max: Int) : ValidationError("Name too long: $len > $max")
     data class TagTooLong(val len: Int, val max: Int) : ValidationError("Tag too long: $len > $max")
     data class TooManyTags(val count: Int, val max: Int) : ValidationError("Too many tags: $count > $max")
-    data object DueDate InPast : ValidationError("Due date must be in future")
+    data object DueDateInPast : ValidationError("Due date must be in future")
 }
 
 class DomainException(val error: DomainError) : Exception(error.message)
@@ -690,22 +694,6 @@ data class TranslationCacheStats(
     val newestEntryTimestamp: Long?
 )
 
-/**
- * Storage usage information.
- */
-data class StorageUsage(
-    val totalSizeBytes: Long,
-    val imageSizeBytes: Long,
-    val databaseSizeBytes: Long,
-    val cacheSizeBytes: Long,
-    val otherSizeBytes: Long
-) {
-    fun formatTotal(): String = totalSizeBytes.formatBytes()
-    fun formatImages(): String = imageSizeBytes.formatBytes()
-    fun formatDatabase(): String = databaseSizeBytes.formatBytes()
-    fun formatCache(): String = cacheSizeBytes.formatBytes()
-}
-
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class ImageQuality(val percent: Int) { LOW(60), MEDIUM(80), HIGH(95), ORIGINAL(100) }
 
@@ -748,7 +736,6 @@ class FakeTimeProvider(private var time: Long = 0L) : TimeProvider {
     }
     
     fun advanceMinutes(minutes: Int) {
-        advance(fun advanceMinutes(minutes: Int) {
         advance(minutes * 60 * 1000L)
     }
     

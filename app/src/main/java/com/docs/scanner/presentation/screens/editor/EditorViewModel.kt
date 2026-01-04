@@ -54,7 +54,7 @@ class EditorViewModel @Inject constructor(
                     return@launch
                 }
 
-                val folder = useCases.getFolderById(record.folderId)
+                val folder = useCases.getFolderById(record.folderId.value)
                 val folderName = folder?.name ?: "Documents"
 
                 useCases.getDocuments(recordId)

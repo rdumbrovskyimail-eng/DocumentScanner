@@ -79,8 +79,8 @@ class SearchViewModel @Inject constructor(
                         // Map to SearchResult with highlighting info
                         val results = documents.take(50).map { doc ->
                             SearchResult(
-                                documentId = doc.id,
-                                recordId = doc.recordId,
+                                documentId = doc.id.value,
+                                recordId = doc.recordId.value,
                                 recordName = doc.recordName ?: "Untitled",
                                 folderName = doc.folderName ?: "Documents",
                                 matchedText = doc.originalText ?: doc.translatedText ?: "",

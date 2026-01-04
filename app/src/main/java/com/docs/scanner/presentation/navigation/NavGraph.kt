@@ -115,6 +115,11 @@ fun NavGraph(
                     safeNavigate(navController) {
                         navigate(Screen.ImageViewer.createRoute(documentId))
                     }
+                },
+                onCameraClick = {
+                    safeNavigate(navController) {
+                        navigate(Screen.Camera.route)
+                    }
                 }
             )
         }

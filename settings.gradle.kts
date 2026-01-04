@@ -45,19 +45,6 @@ dependencyResolutionManagement {
         }
         mavenCentral()
     }
-
-    versionCatalogs {
-        create("libs") {
-            val catalogFile = file("gradle/libs.versions.toml")
-            if (catalogFile.exists()) {
-                from(files(catalogFile))
-            } else {
-                val msg = "❌ Version Catalog missing: ${catalogFile.absolutePath}"
-                logger.error(msg)
-                throw GradleException(msg)
-            }
-        }
-    }
 }
 
 // ================================================================================
@@ -70,38 +57,42 @@ buildCache {
         removeUnusedEntriesAfterDays = 14
     }
 
-    remote<HttpBuildCache> {
-        val cacheUrl = System.getenv("GRADLE_CACHE_URL") 
-            ?: providers.gradleProperty("gradle.cache.url").orNull
-        
-        if (!cacheUrl.isNullOrBlank()) {
+    // ✅ FIX: Only configure remote HTTP build cache when URL is provided.
+    // Gradle 8.10+ fails the build if an HTTP build cache is declared without URL.
+    val cacheUrl = System.getenv("GRADLE_CACHE_URL")
+        ?: providers.gradleProperty("gradle.cache.url").orNull
+
+    if (!cacheUrl.isNullOrBlank()) {
+        remote<HttpBuildCache> {
             try {
                 url = uri(cacheUrl)
-                
+
                 // ✅ IMPROVED: Enhanced CI detection
                 val isCI = listOf(
-                    "CI", "CONTINUOUS_INTEGRATION", "GITHUB_ACTIONS", 
+                    "CI", "CONTINUOUS_INTEGRATION", "GITHUB_ACTIONS",
                     "GITLAB_CI", "CIRCLECI", "JENKINS_HOME", "BUILDKITE"
                 ).any { System.getenv(it)?.toBoolean() == true }
                 isPush = isCI
-                
-                val cacheUser = System.getenv("GRADLE_CACHE_USER") 
+
+                val cacheUser = System.getenv("GRADLE_CACHE_USER")
                     ?: providers.gradleProperty("gradle.cache.user").orNull
-                val cachePassword = System.getenv("GRADLE_CACHE_PASSWORD") 
+                val cachePassword = System.getenv("GRADLE_CACHE_PASSWORD")
                     ?: providers.gradleProperty("gradle.cache.password").orNull
-                
+
                 if (!cacheUser.isNullOrBlank() && !cachePassword.isNullOrBlank()) {
                     credentials {
                         username = cacheUser
                         password = cachePassword
                     }
                 }
-                
+
                 logger.lifecycle("✓ Remote build cache: $cacheUrl (push: $isPush)")
             } catch (e: Exception) {
                 logger.warn("⚠️  Remote cache error: ${e.message}")
             }
         }
+    } else {
+        logger.lifecycle("ℹ️  Remote build cache disabled (no URL configured)")
     }
 }
 

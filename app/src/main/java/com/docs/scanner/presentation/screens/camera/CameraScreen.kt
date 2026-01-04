@@ -23,17 +23,24 @@ fun CameraScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        viewModel.navigationEvent.collect { event ->
+            when (event) {
+                is NavigationEvent.NavigateToEditor -> onScanComplete(event.recordId)
+            }
+        }
+    }
     
     val scannerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
-            scanResult?.pages?.let { pages ->
-                val uris = pages.mapNotNull { it.imageUri }
-                if (uris.isNotEmpty()) {
-                    viewModel.processScannedImages(uris, onScanComplete)
-                }
+            if (scanResult != null) {
+                viewModel.handleScanResult(scanResult)
+            } else {
+                viewModel.onError("Empty scan result")
             }
         } else {
             viewModel.onScanCancelled()
@@ -69,6 +76,7 @@ fun CameraScreen(
             contentAlignment = Alignment.Center
         ) {
             when (uiState) {
+                is CameraUiState.Idle,
                 is CameraUiState.Loading -> {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
@@ -118,15 +126,13 @@ fun CameraScreen(
                     }
                 }
                 
-                is CameraUiState.Ready -> {}
+                is CameraUiState.Ready,
+                is CameraUiState.ScannerActive -> {}
+
+                is CameraUiState.Success -> {
+                    Text("Done")
+                }
             }
         }
     }
-}
-
-sealed interface CameraUiState {
-    data object Loading : CameraUiState
-    data object Ready : CameraUiState
-    data class Processing(val message: String) : CameraUiState
-    data class Error(val message: String) : CameraUiState
 }

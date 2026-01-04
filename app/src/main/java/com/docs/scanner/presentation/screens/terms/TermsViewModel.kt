@@ -84,23 +84,18 @@ class TermsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            val term = Term(
+            when (val result = useCases.terms.create(
                 title = title.trim(),
-                description = description?.takeIf { it.isNotBlank() },
                 dueDate = dueDate,
-                reminderMinutesBefore = reminderMinutesBefore,
-                isCompleted = false
-            )
-
-            when (val result = useCases.createTerm(term)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    // Terms auto-refresh via Flow
-                    // Alarms scheduled in Use Case
+                desc = description?.takeIf { it.isNotBlank() },
+                reminderMinutes = reminderMinutesBefore
+            )) {
+                is com.docs.scanner.domain.core.DomainResult.Success -> {
+                    // auto-refresh via flows
                 }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    updateErrorMessage("Failed to create term: ${result.exception.message}")
+                is com.docs.scanner.domain.core.DomainResult.Failure -> {
+                    updateErrorMessage("Failed to create term: ${result.error.message}")
                 }
-                else -> {}
             }
         }
     }
@@ -146,7 +141,7 @@ class TermsViewModel @Inject constructor(
      */
     fun toggleTermCompletion(term: Term) {
         viewModelScope.launch {
-            when (val result = useCases.markTermCompleted(term.id, !term.isCompleted)) {
+            when (val result = useCases.markTermCompleted(term.id.value, !term.isCompleted)) {
                 is com.docs.scanner.domain.model.Result.Success -> {
                     // Auto-refresh via Flow
                 }
