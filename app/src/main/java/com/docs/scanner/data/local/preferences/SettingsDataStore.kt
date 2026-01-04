@@ -1,37 +1,13 @@
-package com.docs.scanner.data.local.preferences
-
-import android.content.Context
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.emptyPreferences
-import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
-import com.docs.scanner.data.local.security.EncryptedKeyStorage
-import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
-import timber.log.Timber
-import javax.inject.Inject
-import javax.inject.Singleton
-
 /**
- * Extension delegate for DataStore.
- * FIXED: 🟠 Серьёзная #8 - Unified name to match DataStoreModule
- */
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "app_settings")
-
-/**
+ * SettingsDataStore.kt
+ * Version: 7.0.1 - FIXED (2026 Standards)
+ *
+ * ✅ FIX SERIOUS-2: Убран собственный delegate, DataStore инжектится из Hilt
+ *    БЫЛО: private val Context.dataStore by preferencesDataStore(...)
+ *          private val dataStore = context.dataStore
+ *    СТАЛО: DataStore<Preferences> инжектится через конструктор из DataStoreModule
+ *
  * DataStore for app settings.
- * 
- * Fixed issues:
- * - 🟠 Серьёзная #6: Improved null handling in migrateApiKeyToEncrypted
- * - 🟠 Серьёзная #8: Unified DataStore name with DataStoreModule ("app_settings")
- * - 🟡 #1: Replaced android.util.Log with Timber
  * 
  * Security:
  * - ✅ API keys stored in EncryptedKeyStorage (AES-256-GCM)
@@ -45,12 +21,48 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
  * - OCR settings (language, auto-translate)
  * - Cache settings (enabled, TTL)
  */
+
+package com.docs.scanner.data.local.preferences
+
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import com.docs.scanner.data.local.security.EncryptedKeyStorage
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import timber.log.Timber
+import javax.inject.Inject
+import javax.inject.Singleton
+
+// ✅ FIX SERIOUS-2: УДАЛЁН собственный delegate!
+// БЫЛО:
+// private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "app_settings")
+//
+// Теперь DataStore инжектится из DataStoreModule, что гарантирует единственный экземпляр.
+
+/**
+ * DataStore for app settings.
+ * 
+ * ✅ FIX SERIOUS-2: DataStore теперь инжектится из Hilt (DataStoreModule)
+ * вместо создания собственного delegate. Это предотвращает создание
+ * множественных экземпляров DataStore и связанные race conditions.
+ * 
+ * Fixed issues:
+ * - ✅ SERIOUS-2: DataStore injected from Hilt instead of own delegate
+ * - 🟠 Серьёзная #6: Improved null handling in migrateApiKeyToEncrypted
+ * - 🟡 #1: Replaced android.util.Log with Timber
+ */
 @Singleton
 class SettingsDataStore @Inject constructor(
-    @ApplicationContext private val context: Context
+    // ✅ FIX: Инжектим DataStore из DataStoreModule вместо context.dataStore
+    private val dataStore: DataStore<Preferences>
 ) {
-    
-    private val dataStore = context.dataStore
     
     companion object {
         // Onboarding & First Launch
@@ -108,7 +120,6 @@ class SettingsDataStore @Inject constructor(
                     encryptedStorage.setActiveApiKey(oldKey)
                     Timber.i("✅ API key migrated to encrypted storage")
                 } catch (e: Exception) {
-                    // FIXED: 🟠 Серьёзная #6 - Don't fail migration if setActiveApiKey fails
                     Timber.e(e, "❌ Failed to save key to encrypted storage")
                     return false
                 }
@@ -130,7 +141,6 @@ class SettingsDataStore @Inject constructor(
                 return true
             }
         } catch (e: Exception) {
-            // FIXED: 🟠 Серьёзная #6 - Catch outer exceptions (DataStore read errors)
             Timber.e(e, "❌ Migration failed at DataStore read")
             return false
         }
