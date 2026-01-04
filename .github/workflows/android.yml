@@ -101,7 +101,7 @@ jobs:
         echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
         echo "date=$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
         
-    # ✅ Отправка APK в Telegram (не зависит от Release/Artifacts лимитов)
+    # ✅ Отправка ссылки на APK в Telegram (без отправки файла, чтобы не упираться в лимиты)
     - name: Send Success Notification to Telegram
       if: steps.build.outcome == 'success'
       continue-on-error: true
@@ -119,6 +119,8 @@ jobs:
         APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
         APK_NAME=$(basename "$APK_PATH")
         APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+        ARTIFACTS_URL="${RUN_URL}#artifacts"
+
         TEXT="✅ <b>APK собран успешно!</b>
         
         📱 Файл: <code>${APK_NAME}</code>
@@ -128,15 +130,10 @@ jobs:
         🕐 Время: ${{ steps.commit.outputs.date }}
         #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
         
-        🔗 <a href='${RUN_URL}'>Открыть GitHub Actions run</a>"
-        
-        # Prefer sending the APK directly. If it fails (size limit etc.), fall back to a message with the run link.
-        curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
-          -F chat_id="${TELEGRAM_CHAT_ID}" \
-          -F parse_mode="HTML" \
-          -F caption="${TEXT}" \
-          -F document="@${APK_PATH}" \
-        || curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+        📥 <a href='${ARTIFACTS_URL}'>Скачать APK (Artifacts)</a>
+        🔗 <a href='${RUN_URL}'>Открыть run</a>"
+
+        curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
           -d chat_id="${TELEGRAM_CHAT_ID}" \
           -d parse_mode="HTML" \
           --data-urlencode "text=${TEXT}"
