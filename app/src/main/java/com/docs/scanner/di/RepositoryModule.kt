@@ -1,6 +1,8 @@
 package com.docs.scanner.di
 
+import com.docs.scanner.data.repository.BackupRepositoryImpl
 import com.docs.scanner.data.repository.DocumentRepositoryImpl
+import com.docs.scanner.data.repository.FileRepositoryImpl
 import com.docs.scanner.data.repository.FolderRepositoryImpl
 import com.docs.scanner.data.repository.OcrRepositoryImpl
 import com.docs.scanner.data.repository.RecordRepositoryImpl
@@ -8,7 +10,9 @@ import com.docs.scanner.data.repository.ScannerRepositoryImpl
 import com.docs.scanner.data.repository.SettingsRepositoryImpl
 import com.docs.scanner.data.repository.TermRepositoryImpl
 import com.docs.scanner.data.repository.TranslationRepositoryImpl
+import com.docs.scanner.domain.repository.BackupRepository
 import com.docs.scanner.domain.repository.DocumentRepository
+import com.docs.scanner.domain.repository.FileRepository
 import com.docs.scanner.domain.repository.FolderRepository
 import com.docs.scanner.domain.repository.OcrRepository
 import com.docs.scanner.domain.repository.RecordRepository
@@ -29,9 +33,12 @@ import javax.inject.Singleton
  * All repository interfaces must be bound to their implementations here.
  * 
  * Architecture: Clean Architecture
- * - Interfaces defined in domain layer
- * - Implementations in data layer
- * - Bindings here connect them via Hilt
+ * - Interfaces defined in domain layer (DomainRepositories.kt)
+ * - Implementations in data layer (DataRepositories.kt)
+ * - Bindings here connect them via Hilt DI
+ * 
+ * Fixed issues:
+ * - 🟠 Серьёзная #7: Added FileRepository and BackupRepository bindings
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -39,7 +46,7 @@ abstract class RepositoryModule {
 
     /**
      * Binds FolderRepository interface to implementation.
-     * Used by: GetFoldersUseCase, CreateFolderUseCase, etc.
+     * Used by: GetFoldersUseCase, CreateFolderUseCase, DeleteFolderUseCase
      */
     @Binds
     @Singleton
@@ -49,7 +56,7 @@ abstract class RepositoryModule {
 
     /**
      * Binds RecordRepository interface to implementation.
-     * Used by: GetRecordsUseCase, CreateRecordUseCase, etc.
+     * Used by: GetRecordsUseCase, CreateRecordUseCase, UpdateRecordUseCase
      */
     @Binds
     @Singleton
@@ -59,7 +66,7 @@ abstract class RepositoryModule {
 
     /**
      * Binds DocumentRepository interface to implementation.
-     * Used by: GetDocumentsUseCase, SearchDocumentsUseCase, etc.
+     * Used by: GetDocumentsUseCase, SearchDocumentsUseCase, UpdateDocumentUseCase
      */
     @Binds
     @Singleton
@@ -69,7 +76,7 @@ abstract class RepositoryModule {
 
     /**
      * Binds ScannerRepository interface to implementation.
-     * Used by: QuickScanUseCase, RetryTranslationUseCase, etc.
+     * Used by: QuickScanUseCase, RetryTranslationUseCase, ProcessingQueue
      */
     @Binds
     @Singleton
@@ -79,7 +86,7 @@ abstract class RepositoryModule {
 
     /**
      * Binds SettingsRepository interface to implementation.
-     * Used by: SettingsViewModel, OnboardingViewModel
+     * Used by: SettingsViewModel, OnboardingViewModel, App initialization
      */
     @Binds
     @Singleton
@@ -89,7 +96,7 @@ abstract class RepositoryModule {
 
     /**
      * Binds TermRepository interface to implementation.
-     * Used by: All Term Use Cases
+     * Used by: CreateTermUseCase, UpdateTermUseCase, GetTermsUseCase
      */
     @Binds
     @Singleton
@@ -99,7 +106,7 @@ abstract class RepositoryModule {
 
     /**
      * Binds OcrRepository interface to implementation.
-     * Used by: AddDocumentUseCase, FixOcrUseCase
+     * Used by: AddDocumentUseCase, FixOcrUseCase, ML Kit Scanner
      */
     @Binds
     @Singleton
@@ -109,11 +116,35 @@ abstract class RepositoryModule {
 
     /**
      * Binds TranslationRepository interface to implementation.
-     * Used by: RetryTranslationUseCase, EditorViewModel
+     * Used by: RetryTranslationUseCase, EditorViewModel, Gemini API
      */
     @Binds
     @Singleton
     abstract fun bindTranslationRepository(
         impl: TranslationRepositoryImpl
     ): TranslationRepository
+
+    /**
+     * Binds FileRepository interface to implementation.
+     * Used by: SaveImageUseCase, DeleteImageUseCase, GetImageUseCase
+     * 
+     * FIXED: 🟠 Серьёзная #7 - Added missing binding
+     */
+    @Binds
+    @Singleton
+    abstract fun bindFileRepository(
+        impl: FileRepositoryImpl
+    ): FileRepository
+
+    /**
+     * Binds BackupRepository interface to implementation.
+     * Used by: CreateBackupUseCase, RestoreBackupUseCase, Google Drive sync
+     * 
+     * FIXED: 🟠 Серьёзная #7 - Added missing binding
+     */
+    @Binds
+    @Singleton
+    abstract fun bindBackupRepository(
+        impl: BackupRepositoryImpl
+    ): BackupRepository
 }
