@@ -9,7 +9,9 @@ import com.docs.scanner.data.local.database.dao.DocumentDao
 import com.docs.scanner.data.local.database.dao.FolderDao
 import com.docs.scanner.data.local.database.dao.RecordDao
 import com.docs.scanner.data.local.database.dao.SearchDao
+import com.docs.scanner.data.local.database.dao.SearchHistoryDao
 import com.docs.scanner.data.local.database.dao.TermDao
+import com.docs.scanner.data.local.database.dao.TranslationCacheDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,9 +23,12 @@ import javax.inject.Singleton
  * Hilt module for providing database and DAO instances.
  * 
  * Provides:
- * - AppDatabase singleton
+ * - AppDatabase singleton with proper configuration
  * - All DAO instances
  * - Database migrations
+ * 
+ * Note: Room handles WAL mode and pragmas automatically.
+ * Manual execSQL for table creation is avoided to maintain schema validation.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -33,18 +38,17 @@ object DatabaseModule {
 
     /**
      * Migration from version 4 to 5.
-     * Adds FTS and SearchHistory tables.
+     * Adds FTS, SearchHistory, and TranslationCache tables.
      */
     private val MIGRATION_4_5 = object : Migration(4, 5) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            // Create FTS virtual table
+            // Create FTS virtual table for full-text search
             db.execSQL("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts 
-                USING fts5(
+                USING fts4(
                     original_text, 
-                    translated_text, 
-                    content='documents', 
-                    content_rowid='id'
+                    translated_text,
+                    tokenize=unicode61
                 )
             """)
             
@@ -58,10 +62,29 @@ object DatabaseModule {
                 )
             """)
             
-            // Create index on search history
+            // Create index on search history timestamp
             db.execSQL("""
                 CREATE INDEX IF NOT EXISTS index_search_history_timestamp 
                 ON search_history(timestamp DESC)
+            """)
+            
+            // Create translation cache table
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS translation_cache (
+                    cache_key TEXT PRIMARY KEY NOT NULL,
+                    source_text TEXT NOT NULL,
+                    translated_text TEXT NOT NULL,
+                    source_lang TEXT NOT NULL,
+                    target_lang TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL,
+                    hit_count INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            
+            // Create index on cache timestamp for cleanup
+            db.execSQL("""
+                CREATE INDEX IF NOT EXISTS index_translation_cache_timestamp 
+                ON translation_cache(timestamp ASC)
             """)
             
             // Add completed_at column to terms if not exists
@@ -116,5 +139,25 @@ object DatabaseModule {
     @Singleton
     fun provideSearchDao(database: AppDatabase): SearchDao {
         return database.searchDao()
+    }
+
+    /**
+     * Provides TranslationCacheDao for caching translations.
+     * Fixes: 🟠 Серьёзная #9
+     */
+    @Provides
+    @Singleton
+    fun provideTranslationCacheDao(database: AppDatabase): TranslationCacheDao {
+        return database.translationCacheDao()
+    }
+
+    /**
+     * Provides SearchHistoryDao for tracking search queries.
+     * Fixes: 🟠 Серьёзная #10
+     */
+    @Provides
+    @Singleton
+    fun provideSearchHistoryDao(database: AppDatabase): SearchHistoryDao {
+        return database.searchHistoryDao()
     }
 }
