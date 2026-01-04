@@ -11,6 +11,8 @@ name: Android CI
 on:
   push:
     branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -87,7 +89,7 @@ jobs:
         
     # ✅ Создание Release (только при успехе)
     - name: Create Release
-      if: steps.build.outcome == 'success'
+      if: github.event_name == 'push' && steps.build.outcome == 'success'
       id: create_release
       uses: softprops/action-gh-release@v2
       with:
@@ -105,9 +107,17 @@ jobs:
     
     # ✅ Отправка успешного уведомления (только если Release создан)
     - name: Send Success Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome == 'success' && secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != ''
+      if: github.event_name == 'push' && steps.build.outcome == 'success' && steps.create_release.outcome == 'success'
       continue-on-error: true
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
+        if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+          echo "Telegram secrets not set; skipping notification."
+          exit 0
+        fi
+        
         APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
         APK_NAME=$(basename "$APK_PATH")
         APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
@@ -130,9 +140,17 @@ jobs:
     
     # ⚠️ Уведомление если сборка прошла, но Release не создался
     - name: Send Release Failure Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome != 'success' && secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != ''
+      if: github.event_name == 'push' && steps.build.outcome == 'success' && steps.create_release.outcome != 'success'
       continue-on-error: true
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
+        if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+          echo "Telegram secrets not set; skipping notification."
+          exit 0
+        fi
+        
         APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
         APK_NAME=$(basename "$APK_PATH")
         APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
@@ -155,9 +173,17 @@ jobs:
     
     # ❌ Уведомление об ошибке сборки
     - name: Send Build Failure Notification to Telegram
-      if: steps.build.outcome == 'failure' && secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != ''
+      if: github.event_name == 'push' && steps.build.outcome == 'failure'
       continue-on-error: true
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
+        if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+          echo "Telegram secrets not set; skipping notification."
+          exit 0
+        fi
+        
         COMMIT_MSG="${{ github.event.head_commit.message }}"
         
         curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
