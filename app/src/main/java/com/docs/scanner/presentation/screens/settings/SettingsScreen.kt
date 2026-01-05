@@ -17,6 +17,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.App
 import com.docs.scanner.BuildConfig
+import com.docs.scanner.domain.core.BackupInfo
 import com.docs.scanner.domain.core.ImageQuality
 import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.core.ThemeMode
@@ -33,6 +34,7 @@ fun SettingsScreen(
     val saveMessage by viewModel.saveMessage.collectAsStateWithLifecycle()
     val keyTestMessage by viewModel.keyTestMessage.collectAsStateWithLifecycle()
     val driveEmail by viewModel.driveEmail.collectAsStateWithLifecycle()
+    val driveBackups by viewModel.driveBackups.collectAsStateWithLifecycle()
     val backupMessage by viewModel.backupMessage.collectAsStateWithLifecycle()
     val isBackingUp by viewModel.isBackingUp.collectAsStateWithLifecycle()
 
@@ -51,6 +53,8 @@ fun SettingsScreen(
     var showClearOldCacheDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf<LocalBackup?>(null) }
     var includeImagesInBackup by remember { mutableStateOf(true) }
+    var showDriveRestoreDialog by remember { mutableStateOf<BackupInfo?>(null) }
+    var showDriveDeleteDialog by remember { mutableStateOf<BackupInfo?>(null) }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -321,26 +325,91 @@ fun SettingsScreen(
             // Google Drive (Stage 5)
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Google Drive (Stage 5)", style = MaterialTheme.typography.titleMedium)
+                    Text("Google Drive", style = MaterialTheme.typography.titleMedium)
                     Text(
                         text = driveEmail?.let { "Connected: $it" } ?: "Not connected",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "Drive backup/restore will be fully implemented in Stage 5.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = { viewModel.signInGoogleDrive(context, signInLauncher) },
-                            enabled = false,
+                            enabled = driveEmail == null && !isBackingUp,
                             modifier = Modifier.weight(1f)
                         ) { Text("Connect") }
                         OutlinedButton(
                             onClick = viewModel::signOutGoogleDrive,
-                            enabled = false,
+                            enabled = driveEmail != null && !isBackingUp,
                             modifier = Modifier.weight(1f)
                         ) { Text("Disconnect") }
+                    }
+
+                    if (driveEmail != null) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Include images")
+                            Switch(checked = includeImagesInBackup, onCheckedChange = { includeImagesInBackup = it })
+                        }
+
+                        Button(
+                            onClick = { viewModel.uploadBackupToGoogleDrive(includeImagesInBackup) },
+                            enabled = !isBackingUp,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.CloudUpload, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (isBackingUp) "Working…" else "Upload backup")
+                        }
+
+                        OutlinedButton(
+                            onClick = viewModel::refreshDriveBackups,
+                            enabled = !isBackingUp,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Refresh, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Refresh list")
+                        }
+
+                        if (driveBackups.isEmpty()) {
+                            Text("No Drive backups yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            driveBackups.take(10).forEach { b ->
+                                Card(
+                                    Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                ) {
+                                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(b.name, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            "${(b.sizeBytes / (1024.0 * 1024.0)).format(2)} MB",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            OutlinedButton(
+                                                onClick = { showDriveRestoreDialog = b },
+                                                enabled = !isBackingUp,
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Icon(Icons.Default.Restore, null)
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("Restore")
+                                            }
+                                            OutlinedButton(
+                                                onClick = { showDriveDeleteDialog = b },
+                                                enabled = !isBackingUp,
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Icon(Icons.Default.Delete, null)
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("Delete")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if (driveBackups.size > 10) {
+                                Text("…more backups available", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                     }
                 }
             }
@@ -456,6 +525,56 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showRestoreDialog = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    showDriveRestoreDialog?.let { b ->
+        var merge by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { showDriveRestoreDialog = null },
+            title = { Text("Restore from Google Drive") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Restore from:")
+                    Text(b.name, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Merge into existing")
+                        Switch(checked = merge, onCheckedChange = { merge = it })
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isBackingUp,
+                    onClick = {
+                        viewModel.restoreDriveBackup(b.id, merge)
+                        showDriveRestoreDialog = null
+                    }
+                ) { Text("Restore") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDriveRestoreDialog = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    showDriveDeleteDialog?.let { b ->
+        AlertDialog(
+            onDismissRequest = { showDriveDeleteDialog = null },
+            title = { Text("Delete Drive backup?") },
+            text = { Text("This will delete \"${b.name}\" from Google Drive.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !isBackingUp,
+                    onClick = {
+                        viewModel.deleteDriveBackup(b.id)
+                        showDriveDeleteDialog = null
+                    }
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDriveDeleteDialog = null }) { Text("Cancel") }
             }
         )
     }

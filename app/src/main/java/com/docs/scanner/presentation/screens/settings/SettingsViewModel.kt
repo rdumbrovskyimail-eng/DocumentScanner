@@ -14,6 +14,7 @@ import com.docs.scanner.data.local.security.EncryptedKeyStorage
 import com.docs.scanner.data.remote.drive.DriveRepository
 import com.docs.scanner.data.remote.gemini.GeminiApi
 import com.docs.scanner.domain.core.DomainResult
+import com.docs.scanner.domain.core.BackupInfo
 import com.docs.scanner.domain.core.ImageQuality
 import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.core.ThemeMode
@@ -71,6 +72,9 @@ class SettingsViewModel @Inject constructor(
 
     private val _driveEmail = MutableStateFlow<String?>(null)
     val driveEmail: StateFlow<String?> = _driveEmail.asStateFlow()
+
+    private val _driveBackups = MutableStateFlow<List<BackupInfo>>(emptyList())
+    val driveBackups: StateFlow<List<BackupInfo>> = _driveBackups.asStateFlow()
 
     private val _isBackingUp = MutableStateFlow(false)
     val isBackingUp: StateFlow<Boolean> = _isBackingUp.asStateFlow()
@@ -144,11 +148,22 @@ class SettingsViewModel @Inject constructor(
                 when (val result = driveRepository.signIn()) {
                     is com.docs.scanner.domain.model.Result.Success -> {
                         _driveEmail.value = result.data
+                        refreshDriveBackups()
                     }
                     else -> {
                         _driveEmail.value = null
+                        _driveBackups.value = emptyList()
                     }
                 }
+            }
+        }
+    }
+
+    fun refreshDriveBackups() {
+        viewModelScope.launch {
+            when (val r = useCases.backup.listGoogleDriveBackups()) {
+                is DomainResult.Success -> _driveBackups.value = r.data.sortedByDescending { it.timestamp }
+                is DomainResult.Failure -> _backupMessage.value = "✗ Drive list failed: ${r.error.message}"
             }
         }
     }
@@ -460,6 +475,7 @@ class SettingsViewModel @Inject constructor(
                             is com.docs.scanner.domain.model.Result.Success -> {
                                 _driveEmail.value = result.data
                                 _backupMessage.value = "✓ Connected to Google Drive"
+                                refreshDriveBackups()
                             }
                             is com.docs.scanner.domain.model.Result.Error -> {
                                 _backupMessage.value = "✗ Connection failed: ${result.exception.message}"
@@ -482,10 +498,10 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun backupToGoogleDrive() {
+    fun uploadBackupToGoogleDrive(includeImages: Boolean) {
         viewModelScope.launch {
             _isBackingUp.value = true
-            _backupMessage.value = "Backing up..."
+            _backupMessage.value = "Creating backup..."
 
             try {
                 if (!driveRepository.isSignedIn()) {
@@ -494,16 +510,22 @@ class SettingsViewModel @Inject constructor(
                     return@launch
                 }
 
-                when (val result = driveRepository.uploadBackup()) {
-                    is com.docs.scanner.domain.model.Result.Success -> {
-                        _backupMessage.value = "✓ Backup completed successfully"
+                val local = useCases.backup.createLocal(includeImages).getOrElse {
+                    _backupMessage.value = "✗ Backup create failed: ${it.message}"
+                    return@launch
+                }
+
+                _backupMessage.value = "Uploading to Drive..."
+                when (
+                    val upload = useCases.backup.uploadToGoogleDrive(localPath = local) { p ->
+                        _backupMessage.value = "Uploading… ${p.percent}%"
                     }
-                    is com.docs.scanner.domain.model.Result.Error -> {
-                        _backupMessage.value = "✗ Backup failed: ${result.exception.message}"
+                ) {
+                    is DomainResult.Success -> {
+                        _backupMessage.value = "✓ Uploaded to Google Drive"
+                        refreshDriveBackups()
                     }
-                    else -> {
-                        _backupMessage.value = "✗ Backup failed"
-                    }
+                    is DomainResult.Failure -> _backupMessage.value = "✗ Upload failed: ${upload.error.message}"
                 }
             } catch (e: Exception) {
                 _backupMessage.value = "✗ Backup error: ${e.message}"
@@ -513,10 +535,10 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun restoreFromGoogleDrive() {
+    fun restoreDriveBackup(fileId: String, merge: Boolean) {
         viewModelScope.launch {
             _isBackingUp.value = true
-            _backupMessage.value = "Fetching backups..."
+            _backupMessage.value = "Downloading backup..."
 
             try {
                 if (!driveRepository.isSignedIn()) {
@@ -525,26 +547,26 @@ class SettingsViewModel @Inject constructor(
                     return@launch
                 }
 
-                val backupsResult = driveRepository.listBackups()
-
-                if (backupsResult is com.docs.scanner.domain.model.Result.Success && backupsResult.data.isNotEmpty()) {
-                    val latestBackup = backupsResult.data.first()
-
-                    _backupMessage.value = "Restoring from ${latestBackup.fileName}..."
-
-                    when (val result = driveRepository.restoreBackup(latestBackup.fileId)) {
-                        is com.docs.scanner.domain.model.Result.Success -> {
-                            _backupMessage.value = "✓ Restore completed! Restart app to apply changes."
-                        }
-                        is com.docs.scanner.domain.model.Result.Error -> {
-                            _backupMessage.value = "✗ Restore failed: ${result.exception.message}"
-                        }
-                        else -> {
-                            _backupMessage.value = "✗ Restore failed"
-                        }
+                val localPath = when (
+                    val d = useCases.backup.downloadFromGoogleDrive(fileId) { p ->
+                        _backupMessage.value = "Downloading… ${p.percent}%"
                     }
-                } else {
-                    _backupMessage.value = "✗ No backups found"
+                ) {
+                    is DomainResult.Success -> d.data
+                    is DomainResult.Failure -> {
+                        _backupMessage.value = "✗ Download failed: ${d.error.message}"
+                        return@launch
+                    }
+                }
+
+                _backupMessage.value = "Restoring..."
+                when (val r = useCases.backup.restoreFromLocal(localPath, merge = merge)) {
+                    is DomainResult.Success -> {
+                        _backupMessage.value =
+                            if (merge) "✓ Restore merged"
+                            else "✓ Restore completed! Restart app to apply changes."
+                    }
+                    is DomainResult.Failure -> _backupMessage.value = "✗ Restore failed: ${r.error.message}"
                 }
             } catch (e: Exception) {
                 _backupMessage.value = "✗ Restore error: ${e.message}"
@@ -554,10 +576,38 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun deleteDriveBackup(fileId: String) {
+        viewModelScope.launch {
+            _isBackingUp.value = true
+            _backupMessage.value = "Deleting backup..."
+            try {
+                when (val r = useCases.backup.deleteGoogleDriveBackup(fileId)) {
+                    is DomainResult.Success -> {
+                        _backupMessage.value = "✓ Deleted"
+                        refreshDriveBackups()
+                    }
+                    is DomainResult.Failure -> _backupMessage.value = "✗ Delete failed: ${r.error.message}"
+                }
+            } finally {
+                _isBackingUp.value = false
+            }
+        }
+    }
+
     fun signOutGoogleDrive() {
         viewModelScope.launch {
+            // Sign out from Google account used for Drive.
+            runCatching {
+                val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                    .requestEmail()
+                    .requestScopes(Scope(DriveScopes.DRIVE_FILE), Scope(DriveScopes.DRIVE_APPDATA))
+                    .build()
+                GoogleSignIn.getClient(appContext, gso).signOut()
+            }
+
             driveRepository.signOut()
             _driveEmail.value = null
+            _driveBackups.value = emptyList()
             _backupMessage.value = "Disconnected from Google Drive"
         }
     }

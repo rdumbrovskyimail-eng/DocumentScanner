@@ -137,6 +137,7 @@ firebase-perf = { group = "com.google.firebase", name = "firebase-perf" }
 play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "play-services-auth" }
 google-api-services-drive = { group = "com.google.apis", name = "google-api-services-drive", version.ref = "google-api-drive" }
 google-api-client-android = { group = "com.google.api-client", name = "google-api-client-android", version.ref = "google-api-client" }
+google-http-client-android = { group = "com.google.http-client", name = "google-http-client-android", version.ref = "google-http-client" }
 google-http-client-gson = { group = "com.google.http-client", name = "google-http-client-gson", version.ref = "google-http-client" }
 
 # --- ML Kit ---
@@ -263,6 +264,7 @@ google-drive = [
     "play-services-auth",
     "google-api-services-drive",
     "google-api-client-android",
+    "google-http-client-android",
     "google-http-client-gson"
 ]
 

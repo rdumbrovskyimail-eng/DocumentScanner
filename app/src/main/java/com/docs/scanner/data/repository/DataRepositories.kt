@@ -1917,7 +1917,7 @@ class BackupRepositoryImpl @Inject constructor(
         localPath: String,
         onProgress: ((UploadProgress) -> Unit)?
     ): DomainResult<String> {
-        return driveService.uploadBackup { uploaded, total ->
+        return driveService.uploadBackup(localPath) { uploaded, total ->
             onProgress?.invoke(UploadProgress(uploaded, total))
         }
     }
@@ -1926,7 +1926,7 @@ class BackupRepositoryImpl @Inject constructor(
         fileId: String,
         onProgress: ((DownloadProgress) -> Unit)?
     ): DomainResult<String> {
-        return driveService.downloadBackup(fileId) { downloaded, total ->
+        return driveService.downloadBackup(fileId, destDir = backupDir.absolutePath) { downloaded, total ->
             onProgress?.invoke(DownloadProgress(downloaded, total))
         }
     }

@@ -8,6 +8,7 @@ interface DriveRepository {
     suspend fun uploadBackup(): Result<Unit>
     suspend fun listBackups(): Result<List<DriveBackup>>
     suspend fun restoreBackup(fileId: String): Result<Unit>
+    suspend fun deleteBackup(fileId: String): Result<Unit>
     suspend fun signOut()
 }
 

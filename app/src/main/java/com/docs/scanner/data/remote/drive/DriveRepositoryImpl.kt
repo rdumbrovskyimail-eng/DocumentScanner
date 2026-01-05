@@ -4,6 +4,9 @@ import android.content.Context
 import com.docs.scanner.data.remote.GoogleDriveService
 import com.docs.scanner.domain.model.Result
 import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.Scope
+import com.google.api.services.drive.DriveScopes
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import javax.inject.Inject
@@ -12,7 +15,8 @@ import javax.inject.Singleton
 @Singleton
 class DriveRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val driveService: GoogleDriveService
+    private val driveService: GoogleDriveService,
+    private val backupRepository: com.docs.scanner.domain.repository.BackupRepository
 ) : DriveRepository {
 
     override fun isSignedIn(): Boolean =
@@ -28,7 +32,10 @@ class DriveRepositoryImpl @Inject constructor(
     }
 
     override suspend fun uploadBackup(): Result<Unit> {
-        val res = driveService.uploadBackup { _, _ -> }
+        val local = backupRepository.createLocalBackup(includeImages = true).getOrElse {
+            return Result.Error(it.toException())
+        }
+        val res = driveService.uploadBackup(local) { _, _ -> }
         return when (res) {
             is com.docs.scanner.domain.core.DomainResult.Success -> Result.Success(Unit)
             is com.docs.scanner.domain.core.DomainResult.Failure -> Result.Error(res.error.toException())
@@ -54,16 +61,34 @@ class DriveRepositoryImpl @Inject constructor(
     }
 
     override suspend fun restoreBackup(fileId: String): Result<Unit> {
-        Timber.w("Drive restore requested for $fileId (not implemented)")
-        return when (val res = driveService.downloadBackup(fileId) { _, _ -> }) {
+        val downloaded = driveService.downloadBackup(fileId, destDir = context.getExternalFilesDir(null)?.absolutePath ?: context.filesDir.absolutePath) { _, _ -> }
+            .getOrElse { return Result.Error(it.toException()) }
+
+        // Default behavior for legacy UI: replace DB (merge=false)
+        return when (val res = backupRepository.restoreFromLocal(downloaded, merge = false)) {
+            is com.docs.scanner.domain.core.DomainResult.Success -> Result.Success(Unit)
+            is com.docs.scanner.domain.core.DomainResult.Failure -> Result.Error(res.error.toException())
+        }
+    }
+
+    override suspend fun deleteBackup(fileId: String): Result<Unit> {
+        return when (val res = driveService.deleteBackup(fileId)) {
             is com.docs.scanner.domain.core.DomainResult.Success -> Result.Success(Unit)
             is com.docs.scanner.domain.core.DomainResult.Failure -> Result.Error(res.error.toException())
         }
     }
 
     override suspend fun signOut() {
-        // Sign-out is handled by UI using GoogleSignIn client; keep repository stateless for now.
-        Timber.d("DriveRepositoryImpl.signOut called")
+        try {
+            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestEmail()
+                .requestScopes(Scope(DriveScopes.DRIVE_FILE), Scope(DriveScopes.DRIVE_APPDATA))
+                .build()
+            GoogleSignIn.getClient(context, gso).signOut()
+            Timber.d("DriveRepositoryImpl.signOut: requested")
+        } catch (e: Exception) {
+            Timber.w(e, "DriveRepositoryImpl.signOut failed")
+        }
     }
 }
 
