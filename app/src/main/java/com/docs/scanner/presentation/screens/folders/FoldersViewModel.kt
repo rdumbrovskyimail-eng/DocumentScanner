@@ -3,6 +3,7 @@ package com.docs.scanner.presentation.screens.folders
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.docs.scanner.domain.core.DomainResult
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.usecase.AllUseCases
 import com.docs.scanner.domain.usecase.QuickScanState
@@ -28,6 +29,9 @@ class FoldersViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<FoldersUiState>(FoldersUiState.Loading)
     val uiState: StateFlow<FoldersUiState> = _uiState.asStateFlow()
 
+    private val _showArchived = MutableStateFlow(false)
+    val showArchived: StateFlow<Boolean> = _showArchived.asStateFlow()
+
     // ✅ FIX: SharedFlow for one-time navigation events
     private val _navigationEvent = MutableSharedFlow<NavigationEvent>()
     val navigationEvent: SharedFlow<NavigationEvent> = _navigationEvent.asSharedFlow()
@@ -44,7 +48,11 @@ class FoldersViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = FoldersUiState.Loading
 
-            useCases.getFolders()
+            showArchived
+                .flatMapLatest { includeArchived ->
+                    if (includeArchived) useCases.folders.observeIncludingArchived()
+                    else useCases.folders.observeAll()
+                }
                 .catch { e ->
                     _uiState.value = FoldersUiState.Error(
                         "Failed to load folders: ${e.message}"
@@ -60,6 +68,10 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
+    fun setShowArchived(enabled: Boolean) {
+        _showArchived.value = enabled
+    }
+
     /**
      * Create new folder.
      * ✅ FIX: No manual loadFolders() - Flow updates automatically!
@@ -71,14 +83,9 @@ class FoldersViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            when (val result = useCases.createFolder(name.trim(), description)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    // Auto-refresh via Flow, no manual call needed!
-                }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    updateErrorMessage("Failed to create folder: ${result.exception.message}")
-                }
-                else -> {}
+            when (val result = useCases.folders.create(name.trim(), desc = description?.takeIf { it.isNotBlank() })) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> updateErrorMessage("Failed to create folder: ${result.error.message}")
             }
         }
     }
@@ -88,14 +95,9 @@ class FoldersViewModel @Inject constructor(
      */
     fun updateFolder(folder: Folder) {
         viewModelScope.launch {
-            when (val result = useCases.updateFolder(folder)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    // Auto-refresh via Flow
-                }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    updateErrorMessage("Failed to update folder: ${result.exception.message}")
-                }
-                else -> {}
+            when (val result = useCases.folders.update(folder)) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> updateErrorMessage("Failed to update folder: ${result.error.message}")
             }
         }
     }
@@ -103,16 +105,38 @@ class FoldersViewModel @Inject constructor(
     /**
      * Delete folder.
      */
-    fun deleteFolder(folderId: Long) {
+    fun deleteFolder(folderId: Long, deleteContents: Boolean = false) {
         viewModelScope.launch {
-            when (val result = useCases.deleteFolder(folderId)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    // Auto-refresh via Flow
-                }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    updateErrorMessage("Failed to delete folder: ${result.exception.message}")
-                }
-                else -> {}
+            when (val result = useCases.folders.delete(com.docs.scanner.domain.core.FolderId(folderId), deleteContents = deleteContents)) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> updateErrorMessage("Failed to delete folder: ${result.error.message}")
+            }
+        }
+    }
+
+    fun setPinned(folderId: Long, pinned: Boolean) {
+        viewModelScope.launch {
+            when (val result = useCases.folders.pin(com.docs.scanner.domain.core.FolderId(folderId), pinned)) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> updateErrorMessage("Failed to update pin: ${result.error.message}")
+            }
+        }
+    }
+
+    fun archive(folderId: Long) {
+        viewModelScope.launch {
+            when (val result = useCases.folders.archive(com.docs.scanner.domain.core.FolderId(folderId))) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> updateErrorMessage("Failed to archive folder: ${result.error.message}")
+            }
+        }
+    }
+
+    fun unarchive(folderId: Long) {
+        viewModelScope.launch {
+            when (val result = useCases.folders.unarchive(com.docs.scanner.domain.core.FolderId(folderId))) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> updateErrorMessage("Failed to unarchive folder: ${result.error.message}")
             }
         }
     }
