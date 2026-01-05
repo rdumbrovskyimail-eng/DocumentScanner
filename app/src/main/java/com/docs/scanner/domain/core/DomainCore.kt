@@ -669,6 +669,13 @@ data class DownloadProgress(
     fun formatProgress(): String = "${downloaded.formatBytes()} / ${total.formatBytes()} ($percent%)"
 }
 
+data class SearchHistoryItem(
+    val id: Long,
+    val query: String,
+    val resultCount: Int,
+    val timestamp: Long
+)
+
 data class BackupInfo(
     val id: String,
     val name: String,

@@ -658,6 +658,7 @@ class RecordRepositoryImpl @Inject constructor(
 @Singleton
 class DocumentRepositoryImpl @Inject constructor(
     private val documentDao: DocumentDao,
+    private val searchHistoryDao: com.docs.scanner.data.local.database.dao.SearchHistoryDao,
     private val retryPolicy: RetryPolicy
 ) : DocumentRepository {
 
@@ -704,14 +705,94 @@ class DocumentRepositoryImpl @Inject constructor(
      * Fixed: documentDao.searchFts(query) - uses FTS4 virtual table
      */
     override fun searchDocuments(query: String): Flow<List<Document>> =
-        documentDao.searchLike(query)
-            .map { list -> list.map { it.toDomain() } }
-            .flowOn(Dispatchers.IO)
+        searchDocumentsWithPath(query)
 
     override fun searchDocumentsWithPath(query: String): Flow<List<Document>> =
-        documentDao.searchWithPath(query)
+        documentDao.searchFtsWithPath(buildFtsQuery(query), limit = 50)
             .map { list -> list.map { it.toDomain() } }
+            .catch { e ->
+                // Fallback for queries that break FTS syntax.
+                Timber.w(e, "⚠️ FTS query failed, falling back to LIKE")
+                emitAll(
+                    documentDao.searchWithPath(query, limit = 50)
+                        .map { list -> list.map { it.toDomain() } }
+                )
+            }
             .flowOn(Dispatchers.IO)
+
+    override fun observeSearchHistory(limit: Int): Flow<List<com.docs.scanner.domain.core.SearchHistoryItem>> =
+        searchHistoryDao.observeRecent(limit)
+            .map { list ->
+                list.map {
+                    com.docs.scanner.domain.core.SearchHistoryItem(
+                        id = it.id,
+                        query = it.query,
+                        resultCount = it.resultCount,
+                        timestamp = it.timestamp
+                    )
+                }
+            }
+            .catch { e ->
+                Timber.e(e, "❌ Error observing search history")
+                emit(emptyList())
+            }
+            .flowOn(Dispatchers.IO)
+
+    override suspend fun saveSearchQuery(query: String, resultCount: Int): DomainResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val q = query.trim()
+                if (q.isBlank()) return@runCatching
+                // Deduplicate and keep newest on top.
+                searchHistoryDao.deleteByQuery(q)
+                searchHistoryDao.insert(
+                    com.docs.scanner.data.local.database.entity.SearchHistoryEntity(
+                        query = q,
+                        resultCount = resultCount,
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
+                searchHistoryDao.trimToLimit(50)
+            }.toDomainResult()
+        }
+
+    override suspend fun deleteSearchHistoryItem(id: Long): DomainResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching { searchHistoryDao.deleteById(id) }.toDomainResult()
+        }
+
+    override suspend fun clearSearchHistory(): DomainResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching { searchHistoryDao.clearAll() }.toDomainResult()
+        }
+
+    private fun buildFtsQuery(raw: String): String {
+        val q = raw.trim()
+        if (q.isBlank()) return ""
+
+        // Keep quoted phrases as-is; otherwise build a safe AND prefix query: token* AND token*
+        val hasQuotes = q.contains('"')
+        if (hasQuotes) {
+            // Best-effort sanitize: strip control chars.
+            return q.replace(Regex("[\\p{Cntrl}]"), " ").trim()
+        }
+
+        val tokens = q
+            .lowercase()
+            .split(Regex("\\s+"))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .take(10)
+
+        fun escapeToken(t: String): String =
+            t.replace(Regex("[^\\p{L}\\p{N}_]"), " ").trim()
+
+        return tokens
+            .mapNotNull { t -> escapeToken(t).takeIf { it.isNotBlank() } }
+            .map { "$it*" }
+            .joinToString(" AND ")
+            .ifBlank { q }
+    }
 
     override suspend fun getDocumentById(id: DocumentId): DomainResult<Document> = 
         withContext(Dispatchers.IO) {

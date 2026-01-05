@@ -352,6 +352,32 @@ interface DocumentDao {
         LIMIT :limit
     """)
     fun searchWithPath(query: String, limit: Int = 50): Flow<List<DocumentWithPath>>
+
+    /**
+     * FTS4 search over OCR + translation text.
+     *
+     * NOTE: DocumentEntity uses INTEGER PRIMARY KEY, so rowid == id, and
+     * Room keeps documents_fts in sync via @Fts4(contentEntity=DocumentEntity).
+     */
+    @Query("""
+        SELECT d.id, d.record_id AS recordId, d.image_path AS imagePath, d.thumbnail_path AS thumbnailPath,
+               d.original_text AS originalText, d.translated_text AS translatedText,
+               d.detected_language AS detectedLanguage, d.source_language AS sourceLanguage,
+               d.target_language AS targetLanguage, d.position, d.processing_status AS processingStatus,
+               d.ocr_confidence AS ocrConfidence, d.file_size AS fileSize, d.width, d.height,
+               d.created_at AS createdAt, d.updated_at AS updatedAt,
+               r.name AS recordName, f.name AS folderName
+        FROM documents_fts fts
+        INNER JOIN documents d ON d.id = fts.rowid
+        INNER JOIN records r ON d.record_id = r.id
+        INNER JOIN folders f ON r.folder_id = f.id
+        WHERE documents_fts MATCH :ftsQuery
+          AND r.is_archived = 0
+          AND f.is_archived = 0
+        ORDER BY d.updated_at DESC
+        LIMIT :limit
+    """)
+    fun searchFtsWithPath(ftsQuery: String, limit: Int = 50): Flow<List<DocumentWithPath>>
     
     @Query("SELECT EXISTS(SELECT 1 FROM documents WHERE id = :documentId)")
     suspend fun exists(documentId: Long): Boolean
@@ -525,9 +551,18 @@ interface SearchHistoryDao {
     
     @Query("DELETE FROM search_history WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM search_history WHERE LOWER(query) = LOWER(:query)")
+    suspend fun deleteByQuery(query: String)
     
     @Query("DELETE FROM search_history")
     suspend fun clearAll()
+
+    @Query("""
+        DELETE FROM search_history
+        WHERE id NOT IN (SELECT id FROM search_history ORDER BY timestamp DESC LIMIT :limit)
+    """)
+    suspend fun trimToLimit(limit: Int)
     
     @Query("DELETE FROM search_history WHERE timestamp < :timestamp")
     suspend fun deleteOlderThan(timestamp: Long)

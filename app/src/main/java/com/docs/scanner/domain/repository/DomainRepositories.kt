@@ -88,6 +88,12 @@ interface DocumentRepository {
     fun observeFailedDocuments(): Flow<List<Document>>
     fun searchDocuments(query: String): Flow<List<Document>>
     fun searchDocumentsWithPath(query: String): Flow<List<Document>>
+
+    // Search history
+    fun observeSearchHistory(limit: Int = 20): Flow<List<com.docs.scanner.domain.core.SearchHistoryItem>>
+    suspend fun saveSearchQuery(query: String, resultCount: Int): DomainResult<Unit>
+    suspend fun deleteSearchHistoryItem(id: Long): DomainResult<Unit>
+    suspend fun clearSearchHistory(): DomainResult<Unit>
     
     // Query
     suspend fun getDocumentById(id: DocumentId): DomainResult<Document>

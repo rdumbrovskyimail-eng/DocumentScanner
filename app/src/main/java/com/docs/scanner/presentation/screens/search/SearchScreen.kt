@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -74,7 +75,46 @@ fun SearchScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             when (val state = uiState) {
-                SearchUiState.Empty -> Text("Type to search.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                SearchUiState.Suggestions -> {
+                    val history by viewModel.searchHistory.collectAsStateWithLifecycle()
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Recent searches", style = MaterialTheme.typography.labelLarge)
+                        TextButton(
+                            onClick = viewModel::clearHistory,
+                            enabled = history.isNotEmpty()
+                        ) { Text("Clear") }
+                    }
+                    if (history.isEmpty()) {
+                        Text("Type to search.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(history, key = { it.id }) { item ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { viewModel.selectHistory(item.query) }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(item.query, style = MaterialTheme.typography.bodyMedium)
+                                            Text(
+                                                "${item.resultCount} results",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        IconButton(onClick = { viewModel.deleteHistoryItem(item.id) }) {
+                                            Icon(Icons.Default.Clear, contentDescription = "Remove")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 SearchUiState.QueryTooShort -> Text("Query too short.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 SearchUiState.Searching -> Text("Searching...", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 is SearchUiState.NoResults -> Text("No results for \"${state.query}\"")

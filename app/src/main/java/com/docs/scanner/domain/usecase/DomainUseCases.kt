@@ -558,6 +558,18 @@ class DocumentUseCases @Inject constructor(
         return if (trimmed.length < DomainConstants.MIN_SEARCH_QUERY_LENGTH) flowOf(emptyList())
         else repo.searchDocumentsWithPath(trimmed)
     }
+
+    fun observeSearchHistory(limit: Int = 20): Flow<List<com.docs.scanner.domain.core.SearchHistoryItem>> =
+        repo.observeSearchHistory(limit)
+
+    suspend fun saveSearchQuery(query: String, resultCount: Int): DomainResult<Unit> =
+        repo.saveSearchQuery(query, resultCount)
+
+    suspend fun deleteSearchHistoryItem(id: Long): DomainResult<Unit> =
+        repo.deleteSearchHistoryItem(id)
+
+    suspend fun clearSearchHistory(): DomainResult<Unit> =
+        repo.clearSearchHistory()
     
     suspend fun delete(id: DocumentId): DomainResult<Unit> = repo.deleteDocument(id)
     suspend fun update(doc: Document): DomainResult<Unit> = repo.updateDocument(doc.copy(updatedAt = time.currentMillis()))
