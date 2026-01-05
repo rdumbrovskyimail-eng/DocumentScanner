@@ -214,6 +214,97 @@ class QuickScanUseCase @Inject constructor(
             .format(java.time.Instant.ofEpochMilli(millis))
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// MULTI-PAGE SCAN
+// ══════════════════════════════════════════════════════════════════════════════
+
+sealed interface MultiPageScanState {
+    data object Preparing : MultiPageScanState
+    data class CreatingRecord(val targetFolderId: FolderId) : MultiPageScanState
+    data class SavingImage(val index: Int, val total: Int) : MultiPageScanState
+    data class Processing(val index: Int, val total: Int, val state: ProcessingState) : MultiPageScanState
+    data class PageFailed(val index: Int, val total: Int, val error: DomainError, val stage: String) : MultiPageScanState
+    data class Success(val recordId: RecordId, val documentIds: List<DocumentId>) : MultiPageScanState
+    data class Error(val error: DomainError, val stage: String) : MultiPageScanState
+}
+
+@Singleton
+class MultiPageScanUseCase @Inject constructor(
+    private val folderRepo: FolderRepository,
+    private val recordRepo: RecordRepository,
+    private val createDoc: CreateDocumentFromScanUseCase,
+    private val processDoc: ProcessDocumentUseCase,
+    private val time: TimeProvider
+) {
+    operator fun invoke(
+        imageUris: List<String>,
+        targetFolderId: FolderId? = null,
+        quickScansFolderName: String = "Quick Scans",
+        lang: Language = Language.AUTO
+    ): Flow<MultiPageScanState> = flow {
+        if (imageUris.isEmpty()) {
+            emit(MultiPageScanState.Error(DomainError.Unknown(IllegalArgumentException("No pages to scan")), "INPUT"))
+            return@flow
+        }
+
+        try {
+            emit(MultiPageScanState.Preparing)
+
+            val folderId = if (targetFolderId != null) {
+                if (!folderRepo.folderExists(targetFolderId)) {
+                    emit(MultiPageScanState.Error(DomainError.NotFoundError.Folder(targetFolderId), "FOLDER"))
+                    return@flow
+                }
+                targetFolderId
+            } else {
+                folderRepo.ensureQuickScansFolderExists(quickScansFolderName)
+            }
+
+            emit(MultiPageScanState.CreatingRecord(folderId))
+            val now = time.currentMillis()
+            val newRecord = NewRecord(
+                folderId = folderId,
+                name = "Scan ${formatTimestamp(now)}",
+                sourceLanguage = lang,
+                createdAt = now,
+                updatedAt = now
+            )
+            val recordId = recordRepo.createRecord(newRecord).getOrThrow()
+
+            val docIds = mutableListOf<DocumentId>()
+            val total = imageUris.size
+
+            for ((index, uri) in imageUris.withIndex()) {
+                emit(MultiPageScanState.SavingImage(index = index + 1, total = total))
+                val docId = try {
+                    createDoc(recordId, uri, lang).getOrThrow()
+                } catch (e: DomainException) {
+                    emit(MultiPageScanState.PageFailed(index + 1, total, e.error, "SAVE_IMAGE"))
+                    continue
+                }
+                docIds.add(docId)
+
+                processDoc(docId).collect { state ->
+                    emit(MultiPageScanState.Processing(index = index + 1, total = total, state = state))
+                    if (state is ProcessingState.Failed) {
+                        emit(MultiPageScanState.PageFailed(index + 1, total, state.error, state.stage.name))
+                    }
+                }
+            }
+
+            emit(MultiPageScanState.Success(recordId, docIds))
+        } catch (e: Exception) {
+            val err = if (e is DomainException) e.error else DomainError.Unknown(e)
+            emit(MultiPageScanState.Error(err, "SETUP"))
+        }
+    }.cancellable()
+
+    private fun formatTimestamp(millis: Long): String =
+        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(java.time.ZoneId.systemDefault())
+            .format(java.time.Instant.ofEpochMilli(millis))
+}
+
 /**
  * Batch операции с контролем параллелизма.
  */
@@ -653,6 +744,7 @@ class ExportUseCases @Inject constructor(
 class AllUseCases @Inject constructor(
     // Complex Scenarios
     val quickScan: QuickScanUseCase,
+    val multiPageScan: MultiPageScanUseCase,
     val createDocumentFromScan: CreateDocumentFromScanUseCase,
     val processDocument: ProcessDocumentUseCase,
     val batch: BatchOperationsUseCase,

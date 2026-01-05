@@ -18,7 +18,7 @@ class DocumentScannerWrapper @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     sealed interface ScanResult {
-        data class Success(val imageUris: List<Uri>) : ScanResult
+        data class Success(val imageUris: List<Uri>, val pdfUri: Uri?) : ScanResult
         data class Error(val message: String) : ScanResult
     }
 
@@ -37,13 +37,18 @@ class DocumentScannerWrapper @Inject constructor(
 
     fun isAvailable(): Boolean = true
 
-    fun startScan(activity: Activity, launcher: ActivityResultLauncher<IntentSenderRequest>) {
+    fun startScan(
+        activity: Activity,
+        launcher: ActivityResultLauncher<IntentSenderRequest>,
+        onError: (String) -> Unit
+    ) {
         client.getStartScanIntent(activity)
             .addOnSuccessListener { intentSender ->
                 launcher.launch(IntentSenderRequest.Builder(intentSender).build())
             }
             .addOnFailureListener { e ->
                 Timber.e(e, "Failed to start document scan")
+                onError(e.message ?: "Failed to start scanner")
             }
     }
 
@@ -51,7 +56,7 @@ class DocumentScannerWrapper @Inject constructor(
         val pages = result.pages
         val imageUris = pages?.mapNotNull { it.imageUri } ?: emptyList()
         return if (imageUris.isNotEmpty()) {
-            ScanResult.Success(imageUris)
+            ScanResult.Success(imageUris, result.pdf?.uri)
         } else {
             ScanResult.Error("No pages returned from scanner")
         }
