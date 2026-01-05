@@ -409,6 +409,12 @@ interface TermDao {
     
     @Query("DELETE FROM terms WHERE is_cancelled = 1")
     suspend fun deleteAllCancelled(): Int
+
+    @Query("SELECT id FROM terms WHERE is_completed = 1")
+    suspend fun getCompletedIds(): List<Long>
+
+    @Query("SELECT id FROM terms WHERE is_cancelled = 1")
+    suspend fun getCancelledIds(): List<Long>
     
     @Query("SELECT * FROM terms WHERE id = :termId")
     suspend fun getById(termId: Long): TermEntity?

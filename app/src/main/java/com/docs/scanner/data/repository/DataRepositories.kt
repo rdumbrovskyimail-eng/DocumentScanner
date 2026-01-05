@@ -922,7 +922,8 @@ class DocumentRepositoryImpl @Inject constructor(
 @Singleton
 class TermRepositoryImpl @Inject constructor(
     private val termDao: TermDao,
-    private val retryPolicy: RetryPolicy
+    private val retryPolicy: RetryPolicy,
+    private val alarmScheduler: com.docs.scanner.data.local.alarm.AlarmScheduler
 ) : TermRepository {
 
     override fun observeAllTerms(): Flow<List<Term>> =
@@ -1062,6 +1063,8 @@ class TermRepositoryImpl @Inject constructor(
                     val entity = TermEntity.fromNewDomain(newTerm)
                     val id = termDao.insert(entity)
                     Timber.d("✅ Created term: $id")
+                    runCatching { alarmScheduler.scheduleTerm(entity.copy(id = id)) }
+                        .onFailure { Timber.w(it, "Failed to schedule alarms for term %s", id) }
                     TermId(id)
                 }
             }.toDomainResult()
@@ -1074,12 +1077,19 @@ class TermRepositoryImpl @Inject constructor(
                     term.copy(updatedAt = System.currentTimeMillis())
                 )
                 termDao.update(entity)
+                // Reschedule reminders
+                runCatching { alarmScheduler.cancelTerm(term.id.value) }
+                if (!term.isCompleted && !term.isCancelled) {
+                    runCatching { alarmScheduler.scheduleTerm(entity) }
+                        .onFailure { Timber.w(it, "Failed to reschedule alarms for term %s", term.id.value) }
+                }
             }.toDomainResult()
         }
 
     override suspend fun deleteTerm(id: TermId): DomainResult<Unit> = 
         withContext(Dispatchers.IO) {
             runCatching {
+                runCatching { alarmScheduler.cancelTerm(id.value) }
                 termDao.deleteById(id.value)
                 Timber.d("🗑️ Deleted term: $id")
             }.toDomainResult()
@@ -1089,6 +1099,7 @@ class TermRepositoryImpl @Inject constructor(
         withContext(Dispatchers.IO) {
             runCatching {
                 termDao.markCompleted(id.value, timestamp)
+                runCatching { alarmScheduler.cancelTerm(id.value) }
                 Timber.d("✅ Marked term $id as completed")
             }.toDomainResult()
         }
@@ -1097,6 +1108,13 @@ class TermRepositoryImpl @Inject constructor(
         withContext(Dispatchers.IO) {
             runCatching {
                 termDao.markNotCompleted(id.value, timestamp)
+                // Reschedule if term still exists and not cancelled.
+                val entity = termDao.getById(id.value)
+                if (entity != null && !entity.isCancelled) {
+                    runCatching { alarmScheduler.cancelTerm(id.value) }
+                    runCatching { alarmScheduler.scheduleTerm(entity) }
+                        .onFailure { Timber.w(it, "Failed to reschedule alarms for term %s", id.value) }
+                }
                 Timber.d("↩️ Marked term $id as not completed")
             }.toDomainResult()
         }
@@ -1105,6 +1123,7 @@ class TermRepositoryImpl @Inject constructor(
         withContext(Dispatchers.IO) {
             runCatching {
                 termDao.cancel(id.value, timestamp)
+                runCatching { alarmScheduler.cancelTerm(id.value) }
                 Timber.d("❌ Cancelled term: $id")
             }.toDomainResult()
         }
@@ -1113,6 +1132,12 @@ class TermRepositoryImpl @Inject constructor(
         withContext(Dispatchers.IO) {
             runCatching {
                 termDao.restore(id.value, timestamp)
+                val entity = termDao.getById(id.value)
+                if (entity != null && !entity.isCompleted && !entity.isCancelled) {
+                    runCatching { alarmScheduler.cancelTerm(id.value) }
+                    runCatching { alarmScheduler.scheduleTerm(entity) }
+                        .onFailure { Timber.w(it, "Failed to schedule alarms for restored term %s", id.value) }
+                }
                 Timber.d("🔄 Restored term: $id")
             }.toDomainResult()
         }
@@ -1121,6 +1146,8 @@ class TermRepositoryImpl @Inject constructor(
     override suspend fun deleteAllCompleted(): DomainResult<Int> = 
         withContext(Dispatchers.IO) {
             runCatching {
+                // Best-effort cancel any leftover alarms for completed terms.
+                runCatching { termDao.getCompletedIds() }.getOrNull()?.forEach { alarmScheduler.cancelTerm(it) }
                 val count = termDao.deleteAllCompleted()
                 Timber.d("🗑️ Deleted $count completed terms")
                 count
@@ -1131,6 +1158,8 @@ class TermRepositoryImpl @Inject constructor(
     override suspend fun deleteAllCancelled(): DomainResult<Int> = 
         withContext(Dispatchers.IO) {
             runCatching {
+                // Best-effort cancel any leftover alarms for cancelled terms.
+                runCatching { termDao.getCancelledIds() }.getOrNull()?.forEach { alarmScheduler.cancelTerm(it) }
                 val count = termDao.deleteAllCancelled()
                 Timber.d("🗑️ Deleted $count cancelled terms")
                 count

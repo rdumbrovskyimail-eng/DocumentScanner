@@ -23,8 +23,20 @@ private const val TAG = "NavGraph"
 
 @Composable
 fun NavGraph(
-    navController: NavHostController = rememberNavController()
+    navController: NavHostController = rememberNavController(),
+    initialOpenTermId: Long? = null,
+    onOpenTermConsumed: () -> Unit = {}
 ) {
+    LaunchedEffect(initialOpenTermId) {
+        val id = initialOpenTermId
+        if (id != null && id > 0) {
+            safeNavigate(navController) {
+                navigate(Screen.Terms.createRoute(id))
+            }
+            onOpenTermConsumed()
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = Screen.Onboarding.route
@@ -149,9 +161,17 @@ fun NavGraph(
             )
         }
 
-        composable(Screen.Terms.route) {
+        composable(
+            route = Screen.Terms.route,
+            arguments = listOf(
+                navArgument("openTermId") { type = NavType.LongType; defaultValue = -1L }
+            )
+        ) { backStackEntry ->
+            // NOTE: openTermId can be passed via optional query param.
+            val openTermId = backStackEntry.arguments?.getLong("openTermId")?.takeIf { v -> v > 0 }
             TermsScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                openTermId = openTermId
             )
         }
 

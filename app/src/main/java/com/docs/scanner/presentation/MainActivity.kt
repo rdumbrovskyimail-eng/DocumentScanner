@@ -1,6 +1,7 @@
 package com.docs.scanner.presentation
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -27,6 +29,8 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var settingsRepository: SettingsRepository
 
+    private val pendingOpenTermId = mutableStateOf<Long?>(null)
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -41,6 +45,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         requestNecessaryPermissions()
+        pendingOpenTermId.value = intent?.getLongExtra("open_term", -1L)?.takeIf { it > 0 }
 
         setContent {
             val themeMode = settingsRepository.observeThemeMode()
@@ -57,10 +62,18 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    NavGraph()
+                    NavGraph(
+                        initialOpenTermId = pendingOpenTermId.value,
+                        onOpenTermConsumed = { pendingOpenTermId.value = null }
+                    )
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        pendingOpenTermId.value = intent.getLongExtra("open_term", -1L).takeIf { it > 0 }
     }
 
     private fun requestNecessaryPermissions() {
