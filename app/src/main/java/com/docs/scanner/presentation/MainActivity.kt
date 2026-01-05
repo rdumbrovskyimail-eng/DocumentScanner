@@ -9,16 +9,23 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.presentation.navigation.NavGraph
 import com.docs.scanner.presentation.theme.DocumentScannerTheme
+import com.docs.scanner.domain.core.ThemeMode
+import com.docs.scanner.domain.repository.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var settingsRepository: SettingsRepository
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -36,7 +43,16 @@ class MainActivity : ComponentActivity() {
         requestNecessaryPermissions()
 
         setContent {
-            DocumentScannerTheme {
+            val themeMode = settingsRepository.observeThemeMode()
+                .collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+                .value
+            val darkTheme = when (themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+
+            DocumentScannerTheme(darkTheme = darkTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

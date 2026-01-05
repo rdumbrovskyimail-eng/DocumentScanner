@@ -188,7 +188,7 @@ class TranslationCacheManager @Inject constructor(
      */
     suspend fun cleanupExpiredCache(
         ttlDays: Int = DEFAULT_TTL_DAYS
-    ) = withContext(Dispatchers.IO) {
+    ): Int = withContext(Dispatchers.IO) {
         try {
             val expiryTimestamp = System.currentTimeMillis() - (ttlDays * DAY_IN_MILLIS)
             
@@ -197,8 +197,10 @@ class TranslationCacheManager @Inject constructor(
             val remainingCount = cacheDao.getCount()
             
             Timber.d("🧹 Cleanup: deleted $deletedCount, remaining $remainingCount")
+            deletedCount
         } catch (e: Exception) {
             Timber.e(e, "❌ Cleanup failed")
+            0
         }
     }
     

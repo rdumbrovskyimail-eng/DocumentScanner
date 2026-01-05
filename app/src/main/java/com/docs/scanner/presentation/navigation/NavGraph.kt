@@ -15,6 +15,7 @@ import com.docs.scanner.presentation.screens.imageviewer.ImageViewerScreen
 import com.docs.scanner.presentation.screens.onboarding.OnboardingScreen
 import com.docs.scanner.presentation.screens.records.RecordsScreen
 import com.docs.scanner.presentation.screens.search.SearchScreen
+import com.docs.scanner.presentation.screens.debug.DebugScreen
 import com.docs.scanner.presentation.screens.settings.SettingsScreen
 import com.docs.scanner.presentation.screens.terms.TermsScreen
 
@@ -156,6 +157,13 @@ fun NavGraph(
 
         composable(Screen.Settings.route) {
             SettingsScreen(
+                onBackClick = { navController.popBackStack() },
+                onDebugClick = { navController.navigate(Screen.Debug.route) }
+            )
+        }
+
+        composable(Screen.Debug.route) {
+            DebugScreen(
                 onBackClick = { navController.popBackStack() }
             )
         }

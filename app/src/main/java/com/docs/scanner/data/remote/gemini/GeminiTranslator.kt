@@ -1,6 +1,7 @@
 package com.docs.scanner.data.remote.gemini
 
 import com.docs.scanner.data.cache.TranslationCacheManager
+import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
 import com.docs.scanner.domain.core.DomainError
 import com.docs.scanner.domain.core.DomainResult
@@ -10,12 +11,14 @@ import com.docs.scanner.domain.core.TranslationResult
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.first
 
 @Singleton
 class GeminiTranslator @Inject constructor(
     private val geminiApi: GeminiApi,
     private val translationCacheManager: TranslationCacheManager,
-    private val encryptedKeyStorage: EncryptedKeyStorage
+    private val encryptedKeyStorage: EncryptedKeyStorage,
+    private val settingsDataStore: SettingsDataStore
 ) {
     /**
      * 2026 default: fast/cheap model.
@@ -29,7 +32,8 @@ class GeminiTranslator @Inject constructor(
     suspend fun translate(
         text: String,
         sourceLanguage: Language,
-        targetLanguage: Language
+        targetLanguage: Language,
+        useCacheOverride: Boolean? = null
     ): DomainResult<TranslationResult> {
         val trimmed = text.trim()
         if (trimmed.isBlank()) {
@@ -49,22 +53,28 @@ class GeminiTranslator @Inject constructor(
         val srcCode = sourceLanguage.code
         val tgtCode = targetLanguage.code
 
-        val cached = translationCacheManager.getCachedTranslation(
-            text = trimmed,
-            sourceLang = srcCode,
-            targetLang = tgtCode
-        )
-        if (cached != null) {
-            return DomainResult.Success(
-                TranslationResult(
-                    originalText = trimmed,
-                    translatedText = cached,
-                    sourceLanguage = sourceLanguage,
-                    targetLanguage = targetLanguage,
-                    fromCache = true,
-                    processingTimeMs = 0
-                )
+        val cacheEnabled = useCacheOverride ?: (runCatching { settingsDataStore.cacheEnabled.first() }.getOrNull() ?: true)
+        val ttlDays = runCatching { settingsDataStore.cacheTtlDays.first() }.getOrNull() ?: 30
+
+        if (cacheEnabled) {
+            val cached = translationCacheManager.getCachedTranslation(
+                text = trimmed,
+                sourceLang = srcCode,
+                targetLang = tgtCode,
+                maxAgeDays = ttlDays
             )
+            if (cached != null) {
+                return DomainResult.Success(
+                    TranslationResult(
+                        originalText = trimmed,
+                        translatedText = cached,
+                        sourceLanguage = sourceLanguage,
+                        targetLanguage = targetLanguage,
+                        fromCache = true,
+                        processingTimeMs = 0
+                    )
+                )
+            }
         }
 
         val apiKey = encryptedKeyStorage.getActiveApiKey().orEmpty()
@@ -91,12 +101,14 @@ class GeminiTranslator @Inject constructor(
                         )
                     )
                 } else {
-                    translationCacheManager.cacheTranslation(
-                        originalText = trimmed,
-                        translatedText = translated,
-                        sourceLang = srcCode,
-                        targetLang = tgtCode
-                    )
+                    if (cacheEnabled) {
+                        translationCacheManager.cacheTranslation(
+                            originalText = trimmed,
+                            translatedText = translated,
+                            sourceLang = srcCode,
+                            targetLang = tgtCode
+                        )
+                    }
 
                     DomainResult.Success(
                         TranslationResult(
@@ -139,7 +151,6 @@ class GeminiTranslator @Inject constructor(
     suspend fun clearOldCache(ttlDays: Int): Int {
         return try {
             translationCacheManager.cleanupExpiredCache(ttlDays)
-            0
         } catch (e: Exception) {
             Timber.e(e, "Failed to clear old cache")
             0

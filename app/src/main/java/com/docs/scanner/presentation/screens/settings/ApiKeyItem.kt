@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -23,7 +24,8 @@ fun ApiKeyItem(
     key: ApiKeyData,
     onActivate: (String) -> Unit,
     onCopy: (android.content.Context, String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onTest: (String) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     Row(
@@ -43,6 +45,9 @@ fun ApiKeyItem(
             IconButton(onClick = { onActivate(key.id) }) {
                 Icon(Icons.Default.Check, contentDescription = "Set active")
             }
+        }
+        IconButton(onClick = { onTest(key.id) }) {
+            Icon(Icons.Default.PlayArrow, contentDescription = "Test key")
         }
         IconButton(onClick = { onCopy(context, key.key) }) {
             Icon(Icons.Default.ContentCopy, contentDescription = "Copy")

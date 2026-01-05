@@ -18,6 +18,7 @@ sealed class Screen(val route: String) {
     data object Search : Screen("search")
     data object Terms : Screen("terms")
     data object Settings : Screen("settings")
+    data object Debug : Screen("debug")
     
     /**
      * Экран записей в папке

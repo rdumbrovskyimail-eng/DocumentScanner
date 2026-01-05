@@ -573,6 +573,7 @@ class TranslationUseCases @Inject constructor(
     
     suspend fun retryTranslation(docId: DocumentId): DomainResult<TranslationResult> = translateDocument(docId)
     suspend fun clearCache(): DomainResult<Unit> = repo.clearCache()
+    suspend fun clearOldCache(maxAgeDays: Int): DomainResult<Int> = repo.clearOldCache(maxAgeDays)
     suspend fun getCacheStats(): TranslationCacheStats = repo.getCacheStats()
 }
 

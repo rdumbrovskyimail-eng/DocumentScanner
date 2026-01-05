@@ -1287,10 +1287,25 @@ class SettingsRepositoryImpl @Inject constructor(
     override suspend fun setBiometricEnabled(enabled: Boolean): DomainResult<Unit> = 
         DomainResult.Success(Unit) // TODO: Implement biometric
 
-    override suspend fun getImageQuality(): ImageQuality = ImageQuality.HIGH
+    override suspend fun getImageQuality(): ImageQuality =
+        when (settingsDataStore.imageQuality.first().uppercase()) {
+            "LOW" -> ImageQuality.LOW
+            "MEDIUM" -> ImageQuality.MEDIUM
+            "ORIGINAL" -> ImageQuality.ORIGINAL
+            else -> ImageQuality.HIGH
+        }
 
-    override suspend fun setImageQuality(quality: ImageQuality): DomainResult<Unit> = 
-        DomainResult.Success(Unit) // TODO: Implement quality settings
+    override suspend fun setImageQuality(quality: ImageQuality): DomainResult<Unit> =
+        runCatching {
+            settingsDataStore.setImageQuality(
+                when (quality) {
+                    ImageQuality.LOW -> "LOW"
+                    ImageQuality.MEDIUM -> "MEDIUM"
+                    ImageQuality.HIGH -> "HIGH"
+                    ImageQuality.ORIGINAL -> "ORIGINAL"
+                }
+            )
+        }.toDomainResult()
 
     override suspend fun resetToDefaults(): DomainResult<Unit> = 
         runCatching {
@@ -1876,9 +1891,7 @@ class TranslationRepositoryImpl @Inject constructor(
         target: Language,
         useCache: Boolean
     ): DomainResult<TranslationResult> =
-        // Cache is handled internally by GeminiTranslator/TranslationCacheManager for now.
-        // TODO: Respect useCache by bypassing cache when false.
-        geminiTranslator.translate(text, source, target)
+        geminiTranslator.translate(text, source, target, useCacheOverride = useCache)
 
     override suspend fun translateBatch(
         texts: List<String>,
