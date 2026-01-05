@@ -13,18 +13,24 @@ import com.docs.scanner.domain.repository.TextLine
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizerOptionsInterface
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
+import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.first
 import kotlin.coroutines.resume
 
 @Singleton
 class MLKitScanner @Inject constructor(
     @ApplicationContext private val context: Context,
-    @Suppress("UNUSED_PARAMETER") private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore
 ) {
     suspend fun recognizeText(uri: Uri): DomainResult<OcrResult> {
         val start = System.currentTimeMillis()
@@ -65,8 +71,30 @@ class MLKitScanner @Inject constructor(
 
     private suspend fun runOcr(uri: Uri): Text {
         val image = InputImage.fromFilePath(context, uri)
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val recognizer = TextRecognition.getClient(getRecognizerOptions())
         return recognizer.process(image).await()
+    }
+
+    /**
+     * 2026-grade OCR: choose recognizer by user/app settings.
+     *
+     * Supported values in SettingsDataStore.ocrLanguage:
+     * - LATIN / CHINESE / JAPANESE / KOREAN / DEVANAGARI
+     */
+    private suspend fun getRecognizerOptions(): TextRecognizerOptionsInterface {
+        val mode = runCatching { settingsDataStore.ocrLanguage.first() }
+            .getOrNull()
+            ?.trim()
+            ?.uppercase()
+            .orEmpty()
+
+        return when (mode) {
+            "CHINESE" -> ChineseTextRecognizerOptions.Builder().build()
+            "JAPANESE" -> JapaneseTextRecognizerOptions.Builder().build()
+            "KOREAN" -> KoreanTextRecognizerOptions.Builder().build()
+            "DEVANAGARI" -> DevanagariTextRecognizerOptions.Builder().build()
+            else -> TextRecognizerOptions.DEFAULT_OPTIONS
+        }
     }
 }
 

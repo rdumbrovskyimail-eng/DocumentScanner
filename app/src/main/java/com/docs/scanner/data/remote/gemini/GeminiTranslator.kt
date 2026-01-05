@@ -17,6 +17,15 @@ class GeminiTranslator @Inject constructor(
     private val translationCacheManager: TranslationCacheManager,
     private val encryptedKeyStorage: EncryptedKeyStorage
 ) {
+    /**
+     * 2026 default: fast/cheap model.
+     *
+     * We keep a fallback to a widely-available model to avoid hard failures if the
+     * preferred model name is not enabled for the project/region.
+     */
+    private val preferredModel: String = "gemini-2.5-flash-lite"
+    private val fallbackModels: List<String> = listOf("gemini-1.5-flash")
+
     suspend fun translate(
         text: String,
         sourceLanguage: Language,
@@ -70,7 +79,7 @@ class GeminiTranslator @Inject constructor(
             append(trimmed)
         }
 
-        return when (val api = geminiApi.generateText(apiKey, prompt)) {
+        return when (val api = geminiApi.generateText(apiKey, prompt, model = preferredModel, fallbackModels = fallbackModels)) {
             is DomainResult.Success -> {
                 val translated = api.data.trim()
                 if (translated.isBlank()) {
@@ -120,7 +129,7 @@ class GeminiTranslator @Inject constructor(
             append(trimmed)
         }
 
-        return geminiApi.generateText(apiKey, prompt)
+        return geminiApi.generateText(apiKey, prompt, model = preferredModel, fallbackModels = fallbackModels)
     }
 
     suspend fun clearCache() {
