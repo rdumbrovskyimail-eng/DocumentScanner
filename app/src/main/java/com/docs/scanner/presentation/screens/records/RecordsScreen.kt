@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.presentation.components.*
 
@@ -27,20 +28,29 @@ fun RecordsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val currentFolderId by viewModel.currentFolderId.collectAsStateWithLifecycle()
+    val allFolders by viewModel.allFolders.collectAsStateWithLifecycle()
     
     var showCreateDialog by remember { mutableStateOf(false) }
     var editingRecord by remember { mutableStateOf<Record?>(null) }
     var showDeleteDialog by remember { mutableStateOf<Record?>(null) }
     var showMoveDialog by remember { mutableStateOf<Record?>(null) }
+    var snackbarMessage by remember { mutableStateOf<String?>(null) }
     
     LaunchedEffect(folderId) {
-        // viewModel.loadRecords(folderId) // ⚠️ TEMPORARILY DISABLED
+        viewModel.loadRecords(folderId)
     }
     
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Records") },
+                title = {
+                    Text(
+                        text = when (val state = uiState) {
+                            is RecordsUiState.Success -> (state as RecordsUiState.Success).folderName
+                            else -> "Records"
+                        }
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -53,6 +63,11 @@ fun RecordsScreen(
                 onClick = { showCreateDialog = true }
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Create Record")
+            }
+        },
+        snackbarHost = {
+            SnackbarHost(hostState = remember { SnackbarHostState() }) { data ->
+                Snackbar(snackbarData = data)
             }
         }
     ) { padding ->
@@ -107,7 +122,7 @@ fun RecordsScreen(
                 is RecordsUiState.Error -> {
                     ErrorState(
                         error = (uiState as RecordsUiState.Error).message,
-                        onRetry = { /* viewModel.loadRecords(folderId) */ }
+                        onRetry = { viewModel.loadRecords(folderId) }
                     )
                 }
             }
@@ -150,7 +165,7 @@ fun RecordsScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        // viewModel.createRecord(name, description.ifBlank { null })
+                        viewModel.createRecord(name, description.ifBlank { null })
                         showCreateDialog = false
                     },
                     enabled = name.isNotBlank()
@@ -257,12 +272,12 @@ fun RecordsScreen(
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            /* viewModel.updateRecord(
+                            viewModel.updateRecord(
                                 record.copy(
                                     name = newName,
                                     description = newDescription.ifBlank { null }
                                 )
-                            ) */
+                            )
                             showRenameDialog = false
                             editingRecord = null
                         },
@@ -285,14 +300,57 @@ fun RecordsScreen(
     
     // Move dialog
     showMoveDialog?.let { record ->
+        val selectableFolders = remember(allFolders, record.folderId) {
+            allFolders.filter { it.id != record.folderId }
+        }
+        var selectedFolderId by remember(record.id.value) { mutableStateOf<Long?>(null) }
+
         AlertDialog(
             onDismissRequest = { showMoveDialog = null },
             title = { Text("Move to folder") },
             text = {
-                // ⚠️ TEMPORARILY DISABLED - allFolders not available
-                Text("Move functionality temporarily disabled")
+                if (selectableFolders.isEmpty()) {
+                    Text("No other folders available.")
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        selectableFolders.forEach { folder ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedFolderId = folder.id.value }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = selectedFolderId == folder.id.value,
+                                    onClick = { selectedFolderId = folder.id.value }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(folder.name, style = MaterialTheme.typography.bodyLarge)
+                                    folder.description?.let {
+                                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             },
-            confirmButton = {},
+            confirmButton = {
+                TextButton(
+                    enabled = selectedFolderId != null,
+                    onClick = {
+                        val target = selectedFolderId
+                        if (target != null) {
+                            viewModel.moveRecord(record.id.value, target)
+                        }
+                        showMoveDialog = null
+                    }
+                ) {
+                    Text("Move")
+                }
+            },
             dismissButton = {
                 TextButton(onClick = { showMoveDialog = null }) {
                     Text("Cancel")
@@ -308,7 +366,7 @@ fun RecordsScreen(
             message = "This will delete \"${record.name}\" and all its documents. This action cannot be undone.",
             confirmText = "Delete",
             onConfirm = {
-                // viewModel.deleteRecord(record.id)
+                viewModel.deleteRecord(record.id.value)
                 showDeleteDialog = null
             },
             onDismiss = { showDeleteDialog = null }
