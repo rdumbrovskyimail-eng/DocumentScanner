@@ -265,6 +265,7 @@ interface FileRepository {
     suspend fun fileExists(path: String): Boolean
     suspend fun getImageDimensions(path: String): DomainResult<Pair<Int, Int>>
     suspend fun exportToPdf(docIds: List<DocumentId>, outputPath: String): DomainResult<String>
+    suspend fun exportToZip(docIds: List<DocumentId>, outputPath: String): DomainResult<String>
     suspend fun shareFile(path: String): DomainResult<String>
     suspend fun clearTempFiles(): Int
     suspend fun getStorageUsage(): StorageUsage

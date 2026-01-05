@@ -38,6 +38,9 @@ class EditorViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<EditorUiState>(EditorUiState.Loading)
     val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
 
+    private val _shareEvent = MutableSharedFlow<ShareEvent>()
+    val shareEvent: SharedFlow<ShareEvent> = _shareEvent.asSharedFlow()
+
     /**
      * Candidate records to move documents into (same folder).
      * Excludes current record.
@@ -370,6 +373,42 @@ class EditorViewModel @Inject constructor(
             _uiState.value = currentState.copy(errorMessage = message)
         }
     }
+
+    fun shareRecordAsPdf() {
+        val state = _uiState.value as? EditorUiState.Success ?: return
+        viewModelScope.launch {
+            val ids = state.documents.map { it.id }
+            when (val r = useCases.export.shareDocuments(ids, asPdf = true)) {
+                is DomainResult.Success -> _shareEvent.emit(
+                    ShareEvent.File(path = r.data, mimeType = "application/pdf")
+                )
+                is DomainResult.Failure -> updateErrorMessage("Failed to export PDF: ${r.error.message}")
+            }
+        }
+    }
+
+    fun shareRecordImagesZip() {
+        val state = _uiState.value as? EditorUiState.Success ?: return
+        viewModelScope.launch {
+            val ids = state.documents.map { it.id }
+            when (val r = useCases.export.shareDocuments(ids, asPdf = false)) {
+                is DomainResult.Success -> _shareEvent.emit(
+                    ShareEvent.File(path = r.data, mimeType = "application/zip")
+                )
+                is DomainResult.Failure -> updateErrorMessage("Failed to export images: ${r.error.message}")
+            }
+        }
+    }
+
+    fun shareSingleImage(path: String) {
+        viewModelScope.launch {
+            _shareEvent.emit(ShareEvent.File(path = path, mimeType = "image/jpeg"))
+        }
+    }
+}
+
+sealed interface ShareEvent {
+    data class File(val path: String, val mimeType: String) : ShareEvent
 }
 
 sealed interface EditorUiState {

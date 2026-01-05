@@ -1,6 +1,8 @@
 package com.docs.scanner.presentation.screens.editor
 
 import android.net.Uri
+import android.content.Intent
+import androidx.core.content.FileProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,9 +58,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.docs.scanner.BuildConfig
 import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.model.Document
 import com.docs.scanner.presentation.components.FullscreenTextEditor
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,6 +76,7 @@ fun EditorScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val moveTargets by viewModel.moveTargets.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     var recordMenuExpanded by remember { mutableStateOf(false) }
     var showRenameRecordDialog by remember { mutableStateOf(false) }
@@ -92,6 +98,32 @@ fun EditorScreen(
         if (state is EditorUiState.Success && state.errorMessage != null) {
             snackbarHostState.showSnackbar(state.errorMessage)
             viewModel.clearError()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.shareEvent.collect { event ->
+            when (event) {
+                is ShareEvent.File -> {
+                    val file = File(event.path)
+                    if (!file.exists()) {
+                        snackbarHostState.showSnackbar("File not found")
+                        return@collect
+                    }
+
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${BuildConfig.APPLICATION_ID}.fileprovider",
+                        file
+                    )
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = event.mimeType
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Share"))
+                }
+            }
         }
     }
 
@@ -157,6 +189,24 @@ fun EditorScreen(
                                 showLanguageDialog = true
                             },
                             leadingIcon = { Icon(Icons.Default.Language, contentDescription = null) }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Share as PDF") },
+                            onClick = {
+                                recordMenuExpanded = false
+                                viewModel.shareRecordAsPdf()
+                            },
+                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Share images (ZIP)") },
+                            onClick = {
+                                recordMenuExpanded = false
+                                viewModel.shareRecordImagesZip()
+                            },
+                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
                         )
                     }
                 }
@@ -243,6 +293,14 @@ fun EditorScreen(
                                         expanded = docMenuExpanded,
                                         onDismissRequest = { docMenuExpanded = false }
                                     ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Share page") },
+                                            onClick = {
+                                                docMenuExpanded = false
+                                                viewModel.shareSingleImage(doc.imagePath)
+                                            },
+                                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                                        )
                                         DropdownMenuItem(
                                             text = { Text("Edit OCR text") },
                                             onClick = {

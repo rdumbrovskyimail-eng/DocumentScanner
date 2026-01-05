@@ -1350,7 +1350,8 @@ class SettingsRepositoryImpl @Inject constructor(
 @Singleton
 class FileRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val retryPolicy: RetryPolicy
+    private val retryPolicy: RetryPolicy,
+    private val docRepo: DocumentRepository
 ) : FileRepository {
 
     private val documentsDir = File(context.filesDir, "documents").apply { mkdirs() }
@@ -1519,9 +1520,99 @@ class FileRepositoryImpl @Inject constructor(
         docIds: List<DocumentId>, 
         outputPath: String
     ): DomainResult<String> = 
-        DomainResult.Failure(
-            DomainError.Unknown(Exception("PDF export not yet implemented"))
-        )
+        withContext(Dispatchers.IO) {
+            runCatching {
+                if (docIds.isEmpty()) throw IllegalArgumentException("No documents to export")
+
+                val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+                val outFile = resolveOutputFile(exportDir, outputPath, defaultExt = ".pdf")
+
+                val pdf = android.graphics.pdf.PdfDocument()
+                try {
+                    val pageWidth = 595 // A4 @ 72dpi
+                    val pageHeight = 842
+                    val margin = 24
+
+                    for ((index, id) in docIds.withIndex()) {
+                        val doc = docRepo.getDocumentById(id).getOrThrow()
+                        val imgPath = doc.imagePath
+                        val imgFile = File(imgPath)
+                        if (!imgFile.exists()) {
+                            Timber.w("Missing image file for %s: %s", id.value, imgPath)
+                            continue
+                        }
+
+                        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        android.graphics.BitmapFactory.decodeFile(imgFile.absolutePath, bounds)
+                        val imgW = bounds.outWidth.coerceAtLeast(1)
+                        val imgH = bounds.outHeight.coerceAtLeast(1)
+
+                        val targetMax = maxOf(pageWidth, pageHeight) * 2
+                        val sample = calculateInSampleSize(imgW, imgH, targetMax, targetMax)
+                        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                        val bitmap = android.graphics.BitmapFactory.decodeFile(imgFile.absolutePath, opts)
+                            ?: throw IOException("Failed to decode image: $imgPath")
+
+                        val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, index + 1).create()
+                        val page = pdf.startPage(pageInfo)
+                        try {
+                            val canvas = page.canvas
+                            canvas.drawColor(android.graphics.Color.WHITE)
+
+                            val availableW = (pageWidth - margin * 2).toFloat()
+                            val availableH = (pageHeight - margin * 2).toFloat()
+                            val scale = minOf(availableW / bitmap.width.toFloat(), availableH / bitmap.height.toFloat())
+                            val drawW = bitmap.width * scale
+                            val drawH = bitmap.height * scale
+                            val left = margin + (availableW - drawW) / 2f
+                            val top = margin + (availableH - drawH) / 2f
+
+                            val dest = android.graphics.RectF(left, top, left + drawW, top + drawH)
+                            canvas.drawBitmap(bitmap, null, dest, null)
+                        } finally {
+                            pdf.finishPage(page)
+                            bitmap.recycle()
+                        }
+                    }
+
+                    FileOutputStream(outFile).use { out -> pdf.writeTo(out) }
+                    outFile.absolutePath
+                } finally {
+                    pdf.close()
+                }
+            }.toDomainResult()
+        }
+
+    override suspend fun exportToZip(docIds: List<DocumentId>, outputPath: String): DomainResult<String> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                if (docIds.isEmpty()) throw IllegalArgumentException("No documents to export")
+
+                val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+                val outFile = resolveOutputFile(exportDir, outputPath, defaultExt = ".zip")
+
+                java.util.zip.ZipOutputStream(BufferedOutputStream(FileOutputStream(outFile))).use { zos ->
+                    docIds.forEachIndexed { index, id ->
+                        val doc = runCatching { docRepo.getDocumentById(id).getOrThrow() }.getOrNull() ?: return@forEachIndexed
+                        val imgFile = File(doc.imagePath)
+                        if (!imgFile.exists()) {
+                            Timber.w("Missing image file for %s: %s", id.value, doc.imagePath)
+                            return@forEachIndexed
+                        }
+
+                        val ext = imgFile.extension.ifBlank { "jpg" }
+                        val entryName = "page_${(index + 1).toString().padStart(3, '0')}.$ext"
+                        zos.putNextEntry(java.util.zip.ZipEntry(entryName))
+                        BufferedInputStream(FileInputStream(imgFile)).use { input ->
+                            input.copyTo(zos)
+                        }
+                        zos.closeEntry()
+                    }
+                }
+
+                outFile.absolutePath
+            }.toDomainResult()
+        }
 
     override suspend fun shareFile(path: String): DomainResult<String> = 
         DomainResult.Success(path) // Handled by UI layer
@@ -1578,6 +1669,28 @@ class FileRepositoryImpl @Inject constructor(
                 StorageUsage(0, 0, 0, 0)
             }
         }
+
+    private fun resolveOutputFile(dir: File, outputPath: String, defaultExt: String): File {
+        val raw = outputPath.trim()
+        val hasSep = raw.contains(File.separatorChar) || raw.startsWith("/")
+        val file = if (hasSep) File(raw) else File(dir, raw)
+        val name = if (file.name.endsWith(defaultExt, ignoreCase = true)) file.name else file.name + defaultExt
+        val parent = file.parentFile ?: dir
+        parent.mkdirs()
+        return File(parent, name)
+    }
+
+    private fun calculateInSampleSize(srcW: Int, srcH: Int, reqW: Int, reqH: Int): Int {
+        var inSampleSize = 1
+        if (srcH > reqH || srcW > reqW) {
+            var halfHeight = srcH / 2
+            var halfWidth = srcW / 2
+            while ((halfHeight / inSampleSize) >= reqH && (halfWidth / inSampleSize) >= reqW) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize.coerceAtLeast(1)
+    }
 
     /**
      * ✅ GOLD STANDARD: Memory-safe bitmap rotation with EXIF handling.

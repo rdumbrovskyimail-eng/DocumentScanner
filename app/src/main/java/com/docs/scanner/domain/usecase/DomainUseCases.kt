@@ -731,7 +731,9 @@ class ExportUseCases @Inject constructor(
             fileRepo.exportToPdf(docIds, tempPath)
                 .flatMap { fileRepo.shareFile(it) }
         } else {
-            DomainResult.failure(DomainError.Unknown(Exception("Multi-image share not implemented")))
+            val tempPath = "temp_share_${time.currentMillis()}.zip"
+            fileRepo.exportToZip(docIds, tempPath)
+                .flatMap { fileRepo.shareFile(it) }
         }
     }
 }
