@@ -2,6 +2,7 @@ package com.docs.scanner.presentation.screens.records
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.docs.scanner.domain.core.FolderId
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.domain.usecase.AllUseCases
@@ -13,14 +14,17 @@ import javax.inject.Inject
 /**
  * Records Screen ViewModel.
  * 
- * Session 8: Already excellent, no major changes needed
+ * Session 9 Fixes:
+ * - ✅ Allow folderId = -1L for Quick Scans folder
+ * - ✅ Added isQuickScansFolder flag for UI to hide create button
+ * - ✅ Only reject folderId == 0L (invalid)
  */
 @HiltViewModel
 class RecordsViewModel @Inject constructor(
     private val useCases: AllUseCases
 ) : ViewModel() {
 
-    private val _currentFolderId = MutableStateFlow(-1L)
+    private val _currentFolderId = MutableStateFlow(0L)
     val currentFolderId: StateFlow<Long> = _currentFolderId.asStateFlow()
 
     private val _uiState = MutableStateFlow<RecordsUiState>(RecordsUiState.Loading)
@@ -34,12 +38,16 @@ class RecordsViewModel @Inject constructor(
         )
 
     fun loadRecords(folderId: Long) {
-        if (folderId <= 0) {
+        // ✅ FIX: Only reject 0, allow negative IDs (Quick Scans = -1L)
+        if (folderId == 0L) {
             _uiState.value = RecordsUiState.Error("Invalid folder ID")
             return
         }
 
         _currentFolderId.value = folderId
+        
+        // ✅ Check if this is Quick Scans folder
+        val isQuickScans = folderId == FolderId.QUICK_SCANS_ID
         
         viewModelScope.launch {
             _uiState.value = RecordsUiState.Loading
@@ -58,7 +66,8 @@ class RecordsViewModel @Inject constructor(
                         _uiState.value = RecordsUiState.Success(
                             folderId = folderId,
                             folderName = folderName,
-                            records = records
+                            records = records,
+                            isQuickScansFolder = isQuickScans  // ✅ Pass to UI
                         )
                     }
             } catch (e: Exception) {
@@ -76,8 +85,16 @@ class RecordsViewModel @Inject constructor(
         }
 
         val folderId = _currentFolderId.value
-        if (folderId <= 0) {
+        
+        // ✅ FIX: Allow negative IDs, only reject 0
+        if (folderId == 0L) {
             updateErrorMessage("No folder selected")
+            return
+        }
+        
+        // ✅ Prevent manual creation in Quick Scans
+        if (folderId == FolderId.QUICK_SCANS_ID) {
+            updateErrorMessage("Cannot create records manually in Quick Scans")
             return
         }
 
@@ -167,6 +184,7 @@ sealed interface RecordsUiState {
         val folderId: Long,
         val folderName: String,
         val records: List<Record>,
+        val isQuickScansFolder: Boolean = false,  // ✅ NEW: To hide FAB
         val errorMessage: String? = null
     ) : RecordsUiState
     
