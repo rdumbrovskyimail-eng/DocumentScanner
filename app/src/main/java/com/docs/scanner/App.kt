@@ -2,13 +2,16 @@
  * DocumentScanner - App.kt
  * Application class оптимизированный для 2026 Standards
  *
- * Version: 7.0.0 - PRODUCTION READY
+ * Version: 7.1.0 - PRODUCTION READY
  * 
  * Fixed issues:
  * - 🟠 Серьёзная #2: Memory leak (applicationScope теперь cancellable)
  * - 🟠 Performance: Тяжелая инициализация в фоне
  * - 🔵 Minor: Notification channels не создаются при каждом старте
  * - Синтаксическая ошибка в onTerminate()
+ * 
+ * Session 9:
+ * - ✅ Quick Scans folder created on app startup (always exists)
  */
 
 package com.docs.scanner
@@ -41,6 +44,7 @@ import coil3.request.allowHardware
 import coil3.request.crossfade
 import coil3.size.Precision
 import com.docs.scanner.data.local.preferences.SettingsDataStore
+import com.docs.scanner.domain.repository.FolderRepository
 import com.docs.scanner.util.LogcatCollector
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -58,6 +62,12 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
 
     @Inject
     lateinit var settingsDataStore: SettingsDataStore
+    
+    /**
+     * ✅ NEW: Inject FolderRepository to create Quick Scans folder on startup
+     */
+    @Inject
+    lateinit var folderRepository: FolderRepository
 
     private var logcatCollector: LogcatCollector? = null
     
@@ -86,6 +96,9 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
         // Memory thresholds
         private const val MEMORY_CACHE_PERCENT = 0.20
         private const val DISK_CACHE_SIZE_MB = 100L
+        
+        // ✅ Quick Scans folder name (localized later if needed)
+        private const val QUICK_SCANS_FOLDER_NAME = "Quick Scans"
     }
 
     override fun onCreate() {
@@ -111,10 +124,40 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
             createNotificationChannels()
         }
         
-        // 5. Lifecycle Observer
+        // 5. ✅ NEW: Ensure Quick Scans folder exists on startup
+        applicationScope.launch(Dispatchers.IO) {
+            ensureQuickScansFolderExists()
+        }
+        
+        // 6. Lifecycle Observer
         setupLifecycleObserver()
 
         Timber.i("🚀 App initialized. Device: ${Build.MANUFACTURER} ${Build.MODEL}, SDK: ${Build.VERSION.SDK_INT}")
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ QUICK SCANS FOLDER INITIALIZATION
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Ensures Quick Scans folder exists on app startup.
+     * This folder is a system folder that cannot be deleted by user.
+     * It's always shown first in the folder list.
+     */
+    private suspend fun ensureQuickScansFolderExists() {
+        try {
+            // Get localized name if available, fallback to English
+            val folderName = try {
+                getString(R.string.quick_scans_folder_name)
+            } catch (e: Exception) {
+                QUICK_SCANS_FOLDER_NAME
+            }
+            
+            folderRepository.ensureQuickScansFolderExists(folderName)
+            Timber.d("✅ Quick Scans folder ensured")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to create Quick Scans folder")
+        }
     }
 
     // ════════════════════════════════════════════════════════════════════════════════
