@@ -5,8 +5,9 @@ import androidx.lifecycle.SavedStateHandle
 /**
  * ✅ Sealed class для всех экранов навигации
  * 
- * Session 8 Fix:
- * - ✅ Removed nullable parameters and fallbacks
+ * Session 9 Fix:
+ * - ✅ Allow negative folderId for Quick Scans folder (id = -1L)
+ * - ✅ Only reject folderId == 0 (invalid for Room entities)
  * - ✅ Added validation via require()
  * - ✅ Added helper methods for SavedStateHandle extraction
  * - ✅ Fail-fast approach instead of silent fallbacks
@@ -27,10 +28,15 @@ sealed class Screen(val route: String) {
     
     /**
      * Экран записей в папке
+     * 
+     * ✅ FIX: Allow negative folderId for system folders like Quick Scans (id = -1L)
+     * Only 0 is invalid (Room autoGenerate never produces 0)
      */
     data object Records : Screen("records/{folderId}") {
         fun createRoute(folderId: Long): String {
-            require(folderId > 0) { "Invalid folderId: $folderId" }
+            // ✅ FIX: Allow negative IDs (Quick Scans = -1L)
+            // Only reject 0 which is never valid
+            require(folderId != 0L) { "Invalid folderId: $folderId (0 is not allowed)" }
             return "records/$folderId"
         }
         
