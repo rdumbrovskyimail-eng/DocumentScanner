@@ -108,10 +108,7 @@ class TranslationCacheManager @Inject constructor(
                 ?: return@withContext null
             
             // Check expiration
-            val isExpired = TranslationCacheEntity.isExpired(
-                timestamp = cached.timestamp,
-                ttlDays = maxAgeDays
-            )
+            val isExpired = cached.isExpired(ttlDays = maxAgeDays)
             
             if (isExpired) {
                 // Delete expired entry
@@ -191,7 +188,7 @@ class TranslationCacheManager @Inject constructor(
      */
     suspend fun cleanupExpiredCache(
         ttlDays: Int = DEFAULT_TTL_DAYS
-    ) = withContext(Dispatchers.IO) {
+    ): Int = withContext(Dispatchers.IO) {
         try {
             val expiryTimestamp = System.currentTimeMillis() - (ttlDays * DAY_IN_MILLIS)
             
@@ -200,8 +197,10 @@ class TranslationCacheManager @Inject constructor(
             val remainingCount = cacheDao.getCount()
             
             Timber.d("🧹 Cleanup: deleted $deletedCount, remaining $remainingCount")
+            deletedCount
         } catch (e: Exception) {
             Timber.e(e, "❌ Cleanup failed")
+            0
         }
     }
     
@@ -229,8 +228,8 @@ class TranslationCacheManager @Inject constructor(
                 totalEntries = stats.totalEntries,
                 totalOriginalSize = stats.totalOriginalSize,
                 totalTranslatedSize = stats.totalTranslatedSize,
-                oldestEntry = stats.oldestEntry,
-                newestEntry = stats.newestEntry,
+                oldestEntry = stats.oldestEntry ?: 0L,
+                newestEntry = stats.newestEntry ?: 0L,
                 isHealthy = stats.totalEntries < MAX_CACHE_ENTRIES
             )
         } catch (e: Exception) {

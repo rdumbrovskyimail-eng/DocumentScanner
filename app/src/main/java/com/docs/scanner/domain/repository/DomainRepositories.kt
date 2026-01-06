@@ -4,7 +4,7 @@
  * 
  * Improvements v4.1.0:
  * - Type-safe progress callbacks (UploadProgress/DownloadProgress) ✅
- * - Updated method signatures for New*/Existing entity separation ✅
+ * - Updated method signatures for New/Existing entity separation ✅
  * - Improved nullability annotations ✅
  * - Better method naming consistency ✅
  */
@@ -88,6 +88,12 @@ interface DocumentRepository {
     fun observeFailedDocuments(): Flow<List<Document>>
     fun searchDocuments(query: String): Flow<List<Document>>
     fun searchDocumentsWithPath(query: String): Flow<List<Document>>
+
+    // Search history
+    fun observeSearchHistory(limit: Int = 20): Flow<List<com.docs.scanner.domain.core.SearchHistoryItem>>
+    suspend fun saveSearchQuery(query: String, resultCount: Int): DomainResult<Unit>
+    suspend fun deleteSearchHistoryItem(id: Long): DomainResult<Unit>
+    suspend fun clearSearchHistory(): DomainResult<Unit>
     
     // Query
     suspend fun getDocumentById(id: DocumentId): DomainResult<Document>
@@ -207,14 +213,6 @@ interface TranslationRepository {
     suspend fun getCacheStats(): TranslationCacheStats
 }
 
-data class TranslationCacheStats(
-    val totalEntries: Int,
-    val hitRate: Float,
-    val totalSizeBytes: Long,
-    val totalRequests: Long,
-    val cacheHits: Long
-)
-
 // ══════════════════════════════════════════════════════════════════════════════
 // SETTINGS REPOSITORY
 // ══════════════════════════════════════════════════════════════════════════════
@@ -273,6 +271,7 @@ interface FileRepository {
     suspend fun fileExists(path: String): Boolean
     suspend fun getImageDimensions(path: String): DomainResult<Pair<Int, Int>>
     suspend fun exportToPdf(docIds: List<DocumentId>, outputPath: String): DomainResult<String>
+    suspend fun exportToZip(docIds: List<DocumentId>, outputPath: String): DomainResult<String>
     suspend fun shareFile(path: String): DomainResult<String>
     suspend fun clearTempFiles(): Int
     suspend fun getStorageUsage(): StorageUsage
@@ -339,348 +338,3 @@ sealed class BackupProgress {
     data class Completed(val info: BackupInfo) : BackupProgress()
     data class Failed(val error: DomainError) : BackupProgress()
 }
-📄 3/3: UseCases.kt (ФИНАЛЬНАЯ УЛУЧШЕННАЯ ВЕРСИЯ)
-/*
- * DocumentScanner - Domain Use Cases
- * Version: 4.1.0 - Production Ready 2026 Enhanced
- * 
- * Improvements v4.1.0:
- * - Refactored error handling (no duplication) ✅
- * - Uses New*/Existing entity separation ✅
- * - Better type-safe error messages ✅
- * - Improved batch operations ✅
- * - Helper functions for common patterns ✅
- */
-
-package com.docs.scanner.domain.usecase
-
-import com.docs.scanner.domain.core.*
-import com.docs.scanner.domain.repository.*
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import javax.inject.Inject
-import javax.inject.Singleton
-
-// ══════════════════════════════════════════════════════════════════════════════
-// 1. COMPLEX SCENARIOS
-// ══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Создание документа из изображения с полной обработкой.
- */
-@Singleton
-class CreateDocumentFromScanUseCase @Inject constructor(
-    private val fileRepo: FileRepository,
-    private val docRepo: DocumentRepository,
-    private val recordRepo: RecordRepository,
-    private val settings: SettingsRepository,
-    private val time: TimeProvider
-) {
-    suspend operator fun invoke(
-        recordId: RecordId,
-        imageUri: String,
-        lang: Language = Language.AUTO
-    ): DomainResult<DocumentId> = DomainResult.catching {
-        if (!recordRepo.recordExists(recordId))
-            throw DomainError.NotFoundError.Record(recordId).toException()
-        
-        val path = fileRepo.saveImage(imageUri, settings.getImageQuality()).getOrThrow()
-        val size = fileRepo.getFileSize(path)
-        val dim = fileRepo.getImageDimensions(path).getOrNull() ?: (0 to 0)
-        
-        if (size > DomainConstants.MAX_IMAGE_SIZE_BYTES)
-            throw DomainError.FileTooLarge(size, DomainConstants.MAX_IMAGE_SIZE_BYTES).toException()
-        
-        val now = time.currentMillis()
-        val newDoc = NewDocument(
-            recordId = recordId,
-            imagePath = path,
-            sourceLanguage = lang,
-            position = docRepo.getNextPosition(recordId),
-            fileSize = size,
-            width = dim.first,
-            height = dim.second,
-            createdAt = now,
-            updatedAt = now
-        )
-        
-        val id = docRepo.createDocument(newDoc).getOrThrow()
-        recordRepo.updateDocumentCount(recordId)
-        id
-    }
-}
-
-/**
- * Состояния обработки документа.
- */
-sealed interface ProcessingState {
-    data object Idle : ProcessingState
-    data class OcrInProgress(val progress: Int) : ProcessingState
-    data class OcrComplete(val text: String, val language: Language?) : ProcessingState
-    data class TranslationInProgress(val progress: Int) : ProcessingState
-    data class Complete(val originalText: String, val translatedText: String?) : ProcessingState
-    data class Failed(val error: DomainError, val stage: Stage) : ProcessingState
-    
-    enum class Stage { OCR, TRANSLATION }
-}
-
-/**
- * ✅ IMPROVED: Refactored with helper function
- */
-@Singleton
-class ProcessDocumentUseCase @Inject constructor(
-    private val docRepo: DocumentRepository,
-    private val ocrRepo: OcrRepository,
-    private val transRepo: TranslationRepository,
-    private val settings: SettingsRepository
-) {
-    operator fun invoke(id: DocumentId): Flow<ProcessingState> = flow {
-        val doc = docRepo.getDocumentById(id).getOrElse {
-            emit(ProcessingState.Failed(it, ProcessingState.Stage.OCR))
-            return@flow
-        }
-        
-        // OCR Stage
-        emit(ProcessingState.OcrInProgress(0))
-        docRepo.updateProcessingStatus(id, ProcessingStatus.Ocr.InProgress)
-        
-        val ocrResult = processStage(
-            stage = ProcessingState.Stage.OCR,
-            failedStatus = ProcessingStatus.Ocr.Failed
-        ) {
-            ocrRepo.recognizeText(doc.imagePath, doc.sourceLanguage).getOrThrow()
-        } ?: return@flow
-        
-        docRepo.updateOcrResult(
-            id, ocrResult.text, ocrResult.detectedLanguage, 
-            ocrResult.confidence, ProcessingStatus.Ocr.Complete
-        )
-        emit(ProcessingState.OcrComplete(ocrResult.text, ocrResult.detectedLanguage))
-        
-        // Translation Stage (if enabled)
-        val autoTranslate = settings.isAutoTranslateEnabled()
-        if (autoTranslate && ocrResult.text.isNotBlank()) {
-            emit(ProcessingState.TranslationInProgress(0))
-            docRepo.updateProcessingStatus(id, ProcessingStatus.Translation.InProgress)
-            
-            val sourceLang = ocrResult.detectedLanguage ?: doc.sourceLanguage
-            val transResult = processStage(
-                stage = ProcessingState.Stage.TRANSLATION,
-                failedStatus = ProcessingStatus.Translation.Failed
-            ) {
-                transRepo.translate(ocrResult.text, sourceLang, doc.targetLanguage).getOrThrow()
-            } ?: return@flow
-            
-            docRepo.updateTranslationResult(id, transResult.translatedText, ProcessingStatus.Complete)
-            emit(ProcessingState.Complete(ocrResult.text, transResult.translatedText))
-        } else {
-            docRepo.updateProcessingStatus(id, ProcessingStatus.Complete)
-            emit(ProcessingState.Complete(ocrResult.text, null))
-        }
-    }.cancellable()
-    
-    /**
-     * ✅ NEW: Helper to avoid code duplication
-     */
-    private suspend fun <T> FlowCollector<ProcessingState>.processStage(
-        stage: ProcessingState.Stage,
-        failedStatus: ProcessingStatus,
-        block: suspend () -> T
-    ): T? {
-        return try {
-            block()
-        } catch (e: DomainException) {
-            docRepo.updateProcessingStatus(documentId, failedStatus)
-            emit(ProcessingState.Failed(e.error, stage))
-            null
-        }
-    }
-    
-    // Workaround: pass documentId via context or make it a property
-    private lateinit var documentId: DocumentId
-    
-    // Better version: make processStage a member of a private class
-}
-
-/**
- * Состояния Quick Scan.
- */
-sealed interface QuickScanState {
-    data object Preparing : QuickScanState
-    data object CreatingRecord : QuickScanState
-    data class SavingImage(val progress: Int) : QuickScanState
-    data class Processing(val state: ProcessingState) : QuickScanState
-    data class Success(val recordId: RecordId, val documentId: DocumentId) : QuickScanState
-    data class Error(val error: DomainError, val stage: String) : QuickScanState
-}
-
-/**
- * Quick Scan - полный цикл быстрого сканирования.
- */
-@Singleton
-class QuickScanUseCase @Inject constructor(
-    private val folderRepo: FolderRepository,
-    private val recordRepo: RecordRepository,
-    private val createDoc: CreateDocumentFromScanUseCase,
-    private val processDoc: ProcessDocumentUseCase,
-    private val time: TimeProvider
-) {
-    operator fun invoke(
-        imageUri: String,
-        quickScansFolderName: String = "Quick Scans",
-        lang: Language = Language.AUTO
-    ): Flow<QuickScanState> = flow {
-        try {
-            emit(QuickScanState.Preparing)
-            val folderId = folderRepo.ensureQuickScansFolderExists(quickScansFolderName)
-            
-            emit(QuickScanState.CreatingRecord)
-            val now = time.currentMillis()
-            val newRecord = NewRecord(
-                folderId = folderId,
-                name = "Scan ${formatTimestamp(now)}",
-                sourceLanguage = lang,
-                createdAt = now,
-                updatedAt = now
-            )
-            val recordId = recordRepo.createRecord(newRecord).getOrThrow()
-            
-            emit(QuickScanState.SavingImage(0))
-            val docId = createDoc(recordId, imageUri, lang).getOrThrow()
-            
-            processDoc(docId).collect { processingState ->
-                emit(QuickScanState.Processing(processingState))
-                when (processingState) {
-                    is ProcessingState.Complete -> emit(QuickScanState.Success(recordId, docId))
-                    is ProcessingState.Failed -> emit(QuickScanState.Error(processingState.error, processingState.stage.name))
-                    else -> {}
-                }
-            }
-        } catch (e: Exception) {
-            val error = if (e is DomainException) e.error else DomainError.Unknown(e)
-            emit(QuickScanState.Error(error, "SETUP"))
-        }
-    }.cancellable()
-    
-    private fun formatTimestamp(millis: Long): String =
-        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-            .withZone(java.time.ZoneId.systemDefault())
-            .format(java.time.Instant.ofEpochMilli(millis))
-}
-
-/**
- * Batch операции с контролем параллелизма.
- */
-@Singleton
-class BatchOperationsUseCase @Inject constructor(
-    private val createDoc: CreateDocumentFromScanUseCase,
-    private val processDoc: ProcessDocumentUseCase,
-    private val docRepo: DocumentRepository
-) {
-    data class BatchResult<T>(
-        val successful: List<T>,
-        val failed: List<Pair<Int, DomainError>>,
-        val total: Int
-    ) {
-        val successCount: Int get() = successful.size
-        val failedCount: Int get() = failed.size
-        val isFullSuccess: Boolean get() = failed.isEmpty()
-        val successRate: Float get() = if (total > 0) successCount.toFloat() / total else 0f
-    }
-    
-    suspend fun addDocuments(
-        recordId: RecordId,
-        imageUris: List<String>,
-        lang: Language = Language.AUTO,
-        maxConcurrency: Int = DomainConstants.DEFAULT_BATCH_CONCURRENCY,
-        onProgress: ((Int, Int) -> Unit)? = null
-    ): BatchResult<DocumentId> = batchProcess(
-        items = imageUris,
-        maxConcurrency = maxConcurrency,
-        onProgress = onProgress
-    ) { _, uri ->
-        createDoc(recordId, uri, lang)
-    }
-    
-    suspend fun processDocuments(
-        docIds: List<DocumentId>,
-        maxConcurrency: Int = DomainConstants.DEFAULT_BATCH_CONCURRENCY,
-        onProgress: ((Int, Int) -> Unit)? = null
-    ): BatchResult<DocumentId> = withContext(Dispatchers.IO) {
-        if (docIds.isEmpty()) return@withContext BatchResult(emptyList(), emptyList(), 0)
-        
-        val successful = mutableListOf<DocumentId>()
-        val failed = mutableListOf<Pair<Int, DomainError>>()
-        var completed = 0
-        val semaphore = Semaphore(maxConcurrency)
-        
-        docIds.mapIndexed { index, docId ->
-            async {
-                semaphore.withPermit {
-                    processDoc(docId).collect { state ->
-                        when (state) {
-                            is ProcessingState.Complete -> synchronized(successful) { successful.add(docId) }
-                            is ProcessingState.Failed -> synchronized(failed) { failed.add(index to state.error) }
-                            else -> {}
-                        }
-                    }
-                    synchronized(this@withContext) {
-                        completed++
-                        onProgress?.invoke(completed, docIds.size)
-                    }
-                }
-            }
-        }.awaitAll()
-        
-        BatchResult(successful.toList(), failed.toList(), docIds.size)
-    }
-    
-    suspend fun deleteDocuments(
-        docIds: List<DocumentId>,
-        maxConcurrency: Int = DomainConstants.DEFAULT_BATCH_CONCURRENCY,
-        onProgress: ((Int, Int) -> Unit)? = null
-    ): BatchResult<DocumentId> = batchProcess(
-        items = docIds,
-        maxConcurrency = maxConcurrency,
-        onProgress = onProgress
-    ) { _, docId ->
-        docRepo.deleteDocument(docId).map { docId }
-    }
-    
-    /**
-     * ✅ NEW: Generic batch processing helper
-     */
-    private suspend fun <T, R> batchProcess(
-        items: List<T>,
-        maxConcurrency: Int,
-        onProgress: ((Int, Int) -> Unit)?,
-        operation: suspend (Int, T) -> DomainResult<R>
-    ): BatchResult<R> = withContext(Dispatchers.IO) {
-        if (items.isEmpty()) return@withContext BatchResult(emptyList(), emptyList(), 0)
-        
-        val successful = mutableListOf<R>()
-        val failed = mutableListOf<Pair<Int, DomainError>>()
-        var completed = 0
-        val semaphore = Semaphore(maxConcurrency)
-        
-        items.mapIndexed { index, item ->
-            async {
-                semaphore.withPermit {
-                    operation(index, item)
-                        .onSuccess { synchronized(successful) { successful.add(it) } }
-                        .onFailure { synchronized(failed) { failed.add(index to it) } }
-                    synchronized(this@withContext) {
-                        completed++
-                        onProgress?.invoke(completed, items.size)
-                    }
-                }
-            }
-        }.awaitAll()
-        
-        BatchResult(successful.toList(), failed.toList(), items.size)
-    }
-}
-
-// ══════════════════════════════════════════════════════════════════════════

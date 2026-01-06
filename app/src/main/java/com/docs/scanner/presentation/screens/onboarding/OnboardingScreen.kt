@@ -252,46 +252,4 @@ private fun FeatureItem(
     }
 }
 
-// ⚠️ TODO Session 9 Problem #4: Переместить в presentation/viewmodels/OnboardingViewModel.kt
-@HiltViewModel
-class OnboardingViewModel @Inject constructor(
-    private val settingsRepository: SettingsRepository,
-    private val encryptedKeyStorage: EncryptedKeyStorage  // ✅ ДОБАВЛЕН (SECURITY!)
-) : ViewModel() {
-    
-    private val _apiKey = MutableStateFlow("")
-    val apiKey: StateFlow<String> = _apiKey.asStateFlow()
-    
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-    
-    fun checkFirstLaunch(onNotFirstLaunch: () -> Unit) {
-        viewModelScope.launch {
-            val isFirstLaunch = settingsRepository.isFirstLaunch()
-            if (!isFirstLaunch) {
-                onNotFirstLaunch()
-            }
-        }
-    }
-    
-    fun updateApiKey(key: String) {
-        _apiKey.value = key
-    }
-    
-    fun saveAndContinue(onComplete: () -> Unit) {
-        viewModelScope.launch {
-            _isLoading.value = true
-            
-            try {
-                // ✅ ИСПРАВЛЕНО SECURITY: EncryptedKeyStorage вместо SettingsRepository!
-                encryptedKeyStorage.setActiveApiKey(_apiKey.value)
-                settingsRepository.setFirstLaunchCompleted()
-                onComplete()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                _isLoading.value = false
-            }
-        }
-    }
-}
+// ViewModel is defined in `OnboardingViewModel.kt`.

@@ -3,6 +3,7 @@ package com.docs.scanner.presentation.screens.folders
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.docs.scanner.domain.core.DomainResult
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.usecase.AllUseCases
 import com.docs.scanner.domain.usecase.QuickScanState
@@ -28,6 +29,9 @@ class FoldersViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<FoldersUiState>(FoldersUiState.Loading)
     val uiState: StateFlow<FoldersUiState> = _uiState.asStateFlow()
 
+    private val _showArchived = MutableStateFlow(false)
+    val showArchived: StateFlow<Boolean> = _showArchived.asStateFlow()
+
     // ✅ FIX: SharedFlow for one-time navigation events
     private val _navigationEvent = MutableSharedFlow<NavigationEvent>()
     val navigationEvent: SharedFlow<NavigationEvent> = _navigationEvent.asSharedFlow()
@@ -44,7 +48,11 @@ class FoldersViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = FoldersUiState.Loading
 
-            useCases.getFolders()
+            showArchived
+                .flatMapLatest { includeArchived ->
+                    if (includeArchived) useCases.folders.observeIncludingArchived()
+                    else useCases.folders.observeAll()
+                }
                 .catch { e ->
                     _uiState.value = FoldersUiState.Error(
                         "Failed to load folders: ${e.message}"
@@ -60,6 +68,10 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
+    fun setShowArchived(enabled: Boolean) {
+        _showArchived.value = enabled
+    }
+
     /**
      * Create new folder.
      * ✅ FIX: No manual loadFolders() - Flow updates automatically!
@@ -71,14 +83,9 @@ class FoldersViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            when (val result = useCases.createFolder(name.trim(), description)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    // Auto-refresh via Flow, no manual call needed!
-                }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    updateErrorMessage("Failed to create folder: ${result.exception.message}")
-                }
-                else -> {}
+            when (val result = useCases.folders.create(name.trim(), desc = description?.takeIf { it.isNotBlank() })) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> updateErrorMessage("Failed to create folder: ${result.error.message}")
             }
         }
     }
@@ -88,14 +95,9 @@ class FoldersViewModel @Inject constructor(
      */
     fun updateFolder(folder: Folder) {
         viewModelScope.launch {
-            when (val result = useCases.updateFolder(folder)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    // Auto-refresh via Flow
-                }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    updateErrorMessage("Failed to update folder: ${result.exception.message}")
-                }
-                else -> {}
+            when (val result = useCases.folders.update(folder)) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> updateErrorMessage("Failed to update folder: ${result.error.message}")
             }
         }
     }
@@ -103,16 +105,38 @@ class FoldersViewModel @Inject constructor(
     /**
      * Delete folder.
      */
-    fun deleteFolder(folderId: Long) {
+    fun deleteFolder(folderId: Long, deleteContents: Boolean = false) {
         viewModelScope.launch {
-            when (val result = useCases.deleteFolder(folderId)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    // Auto-refresh via Flow
-                }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    updateErrorMessage("Failed to delete folder: ${result.exception.message}")
-                }
-                else -> {}
+            when (val result = useCases.folders.delete(com.docs.scanner.domain.core.FolderId(folderId), deleteContents = deleteContents)) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> updateErrorMessage("Failed to delete folder: ${result.error.message}")
+            }
+        }
+    }
+
+    fun setPinned(folderId: Long, pinned: Boolean) {
+        viewModelScope.launch {
+            when (val result = useCases.folders.pin(com.docs.scanner.domain.core.FolderId(folderId), pinned)) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> updateErrorMessage("Failed to update pin: ${result.error.message}")
+            }
+        }
+    }
+
+    fun archive(folderId: Long) {
+        viewModelScope.launch {
+            when (val result = useCases.folders.archive(com.docs.scanner.domain.core.FolderId(folderId))) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> updateErrorMessage("Failed to archive folder: ${result.error.message}")
+            }
+        }
+    }
+
+    fun unarchive(folderId: Long) {
+        viewModelScope.launch {
+            when (val result = useCases.folders.unarchive(com.docs.scanner.domain.core.FolderId(folderId))) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> updateErrorMessage("Failed to unarchive folder: ${result.error.message}")
             }
         }
     }
@@ -130,7 +154,7 @@ class FoldersViewModel @Inject constructor(
             )
 
             try {
-                useCases.quickScan(imageUri)
+                useCases.quickScan(imageUri.toString())
                     .catch { e ->
                         updateErrorMessage("Quick scan failed: ${e.message}")
                         // Reset to folders list
@@ -138,29 +162,23 @@ class FoldersViewModel @Inject constructor(
                     }
                     .collect { state ->
                         when (state) {
-                            is QuickScanState.CreatingStructure,
-                            is QuickScanState.CreatingFolder,
+                            is QuickScanState.Preparing,
                             is QuickScanState.CreatingRecord,
-                            is QuickScanState.ScanningImage,
-                            is QuickScanState.ProcessingOcr,
-                            is QuickScanState.Translating -> {
+                            is QuickScanState.SavingImage,
+                            is QuickScanState.Processing -> {
                                 _uiState.value = FoldersUiState.Processing(
                                     progress = when (state) {
-                                        is QuickScanState.CreatingStructure -> state.progress
-                                        is QuickScanState.CreatingFolder -> state.progress
-                                        is QuickScanState.CreatingRecord -> state.progress
-                                        is QuickScanState.ScanningImage -> state.progress
-                                        is QuickScanState.ProcessingOcr -> state.progress
-                                        is QuickScanState.Translating -> state.progress
+                                        is QuickScanState.Preparing -> 5
+                                        is QuickScanState.CreatingRecord -> 20
+                                        is QuickScanState.SavingImage -> 40 + (state.progress.coerceIn(0, 100) * 20 / 100)
+                                        is QuickScanState.Processing -> 70
                                         else -> 0
                                     },
                                     message = when (state) {
-                                        is QuickScanState.CreatingStructure -> state.message
-                                        is QuickScanState.CreatingFolder -> state.message
-                                        is QuickScanState.CreatingRecord -> state.message
-                                        is QuickScanState.ScanningImage -> state.message
-                                        is QuickScanState.ProcessingOcr -> state.message
-                                        is QuickScanState.Translating -> state.message
+                                        is QuickScanState.Preparing -> "Preparing..."
+                                        is QuickScanState.CreatingRecord -> "Creating record..."
+                                        is QuickScanState.SavingImage -> "Saving image..."
+                                        is QuickScanState.Processing -> "Processing..."
                                         else -> ""
                                     }
                                 )
@@ -168,14 +186,14 @@ class FoldersViewModel @Inject constructor(
                             is QuickScanState.Success -> {
                                 // Emit navigation event
                                 _navigationEvent.emit(
-                                    NavigationEvent.NavigateToEditor(state.recordId)
+                                    NavigationEvent.NavigateToEditor(state.recordId.value)
                                 )
                                 
                                 // Reset UI
                                 loadFolders()
                             }
                             is QuickScanState.Error -> {
-                                updateErrorMessage(state.message)
+                                updateErrorMessage(state.error.message)
                                 loadFolders()
                             }
                         }

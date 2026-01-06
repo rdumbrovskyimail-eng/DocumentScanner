@@ -697,7 +697,7 @@ suspend fun AppDatabase.getStats(context: Context): DatabaseStats = withContext(
         recordCount = recordDao().getCount(),
         documentCount = documentDao().getCount(),
         termCount = termDao().getActiveCount(),
-        cacheEntries = translationCacheDao().getCacheCount()
+        cacheEntries = translationCacheDao().getCount()
     )
 }
 

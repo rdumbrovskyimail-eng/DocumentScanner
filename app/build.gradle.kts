@@ -19,10 +19,9 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
-    
-    // Optional High-End Plugins (Safe Apply)
-    alias(libs.plugins.baseline.profile) apply false
-    alias(libs.plugins.dependency.guard) apply false
+
+    // Optional plugins removed: they currently fail plugin resolution in CI and
+    // are not required to build/run the app.
     id("com.google.gms.google-services") version "4.4.2" apply false
     id("com.google.firebase.crashlytics") version "3.0.2" apply false
 }
@@ -30,14 +29,20 @@ plugins {
 // ════════════════════════════════════════════════════════════════════════════════
 // 🔐 SECRETS MANAGEMENT (Configuration Cache Safe)
 // ════════════════════════════════════════════════════════════════════════════════
-val secrets = providers.fileContents(rootProject.layout.projectDirectory.file("local.properties"))
-    .asText
-    .map { content ->
-        Properties().apply { load(content.byteInputStream()) }
+val secrets = providers.provider {
+    val props = Properties()
+    val localPropertiesFile = rootProject.layout.projectDirectory.file("local.properties").asFile
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { props.load(it) }
     }
+    props
+}
 
 fun getSecret(key: String): String = 
     secrets.orNull?.getProperty(key) ?: System.getenv(key) ?: ""
+
+fun String.escapeForBuildConfigString(): String =
+    replace("\\", "\\\\").replace("\"", "\\\"")
 
 // ════════════════════════════════════════════════════════════════════════════════
 // 🏗️ ANDROID CONFIGURATION
@@ -60,8 +65,8 @@ android {
         resourceConfigurations += setOf("en", "ru", "es", "de", "fr", "it", "pt", "zh")
 
         // 🔐 SECRETS INJECTION
-        buildConfigField("String", "GEMINI_API_KEY", "\"${getSecret("GEMINI_API_KEY")}\"")
-        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${getSecret("GOOGLE_DRIVE_CLIENT_ID")}\"")
+        buildConfigField("String", "GEMINI_API_KEY", "\"${getSecret("GEMINI_API_KEY").escapeForBuildConfigString()}\"")
+        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${getSecret("GOOGLE_DRIVE_CLIENT_ID").escapeForBuildConfigString()}\"")
         
         // Manifest placeholders для Google Auth
         manifestPlaceholders["googleClientId"] = getSecret("GOOGLE_DRIVE_CLIENT_ID")
@@ -104,11 +109,6 @@ android {
                 "proguard-rules.pro"
             )
             signingConfig = signingConfigs.findByName("release")
-            
-            // Baseline Profile Rule
-            if (project.pluginManager.hasPlugin("androidx.baselineprofile")) {
-                baselineProfile.requiresRuleProducer = false
-            }
         }
         
         debug {
@@ -216,6 +216,9 @@ android {
 // 📦 DEPENDENCIES
 // ════════════════════════════════════════════════════════════════════════════════
 dependencies {
+    // ✅ Compose BOM (required for Compose artifacts without explicit versions)
+    implementation(platform(libs.androidx.compose.bom))
+
     // ✅ Bundles (See libs.versions.toml)
     implementation(libs.bundles.compose)
     implementation(libs.bundles.networking)
@@ -245,6 +248,9 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network)
 
+    // ✅ Material Components (required for XML Material3 theme in themes.xml)
+    implementation(libs.google.material)
+
     // ✅ Firebase & AI
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.vertexai)
@@ -260,6 +266,8 @@ dependencies {
     implementation(libs.androidx.biometric)
     implementation(libs.datastore.prefs)
     implementation(libs.androidx.startup)
+    implementation(libs.androidx.splashscreen)
+    implementation(libs.androidx.lifecycle.process)
 
     // ✅ Baseline Profiles
     implementation(libs.androidx.profileinstaller)
@@ -285,12 +293,7 @@ if (file("google-services.json").exists()) {
     apply(plugin = "com.google.firebase.firebase-perf")
 }
 
-// 🛡️ Dependency Guard Config (If plugin applied)
-if (pluginManager.hasPlugin("com.dropbox.dependency-guard")) {
-    configure<com.dropbox.gradle.plugins.dependencyguard.DependencyGuardExtension> {
-        configuration("releaseRuntimeClasspath")
-    }
-}
+// 🛡️ Dependency Guard config removed (optional tooling).
 
 // ════════════════════════════════════════════════════════════════════════════════
 // 📊 BUILD INFO (Debug)

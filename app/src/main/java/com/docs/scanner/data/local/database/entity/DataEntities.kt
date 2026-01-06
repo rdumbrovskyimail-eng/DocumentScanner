@@ -10,7 +10,7 @@
  * 
  * ✅ Synchronized with Domain v4.1.0
  * ✅ ProcessingStatus sealed interface mapping
- * ✅ Proper New*/Existing entity separation
+ * ✅ Proper New/Existing entity separation
  * 
  * 🔴 FIXED ISSUES:
  *    - Critical #1: Syntax error in TranslationCacheEntity.generateCacheKey()

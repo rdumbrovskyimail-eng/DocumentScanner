@@ -16,8 +16,14 @@ sealed class Screen(val route: String) {
     data object Folders : Screen("folders")
     data object Camera : Screen("camera")
     data object Search : Screen("search")
-    data object Terms : Screen("terms")
+    data object Terms : Screen("terms?openTermId={openTermId}") {
+        fun createRoute(openTermId: Long? = null): String {
+            val id = openTermId ?: return "terms"
+            return if (id > 0) "terms?openTermId=$id" else "terms"
+        }
+    }
     data object Settings : Screen("settings")
+    data object Debug : Screen("debug")
     
     /**
      * Экран записей в папке

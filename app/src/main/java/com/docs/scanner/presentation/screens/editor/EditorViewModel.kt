@@ -4,6 +4,11 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.docs.scanner.domain.core.DomainResult
+import com.docs.scanner.domain.core.DocumentId
+import com.docs.scanner.domain.core.FolderId
+import com.docs.scanner.domain.core.Language
+import com.docs.scanner.domain.core.RecordId
 import com.docs.scanner.domain.model.Document
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.domain.usecase.AddDocumentState
@@ -33,6 +38,24 @@ class EditorViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<EditorUiState>(EditorUiState.Loading)
     val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
 
+    private val _shareEvent = MutableSharedFlow<ShareEvent>()
+    val shareEvent: SharedFlow<ShareEvent> = _shareEvent.asSharedFlow()
+
+    /**
+     * Candidate records to move documents into (same folder).
+     * Excludes current record.
+     */
+    val moveTargets: StateFlow<List<Record>> =
+        uiState
+            .map { it as? EditorUiState.Success }
+            .distinctUntilChangedBy { it?.record?.id?.value }
+            .flatMapLatest { state ->
+                val record = state?.record ?: return@flatMapLatest flowOf(emptyList())
+                useCases.records.observeByFolder(FolderId(record.folderId.value))
+                    .map { list -> list.filter { it.id.value != record.id.value } }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     init {
         if (recordId > 0) {
             loadData()
@@ -54,7 +77,7 @@ class EditorViewModel @Inject constructor(
                     return@launch
                 }
 
-                val folder = useCases.getFolderById(record.folderId)
+                val folder = useCases.getFolderById(record.folderId.value)
                 val folderName = folder?.name ?: "Documents"
 
                 useCases.getDocuments(recordId)
@@ -139,6 +162,87 @@ class EditorViewModel @Inject constructor(
                 processingProgress = progress,
                 processingMessage = message
             )
+        }
+    }
+
+    fun moveDocument(documentId: Long, targetRecordId: Long) {
+        if (documentId <= 0 || targetRecordId <= 0) return
+        viewModelScope.launch {
+            when (val result = useCases.documents.move(DocumentId(documentId), RecordId(targetRecordId))) {
+                is DomainResult.Success -> loadData()
+                is DomainResult.Failure -> updateErrorMessage("Failed to move page: ${result.error.message}")
+            }
+        }
+    }
+
+    fun moveDocumentUp(documentId: Long) {
+        val state = _uiState.value as? EditorUiState.Success ?: return
+        val ids = state.documents.map { it.id.value }
+        val index = ids.indexOf(documentId)
+        if (index <= 0) return
+
+        val swapped = ids.toMutableList().apply {
+            val tmp = this[index - 1]
+            this[index - 1] = this[index]
+            this[index] = tmp
+        }
+
+        viewModelScope.launch {
+            when (val result = useCases.documents.reorder(RecordId(recordId), swapped.map { DocumentId(it) })) {
+                is DomainResult.Success -> Unit // flow will update
+                is DomainResult.Failure -> updateErrorMessage("Failed to reorder: ${result.error.message}")
+            }
+        }
+    }
+
+    fun moveDocumentDown(documentId: Long) {
+        val state = _uiState.value as? EditorUiState.Success ?: return
+        val ids = state.documents.map { it.id.value }
+        val index = ids.indexOf(documentId)
+        if (index == -1 || index >= ids.lastIndex) return
+
+        val swapped = ids.toMutableList().apply {
+            val tmp = this[index + 1]
+            this[index + 1] = this[index]
+            this[index] = tmp
+        }
+
+        viewModelScope.launch {
+            when (val result = useCases.documents.reorder(RecordId(recordId), swapped.map { DocumentId(it) })) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> updateErrorMessage("Failed to reorder: ${result.error.message}")
+            }
+        }
+    }
+
+    fun updateLanguages(source: Language, target: Language) {
+        viewModelScope.launch {
+            when (val result = useCases.records.updateLanguage(RecordId(recordId), source, target)) {
+                is DomainResult.Success -> loadData()
+                is DomainResult.Failure -> updateErrorMessage(result.error.message)
+            }
+        }
+    }
+
+    fun addTag(tag: String) {
+        val t = tag.trim()
+        if (t.isBlank()) return
+        viewModelScope.launch {
+            when (val result = useCases.records.addTag(RecordId(recordId), t)) {
+                is DomainResult.Success -> loadData()
+                is DomainResult.Failure -> updateErrorMessage("Failed to add tag: ${result.error.message}")
+            }
+        }
+    }
+
+    fun removeTag(tag: String) {
+        val t = tag.trim()
+        if (t.isBlank()) return
+        viewModelScope.launch {
+            when (val result = useCases.records.removeTag(RecordId(recordId), t)) {
+                is DomainResult.Success -> loadData()
+                is DomainResult.Failure -> updateErrorMessage("Failed to remove tag: ${result.error.message}")
+            }
         }
     }
 
@@ -269,6 +373,42 @@ class EditorViewModel @Inject constructor(
             _uiState.value = currentState.copy(errorMessage = message)
         }
     }
+
+    fun shareRecordAsPdf() {
+        val state = _uiState.value as? EditorUiState.Success ?: return
+        viewModelScope.launch {
+            val ids = state.documents.map { it.id }
+            when (val r = useCases.export.shareDocuments(ids, asPdf = true)) {
+                is DomainResult.Success -> _shareEvent.emit(
+                    ShareEvent.File(path = r.data, mimeType = "application/pdf")
+                )
+                is DomainResult.Failure -> updateErrorMessage("Failed to export PDF: ${r.error.message}")
+            }
+        }
+    }
+
+    fun shareRecordImagesZip() {
+        val state = _uiState.value as? EditorUiState.Success ?: return
+        viewModelScope.launch {
+            val ids = state.documents.map { it.id }
+            when (val r = useCases.export.shareDocuments(ids, asPdf = false)) {
+                is DomainResult.Success -> _shareEvent.emit(
+                    ShareEvent.File(path = r.data, mimeType = "application/zip")
+                )
+                is DomainResult.Failure -> updateErrorMessage("Failed to export images: ${r.error.message}")
+            }
+        }
+    }
+
+    fun shareSingleImage(path: String) {
+        viewModelScope.launch {
+            _shareEvent.emit(ShareEvent.File(path = path, mimeType = "image/jpeg"))
+        }
+    }
+}
+
+sealed interface ShareEvent {
+    data class File(val path: String, val mimeType: String) : ShareEvent
 }
 
 sealed interface EditorUiState {

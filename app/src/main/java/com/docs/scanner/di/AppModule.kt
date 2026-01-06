@@ -4,8 +4,9 @@ import android.content.Context
 import com.docs.scanner.data.cache.TranslationCacheManager
 import com.docs.scanner.data.local.alarm.AlarmScheduler
 import com.docs.scanner.data.local.database.dao.TranslationCacheDao
-import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
+import com.docs.scanner.domain.core.SystemTimeProvider
+import com.docs.scanner.domain.core.TimeProvider
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -61,18 +62,6 @@ object AppModule {
         return EncryptedKeyStorage(context)
     }
     
-    /**
-     * Provides DataStore for app settings.
-     * ⚠️ Does NOT store API keys (use EncryptedKeyStorage instead).
-     */
-    @Provides
-    @Singleton
-    fun provideSettingsDataStore(
-        @ApplicationContext context: Context
-    ): SettingsDataStore {
-        return SettingsDataStore(context)
-    }
-    
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // TRANSLATION CACHE
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -106,6 +95,14 @@ object AppModule {
     ): AlarmScheduler {
         return AlarmScheduler(context)
     }
+    
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // TIME (for deterministic domain logic)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    @Provides
+    @Singleton
+    fun provideTimeProvider(): TimeProvider = SystemTimeProvider()
     
     // ⚠️ NOTE: AlarmSchedulerWrapper removed - it was duplicate wrapper.
     // ViewModels should inject AlarmScheduler directly.

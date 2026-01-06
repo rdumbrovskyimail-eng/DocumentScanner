@@ -4,6 +4,24 @@
     <!-- APP NAME -->
     <!-- ============================================ -->
     <string name="app_name">Document Scanner</string>
+
+    <!-- ============================================ -->
+    <!-- NOTIFICATIONS (Channels/Groups) -->
+    <!-- ============================================ -->
+    <string name="notification_group_reminders">Reminders</string>
+    <string name="notification_group_operations">Operations</string>
+
+    <string name="notification_channel_term_reminders">Term reminders</string>
+    <string name="notification_channel_term_reminders_desc">Deadlines and term reminder notifications</string>
+
+    <string name="notification_channel_scan_progress">Scan progress</string>
+    <string name="notification_channel_scan_progress_desc">Document scanning progress</string>
+
+    <string name="notification_channel_backup_restore">Backup &amp; restore</string>
+    <string name="notification_channel_backup_restore_desc">Google Drive backup and restore notifications</string>
+
+    <string name="notification_channel_general">General</string>
+    <string name="notification_channel_general_desc">General application notifications</string>
     
     <!-- ============================================ -->
     <!-- SCREEN TITLES -->

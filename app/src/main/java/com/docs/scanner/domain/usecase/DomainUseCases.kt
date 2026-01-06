@@ -3,7 +3,7 @@
  * Version: 4.1.0 - Production Ready 2026 Enhanced (FINAL)
  * 
  * Improvements v4.1.0:
- * - Uses New*/Existing entity separation ✅
+ * - Uses New/Existing entity separation ✅
  * - Type-safe error handling ✅
  * - Improved batch operations with generic helper ✅
  * - Better code organization ✅
@@ -11,7 +11,10 @@
 
 package com.docs.scanner.domain.usecase
 
+import android.net.Uri
 import com.docs.scanner.domain.core.*
+import com.docs.scanner.domain.model.Result as LegacyResult
+import com.docs.scanner.domain.model.toLegacyResult
 import com.docs.scanner.domain.repository.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -95,9 +98,12 @@ class ProcessDocumentUseCase @Inject constructor(
     private val settings: SettingsRepository
 ) {
     operator fun invoke(id: DocumentId): Flow<ProcessingState> = flow {
-        val doc = docRepo.getDocumentById(id).getOrElse {
-            emit(ProcessingState.Failed(it, ProcessingState.Stage.OCR))
-            return@flow
+        val doc = when (val res = docRepo.getDocumentById(id)) {
+            is DomainResult.Success -> res.data
+            is DomainResult.Failure -> {
+                emit(ProcessingState.Failed(res.error, ProcessingState.Stage.OCR))
+                return@flow
+            }
         }
         
         // OCR Stage
@@ -202,6 +208,97 @@ class QuickScanUseCase @Inject constructor(
         }
     }.cancellable()
     
+    private fun formatTimestamp(millis: Long): String =
+        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(java.time.ZoneId.systemDefault())
+            .format(java.time.Instant.ofEpochMilli(millis))
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MULTI-PAGE SCAN
+// ══════════════════════════════════════════════════════════════════════════════
+
+sealed interface MultiPageScanState {
+    data object Preparing : MultiPageScanState
+    data class CreatingRecord(val targetFolderId: FolderId) : MultiPageScanState
+    data class SavingImage(val index: Int, val total: Int) : MultiPageScanState
+    data class Processing(val index: Int, val total: Int, val state: ProcessingState) : MultiPageScanState
+    data class PageFailed(val index: Int, val total: Int, val error: DomainError, val stage: String) : MultiPageScanState
+    data class Success(val recordId: RecordId, val documentIds: List<DocumentId>) : MultiPageScanState
+    data class Error(val error: DomainError, val stage: String) : MultiPageScanState
+}
+
+@Singleton
+class MultiPageScanUseCase @Inject constructor(
+    private val folderRepo: FolderRepository,
+    private val recordRepo: RecordRepository,
+    private val createDoc: CreateDocumentFromScanUseCase,
+    private val processDoc: ProcessDocumentUseCase,
+    private val time: TimeProvider
+) {
+    operator fun invoke(
+        imageUris: List<String>,
+        targetFolderId: FolderId? = null,
+        quickScansFolderName: String = "Quick Scans",
+        lang: Language = Language.AUTO
+    ): Flow<MultiPageScanState> = flow {
+        if (imageUris.isEmpty()) {
+            emit(MultiPageScanState.Error(DomainError.Unknown(IllegalArgumentException("No pages to scan")), "INPUT"))
+            return@flow
+        }
+
+        try {
+            emit(MultiPageScanState.Preparing)
+
+            val folderId = if (targetFolderId != null) {
+                if (!folderRepo.folderExists(targetFolderId)) {
+                    emit(MultiPageScanState.Error(DomainError.NotFoundError.Folder(targetFolderId), "FOLDER"))
+                    return@flow
+                }
+                targetFolderId
+            } else {
+                folderRepo.ensureQuickScansFolderExists(quickScansFolderName)
+            }
+
+            emit(MultiPageScanState.CreatingRecord(folderId))
+            val now = time.currentMillis()
+            val newRecord = NewRecord(
+                folderId = folderId,
+                name = "Scan ${formatTimestamp(now)}",
+                sourceLanguage = lang,
+                createdAt = now,
+                updatedAt = now
+            )
+            val recordId = recordRepo.createRecord(newRecord).getOrThrow()
+
+            val docIds = mutableListOf<DocumentId>()
+            val total = imageUris.size
+
+            for ((index, uri) in imageUris.withIndex()) {
+                emit(MultiPageScanState.SavingImage(index = index + 1, total = total))
+                val docId = try {
+                    createDoc(recordId, uri, lang).getOrThrow()
+                } catch (e: DomainException) {
+                    emit(MultiPageScanState.PageFailed(index + 1, total, e.error, "SAVE_IMAGE"))
+                    continue
+                }
+                docIds.add(docId)
+
+                processDoc(docId).collect { state ->
+                    emit(MultiPageScanState.Processing(index = index + 1, total = total, state = state))
+                    if (state is ProcessingState.Failed) {
+                        emit(MultiPageScanState.PageFailed(index + 1, total, state.error, state.stage.name))
+                    }
+                }
+            }
+
+            emit(MultiPageScanState.Success(recordId, docIds))
+        } catch (e: Exception) {
+            val err = if (e is DomainException) e.error else DomainError.Unknown(e)
+            emit(MultiPageScanState.Error(err, "SETUP"))
+        }
+    }.cancellable()
+
     private fun formatTimestamp(millis: Long): String =
         java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withZone(java.time.ZoneId.systemDefault())
@@ -461,8 +558,21 @@ class DocumentUseCases @Inject constructor(
         return if (trimmed.length < DomainConstants.MIN_SEARCH_QUERY_LENGTH) flowOf(emptyList())
         else repo.searchDocumentsWithPath(trimmed)
     }
+
+    fun observeSearchHistory(limit: Int = 20): Flow<List<com.docs.scanner.domain.core.SearchHistoryItem>> =
+        repo.observeSearchHistory(limit)
+
+    suspend fun saveSearchQuery(query: String, resultCount: Int): DomainResult<Unit> =
+        repo.saveSearchQuery(query, resultCount)
+
+    suspend fun deleteSearchHistoryItem(id: Long): DomainResult<Unit> =
+        repo.deleteSearchHistoryItem(id)
+
+    suspend fun clearSearchHistory(): DomainResult<Unit> =
+        repo.clearSearchHistory()
     
     suspend fun delete(id: DocumentId): DomainResult<Unit> = repo.deleteDocument(id)
+    suspend fun update(doc: Document): DomainResult<Unit> = repo.updateDocument(doc.copy(updatedAt = time.currentMillis()))
     suspend fun reorder(recordId: RecordId, docIds: List<DocumentId>): DomainResult<Unit> = repo.reorderDocuments(recordId, docIds)
     suspend fun move(id: DocumentId, toRecord: RecordId): DomainResult<Unit> = repo.moveDocument(id, toRecord)
 }
@@ -566,6 +676,7 @@ class TranslationUseCases @Inject constructor(
     
     suspend fun retryTranslation(docId: DocumentId): DomainResult<TranslationResult> = translateDocument(docId)
     suspend fun clearCache(): DomainResult<Unit> = repo.clearCache()
+    suspend fun clearOldCache(maxAgeDays: Int): DomainResult<Int> = repo.clearOldCache(maxAgeDays)
     suspend fun getCacheStats(): TranslationCacheStats = repo.getCacheStats()
 }
 
@@ -632,7 +743,9 @@ class ExportUseCases @Inject constructor(
             fileRepo.exportToPdf(docIds, tempPath)
                 .flatMap { fileRepo.shareFile(it) }
         } else {
-            DomainResult.failure(DomainError.Unknown(Exception("Multi-image share not implemented")))
+            val tempPath = "temp_share_${time.currentMillis()}.zip"
+            fileRepo.exportToZip(docIds, tempPath)
+                .flatMap { fileRepo.shareFile(it) }
         }
     }
 }
@@ -645,6 +758,7 @@ class ExportUseCases @Inject constructor(
 class AllUseCases @Inject constructor(
     // Complex Scenarios
     val quickScan: QuickScanUseCase,
+    val multiPageScan: MultiPageScanUseCase,
     val createDocumentFromScan: CreateDocumentFromScanUseCase,
     val processDocument: ProcessDocumentUseCase,
     val batch: BatchOperationsUseCase,
@@ -661,4 +775,127 @@ class AllUseCases @Inject constructor(
 ) {
     /** DSL для функционального стиля */
     suspend operator fun <R> invoke(block: suspend AllUseCases.() -> R): R = block(this)
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Legacy facade (presentation compatibility)
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    fun getFolders(): Flow<List<Folder>> = folders.observeAll()
+
+    suspend fun getFolderById(folderId: Long): Folder? =
+        folders.getById(FolderId(folderId)).getOrNull()
+
+    suspend fun createFolder(name: String, description: String?): LegacyResult<Unit> =
+        folders.create(name, desc = description).map { Unit }.toLegacyResult()
+
+    suspend fun updateFolder(folder: Folder): LegacyResult<Unit> =
+        folders.update(folder).toLegacyResult()
+
+    suspend fun deleteFolder(folderId: Long): LegacyResult<Unit> =
+        folders.delete(FolderId(folderId)).toLegacyResult()
+
+    fun getRecords(folderId: Long): Flow<List<Record>> =
+        records.observeByFolder(FolderId(folderId))
+
+    suspend fun getRecordById(recordId: Long): Record? =
+        records.getById(RecordId(recordId)).getOrNull()
+
+    suspend fun createRecord(folderId: Long, name: String, description: String?): LegacyResult<Unit> =
+        records.create(folderId = FolderId(folderId), name = name, desc = description).map { Unit }.toLegacyResult()
+
+    suspend fun updateRecord(record: Record): LegacyResult<Unit> =
+        records.update(record).toLegacyResult()
+
+    suspend fun deleteRecord(recordId: Long): LegacyResult<Unit> =
+        records.delete(RecordId(recordId)).toLegacyResult()
+
+    suspend fun moveRecord(recordId: Long, targetFolderId: Long): LegacyResult<Unit> =
+        records.move(RecordId(recordId), FolderId(targetFolderId)).toLegacyResult()
+
+    fun getDocuments(recordId: Long): Flow<List<Document>> =
+        documents.observeByRecord(RecordId(recordId))
+
+    suspend fun getDocumentById(documentId: Long): Document? =
+        documents.getById(DocumentId(documentId)).getOrNull()
+
+    suspend fun updateDocument(document: Document): LegacyResult<Unit> =
+        documents.update(document).toLegacyResult()
+
+    suspend fun deleteDocument(documentId: Long): LegacyResult<Unit> =
+        documents.delete(DocumentId(documentId)).toLegacyResult()
+
+    fun searchDocuments(query: String): Flow<List<Document>> = documents.search(query)
+
+    fun addDocument(recordId: Long, imageUri: Uri): Flow<AddDocumentState> = flow {
+        emit(AddDocumentState.Creating(progress = 10, message = "Saving image..."))
+
+        val record = when (val r = records.getById(RecordId(recordId))) {
+            is DomainResult.Success -> r.data
+            is DomainResult.Failure -> {
+                emit(AddDocumentState.Error(message = r.error.message))
+                return@flow
+            }
+        }
+
+        val docId = when (val created = createDocumentFromScan(RecordId(recordId), imageUri.toString(), record.sourceLanguage)) {
+            is DomainResult.Success -> created.data
+            is DomainResult.Failure -> {
+                emit(AddDocumentState.Error(message = created.error.message))
+                return@flow
+            }
+        }
+
+        emit(AddDocumentState.ProcessingOcr(progress = 60, message = "Processing..."))
+
+        processDocument(docId).collect { state ->
+            when (state) {
+                is ProcessingState.OcrInProgress -> emit(AddDocumentState.ProcessingOcr(70, "Running OCR..."))
+                is ProcessingState.TranslationInProgress -> emit(AddDocumentState.Translating(85, "Translating..."))
+                is ProcessingState.Complete -> emit(AddDocumentState.Success(documentId = docId.value))
+                is ProcessingState.Failed -> emit(AddDocumentState.Error(message = state.error.message))
+                else -> {}
+            }
+        }
+    }.cancellable()
+
+    suspend fun fixOcr(documentId: Long): LegacyResult<Unit> {
+        return try {
+            val terminal = processDocument(DocumentId(documentId))
+                .first { it is ProcessingState.Complete || it is ProcessingState.Failed }
+            when (terminal) {
+                is ProcessingState.Complete -> LegacyResult.Success(Unit)
+                is ProcessingState.Failed -> LegacyResult.Error(DomainException(terminal.error))
+                else -> LegacyResult.Success(Unit)
+            }
+        } catch (e: Exception) {
+            LegacyResult.Error(e as? Exception ?: Exception(e))
+        }
+    }
+
+    suspend fun retryTranslation(documentId: Long): LegacyResult<Unit> =
+        translation.retryTranslation(DocumentId(documentId)).map { Unit }.toLegacyResult()
+
+    fun getUpcomingTerms(): Flow<List<Term>> = terms.observeActive()
+    fun getCompletedTerms(): Flow<List<Term>> = terms.observeCompleted()
+
+    suspend fun createTerm(term: Term): LegacyResult<Unit> =
+        terms.create(
+            title = term.title,
+            dueDate = term.dueDate,
+            desc = term.description,
+            reminderMinutes = term.reminderMinutesBefore,
+            priority = term.priority,
+            docId = term.documentId,
+            folderId = term.folderId,
+            color = term.color
+        ).map { Unit }.toLegacyResult()
+
+    suspend fun updateTerm(term: Term): LegacyResult<Unit> =
+        terms.update(term).toLegacyResult()
+
+    suspend fun markTermCompleted(termId: Long, completed: Boolean): LegacyResult<Unit> =
+        (if (completed) terms.complete(TermId(termId)) else terms.uncomplete(TermId(termId))).toLegacyResult()
+
+    suspend fun deleteTerm(term: Term): LegacyResult<Unit> =
+        terms.delete(term.id).toLegacyResult()
 }

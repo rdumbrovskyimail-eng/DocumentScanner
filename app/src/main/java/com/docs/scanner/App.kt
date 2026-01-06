@@ -375,11 +375,12 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     // ════════════════════════════════════════════════════════════════════════════════
     
     override fun newImageLoader(context: PlatformContext): ImageLoader {
+        // Coil 3 API: keep the ImageLoader configuration minimal and stable.
+        // Per-request placeholders/errors should be set in composables (AsyncImage).
         return ImageLoader.Builder(context)
             .memoryCache {
                 MemoryCache.Builder()
                     .maxSizePercent(context, percent = MEMORY_CACHE_PERCENT)
-                    .strongReferencesEnabled(true)
                     .build()
             }
             .diskCache {
@@ -388,28 +389,7 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
                     .maxSizeBytes(DISK_CACHE_SIZE_MB * 1024 * 1024)
                     .build()
             }
-            .memoryCachePolicy(CachePolicy.ENABLED)
-            .diskCachePolicy(CachePolicy.ENABLED)
-            .networkCachePolicy(CachePolicy.ENABLED)
-            .crossfade(enable = true)
-            .crossfade(durationMillis = 200)
-            .components {
-                add(coil3.decode.BitmapFactoryDecoder.Factory(
-                    bitmapConfig = Bitmap.Config.RGB_565
-                ))
-            }
-            .respectCacheHeaders(false)
-            .allowHardware(enable = true)
-            .precision(Precision.AUTOMATIC)
-            .apply {
-                // Placeholder & Error drawables
-                placeholder(R.drawable.ic_placeholder)
-                error(R.drawable.ic_error)
-                
-                if (BuildConfig.DEBUG) {
-                    logger(coil3.util.DebugLogger())
-                }
-            }
+            .crossfade(true)
             .build()
     }
 

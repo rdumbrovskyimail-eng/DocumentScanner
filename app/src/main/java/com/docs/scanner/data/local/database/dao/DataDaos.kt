@@ -223,6 +223,9 @@ interface RecordDao {
     
     @Query("SELECT COUNT(*) FROM records WHERE folder_id = :folderId AND is_archived = 0")
     suspend fun getCountByFolder(folderId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM records WHERE is_archived = 0")
+    suspend fun getCount(): Int
     
     @Query("SELECT DISTINCT tags FROM records WHERE tags IS NOT NULL AND tags != '' AND tags != '[]'")
     suspend fun getAllTagsJson(): List<String>
@@ -236,6 +239,23 @@ interface RecordDao {
         LIMIT :limit
     """)
     suspend fun search(query: String, limit: Int = 50): List<RecordEntity>
+
+    @Query("""
+        SELECT r.id, r.folder_id AS folderId, r.name, r.description, r.tags,
+               r.source_language AS sourceLanguage, r.target_language AS targetLanguage,
+               r.is_pinned AS isPinned, r.is_archived AS isArchived,
+               r.created_at AS createdAt, r.updated_at AS updatedAt,
+               COUNT(d.id) AS documentCount
+        FROM records r
+        LEFT JOIN documents d ON r.id = d.record_id
+        WHERE r.is_archived = 0
+          AND (LOWER(r.name) LIKE LOWER('%' || :query || '%')
+               OR LOWER(r.description) LIKE LOWER('%' || :query || '%'))
+        GROUP BY r.id
+        ORDER BY r.updated_at DESC
+        LIMIT :limit
+    """)
+    suspend fun searchWithCount(query: String, limit: Int = 50): List<RecordWithCount>
 
     // ✅ CRITICAL FIX: Добавлен метод для инкрементального бэкапа
     @Query("SELECT * FROM records WHERE updated_at > :timestamp")
@@ -332,12 +352,41 @@ interface DocumentDao {
         LIMIT :limit
     """)
     fun searchWithPath(query: String, limit: Int = 50): Flow<List<DocumentWithPath>>
+
+    /**
+     * FTS4 search over OCR + translation text.
+     *
+     * NOTE: DocumentEntity uses INTEGER PRIMARY KEY, so rowid == id, and
+     * Room keeps documents_fts in sync via @Fts4(contentEntity=DocumentEntity).
+     */
+    @Query("""
+        SELECT d.id, d.record_id AS recordId, d.image_path AS imagePath, d.thumbnail_path AS thumbnailPath,
+               d.original_text AS originalText, d.translated_text AS translatedText,
+               d.detected_language AS detectedLanguage, d.source_language AS sourceLanguage,
+               d.target_language AS targetLanguage, d.position, d.processing_status AS processingStatus,
+               d.ocr_confidence AS ocrConfidence, d.file_size AS fileSize, d.width, d.height,
+               d.created_at AS createdAt, d.updated_at AS updatedAt,
+               r.name AS recordName, f.name AS folderName
+        FROM documents_fts fts
+        INNER JOIN documents d ON d.id = fts.rowid
+        INNER JOIN records r ON d.record_id = r.id
+        INNER JOIN folders f ON r.folder_id = f.id
+        WHERE documents_fts MATCH :ftsQuery
+          AND r.is_archived = 0
+          AND f.is_archived = 0
+        ORDER BY d.updated_at DESC
+        LIMIT :limit
+    """)
+    fun searchFtsWithPath(ftsQuery: String, limit: Int = 50): Flow<List<DocumentWithPath>>
     
     @Query("SELECT EXISTS(SELECT 1 FROM documents WHERE id = :documentId)")
     suspend fun exists(documentId: Long): Boolean
     
     @Query("SELECT COUNT(*) FROM documents WHERE record_id = :recordId")
     suspend fun getCountByRecord(recordId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM documents")
+    suspend fun getCount(): Int
     
     @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM documents WHERE record_id = :recordId")
     suspend fun getNextPosition(recordId: Long): Int
@@ -386,6 +435,12 @@ interface TermDao {
     
     @Query("DELETE FROM terms WHERE is_cancelled = 1")
     suspend fun deleteAllCancelled(): Int
+
+    @Query("SELECT id FROM terms WHERE is_completed = 1")
+    suspend fun getCompletedIds(): List<Long>
+
+    @Query("SELECT id FROM terms WHERE is_cancelled = 1")
+    suspend fun getCancelledIds(): List<Long>
     
     @Query("SELECT * FROM terms WHERE id = :termId")
     suspend fun getById(termId: Long): TermEntity?
@@ -496,9 +551,18 @@ interface SearchHistoryDao {
     
     @Query("DELETE FROM search_history WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM search_history WHERE LOWER(query) = LOWER(:query)")
+    suspend fun deleteByQuery(query: String)
     
     @Query("DELETE FROM search_history")
     suspend fun clearAll()
+
+    @Query("""
+        DELETE FROM search_history
+        WHERE id NOT IN (SELECT id FROM search_history ORDER BY timestamp DESC LIMIT :limit)
+    """)
+    suspend fun trimToLimit(limit: Int)
     
     @Query("DELETE FROM search_history WHERE timestamp < :timestamp")
     suspend fun deleteOlderThan(timestamp: Long)
