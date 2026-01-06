@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.core.DomainResult
+import com.docs.scanner.domain.core.FolderId
+import com.docs.scanner.domain.core.RecordId
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.usecase.AllUseCases
 import com.docs.scanner.domain.usecase.QuickScanState
@@ -15,11 +17,14 @@ import javax.inject.Inject
 /**
  * Folders Screen ViewModel.
  * 
- * Session 8 Fixes:
+ * Session 8+ Fixes:
  * - ✅ Removed manual loadFolders() calls (Flow auto-updates!)
  * - ✅ SharedFlow for navigation instead of callbacks
  * - ✅ Added Processing state for quick scan
  * - ✅ Uses AllUseCases for consistency
+ * - ✅ Added clearQuickScans() for clearing Quick Scans folder
+ * - ✅ Added moveFolderPosition() for reordering folders
+ * - ✅ Sorting: Quick Scans first, then pinned, then by position/name
  */
 @HiltViewModel
 class FoldersViewModel @Inject constructor(
@@ -32,40 +37,67 @@ class FoldersViewModel @Inject constructor(
     private val _showArchived = MutableStateFlow(false)
     val showArchived: StateFlow<Boolean> = _showArchived.asStateFlow()
 
-    // ✅ FIX: SharedFlow for one-time navigation events
+    // ✅ SharedFlow for one-time navigation events
     private val _navigationEvent = MutableSharedFlow<NavigationEvent>()
     val navigationEvent: SharedFlow<NavigationEvent> = _navigationEvent.asSharedFlow()
+    
+    // Local ordering for folders (position overrides)
+    // Key: folderId, Value: position (lower = higher in list)
+    private val _folderPositions = MutableStateFlow<Map<Long, Int>>(emptyMap())
 
     init {
         loadFolders()
     }
 
     /**
-     * Load folders.
-     * ✅ FIX: Flow auto-updates, no need to call manually after operations!
+     * Load folders with proper sorting.
+     * ✅ Flow auto-updates, no need to call manually after operations!
      */
     private fun loadFolders() {
         viewModelScope.launch {
             _uiState.value = FoldersUiState.Loading
 
-            showArchived
-                .flatMapLatest { includeArchived ->
+            combine(
+                showArchived.flatMapLatest { includeArchived ->
                     if (includeArchived) useCases.folders.observeIncludingArchived()
                     else useCases.folders.observeAll()
+                },
+                _folderPositions
+            ) { folders, positions ->
+                sortFolders(folders, positions)
+            }
+            .catch { e ->
+                _uiState.value = FoldersUiState.Error(
+                    "Failed to load folders: ${e.message}"
+                )
+            }
+            .collect { sortedFolders ->
+                _uiState.value = if (sortedFolders.isEmpty()) {
+                    FoldersUiState.Empty
+                } else {
+                    FoldersUiState.Success(sortedFolders)
                 }
-                .catch { e ->
-                    _uiState.value = FoldersUiState.Error(
-                        "Failed to load folders: ${e.message}"
-                    )
-                }
-                .collect { folders ->
-                    _uiState.value = if (folders.isEmpty()) {
-                        FoldersUiState.Empty
-                    } else {
-                        FoldersUiState.Success(folders)
-                    }
-                }
+            }
         }
+    }
+    
+    /**
+     * Sort folders:
+     * 1. Quick Scans always first
+     * 2. Pinned folders next (sorted by name)
+     * 3. Other folders by position (if set) or by name
+     */
+    private fun sortFolders(folders: List<Folder>, positions: Map<Long, Int>): List<Folder> {
+        val quickScans = folders.filter { it.isQuickScans }
+        val pinned = folders.filter { !it.isQuickScans && it.isPinned }
+            .sortedBy { it.name.lowercase() }
+        val others = folders.filter { !it.isQuickScans && !it.isPinned }
+            .sortedWith(compareBy(
+                { positions[it.id.value] ?: Int.MAX_VALUE },
+                { it.name.lowercase() }
+            ))
+        
+        return quickScans + pinned + others
     }
 
     fun setShowArchived(enabled: Boolean) {
@@ -74,7 +106,7 @@ class FoldersViewModel @Inject constructor(
 
     /**
      * Create new folder.
-     * ✅ FIX: No manual loadFolders() - Flow updates automatically!
+     * ✅ No manual loadFolders() - Flow updates automatically!
      */
     fun createFolder(name: String, description: String?) {
         if (name.isBlank()) {
@@ -107,7 +139,7 @@ class FoldersViewModel @Inject constructor(
      */
     fun deleteFolder(folderId: Long, deleteContents: Boolean = false) {
         viewModelScope.launch {
-            when (val result = useCases.folders.delete(com.docs.scanner.domain.core.FolderId(folderId), deleteContents = deleteContents)) {
+            when (val result = useCases.folders.delete(FolderId(folderId), deleteContents = deleteContents)) {
                 is DomainResult.Success -> Unit
                 is DomainResult.Failure -> updateErrorMessage("Failed to delete folder: ${result.error.message}")
             }
@@ -116,7 +148,7 @@ class FoldersViewModel @Inject constructor(
 
     fun setPinned(folderId: Long, pinned: Boolean) {
         viewModelScope.launch {
-            when (val result = useCases.folders.pin(com.docs.scanner.domain.core.FolderId(folderId), pinned)) {
+            when (val result = useCases.folders.pin(FolderId(folderId), pinned)) {
                 is DomainResult.Success -> Unit
                 is DomainResult.Failure -> updateErrorMessage("Failed to update pin: ${result.error.message}")
             }
@@ -125,7 +157,7 @@ class FoldersViewModel @Inject constructor(
 
     fun archive(folderId: Long) {
         viewModelScope.launch {
-            when (val result = useCases.folders.archive(com.docs.scanner.domain.core.FolderId(folderId))) {
+            when (val result = useCases.folders.archive(FolderId(folderId))) {
                 is DomainResult.Success -> Unit
                 is DomainResult.Failure -> updateErrorMessage("Failed to archive folder: ${result.error.message}")
             }
@@ -134,16 +166,69 @@ class FoldersViewModel @Inject constructor(
 
     fun unarchive(folderId: Long) {
         viewModelScope.launch {
-            when (val result = useCases.folders.unarchive(com.docs.scanner.domain.core.FolderId(folderId))) {
+            when (val result = useCases.folders.unarchive(FolderId(folderId))) {
                 is DomainResult.Success -> Unit
                 is DomainResult.Failure -> updateErrorMessage("Failed to unarchive folder: ${result.error.message}")
             }
         }
     }
+    
+    /**
+     * ✅ NEW: Clear all records in Quick Scans folder.
+     */
+    fun clearQuickScans() {
+        viewModelScope.launch {
+            try {
+                // Get all records in Quick Scans
+                val quickScansId = FolderId.QUICK_SCANS
+                
+                // Observe records once and delete them
+                useCases.records.observeByFolder(quickScansId)
+                    .first() // Get current list
+                    .forEach { record ->
+                        useCases.records.delete(record.id)
+                    }
+                    
+            } catch (e: Exception) {
+                updateErrorMessage("Failed to clear Quick Scans: ${e.message}")
+            }
+        }
+    }
+    
+    /**
+     * ✅ NEW: Move folder position up or down.
+     * 
+     * @param folderId The folder to move
+     * @param direction -1 for up, +1 for down
+     */
+    fun moveFolderPosition(folderId: Long, direction: Int) {
+        val currentState = _uiState.value
+        if (currentState !is FoldersUiState.Success) return
+        
+        // Get current non-QuickScans, non-pinned folders (these are the ones that can be reordered)
+        val reorderableFolders = currentState.folders
+            .filter { !it.isQuickScans && !it.isPinned }
+        
+        val currentIndex = reorderableFolders.indexOfFirst { it.id.value == folderId }
+        if (currentIndex == -1) return
+        
+        val newIndex = (currentIndex + direction).coerceIn(0, reorderableFolders.lastIndex)
+        if (newIndex == currentIndex) return
+        
+        // Update positions map
+        val newPositions = _folderPositions.value.toMutableMap()
+        
+        // Swap positions
+        val targetFolder = reorderableFolders[newIndex]
+        newPositions[folderId] = newIndex
+        newPositions[targetFolder.id.value] = currentIndex
+        
+        _folderPositions.value = newPositions
+    }
 
     /**
      * Quick scan with progress reporting.
-     * ✅ FIX: Uses QuickScanState Flow + SharedFlow for navigation.
+     * ✅ Uses QuickScanState Flow + SharedFlow for navigation.
      */
     fun quickScan(imageUri: Uri) {
         viewModelScope.launch {
@@ -178,7 +263,7 @@ class FoldersViewModel @Inject constructor(
                                         is QuickScanState.Preparing -> "Preparing..."
                                         is QuickScanState.CreatingRecord -> "Creating record..."
                                         is QuickScanState.SavingImage -> "Saving image..."
-                                        is QuickScanState.Processing -> "Processing..."
+                                        is QuickScanState.Processing -> "Processing OCR..."
                                         else -> ""
                                     }
                                 )
@@ -193,7 +278,7 @@ class FoldersViewModel @Inject constructor(
                                 loadFolders()
                             }
                             is QuickScanState.Error -> {
-                                updateErrorMessage(state.error.message)
+                                updateErrorMessage("${state.stage}: ${state.error.message}")
                                 loadFolders()
                             }
                         }
@@ -232,8 +317,8 @@ class FoldersViewModel @Inject constructor(
  * UI State for Folders Screen.
  */
 sealed interface FoldersUiState {
-    object Loading : FoldersUiState
-    object Empty : FoldersUiState
+    data object Loading : FoldersUiState
+    data object Empty : FoldersUiState
     
     data class Success(
         val folders: List<Folder>,
