@@ -40,13 +40,19 @@ fun RecordsScreen(
         viewModel.loadRecords(folderId)
     }
     
+    // ✅ Determine if we should show FAB (hide for Quick Scans)
+    val showFab = when (val state = uiState) {
+        is RecordsUiState.Success -> !state.isQuickScansFolder
+        else -> false
+    }
+    
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
                         text = when (val state = uiState) {
-                            is RecordsUiState.Success -> (state as RecordsUiState.Success).folderName
+                            is RecordsUiState.Success -> state.folderName
                             else -> "Records"
                         }
                     )
@@ -59,10 +65,13 @@ fun RecordsScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showCreateDialog = true }
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Create Record")
+            // ✅ FIX: Only show FAB if not Quick Scans folder
+            if (showFab) {
+                FloatingActionButton(
+                    onClick = { showCreateDialog = true }
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Create Record")
+                }
             }
         },
         snackbarHost = {
@@ -76,7 +85,7 @@ fun RecordsScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            when (uiState) {
+            when (val state = uiState) {
                 is RecordsUiState.Loading -> {
                     CircularProgressIndicator(
                         modifier = Modifier.align(Alignment.Center)
@@ -84,22 +93,32 @@ fun RecordsScreen(
                 }
                 
                 is RecordsUiState.Success -> {
-                    val records = (uiState as RecordsUiState.Success).records
+                    val records = state.records
                     
                     if (records.isEmpty()) {
                         EmptyState(
                             icon = {
                                 Icon(
-                                    imageVector = Icons.Default.Description,
+                                    imageVector = if (state.isQuickScansFolder) 
+                                        Icons.Default.FlashOn 
+                                    else 
+                                        Icons.Default.Description,
                                     contentDescription = null,
                                     modifier = Modifier.size(64.dp),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             },
-                            title = "No records yet",
-                            message = "Create your first record to add documents",
-                            actionText = "Create Record",
-                            onActionClick = { showCreateDialog = true }
+                            title = if (state.isQuickScansFolder) 
+                                "No quick scans yet" 
+                            else 
+                                "No records yet",
+                            message = if (state.isQuickScansFolder)
+                                "Use the gallery button on the main screen to quick scan documents"
+                            else
+                                "Create your first record to add documents",
+                            // ✅ FIX: Don't show action button for Quick Scans
+                            actionText = if (state.isQuickScansFolder) null else "Create Record",
+                            onActionClick = if (state.isQuickScansFolder) null else {{ showCreateDialog = true }}
                         )
                     } else {
                         LazyColumn(
@@ -121,7 +140,7 @@ fun RecordsScreen(
                 
                 is RecordsUiState.Error -> {
                     ErrorState(
-                        error = (uiState as RecordsUiState.Error).message,
+                        error = state.message,
                         onRetry = { viewModel.loadRecords(folderId) }
                     )
                 }
@@ -129,7 +148,7 @@ fun RecordsScreen(
         }
     }
     
-    // Create dialog
+    // Create dialog (only for non-Quick Scans folders)
     if (showCreateDialog) {
         var name by remember { mutableStateOf("") }
         var description by remember { mutableStateOf("") }
@@ -301,7 +320,7 @@ fun RecordsScreen(
     // Move dialog
     showMoveDialog?.let { record ->
         val selectableFolders = remember(allFolders, record.folderId) {
-            allFolders.filter { it.id != record.folderId }
+            allFolders.filter { it.id != record.folderId && !it.isQuickScans }  // ✅ Exclude Quick Scans as target
         }
         var selectedFolderId by remember(record.id.value) { mutableStateOf<Long?>(null) }
 
@@ -431,5 +450,3 @@ private fun RecordCard(
         }
     }
 }
-
-// ⚠️ RecordsUiState moved to RecordsViewModel.kt file
