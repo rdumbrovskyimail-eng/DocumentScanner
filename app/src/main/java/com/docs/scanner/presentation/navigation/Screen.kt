@@ -4,44 +4,37 @@ import androidx.lifecycle.SavedStateHandle
 
 /**
  * ✅ Sealed class для всех экранов навигации
- * 
- * Session 9 Fix:
- * - ✅ Allow negative folderId for Quick Scans folder (id = -1L)
- * - ✅ Only reject folderId == 0 (invalid for Room entities)
- * - ✅ Added validation via require()
- * - ✅ Added helper methods for SavedStateHandle extraction
- * - ✅ Fail-fast approach instead of silent fallbacks
+ * * FIX APPLIED:
+ * - Changed get<String> to get<Long> in helper methods because NavGraph uses NavType.LongType.
+ * - This fixes the issue where IDs were returned as 0L (null), blocking the Editor from opening.
  */
 sealed class Screen(val route: String) {
     data object Onboarding : Screen("onboarding")
     data object Folders : Screen("folders")
     data object Camera : Screen("camera")
     data object Search : Screen("search")
+    data object Settings : Screen("settings")
+    data object Debug : Screen("debug")
+    
     data object Terms : Screen("terms?openTermId={openTermId}") {
         fun createRoute(openTermId: Long? = null): String {
             val id = openTermId ?: return "terms"
             return if (id > 0) "terms?openTermId=$id" else "terms"
         }
     }
-    data object Settings : Screen("settings")
-    data object Debug : Screen("debug")
     
     /**
      * Экран записей в папке
-     * 
-     * ✅ FIX: Allow negative folderId for system folders like Quick Scans (id = -1L)
-     * Only 0 is invalid (Room autoGenerate never produces 0)
      */
     data object Records : Screen("records/{folderId}") {
         fun createRoute(folderId: Long): String {
-            // ✅ FIX: Allow negative IDs (Quick Scans = -1L)
-            // Only reject 0 which is never valid
             require(folderId != 0L) { "Invalid folderId: $folderId (0 is not allowed)" }
             return "records/$folderId"
         }
         
         fun getFolderIdFromRoute(savedStateHandle: SavedStateHandle): Long {
-            return savedStateHandle.get<String>("folderId")?.toLongOrNull() ?: 0L
+            // ✅ FIX: NavGraph saves this as Long, so we must retrieve it as Long
+            return savedStateHandle.get<Long>("folderId") ?: 0L
         }
     }
     
@@ -55,7 +48,8 @@ sealed class Screen(val route: String) {
         }
         
         fun getRecordIdFromRoute(savedStateHandle: SavedStateHandle): Long {
-            return savedStateHandle.get<String>("recordId")?.toLongOrNull() ?: 0L
+            // ✅ FIX: NavGraph saves this as Long, so we must retrieve it as Long
+            return savedStateHandle.get<Long>("recordId") ?: 0L
         }
     }
     
@@ -69,7 +63,8 @@ sealed class Screen(val route: String) {
         }
         
         fun getDocumentIdFromRoute(savedStateHandle: SavedStateHandle): Long {
-            return savedStateHandle.get<String>("documentId")?.toLongOrNull() ?: 0L
+            // ✅ FIX: NavGraph saves this as Long, so we must retrieve it as Long
+            return savedStateHandle.get<Long>("documentId") ?: 0L
         }
     }
 }
