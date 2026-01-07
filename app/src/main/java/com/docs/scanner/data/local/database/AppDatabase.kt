@@ -1,26 +1,22 @@
 /*
  * DocumentScanner - App Database
  * Version: 7.0.0 - PRODUCTION READY 2026 (ALL 4 ANALYSES APPLIED)
- * 
- * ✅ CRITICAL FIXES:
- *    - Removed "server-side code" (30GB mmap_size → adaptive)
- *    - Fixed SearchDao availability
- * 
- * ✅ SERIOUS FIXES:
- *    - Added timeout for PRAGMA operations (Android best practice)
- *    - Removed manual FTS table creation (Room @Fts4 handles it)
- *    - Fixed WAL mode (already enabled by Room, removed duplicate)
- * 
- * ✅ ARCHITECTURAL IMPROVEMENTS:
- *    - Adaptive mmap_size based on device memory (max 256MB)
- *    - No more manual SQL for FTS (Room annotations only)
- *    - Proper migration testing hooks
- *    - Database validation utilities
- * 
- * ✅ SYNCHRONIZED:
- *    - Domain v4.1.0 (ProcessingStatus sealed interface)
- *    - Room Database with 7 entities
- *    - FTS4 full-text search (via @Fts4 annotation)
+ * * ✅ CRITICAL FIXES:
+ * - Removed "server-side code" (30GB mmap_size → adaptive)
+ * - Fixed SearchDao availability
+ * * ✅ SERIOUS FIXES:
+ * - Added timeout for PRAGMA operations (Android best practice)
+ * - Removed manual FTS table creation (Room @Fts4 handles it)
+ * - Fixed WAL mode (already enabled by Room, removed duplicate)
+ * * ✅ ARCHITECTURAL IMPROVEMENTS:
+ * - Adaptive mmap_size based on device memory (max 256MB)
+ * - No more manual SQL for FTS (Room annotations only)
+ * - Proper migration testing hooks
+ * - Database validation utilities
+ * * ✅ SYNCHRONIZED:
+ * - Domain v4.1.0 (ProcessingStatus sealed interface)
+ * - Room Database with 7 entities
+ * - FTS4 full-text search (via @Fts4 annotation)
  */
 
 package com.docs.scanner.data.local.database
@@ -52,7 +48,7 @@ import kotlin.math.min
         TranslationCacheEntity::class,
         SearchHistoryEntity::class
     ],
-    version = 17,
+    version = 18,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -71,10 +67,8 @@ abstract class AppDatabase : RoomDatabase() {
     
     /**
      * ✅ CRITICAL FIX #3: SearchDao now available.
-     * 
-     * Original code imported SearchDao in DatabaseModule but didn't provide it.
-     * 
-     * Note: This is optional - if you don't need a separate SearchDao,
+     * * Original code imported SearchDao in DatabaseModule but didn't provide it.
+     * * Note: This is optional - if you don't need a separate SearchDao,
      * search functionality is already in documentDao().searchFts().
      * But we provide it for consistency with DatabaseModule imports.
      */
@@ -114,7 +108,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_13_14,
                     MIGRATION_14_15,
                     MIGRATION_15_16,
-                    MIGRATION_16_17
+                    MIGRATION_16_17,
+                    MIGRATION_17_18
                 )
                 .addCallback(DatabaseCallback(context))
                 .fallbackToDestructiveMigrationOnDowngrade()
@@ -207,13 +202,11 @@ class Converters {
 
 /**
  * ✅ FULLY FIXED: Removed "server-side mentality" code.
- * 
- * REMOVED:
+ * * REMOVED:
  * - Manual FTS table creation (Room @Fts4 handles it)
  * - Manual WAL mode (Room JournalMode.WRITE_AHEAD_LOGGING handles it)
  * - 30GB mmap_size (server code on mobile = OOM crash)
- * 
- * ADDED:
+ * * ADDED:
  * - Adaptive mmap_size based on device memory (max 256MB)
  * - Timeout protection for PRAGMA operations
  * - Proper error handling
@@ -231,16 +224,13 @@ class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
         
         /**
          * ✅ REMOVED: Manual FTS table creation.
-         * 
-         * Original code:
+         * * Original code:
          * db.execSQL("CREATE VIRTUAL TABLE documents_fts USING fts4...")
-         * 
-         * Why removed:
+         * * Why removed:
          * - Room @Fts4 annotation creates FTS table automatically
          * - Manual creation breaks Room schema validation
          * - Can cause migration failures (hash mismatch)
-         * 
-         * Correct way: Use @Fts4 annotation in DocumentFtsEntity.
+         * * Correct way: Use @Fts4 annotation in DocumentFtsEntity.
          */
         
         // FTS triggers for auto-updating index (Room doesn't create these)
@@ -283,17 +273,14 @@ class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
         
         /**
          * ✅ CRITICAL FIX (Serious #4): Adaptive mmap_size instead of 30GB.
-         * 
-         * Original code:
+         * * Original code:
          * db.execSQL("PRAGMA mmap_size=30000000000") // 30GB!
-         * 
-         * Why this is WRONG:
+         * * Why this is WRONG:
          * - 30GB address space on mobile = OOM on 32-bit devices
          * - Even 64-bit phones don't have 30GB free address space
          * - This is SERVER-SIDE CODE copied to mobile without adaptation
          * - Can cause app crashes, ANRs, system instability
-         * 
-         * Fixed: Adaptive size based on available memory (max 256MB).
+         * * Fixed: Adaptive size based on available memory (max 256MB).
          */
         try {
             // Calculate adaptive mmap_size
@@ -310,23 +297,19 @@ class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
         
         /**
          * ✅ REMOVED: Manual WAL mode.
-         * 
-         * Original code:
+         * * Original code:
          * db.execSQL("PRAGMA journal_mode=WAL")
-         * 
-         * Why removed:
+         * * Why removed:
          * - Room already sets WAL via setJournalMode() in builder
          * - Duplicate setting is unnecessary
          * - Can cause conflicts on some Android versions
-         * 
-         * Room handles this correctly with:
+         * * Room handles this correctly with:
          * .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
          */
         
         /**
          * ✅ FIXED (Medium #15): Added timeout protection for PRAGMA operations.
-         * 
-         * Original: Direct PRAGMA calls without timeout = can hang UI thread
+         * * Original: Direct PRAGMA calls without timeout = can hang UI thread
          * Fixed: Wrapped in try-catch with logging
          */
         try {
@@ -418,8 +401,7 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
 
 /**
  * Migration 4→5: Добавлены FTS, translation_cache, search_history, языковые поля
- * 
- * ⚠️ NOTE: This migration historically created FTS table manually.
+ * * ⚠️ NOTE: This migration historically created FTS table manually.
  * In v17+, Room @Fts4 handles FTS creation, but we keep this for compatibility.
  */
 val MIGRATION_4_5 = object : Migration(4, 5) {
@@ -510,8 +492,7 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
 
 /**
  * ✅ NEW: Migrations 6→17 (placeholders for future schema changes)
- * 
- * These are empty migrations to match the database version 17.
+ * * These are empty migrations to match the database version 17.
  * Add actual schema changes here when needed.
  */
 val MIGRATION_6_7 = object : Migration(6, 7) {
@@ -581,6 +562,12 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
     }
 }
 
+val MIGRATION_17_18 = object : Migration(17, 18) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        Timber.d("✅ Migration 17→18: Version bump")
+    }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // DATABASE EXTENSIONS
 // ══════════════════════════════════════════════════════════════════════════════
@@ -626,8 +613,7 @@ fun AppDatabase.getTotalDatabaseSize(context: Context): Long {
 
 /**
  * Vacuum database (reclaim unused space)
- * 
- * ✅ FIXED (Medium #12): Added testing support.
+ * * ✅ FIXED (Medium #12): Added testing support.
  */
 suspend fun AppDatabase.vacuum() = withContext(Dispatchers.IO) {
     try {
@@ -700,44 +686,3 @@ suspend fun AppDatabase.getStats(context: Context): DatabaseStats = withContext(
         cacheEntries = translationCacheDao().getCount()
     )
 }
-
-// ══════════════════════════════════════════════════════════════════════════════
-// END OF FILE - SUMMARY OF FIXES
-// ══════════════════════════════════════════════════════════════════════════════
-
-/**
- * ✅ ALL FIXES APPLIED FROM 4 ANALYSES:
- * 
- * 🔴 CRITICAL FIXES (1/7 total - this file's portion):
- *    ✅ #3: SearchDao availability (documented, optional implementation)
- * 
- * 🟠 SERIOUS FIXES (2/15 total):
- *    ✅ #4: Fixed 30GB mmap_size → adaptive (max 256MB based on device memory)
- *    ✅ #15: Added timeout protection for PRAGMA operations
- * 
- * 🟡 MEDIUM FIXES (1/22 total):
- *    ✅ #12: Database migrations testing support added
- *    ✅ #15: DatabaseCallback.onOpen() with proper error handling
- * 
- * 🏗️ ARCHITECTURAL IMPROVEMENTS (from Deep Analysis):
- *    ✅ Removed "server-side mentality" code:
- *       - 30GB mmap_size (server code) → adaptive mobile-friendly size
- *       - Manual FTS creation → Room @Fts4 annotation
- *       - Duplicate WAL mode setting → Room's setJournalMode()
- *    ✅ Added proper error handling throughout
- *    ✅ Added database integrity validation
- *    ✅ Added debugging utilities (getStats, validateIntegrity)
- *    ✅ Improved migration logging
- * 
- * 📊 ISSUES RESOLVED IN THIS FILE: 4 problems
- * 
- * NEXT FILES TO FIX:
- *    1. DatabaseModule.kt (Critical #3 - SearchDao provider)
- *    2. build.gradle.kts root (Critical #7)
- *    3. App.kt (Serious #2 - memory leak)
- *    4. NetworkModule.kt (Serious #1)
- *    5. EncryptedKeyStorage.kt (Serious #3)
- * 
- * Current compilation status: 4/7 critical issues remain (other files)
- * This file is now: ✅ PRODUCTION READY 2026
- */
