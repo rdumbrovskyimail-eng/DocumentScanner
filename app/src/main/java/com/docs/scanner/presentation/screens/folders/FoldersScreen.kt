@@ -3,70 +3,29 @@ package com.docs.scanner.presentation.screens.folders
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.ClearAll
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Event
-import androidx.compose.material.icons.filled.FlashOn
-import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Unarchive
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.presentation.components.ConfirmDialog
+import org.burnoutcrew.reorderable.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -88,8 +47,10 @@ fun FoldersScreen(
     var showDeleteFolderDialog by remember { mutableStateOf<Folder?>(null) }
     var deleteFolderWithContents by remember { mutableStateOf(false) }
     var showClearQuickScansDialog by remember { mutableStateOf(false) }
+    var showSortMenu by remember { mutableStateOf(false) }
     
-    var reorderingFolderId by remember { mutableStateOf<Long?>(null) }
+    // Меню для конкретной папки
+    var menuFolder by remember { mutableStateOf<Folder?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.navigationEvent.collect { event ->
@@ -110,7 +71,52 @@ fun FoldersScreen(
             TopAppBar(
                 title = { Text("Documents") },
                 actions = {
-                    // Архив как иконка-тоггл
+                    // Сортировка
+                    Box {
+                        IconButton(onClick = { showSortMenu = true }) {
+                            Icon(Icons.Default.Sort, contentDescription = "Sort")
+                        }
+                        DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Name A-Z") },
+                                onClick = { 
+                                    viewModel.setSortOrder(SortOrder.NAME_ASC)
+                                    showSortMenu = false 
+                                },
+                                leadingIcon = { Icon(Icons.Default.SortByAlpha, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Name Z-A") },
+                                onClick = { 
+                                    viewModel.setSortOrder(SortOrder.NAME_DESC)
+                                    showSortMenu = false 
+                                },
+                                leadingIcon = { Icon(Icons.Default.SortByAlpha, null) }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Newest first") },
+                                onClick = { 
+                                    viewModel.setSortOrder(SortOrder.DATE_DESC)
+                                    showSortMenu = false 
+                                },
+                                leadingIcon = { Icon(Icons.Default.CalendarToday, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Oldest first") },
+                                onClick = { 
+                                    viewModel.setSortOrder(SortOrder.DATE_ASC)
+                                    showSortMenu = false 
+                                },
+                                leadingIcon = { Icon(Icons.Default.CalendarToday, null) }
+                            )
+                        }
+                    }
+                    
+                    // Архив
                     IconButton(onClick = { viewModel.setShowArchived(!showArchived) }) {
                         Icon(
                             Icons.Default.Inventory2,
@@ -183,7 +189,27 @@ fun FoldersScreen(
                     val quickScansFolder = state.folders.find { it.isQuickScans }
                     val otherFolders = state.folders.filter { !it.isQuickScans }
                     
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Reorderable state
+                    val reorderState = rememberReorderableLazyListState(
+                        onMove = { from, to ->
+                            // Учитываем что Quick Scans всегда первый (index 0)
+                            val fromIndex = from.index - 1
+                            val toIndex = to.index - 1
+                            if (fromIndex >= 0 && toIndex >= 0) {
+                                viewModel.reorderFolders(fromIndex, toIndex)
+                            }
+                        },
+                        onDragEnd = { _, _ ->
+                            viewModel.saveFolderOrder()
+                        }
+                    )
+                    
+                    LazyColumn(
+                        state = reorderState.listState,
+                        modifier = Modifier.reorderable(reorderState),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Quick Scans - не перетаскивается
                         quickScansFolder?.let { folder ->
                             item(key = "quickscans") {
                                 QuickScansFolderCard(
@@ -194,61 +220,106 @@ fun FoldersScreen(
                             }
                         }
                         
+                        // Остальные папки с drag & drop
                         itemsIndexed(
                             items = otherFolders,
                             key = { _, folder -> folder.id.value }
                         ) { index, folder ->
-                            val isReordering = reorderingFolderId == folder.id.value
-                            var menuExpanded by remember(folder.id.value) { mutableStateOf(false) }
-
-                            RegularFolderCard(
-                                folder = folder,
-                                isReordering = isReordering,
-                                canMoveUp = index > 0,
-                                canMoveDown = index < otherFolders.lastIndex,
-                                onClick = { 
-                                    if (isReordering) {
-                                        reorderingFolderId = null
-                                    } else {
-                                        onFolderClick(folder.id.value) 
-                                    }
-                                },
-                                onLongClick = { 
-                                    reorderingFolderId = if (isReordering) null else folder.id.value
-                                },
-                                onMenuClick = { menuExpanded = true },
-                                onMoveUp = { 
-                                    viewModel.moveFolderPosition(folder.id.value, -1)
-                                },
-                                onMoveDown = { 
-                                    viewModel.moveFolderPosition(folder.id.value, 1)
-                                },
-                                menuExpanded = menuExpanded,
-                                onMenuDismiss = { menuExpanded = false },
-                                onRename = {
-                                    menuExpanded = false
-                                    editingFolder = folder
-                                },
-                                onPin = {
-                                    menuExpanded = false
-                                    viewModel.setPinned(folder.id.value, !folder.isPinned)
-                                },
-                                onArchive = {
-                                    menuExpanded = false
-                                    if (folder.isArchived) {
-                                        viewModel.unarchive(folder.id.value)
-                                    } else {
-                                        viewModel.archive(folder.id.value)
-                                    }
-                                },
-                                onDelete = {
-                                    menuExpanded = false
-                                    deleteFolderWithContents = false
-                                    showDeleteFolderDialog = folder
-                                }
-                            )
+                            ReorderableItem(
+                                reorderableState = reorderState,
+                                key = folder.id.value
+                            ) { isDragging ->
+                                val elevation by animateDpAsState(
+                                    if (isDragging) 8.dp else 0.dp,
+                                    label = "elevation"
+                                )
+                                
+                                RegularFolderCard(
+                                    folder = folder,
+                                    isDragging = isDragging,
+                                    elevation = elevation,
+                                    modifier = Modifier.detectReorderAfterLongPress(reorderState),
+                                    onClick = { onFolderClick(folder.id.value) },
+                                    onMenuClick = { menuFolder = folder }
+                                )
+                            }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // МЕНЮ ПАПКИ (современный стиль)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    menuFolder?.let { folder ->
+        AlertDialog(
+            onDismissRequest = { menuFolder = null }
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Text(
+                        text = folder.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                    
+                    HorizontalDivider()
+                    
+                    ListItem(
+                        headlineContent = { Text("Rename") },
+                        leadingContent = { Icon(Icons.Default.Edit, null) },
+                        modifier = Modifier.clickable {
+                            menuFolder = null
+                            editingFolder = folder
+                        }
+                    )
+                    
+                    ListItem(
+                        headlineContent = { Text(if (folder.isPinned) "Unpin" else "Pin to top") },
+                        leadingContent = { Icon(Icons.Default.PushPin, null) },
+                        modifier = Modifier.clickable {
+                            viewModel.setPinned(folder.id.value, !folder.isPinned)
+                            menuFolder = null
+                        }
+                    )
+                    
+                    ListItem(
+                        headlineContent = { Text(if (folder.isArchived) "Unarchive" else "Archive") },
+                        leadingContent = { 
+                            Icon(
+                                if (folder.isArchived) Icons.Default.Unarchive else Icons.Default.Archive, 
+                                null
+                            ) 
+                        },
+                        modifier = Modifier.clickable {
+                            if (folder.isArchived) {
+                                viewModel.unarchive(folder.id.value)
+                            } else {
+                                viewModel.archive(folder.id.value)
+                            }
+                            menuFolder = null
+                        }
+                    )
+                    
+                    ListItem(
+                        headlineContent = { Text("Delete") },
+                        leadingContent = { 
+                            Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) 
+                        },
+                        modifier = Modifier.clickable {
+                            menuFolder = null
+                            deleteFolderWithContents = false
+                            showDeleteFolderDialog = folder
+                        }
+                    )
                 }
             }
         }
@@ -404,10 +475,7 @@ private fun QuickScansFolderCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = { }
-            ),
+            .combinedClickable(onClick = onClick, onLongClick = {}),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
         )
@@ -441,96 +509,71 @@ private fun QuickScansFolderCard(
                 )
             }
             
-            IconButton(onClick = { menuExpanded = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Menu")
-            }
-            
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false }
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Clear folder") },
-                    onClick = {
-                        menuExpanded = false
-                        onClearClick()
-                    },
-                    leadingIcon = { Icon(Icons.Default.ClearAll, contentDescription = null) },
-                    enabled = folder.recordCount > 0
-                )
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+                }
+                
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Clear folder") },
+                        onClick = {
+                            menuExpanded = false
+                            onClearClick()
+                        },
+                        leadingIcon = { Icon(Icons.Default.ClearAll, null) },
+                        enabled = folder.recordCount > 0
+                    )
+                }
             }
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// REGULAR FOLDER CARD
+// REGULAR FOLDER CARD (с поддержкой drag & drop)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RegularFolderCard(
     folder: Folder,
-    isReordering: Boolean,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
+    isDragging: Boolean,
+    elevation: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    onMenuClick: () -> Unit,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
-    menuExpanded: Boolean,
-    onMenuDismiss: () -> Unit,
-    onRename: () -> Unit,
-    onPin: () -> Unit,
-    onArchive: () -> Unit,
-    onDelete: () -> Unit
+    onMenuClick: () -> Unit
 ) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            .shadow(elevation, RoundedCornerShape(12.dp))
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = onLongClick
+                onLongClick = { /* Handled by reorderable */ }
             ),
-        colors = if (isReordering) {
-            CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer
-            )
-        } else {
-            CardDefaults.cardColors()
-        }
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDragging) 
+                MaterialTheme.colorScheme.primaryContainer 
+            else 
+                MaterialTheme.colorScheme.surface
+        )
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isReordering) {
-                Column {
-                    IconButton(
-                        onClick = onMoveUp,
-                        enabled = canMoveUp
-                    ) {
-                        Icon(
-                            Icons.Default.KeyboardArrowUp, 
-                            contentDescription = "Move up",
-                            tint = if (canMoveUp) MaterialTheme.colorScheme.primary 
-                                   else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                        )
-                    }
-                    IconButton(
-                        onClick = onMoveDown,
-                        enabled = canMoveDown
-                    ) {
-                        Icon(
-                            Icons.Default.KeyboardArrowDown, 
-                            contentDescription = "Move down",
-                            tint = if (canMoveDown) MaterialTheme.colorScheme.primary 
-                                   else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                        )
-                    }
-                }
-            }
+            // Drag handle
+            Icon(
+                Icons.Default.DragHandle,
+                contentDescription = "Drag to reorder",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+            )
+            
+            Spacer(modifier = Modifier.width(12.dp))
             
             Column(modifier = Modifier.weight(1f)) {
                 Row(
@@ -565,45 +608,14 @@ private fun RegularFolderCard(
                 )
             }
             
-            if (!isReordering) {
-                IconButton(onClick = onMenuClick) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Folder menu")
-                }
+            IconButton(onClick = onMenuClick) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Menu")
             }
         }
-        
-        DropdownMenu(
-            expanded = menuExpanded,
-            onDismissRequest = onMenuDismiss
-        ) {
-            DropdownMenuItem(
-                text = { Text("Rename") },
-                onClick = onRename,
-                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
-            )
-
-            DropdownMenuItem(
-                text = { Text(if (folder.isPinned) "Unpin" else "Pin") },
-                onClick = onPin,
-                leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) }
-            )
-
-            DropdownMenuItem(
-                text = { Text(if (folder.isArchived) "Unarchive" else "Archive") },
-                onClick = onArchive,
-                leadingIcon = {
-                    Icon(
-                        if (folder.isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
-                        contentDescription = null
-                    )
-                }
-            )
-
-            DropdownMenuItem(
-                text = { Text("Delete") },
-                onClick = onDelete,
-                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) }
-            )
-        }
     }
+}
+
+// Enum для сортировки
+enum class SortOrder {
+    NAME_ASC, NAME_DESC, DATE_ASC, DATE_DESC
 }
