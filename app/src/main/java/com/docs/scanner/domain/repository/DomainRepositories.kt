@@ -39,6 +39,7 @@ interface FolderRepository {
     suspend fun setPinned(id: FolderId, pinned: Boolean): DomainResult<Unit>
     suspend fun updateRecordCount(id: FolderId): DomainResult<Unit>
     suspend fun ensureQuickScansFolderExists(name: String): FolderId
+    suspend fun updatePosition(id: FolderId, position: Int): DomainResult<Unit>
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
