@@ -16,15 +16,6 @@ import javax.inject.Inject
 
 /**
  * Folders Screen ViewModel.
- * 
- * Session 8+ Fixes:
- * - ✅ Removed manual loadFolders() calls (Flow auto-updates!)
- * - ✅ SharedFlow for navigation instead of callbacks
- * - ✅ Added Processing state for quick scan
- * - ✅ Uses AllUseCases for consistency
- * - ✅ Added clearQuickScans() for clearing Quick Scans folder
- * - ✅ Added moveFolderPosition() for reordering folders
- * - ✅ Sorting: Quick Scans first, then pinned, then by position/name
  */
 @HiltViewModel
 class FoldersViewModel @Inject constructor(
@@ -36,23 +27,20 @@ class FoldersViewModel @Inject constructor(
 
     private val _showArchived = MutableStateFlow(false)
     val showArchived: StateFlow<Boolean> = _showArchived.asStateFlow()
+    
+    private val _sortOrder = MutableStateFlow(SortOrder.NAME_ASC)
+    val sortOrder: StateFlow<SortOrder> = _sortOrder.asStateFlow()
 
-    // ✅ SharedFlow for one-time navigation events
     private val _navigationEvent = MutableSharedFlow<NavigationEvent>()
     val navigationEvent: SharedFlow<NavigationEvent> = _navigationEvent.asSharedFlow()
     
-    // Local ordering for folders (position overrides)
-    // Key: folderId, Value: position (lower = higher in list)
-    private val _folderPositions = MutableStateFlow<Map<Long, Int>>(emptyMap())
+    // Mutable list для drag & drop
+    private val _reorderableFolders = MutableStateFlow<List<Folder>>(emptyList())
 
     init {
         loadFolders()
     }
 
-    /**
-     * Load folders with proper sorting.
-     * ✅ Flow auto-updates, no need to call manually after operations!
-     */
     private fun loadFolders() {
         viewModelScope.launch {
             _uiState.value = FoldersUiState.Loading
@@ -62,9 +50,9 @@ class FoldersViewModel @Inject constructor(
                     if (includeArchived) useCases.folders.observeIncludingArchived()
                     else useCases.folders.observeAll()
                 },
-                _folderPositions
-            ) { folders, positions ->
-                sortFolders(folders, positions)
+                _sortOrder
+            ) { folders, sort ->
+                sortFolders(folders, sort)
             }
             .catch { e ->
                 _uiState.value = FoldersUiState.Error(
@@ -72,6 +60,7 @@ class FoldersViewModel @Inject constructor(
                 )
             }
             .collect { sortedFolders ->
+                _reorderableFolders.value = sortedFolders.filter { !it.isQuickScans && !it.isPinned }
                 _uiState.value = if (sortedFolders.isEmpty()) {
                     FoldersUiState.Empty
                 } else {
@@ -84,30 +73,69 @@ class FoldersViewModel @Inject constructor(
     /**
      * Sort folders:
      * 1. Quick Scans always first
-     * 2. Pinned folders next (sorted by name)
-     * 3. Other folders by position (if set) or by name
+     * 2. Pinned folders next
+     * 3. Other folders by selected sort order
      */
-    private fun sortFolders(folders: List<Folder>, positions: Map<Long, Int>): List<Folder> {
+    private fun sortFolders(folders: List<Folder>, sort: SortOrder): List<Folder> {
         val quickScans = folders.filter { it.isQuickScans }
         val pinned = folders.filter { !it.isQuickScans && it.isPinned }
             .sortedBy { it.name.lowercase() }
         val others = folders.filter { !it.isQuickScans && !it.isPinned }
-            .sortedWith(compareBy(
-                { positions[it.id.value] ?: Int.MAX_VALUE },
-                { it.name.lowercase() }
-            ))
+            .let { list ->
+                when (sort) {
+                    SortOrder.NAME_ASC -> list.sortedBy { it.name.lowercase() }
+                    SortOrder.NAME_DESC -> list.sortedByDescending { it.name.lowercase() }
+                    SortOrder.DATE_ASC -> list.sortedBy { it.createdAt }
+                    SortOrder.DATE_DESC -> list.sortedByDescending { it.createdAt }
+                }
+            }
         
         return quickScans + pinned + others
+    }
+    
+    /**
+     * Set sort order
+     */
+    fun setSortOrder(order: SortOrder) {
+        _sortOrder.value = order
+    }
+    
+    /**
+     * Reorder folders during drag & drop
+     */
+    fun reorderFolders(fromIndex: Int, toIndex: Int) {
+        val currentState = _uiState.value
+        if (currentState !is FoldersUiState.Success) return
+        
+        val quickScans = currentState.folders.filter { it.isQuickScans }
+        val pinned = currentState.folders.filter { !it.isQuickScans && it.isPinned }
+        val others = currentState.folders.filter { !it.isQuickScans && !it.isPinned }.toMutableList()
+        
+        if (fromIndex < 0 || fromIndex >= others.size || toIndex < 0 || toIndex >= others.size) return
+        
+        // Swap
+        val item = others.removeAt(fromIndex)
+        others.add(toIndex, item)
+        
+        _reorderableFolders.value = others
+        _uiState.value = FoldersUiState.Success(quickScans + pinned + others)
+    }
+    
+    /**
+     * Save folder order after drag ends
+     */
+    fun saveFolderOrder() {
+        viewModelScope.launch {
+            _reorderableFolders.value.forEachIndexed { index, folder ->
+                useCases.folders.updatePosition(folder.id, index)
+            }
+        }
     }
 
     fun setShowArchived(enabled: Boolean) {
         _showArchived.value = enabled
     }
 
-    /**
-     * Create new folder.
-     * ✅ No manual loadFolders() - Flow updates automatically!
-     */
     fun createFolder(name: String, description: String?) {
         if (name.isBlank()) {
             updateErrorMessage("Name cannot be empty")
@@ -122,9 +150,6 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Update folder.
-     */
     fun updateFolder(folder: Folder) {
         viewModelScope.launch {
             when (val result = useCases.folders.update(folder)) {
@@ -134,9 +159,6 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Delete folder.
-     */
     fun deleteFolder(folderId: Long, deleteContents: Boolean = false) {
         viewModelScope.launch {
             when (val result = useCases.folders.delete(FolderId(folderId), deleteContents = deleteContents)) {
@@ -173,18 +195,13 @@ class FoldersViewModel @Inject constructor(
         }
     }
     
-    /**
-     * ✅ NEW: Clear all records in Quick Scans folder.
-     */
     fun clearQuickScans() {
         viewModelScope.launch {
             try {
-                // Get all records in Quick Scans
                 val quickScansId = FolderId.QUICK_SCANS
                 
-                // Observe records once and delete them
                 useCases.records.observeByFolder(quickScansId)
-                    .first() // Get current list
+                    .first()
                     .forEach { record ->
                         useCases.records.delete(record.id)
                     }
@@ -196,16 +213,12 @@ class FoldersViewModel @Inject constructor(
     }
     
     /**
-     * ✅ NEW: Move folder position up or down.
-     * 
-     * @param folderId The folder to move
-     * @param direction -1 for up, +1 for down
+     * @deprecated Use reorderFolders() + saveFolderOrder() instead
      */
     fun moveFolderPosition(folderId: Long, direction: Int) {
         val currentState = _uiState.value
         if (currentState !is FoldersUiState.Success) return
         
-        // Get current non-QuickScans, non-pinned folders (these are the ones that can be reordered)
         val reorderableFolders = currentState.folders
             .filter { !it.isQuickScans && !it.isPinned }
         
@@ -215,24 +228,12 @@ class FoldersViewModel @Inject constructor(
         val newIndex = (currentIndex + direction).coerceIn(0, reorderableFolders.lastIndex)
         if (newIndex == currentIndex) return
         
-        // Update positions map
-        val newPositions = _folderPositions.value.toMutableMap()
-        
-        // Swap positions
-        val targetFolder = reorderableFolders[newIndex]
-        newPositions[folderId] = newIndex
-        newPositions[targetFolder.id.value] = currentIndex
-        
-        _folderPositions.value = newPositions
+        reorderFolders(currentIndex, newIndex)
+        saveFolderOrder()
     }
 
-    /**
-     * Quick scan with progress reporting.
-     * ✅ Uses QuickScanState Flow + SharedFlow for navigation.
-     */
     fun quickScan(imageUri: Uri) {
         viewModelScope.launch {
-            // Set processing state
             _uiState.value = FoldersUiState.Processing(
                 progress = 0,
                 message = "Starting quick scan..."
@@ -242,7 +243,6 @@ class FoldersViewModel @Inject constructor(
                 useCases.quickScan(imageUri.toString())
                     .catch { e ->
                         updateErrorMessage("Quick scan failed: ${e.message}")
-                        // Reset to folders list
                         loadFolders()
                     }
                     .collect { state ->
@@ -269,12 +269,9 @@ class FoldersViewModel @Inject constructor(
                                 )
                             }
                             is QuickScanState.Success -> {
-                                // Emit navigation event
                                 _navigationEvent.emit(
                                     NavigationEvent.NavigateToEditor(state.recordId.value)
                                 )
-                                
-                                // Reset UI
                                 loadFolders()
                             }
                             is QuickScanState.Error -> {
@@ -290,9 +287,6 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Clear error message.
-     */
     fun clearError() {
         val currentState = _uiState.value
         if (currentState is FoldersUiState.Success) {
@@ -300,9 +294,6 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Helper to update error message.
-     */
     private fun updateErrorMessage(message: String) {
         val currentState = _uiState.value
         if (currentState is FoldersUiState.Success) {
@@ -313,9 +304,6 @@ class FoldersViewModel @Inject constructor(
     }
 }
 
-/**
- * UI State for Folders Screen.
- */
 sealed interface FoldersUiState {
     data object Loading : FoldersUiState
     data object Empty : FoldersUiState
@@ -333,9 +321,11 @@ sealed interface FoldersUiState {
     data class Error(val message: String) : FoldersUiState
 }
 
-/**
- * Navigation events.
- */
 sealed interface NavigationEvent {
     data class NavigateToEditor(val recordId: Long) : NavigationEvent
+}
+
+// Enum для сортировки (должен быть в этом файле или отдельном)
+enum class SortOrder {
+    NAME_ASC, NAME_DESC, DATE_ASC, DATE_DESC
 }
