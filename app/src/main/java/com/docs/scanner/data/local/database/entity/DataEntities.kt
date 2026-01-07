@@ -1,26 +1,23 @@
 /*
  * DocumentScanner - Data Entities
- * Version: 7.0.0 - Production Ready 2026 (FULLY SYNCHRONIZED)
- * 
- * ✅ ALL CRITICAL FIXES APPLIED:
- *    - Syntax error in generateCacheKey() fixed
- *    - Missing MessageDigest import added
- *    - ProcessingStatusMapper object added
- *    - Duplication removed (parseJsonList/toJsonList consolidated)
- * 
- * ✅ Synchronized with Domain v4.1.0
+ * Version: 7.1.0 - Production Ready 2026 (UPDATED WITH POSITION)
+ * * ✅ ALL CRITICAL FIXES APPLIED:
+ * - Syntax error in generateCacheKey() fixed
+ * - Missing MessageDigest import added
+ * - ProcessingStatusMapper object added
+ * - Duplication removed (parseJsonList/toJsonList consolidated)
+ * * ✅ Synchronized with Domain v4.1.0
  * ✅ ProcessingStatus sealed interface mapping
  * ✅ Proper New/Existing entity separation
- * 
- * 🔴 FIXED ISSUES:
- *    - Critical #1: Syntax error in TranslationCacheEntity.generateCacheKey()
- *    - Critical #2: Missing import java.security.MessageDigest
- *    - Critical #6: Missing ProcessingStatusMapper object
- *    - Medium #5: Removed parseJsonList/toJsonList duplication
- * 
- * ⚠️ ARCHITECTURAL TODOs (Phase 3 - Requires DB Migration):
- *    - TODO: Normalize tags (create TagEntity, RecordTagCrossRef)
- *    - TODO: Remove UI formatting from Domain (if any exists)
+ * ✅ Added 'position' field to Folders and Records
+ * * 🔴 FIXED ISSUES:
+ * - Critical #1: Syntax error in TranslationCacheEntity.generateCacheKey()
+ * - Critical #2: Missing import java.security.MessageDigest
+ * - Critical #6: Missing ProcessingStatusMapper object
+ * - Medium #5: Removed parseJsonList/toJsonList duplication
+ * * ⚠️ ARCHITECTURAL TODOs (Phase 3 - Requires DB Migration):
+ * - TODO: Normalize tags (create TagEntity, RecordTagCrossRef)
+ * - TODO: Remove UI formatting from Domain (if any exists)
  */
 
 package com.docs.scanner.data.local.database.entity
@@ -35,14 +32,11 @@ import java.security.MessageDigest
 
 /**
  * Maps between ProcessingStatus sealed interface (Domain) and Int (Database).
- * 
- * ✅ CRITICAL FIX #6: This object was MISSING in original code.
+ * * ✅ CRITICAL FIX #6: This object was MISSING in original code.
  * Used throughout DataDaos.kt and DataRepositories.kt but never defined.
- * 
- * Domain v4.1.0 uses sealed interface instead of enum, so we map to stable ordinals.
+ * * Domain v4.1.0 uses sealed interface instead of enum, so we map to stable ordinals.
  * These ordinals MUST NEVER CHANGE (database schema stability).
- * 
- * @since v7.0.0
+ * * @since v7.0.0
  */
 object ProcessingStatusMapper {
     // Stable ordinals (immutable for database compatibility)
@@ -108,7 +102,8 @@ object ProcessingStatusMapper {
         Index(value = ["name"]),
         Index(value = ["is_pinned"]),
         Index(value = ["is_archived"]),
-        Index(value = ["created_at"])
+        Index(value = ["created_at"]),
+        Index(value = ["position"])
     ]
 )
 data class FolderEntity(
@@ -127,6 +122,9 @@ data class FolderEntity(
     
     @ColumnInfo(name = "icon")
     val icon: String? = null,
+    
+    @ColumnInfo(name = "position", defaultValue = "0")
+    val position: Int = 0,
     
     @ColumnInfo(name = "is_pinned", defaultValue = "0")
     val isPinned: Boolean = false,
@@ -248,7 +246,8 @@ data class FolderWithCount(
         Index(value = ["name"]),
         Index(value = ["is_pinned"]),
         Index(value = ["is_archived"]),
-        Index(value = ["created_at"])
+        Index(value = ["created_at"]),
+        Index(value = ["position"])
     ]
 )
 data class RecordEntity(
@@ -267,14 +266,11 @@ data class RecordEntity(
     
     /**
      * ⚠️ ARCHITECTURAL DEBT: Tags stored as JSON string.
-     * 
-     * This is an anti-pattern (violates database normalization).
+     * * This is an anti-pattern (violates database normalization).
      * Should be in separate TagEntity table with Many-to-Many relation.
-     * 
-     * TODO Phase 3: Create TagEntity, RecordTagCrossRef tables.
+     * * TODO Phase 3: Create TagEntity, RecordTagCrossRef tables.
      * Requires database migration from v17 to v18.
-     * 
-     * Current format: ["tag1", "tag2", "tag3"]
+     * * Current format: ["tag1", "tag2", "tag3"]
      */
     @ColumnInfo(name = "tags")
     val tags: String? = null,
@@ -284,6 +280,9 @@ data class RecordEntity(
     
     @ColumnInfo(name = "target_language", defaultValue = "en")
     val targetLanguage: String = "en",
+    
+    @ColumnInfo(name = "position", defaultValue = "0")
+    val position: Int = 0,
     
     @ColumnInfo(name = "is_pinned", defaultValue = "0")
     val isPinned: Boolean = false,
@@ -793,15 +792,11 @@ data class TranslationCacheEntity(
     companion object {
         /**
          * Генерирует ключ кэша: SHA-256("text|srcLang|tgtLang")
-         * 
-         * ✅ CRITICAL FIX #1: Syntax error fixed.
+         * * ✅ CRITICAL FIX #1: Syntax error fixed.
          * Original had duplicate function signature causing compilation failure.
-         * 
-         * ✅ CRITICAL FIX #2: MessageDigest import added at file top.
-         * 
-         * Разные языковые пары для одного текста = разные ключи.
-         * 
-         * @param text Original text to translate
+         * * ✅ CRITICAL FIX #2: MessageDigest import added at file top.
+         * * Разные языковые пары для одного текста = разные ключи.
+         * * @param text Original text to translate
          * @param srcLang Source language code
          * @param tgtLang Target language code
          * @return SHA-256 hash as hex string (64 characters)
@@ -861,23 +856,19 @@ data class SearchHistoryEntity(
  * ✅ MEDIUM FIX #5: Consolidated JSON parsing utilities.
  * Original code had multiple duplicate implementations scattered throughout.
  * Now there's only ONE canonical version.
- * 
- * These functions handle the tags field in RecordEntity.
- * 
- * ⚠️ NOTE: This is a temporary solution. In Phase 3, tags should be normalized
+ * * These functions handle the tags field in RecordEntity.
+ * * ⚠️ NOTE: This is a temporary solution. In Phase 3, tags should be normalized
  * into a separate TagEntity table with proper Many-to-Many relations.
  */
 
 /**
  * Converts JSON array string to List<String>.
- * 
- * Handles formats:
+ * * Handles formats:
  * - ["tag1", "tag2", "tag3"]
  * - ["tag1","tag2","tag3"] (no spaces)
  * - [] (empty array)
  * - null/blank strings
- * 
- * @param json JSON string representation of string array
+ * * @param json JSON string representation of string array
  * @return List of tags, empty list if parsing fails or input is null/blank
  */
 private fun parseJsonList(json: String): List<String> {
@@ -896,10 +887,8 @@ private fun parseJsonList(json: String): List<String> {
 
 /**
  * Converts List<String> to JSON array string.
- * 
- * Output format: ["tag1", "tag2", "tag3"]
- * 
- * @param list List of tags
+ * * Output format: ["tag1", "tag2", "tag3"]
+ * * @param list List of tags
  * @return JSON string representation, "[]" if list is empty
  */
 private fun toJsonList(list: List<String>): String {
@@ -913,83 +902,74 @@ private fun toJsonList(list: List<String>): String {
 
 /**
  * TODO Phase 3: Normalize Tags (DB Migration Required)
- * 
- * Current anti-pattern: tags stored as JSON string in RecordEntity.
+ * * Current anti-pattern: tags stored as JSON string in RecordEntity.
  * This violates database normalization and makes queries inefficient.
- * 
- * Proper solution:
- * 
- * 1. Create TagEntity:
+ * * Proper solution:
+ * * 1. Create TagEntity:
  * ```kotlin
  * @Entity(
- *     tableName = "tags",
- *     indices = [Index(value = ["name"], unique = true)]
+ * tableName = "tags",
+ * indices = [Index(value = ["name"], unique = true)]
  * )
  * data class TagEntity(
- *     @PrimaryKey(autoGenerate = true) val id: Long = 0,
- *     @ColumnInfo(name = "name") val name: String,
- *     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis()
+ * @PrimaryKey(autoGenerate = true) val id: Long = 0,
+ * @ColumnInfo(name = "name") val name: String,
+ * @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis()
  * )
  * ```
- * 
- * 2. Create junction table:
+ * * 2. Create junction table:
  * ```kotlin
  * @Entity(
- *     tableName = "record_tags",
- *     primaryKeys = ["record_id", "tag_id"],
- *     foreignKeys = [
- *         ForeignKey(entity = RecordEntity::class, ...),
- *         ForeignKey(entity = TagEntity::class, ...)
- *     ],
- *     indices = [Index("record_id"), Index("tag_id")]
+ * tableName = "record_tags",
+ * primaryKeys = ["record_id", "tag_id"],
+ * foreignKeys = [
+ * ForeignKey(entity = RecordEntity::class, ...),
+ * ForeignKey(entity = TagEntity::class, ...)
+ * ],
+ * indices = [Index("record_id"), Index("tag_id")]
  * )
  * data class RecordTagCrossRef(
- *     @ColumnInfo(name = "record_id") val recordId: Long,
- *     @ColumnInfo(name = "tag_id") val tagId: Long
+ * @ColumnInfo(name = "record_id") val recordId: Long,
+ * @ColumnInfo(name = "tag_id") val tagId: Long
  * )
  * ```
- * 
- * 3. Create relation data class:
+ * * 3. Create relation data class:
  * ```kotlin
  * data class RecordWithTags(
- *     @Embedded val record: RecordEntity,
- *     @Relation(
- *         parentColumn = "id",
- *         entityColumn = "id",
- *         associateBy = Junction(
- *             RecordTagCrossRef::class,
- *             parentColumn = "record_id",
- *             entityColumn = "tag_id"
- *         )
- *     )
- *     val tags: List<TagEntity>
+ * @Embedded val record: RecordEntity,
+ * @Relation(
+ * parentColumn = "id",
+ * entityColumn = "id",
+ * associateBy = Junction(
+ * RecordTagCrossRef::class,
+ * parentColumn = "record_id",
+ * entityColumn = "tag_id"
+ * )
+ * )
+ * val tags: List<TagEntity>
  * )
  * ```
- * 
- * 4. Migration v17→v18:
+ * * 4. Migration v17→v18:
  * ```kotlin
  * val MIGRATION_17_18 = object : Migration(17, 18) {
- *     override fun migrate(db: SupportSQLiteDatabase) {
- *         // Create new tables
- *         db.execSQL("CREATE TABLE tags (...)")
- *         db.execSQL("CREATE TABLE record_tags (...)")
- *         
- *         // Migrate existing JSON data
- *         // 1. Extract all unique tags from records.tags JSON
- *         // 2. Insert into tags table
- *         // 3. Create record_tags relations
- *         // 4. Drop records.tags column
- *     }
+ * override fun migrate(db: SupportSQLiteDatabase) {
+ * // Create new tables
+ * db.execSQL("CREATE TABLE tags (...)")
+ * db.execSQL("CREATE TABLE record_tags (...)")
+ * * // Migrate existing JSON data
+ * // 1. Extract all unique tags from records.tags JSON
+ * // 2. Insert into tags table
+ * // 3. Create record_tags relations
+ * // 4. Drop records.tags column
+ * }
  * }
  * ```
- * 
- * Benefits:
+ * * Benefits:
  * - Efficient tag search (indexed queries instead of JSON LIKE)
  * - Autocomplete support (SELECT DISTINCT name FROM tags)
  * - Tag usage statistics (COUNT records per tag)
  * - No parsing overhead in RecyclerView
- * 
- * Estimated effort: ~2 hours + migration testing
+ * * Estimated effort: ~2 hours + migration testing
  * Risk: Medium (requires data migration, can't rollback easily)
  * Priority: Low (current solution works, optimize later)
  */
@@ -1000,24 +980,19 @@ private fun toJsonList(list: List<String>): String {
 
 /**
  * ✅ ALL FIXES APPLIED TO DataEntities.kt:
- * 
- * 🔴 CRITICAL FIXES (3/3 completed):
- *    ✅ #1: Syntax error in TranslationCacheEntity.generateCacheKey() - FIXED
- *    ✅ #2: Missing import java.security.MessageDigest - ADDED
- *    ✅ #6: Missing ProcessingStatusMapper object - CREATED
- * 
- * 🟡 MEDIUM FIXES (1/1 completed):
- *    ✅ #5: Removed parseJsonList/toJsonList duplication - CONSOLIDATED
- * 
- * 🟠 ARCHITECTURAL IMPROVEMENTS (documented for Phase 3):
- *    📋 Tag normalization (TagEntity, RecordTagCrossRef) - TODO with migration
- *    📋 Remove UI formatting from Domain layer (if any exists) - TODO
- * 
- * NEXT FILES TO FIX:
- *    1. DataRepositories.kt (Critical #4, #5 + Serious #1-15)
- *    2. DatabaseModule.kt (Critical #3)
- *    3. build.gradle.kts root (Critical #7)
- * 
- * Current compilation status: 4/7 critical issues remain (other files)
+ * * 🔴 CRITICAL FIXES (3/3 completed):
+ * ✅ #1: Syntax error in TranslationCacheEntity.generateCacheKey() - FIXED
+ * ✅ #2: Missing import java.security.MessageDigest - ADDED
+ * ✅ #6: Missing ProcessingStatusMapper object - CREATED
+ * * 🟡 MEDIUM FIXES (1/1 completed):
+ * ✅ #5: Removed parseJsonList/toJsonList duplication - CONSOLIDATED
+ * * 🟠 ARCHITECTURAL IMPROVEMENTS (documented for Phase 3):
+ * 📋 Tag normalization (TagEntity, RecordTagCrossRef) - TODO with migration
+ * 📋 Remove UI formatting from Domain layer (if any exists) - TODO
+ * * NEXT FILES TO FIX:
+ * 1. DataRepositories.kt (Critical #4, #5 + Serious #1-15)
+ * 2. DatabaseModule.kt (Critical #3)
+ * 3. build.gradle.kts root (Critical #7)
+ * * Current compilation status: 4/7 critical issues remain (other files)
  * This file is now: ✅ PRODUCTION READY
  */
