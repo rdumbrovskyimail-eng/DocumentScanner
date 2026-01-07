@@ -258,6 +258,9 @@ dependencies {
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.perf)
 
+    // ✅ Drag & Drop Reorderable
+    implementation("org.burnoutcrew.composereorderable:reorderable:0.9.6")
+
     // ✅ Utils
     implementation(libs.kotlinx.datetime)
     implementation(libs.kotlinx.collections.immutable)
