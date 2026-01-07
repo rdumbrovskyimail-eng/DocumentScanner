@@ -11,14 +11,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/**
- * Records Screen ViewModel.
- * 
- * Session 9 Fixes:
- * - ✅ Allow folderId = -1L for Quick Scans folder
- * - ✅ Added isQuickScansFolder flag for UI to hide create button
- * - ✅ Only reject folderId == 0L (invalid)
- */
 @HiltViewModel
 class RecordsViewModel @Inject constructor(
     private val useCases: AllUseCases
@@ -29,6 +21,12 @@ class RecordsViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<RecordsUiState>(RecordsUiState.Loading)
     val uiState: StateFlow<RecordsUiState> = _uiState.asStateFlow()
+    
+    private val _sortOrder = MutableStateFlow(RecordSortOrder.DATE_DESC)
+    val sortOrder: StateFlow<RecordSortOrder> = _sortOrder.asStateFlow()
+    
+    // Mutable list для drag & drop
+    private val _reorderableRecords = MutableStateFlow<List<Record>>(emptyList())
 
     val allFolders: StateFlow<List<Folder>> = useCases.getFolders()
         .stateIn(
@@ -38,7 +36,6 @@ class RecordsViewModel @Inject constructor(
         )
 
     fun loadRecords(folderId: Long) {
-        // ✅ FIX: Only reject 0, allow negative IDs (Quick Scans = -1L)
         if (folderId == 0L) {
             _uiState.value = RecordsUiState.Error("Invalid folder ID")
             return
@@ -46,7 +43,6 @@ class RecordsViewModel @Inject constructor(
 
         _currentFolderId.value = folderId
         
-        // ✅ Check if this is Quick Scans folder
         val isQuickScans = folderId == FolderId.QUICK_SCANS_ID
         
         viewModelScope.launch {
@@ -56,24 +52,78 @@ class RecordsViewModel @Inject constructor(
                 val folder = useCases.getFolderById(folderId)
                 val folderName = folder?.name ?: "Records"
 
-                useCases.getRecords(folderId)
-                    .catch { e ->
-                        _uiState.value = RecordsUiState.Error(
-                            "Failed to load records: ${e.message}"
-                        )
-                    }
-                    .collect { records ->
-                        _uiState.value = RecordsUiState.Success(
-                            folderId = folderId,
-                            folderName = folderName,
-                            records = records,
-                            isQuickScansFolder = isQuickScans  // ✅ Pass to UI
-                        )
-                    }
+                combine(
+                    useCases.getRecords(folderId),
+                    _sortOrder
+                ) { records, sort ->
+                    sortRecords(records, sort)
+                }
+                .catch { e ->
+                    _uiState.value = RecordsUiState.Error(
+                        "Failed to load records: ${e.message}"
+                    )
+                }
+                .collect { records ->
+                    _reorderableRecords.value = records
+                    _uiState.value = RecordsUiState.Success(
+                        folderId = folderId,
+                        folderName = folderName,
+                        records = records,
+                        isQuickScansFolder = isQuickScans
+                    )
+                }
             } catch (e: Exception) {
                 _uiState.value = RecordsUiState.Error(
                     "Failed to load data: ${e.message}"
                 )
+            }
+        }
+    }
+    
+    /**
+     * Sort records by selected order
+     */
+    private fun sortRecords(records: List<Record>, sort: RecordSortOrder): List<Record> {
+        return when (sort) {
+            RecordSortOrder.NAME_ASC -> records.sortedBy { it.name.lowercase() }
+            RecordSortOrder.NAME_DESC -> records.sortedByDescending { it.name.lowercase() }
+            RecordSortOrder.DATE_ASC -> records.sortedBy { it.createdAt }
+            RecordSortOrder.DATE_DESC -> records.sortedByDescending { it.createdAt }
+        }
+    }
+    
+    /**
+     * Set sort order
+     */
+    fun setSortOrder(order: RecordSortOrder) {
+        _sortOrder.value = order
+    }
+    
+    /**
+     * Reorder records during drag & drop
+     */
+    fun reorderRecords(fromIndex: Int, toIndex: Int) {
+        val currentState = _uiState.value
+        if (currentState !is RecordsUiState.Success) return
+        
+        val records = currentState.records.toMutableList()
+        
+        if (fromIndex < 0 || fromIndex >= records.size || toIndex < 0 || toIndex >= records.size) return
+        
+        val item = records.removeAt(fromIndex)
+        records.add(toIndex, item)
+        
+        _reorderableRecords.value = records
+        _uiState.value = currentState.copy(records = records)
+    }
+    
+    /**
+     * Save record order after drag ends
+     */
+    fun saveRecordOrder() {
+        viewModelScope.launch {
+            _reorderableRecords.value.forEachIndexed { index, record ->
+                useCases.updateRecordPosition(record.id.value, index)
             }
         }
     }
@@ -86,13 +136,11 @@ class RecordsViewModel @Inject constructor(
 
         val folderId = _currentFolderId.value
         
-        // ✅ FIX: Allow negative IDs, only reject 0
         if (folderId == 0L) {
             updateErrorMessage("No folder selected")
             return
         }
         
-        // ✅ Prevent manual creation in Quick Scans
         if (folderId == FolderId.QUICK_SCANS_ID) {
             updateErrorMessage("Cannot create records manually in Quick Scans")
             return
@@ -184,9 +232,14 @@ sealed interface RecordsUiState {
         val folderId: Long,
         val folderName: String,
         val records: List<Record>,
-        val isQuickScansFolder: Boolean = false,  // ✅ NEW: To hide FAB
+        val isQuickScansFolder: Boolean = false,
         val errorMessage: String? = null
     ) : RecordsUiState
     
     data class Error(val message: String) : RecordsUiState
+}
+
+// Enum для сортировки записей
+enum class RecordSortOrder {
+    NAME_ASC, NAME_DESC, DATE_ASC, DATE_DESC
 }
