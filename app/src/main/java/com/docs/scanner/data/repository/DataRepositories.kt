@@ -330,7 +330,7 @@ class FolderRepositoryImpl @Inject constructor(
             }.toDomainResult()
         }
 
-    override suspend fun setPinned(id: FolderId, pinned: Boolean): DomainResult<Unit> = 
+override suspend fun setPinned(id: FolderId, pinned: Boolean): DomainResult<Unit> = 
         withContext(Dispatchers.IO) {
             runCatching {
                 folderDao.setPinned(id.value, pinned, System.currentTimeMillis())
@@ -357,6 +357,14 @@ class FolderRepositoryImpl @Inject constructor(
                 Timber.d("✅ Created Quick Scans folder")
             }
             FolderId(quickScansId)
+        }
+
+    override suspend fun updatePosition(id: FolderId, position: Int): DomainResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                folderDao.updatePosition(id.value, position)
+                Timber.d("📍 Folder $id position=$position")
+            }.toDomainResult()
         }
 }
 
@@ -649,6 +657,14 @@ class RecordRepositoryImpl @Inject constructor(
 
     override suspend fun updateDocumentCount(id: RecordId): DomainResult<Unit> = 
         DomainResult.Success(Unit) // Auto-updated via JOIN
+
+    override suspend fun updatePosition(id: RecordId, position: Int): DomainResult<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                recordDao.updatePosition(id.value, position)
+                Timber.d("📍 Record $id position=$position")
+            }.toDomainResult()
+        }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
