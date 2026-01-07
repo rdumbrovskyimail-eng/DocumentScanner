@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
@@ -88,7 +89,6 @@ fun FoldersScreen(
     var deleteFolderWithContents by remember { mutableStateOf(false) }
     var showClearQuickScansDialog by remember { mutableStateOf(false) }
     
-    // Track which folder is in "reorder mode" (long press on normal folder)
     var reorderingFolderId by remember { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(Unit) {
@@ -108,17 +108,15 @@ fun FoldersScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Document Scanner") },
+                title = { Text("Documents") },
                 actions = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Archived",
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(end = 4.dp)
-                        )
-                        Switch(
-                            checked = showArchived,
-                            onCheckedChange = viewModel::setShowArchived
+                    // Архив как иконка-тоггл
+                    IconButton(onClick = { viewModel.setShowArchived(!showArchived) }) {
+                        Icon(
+                            Icons.Default.Inventory2,
+                            contentDescription = "Archive",
+                            tint = if (showArchived) MaterialTheme.colorScheme.primary 
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     IconButton(onClick = onSearchClick) { 
@@ -131,7 +129,7 @@ fun FoldersScreen(
                         Icon(Icons.Default.CameraAlt, contentDescription = "Camera") 
                     }
                     IconButton(onClick = { galleryLauncher.launch("image/*") }) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = "Quick scan")
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = "Gallery")
                     }
                     IconButton(onClick = onSettingsClick) { 
                         Icon(Icons.Default.Settings, contentDescription = "Settings") 
@@ -182,14 +180,10 @@ fun FoldersScreen(
                         }
                     }
                     
-                    // Separate Quick Scans from other folders
                     val quickScansFolder = state.folders.find { it.isQuickScans }
                     val otherFolders = state.folders.filter { !it.isQuickScans }
                     
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // ═══════════════════════════════════════════════════════
-                        // QUICK SCANS FOLDER (always first, special treatment)
-                        // ═══════════════════════════════════════════════════════
                         quickScansFolder?.let { folder ->
                             item(key = "quickscans") {
                                 QuickScansFolderCard(
@@ -200,9 +194,6 @@ fun FoldersScreen(
                             }
                         }
                         
-                        // ═══════════════════════════════════════════════════════
-                        // OTHER FOLDERS (with reorder support)
-                        // ═══════════════════════════════════════════════════════
                         itemsIndexed(
                             items = otherFolders,
                             key = { _, folder -> folder.id.value }
@@ -267,7 +258,6 @@ fun FoldersScreen(
     // DIALOGS
     // ═══════════════════════════════════════════════════════════════════════════
 
-    // Clear Quick Scans confirmation
     if (showClearQuickScansDialog) {
         ConfirmDialog(
             title = "Clear Quick Scans?",
@@ -281,7 +271,6 @@ fun FoldersScreen(
         )
     }
 
-    // Create folder dialog
     if (showCreateFolderDialog) {
         var name by remember { mutableStateOf("") }
         var description by remember { mutableStateOf("") }
@@ -321,7 +310,6 @@ fun FoldersScreen(
         )
     }
 
-    // Edit/Rename folder dialog
     editingFolder?.let { folder ->
         var name by remember(folder.id.value) { mutableStateOf(folder.name) }
         var description by remember(folder.id.value) { mutableStateOf(folder.description ?: "") }
@@ -361,7 +349,6 @@ fun FoldersScreen(
         )
     }
 
-    // Delete folder dialog
     showDeleteFolderDialog?.let { folder ->
         AlertDialog(
             onDismissRequest = { showDeleteFolderDialog = null },
@@ -403,7 +390,7 @@ fun FoldersScreen(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// QUICK SCANS FOLDER CARD (Special - no long press, only Clear action)
+// QUICK SCANS FOLDER CARD
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -419,7 +406,7 @@ private fun QuickScansFolderCard(
             .fillMaxWidth()
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = { /* No action for Quick Scans */ }
+                onLongClick = { }
             ),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
@@ -429,7 +416,6 @@ private fun QuickScansFolderCard(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Flash icon for Quick Scans
             Icon(
                 imageVector = Icons.Default.FlashOn,
                 contentDescription = null,
@@ -455,7 +441,6 @@ private fun QuickScansFolderCard(
                 )
             }
             
-            // Menu button - only "Clear folder" option
             IconButton(onClick = { menuExpanded = true }) {
                 Icon(Icons.Default.MoreVert, contentDescription = "Menu")
             }
@@ -479,7 +464,7 @@ private fun QuickScansFolderCard(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// REGULAR FOLDER CARD (with reorder buttons on long press)
+// REGULAR FOLDER CARD
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -520,7 +505,6 @@ private fun RegularFolderCard(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Reorder buttons (shown when long pressed)
             if (isReordering) {
                 Column {
                     IconButton(
@@ -581,7 +565,6 @@ private fun RegularFolderCard(
                 )
             }
             
-            // Menu button (3 dots)
             if (!isReordering) {
                 IconButton(onClick = onMenuClick) {
                     Icon(Icons.Default.MoreVert, contentDescription = "Folder menu")
@@ -589,7 +572,6 @@ private fun RegularFolderCard(
             }
         }
         
-        // Dropdown menu
         DropdownMenu(
             expanded = menuExpanded,
             onDismissRequest = onMenuDismiss
