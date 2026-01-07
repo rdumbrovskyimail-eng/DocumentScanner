@@ -81,7 +81,7 @@ interface FolderDao {
     """)
     fun observeAllIncludingArchivedWithCount(): Flow<List<FolderWithCount>>
     
-    @Query("SELECT EXISTS(SELECT 1 FROM folders WHERE id = :folderId)")
+   @Query("SELECT EXISTS(SELECT 1 FROM folders WHERE id = :folderId)")
     suspend fun exists(folderId: Long): Boolean
     
     @Query("SELECT EXISTS(SELECT 1 FROM folders WHERE LOWER(name) = LOWER(:name) AND id != :excludeId)")
@@ -93,8 +93,10 @@ interface FolderDao {
     // ✅ CRITICAL FIX: Добавлен метод для инкрементального бэкапа
     @Query("SELECT * FROM folders WHERE updated_at > :timestamp")
     suspend fun getAllModifiedSince(timestamp: Long): List<FolderEntity>
-}
 
+    @Query("UPDATE folders SET position = :position, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updatePosition(id: Long, position: Int, updatedAt: Long = System.currentTimeMillis())
+}
 // ══════════════════════════════════════════════════════════════════════════════
 // RECORD DAO
 // ══════════════════════════════════════════════════════════════════════════════
@@ -260,6 +262,9 @@ interface RecordDao {
     // ✅ CRITICAL FIX: Добавлен метод для инкрементального бэкапа
     @Query("SELECT * FROM records WHERE updated_at > :timestamp")
     suspend fun getAllModifiedSince(timestamp: Long): List<RecordEntity>
+
+    @Query("UPDATE records SET position = :position, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updatePosition(id: Long, position: Int, updatedAt: Long = System.currentTimeMillis())
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
