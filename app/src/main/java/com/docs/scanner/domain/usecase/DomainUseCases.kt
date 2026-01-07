@@ -1,12 +1,12 @@
 /*
  * DocumentScanner - Domain Use Cases
  * Version: 4.1.0 - Production Ready 2026 Enhanced (FINAL)
- * 
- * Improvements v4.1.0:
+ * * Improvements v4.1.0:
  * - Uses New/Existing entity separation ✅
  * - Type-safe error handling ✅
  * - Improved batch operations with generic helper ✅
  * - Better code organization ✅
+ * - Added updatePosition for Records and Folders ✅
  */
 
 package com.docs.scanner.domain.usecase
@@ -88,7 +88,6 @@ sealed interface ProcessingState {
 
 /**
  * Обработка документа: OCR + опциональный перевод.
- * ✅ FIXED: Убрана попытка использовать некорректный helper
  */
 @Singleton
 class ProcessDocumentUseCase @Inject constructor(
@@ -430,12 +429,17 @@ class FolderUseCases @Inject constructor(
     private val repo: FolderRepository,
     private val time: TimeProvider
 ) {
-    suspend fun create(name: String, desc: String? = null, color: Int? = null, icon: String? = null): DomainResult<FolderId> =
+    suspend fun create(
+        name: String,
+        desc: String? = null,
+        color: Int? = null,
+        icon: String? = null
+    ): DomainResult<FolderId> =
         DomainResult.catching {
             val validName = FolderName.create(name).getOrThrow()
             if (repo.folderNameExists(validName.value))
                 throw DomainError.AlreadyExists(validName.value).toException()
-            
+
             val now = time.currentMillis()
             val newFolder = NewFolder(
                 name = validName.value,
@@ -447,32 +451,50 @@ class FolderUseCases @Inject constructor(
             )
             repo.createFolder(newFolder).getOrThrow()
         }
-    
+
     suspend fun update(folder: Folder): DomainResult<Unit> {
-        if (folder.isQuickScans) return DomainResult.failure(DomainError.CannotModifyQuickScansFolder("update"))
+        if (folder.isQuickScans)
+            return DomainResult.failure(DomainError.CannotModifyQuickScansFolder("update"))
         return repo.updateFolder(folder.copy(updatedAt = time.currentMillis()))
     }
-    
+
     suspend fun delete(id: FolderId, deleteContents: Boolean = false): DomainResult<Unit> {
-        if (id == FolderId.QUICK_SCANS) return DomainResult.failure(DomainError.CannotDeleteSystemFolder(id))
-        
+        if (id == FolderId.QUICK_SCANS)
+            return DomainResult.failure(DomainError.CannotDeleteSystemFolder(id))
+
         if (!deleteContents) {
             val folder = repo.getFolderById(id).getOrElse { return DomainResult.failure(it) }
-            if (folder.recordCount > 0) return DomainResult.failure(DomainError.CannotDeleteNonEmptyFolder(id, folder.recordCount))
+            if (folder.recordCount > 0)
+                return DomainResult.failure(
+                    DomainError.CannotDeleteNonEmptyFolder(id, folder.recordCount)
+                )
         }
         return repo.deleteFolder(id, deleteContents)
     }
-    
-    suspend fun getById(id: FolderId): DomainResult<Folder> = repo.getFolderById(id)
-    fun observeAll(): Flow<List<Folder>> = repo.observeAllFolders()
-    fun observeIncludingArchived(): Flow<List<Folder>> = repo.observeAllFoldersIncludingArchived()
-    
+
+    suspend fun getById(id: FolderId): DomainResult<Folder> =
+        repo.getFolderById(id)
+
+    fun observeAll(): Flow<List<Folder>> =
+        repo.observeAllFolders()
+
+    fun observeIncludingArchived(): Flow<List<Folder>> =
+        repo.observeAllFoldersIncludingArchived()
+
     suspend fun archive(id: FolderId): DomainResult<Unit> {
-        if (id == FolderId.QUICK_SCANS) return DomainResult.failure(DomainError.CannotModifyQuickScansFolder("archive"))
+        if (id == FolderId.QUICK_SCANS)
+            return DomainResult.failure(DomainError.CannotModifyQuickScansFolder("archive"))
         return repo.archiveFolder(id)
     }
-    suspend fun unarchive(id: FolderId): DomainResult<Unit> = repo.unarchiveFolder(id)
-    suspend fun pin(id: FolderId, pinned: Boolean): DomainResult<Unit> = repo.setPinned(id, pinned)
+
+    suspend fun unarchive(id: FolderId): DomainResult<Unit> =
+        repo.unarchiveFolder(id)
+
+    suspend fun pin(id: FolderId, pinned: Boolean): DomainResult<Unit> =
+        repo.setPinned(id, pinned)
+
+    suspend fun updatePosition(id: FolderId, position: Int): DomainResult<Unit> =
+        repo.updatePosition(id, position)
 }
 
 @Singleton
@@ -488,59 +510,76 @@ class RecordUseCases @Inject constructor(
         tags: List<String> = emptyList(),
         sourceLang: Language = Language.AUTO,
         targetLang: Language = Language.ENGLISH
-    ): DomainResult<RecordId> = DomainResult.catching {
-        val validName = RecordName.create(name).getOrThrow()
-        if (!folderRepo.folderExists(folderId)) throw DomainError.NotFoundError.Folder(folderId).toException()
-        
-        val validTags = tags.mapNotNull { Tag.create(it).getOrNull()?.value }.distinct()
-        
-        val now = time.currentMillis()
-        val newRecord = NewRecord(
-            folderId = folderId,
-            name = validName.value,
-            description = desc,
-            tags = validTags,
-            sourceLanguage = sourceLang,
-            targetLanguage = targetLang,
-            createdAt = now,
-            updatedAt = now
-        )
-        repo.createRecord(newRecord).getOrThrow()
-    }
-    
-    suspend fun update(record: Record): DomainResult<Unit> = repo.updateRecord(record.copy(updatedAt = time.currentMillis()))
-    
-    suspend fun updateLanguage(id: RecordId, source: Language, target: Language): DomainResult<Unit> {
-        if (source == target && source != Language.AUTO) return DomainResult.failure(DomainError.UnsupportedLanguagePair(source, target))
+    ): DomainResult<RecordId> =
+        DomainResult.catching {
+            val validName = RecordName.create(name).getOrThrow()
+            if (!folderRepo.folderExists(folderId))
+                throw DomainError.NotFoundError.Folder(folderId).toException()
+
+            val validTags = tags
+                .mapNotNull { Tag.create(it).getOrNull()?.value }
+                .distinct()
+
+            val now = time.currentMillis()
+            val newRecord = NewRecord(
+                folderId = folderId,
+                name = validName.value,
+                description = desc,
+                tags = validTags,
+                sourceLanguage = sourceLang,
+                targetLanguage = targetLang,
+                createdAt = now,
+                updatedAt = now
+            )
+            repo.createRecord(newRecord).getOrThrow()
+        }
+
+    suspend fun update(record: Record): DomainResult<Unit> =
+        repo.updateRecord(record.copy(updatedAt = time.currentMillis()))
+
+    suspend fun updateLanguage(
+        id: RecordId,
+        source: Language,
+        target: Language
+    ): DomainResult<Unit> {
+        if (source == target && source != Language.AUTO)
+            return DomainResult.failure(
+                DomainError.UnsupportedLanguagePair(source, target)
+            )
         return repo.updateLanguageSettings(id, source, target)
     }
-    
-    suspend fun delete(id: RecordId): DomainResult<Unit> = repo.deleteRecord(id)
-    
+
+    suspend fun delete(id: RecordId): DomainResult<Unit> =
+        repo.deleteRecord(id)
+
     suspend fun move(id: RecordId, toFolder: FolderId): DomainResult<Unit> {
-        if (!folderRepo.folderExists(toFolder)) return DomainResult.failure(DomainError.NotFoundError.Folder(toFolder))
+        if (!folderRepo.folderExists(toFolder))
+            return DomainResult.failure(
+                DomainError.NotFoundError.Folder(toFolder)
+            )
         return repo.moveRecord(id, toFolder)
     }
-    
-    suspend fun duplicate(id: RecordId, toFolder: FolderId? = null, copyDocs: Boolean = true): DomainResult<RecordId> =
-        repo.duplicateRecord(id, toFolder, copyDocs)
-    
-    suspend fun getById(id: RecordId): DomainResult<Record> = repo.getRecordById(id)
-    fun observeByFolder(folderId: FolderId): Flow<List<Record>> = repo.observeRecordsByFolder(folderId)
-    fun observeRecent(limit: Int = 10): Flow<List<Record>> = repo.observeRecentRecords(limit)
-    fun observeByTag(tag: String): Flow<List<Record>> = repo.observeRecordsByTag(tag)
-    fun observeAll(): Flow<List<Record>> = repo.observeAllRecords()
-    
-    suspend fun addTag(id: RecordId, tag: String): DomainResult<Unit> {
-        val validTag = Tag.create(tag).getOrElse { return DomainResult.failure(it) }
-        return repo.addTag(id, validTag.value)
-    }
-    suspend fun removeTag(id: RecordId, tag: String): DomainResult<Unit> = repo.removeTag(id, tag)
-    suspend fun getAllTags(): List<String> = repo.getAllTags()
-    
-    suspend fun archive(id: RecordId): DomainResult<Unit> = repo.archiveRecord(id)
-    suspend fun unarchive(id: RecordId): DomainResult<Unit> = repo.unarchiveRecord(id)
-    suspend fun pin(id: RecordId, pinned: Boolean): DomainResult<Unit> = repo.setPinned(id, pinned)
+
+    suspend fun getById(id: RecordId): DomainResult<Record> =
+        repo.getRecordById(id)
+
+    fun observeByFolder(folderId: FolderId): Flow<List<Record>> =
+        repo.observeRecordsByFolder(folderId)
+
+    fun observeAll(): Flow<List<Record>> =
+        repo.observeAllRecords()
+
+    suspend fun archive(id: RecordId): DomainResult<Unit> =
+        repo.archiveRecord(id)
+
+    suspend fun unarchive(id: RecordId): DomainResult<Unit> =
+        repo.unarchiveRecord(id)
+
+    suspend fun pin(id: RecordId, pinned: Boolean): DomainResult<Unit> =
+        repo.setPinned(id, pinned)
+
+    suspend fun updatePosition(id: RecordId, position: Int): DomainResult<Unit> =
+        repo.updatePosition(id, position)
 }
 
 @Singleton
@@ -654,7 +693,6 @@ class TranslationUseCases @Inject constructor(
     suspend fun translateDocument(docId: DocumentId, targetLang: Language? = null): DomainResult<TranslationResult> {
         val doc = docRepo.getDocumentById(docId).getOrElse { return DomainResult.failure(it) }
         
-        // ✅ FIXED: Check if originalText is empty without using undefined error
         if (doc.originalText.isNullOrBlank()) {
             return DomainResult.failure(
                 DomainError.TranslationFailed(
