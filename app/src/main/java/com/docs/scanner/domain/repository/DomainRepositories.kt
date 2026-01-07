@@ -75,9 +75,10 @@ interface RecordRepository {
     suspend fun addTag(id: RecordId, tag: String): DomainResult<Unit>
     suspend fun removeTag(id: RecordId, tag: String): DomainResult<Unit>
     suspend fun updateDocumentCount(id: RecordId): DomainResult<Unit>
+    suspend fun updatePosition(id: RecordId, position: Int): DomainResult<Unit>
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 // DOCUMENT REPOSITORY
 // ══════════════════════════════════════════════════════════════════════════════
 
