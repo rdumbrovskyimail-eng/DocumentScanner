@@ -1,24 +1,28 @@
 package com.docs.scanner.presentation.screens.records
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.presentation.components.*
+import org.burnoutcrew.reorderable.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordsScreen(
     folderId: Long,
@@ -31,16 +35,18 @@ fun RecordsScreen(
     val allFolders by viewModel.allFolders.collectAsStateWithLifecycle()
     
     var showCreateDialog by remember { mutableStateOf(false) }
-    var editingRecord by remember { mutableStateOf<Record?>(null) }
     var showDeleteDialog by remember { mutableStateOf<Record?>(null) }
     var showMoveDialog by remember { mutableStateOf<Record?>(null) }
-    var snackbarMessage by remember { mutableStateOf<String?>(null) }
+    var showSortMenu by remember { mutableStateOf(false) }
+    
+    // Меню для конкретной записи
+    var menuRecord by remember { mutableStateOf<Record?>(null) }
+    var editingRecord by remember { mutableStateOf<Record?>(null) }
     
     LaunchedEffect(folderId) {
         viewModel.loadRecords(folderId)
     }
     
-    // ✅ Determine if we should show FAB (hide for Quick Scans)
     val showFab = when (val state = uiState) {
         is RecordsUiState.Success -> !state.isQuickScansFolder
         else -> false
@@ -61,15 +67,58 @@ fun RecordsScreen(
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
+                },
+                actions = {
+                    // Сортировка
+                    Box {
+                        IconButton(onClick = { showSortMenu = true }) {
+                            Icon(Icons.Default.Sort, contentDescription = "Sort")
+                        }
+                        DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Name A-Z") },
+                                onClick = { 
+                                    viewModel.setSortOrder(RecordSortOrder.NAME_ASC)
+                                    showSortMenu = false 
+                                },
+                                leadingIcon = { Icon(Icons.Default.SortByAlpha, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Name Z-A") },
+                                onClick = { 
+                                    viewModel.setSortOrder(RecordSortOrder.NAME_DESC)
+                                    showSortMenu = false 
+                                },
+                                leadingIcon = { Icon(Icons.Default.SortByAlpha, null) }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Newest first") },
+                                onClick = { 
+                                    viewModel.setSortOrder(RecordSortOrder.DATE_DESC)
+                                    showSortMenu = false 
+                                },
+                                leadingIcon = { Icon(Icons.Default.CalendarToday, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Oldest first") },
+                                onClick = { 
+                                    viewModel.setSortOrder(RecordSortOrder.DATE_ASC)
+                                    showSortMenu = false 
+                                },
+                                leadingIcon = { Icon(Icons.Default.CalendarToday, null) }
+                            )
+                        }
+                    }
                 }
             )
         },
         floatingActionButton = {
-            // ✅ FIX: Only show FAB if not Quick Scans folder
             if (showFab) {
-                FloatingActionButton(
-                    onClick = { showCreateDialog = true }
-                ) {
+                FloatingActionButton(onClick = { showCreateDialog = true }) {
                     Icon(Icons.Default.Add, contentDescription = "Create Record")
                 }
             }
@@ -87,9 +136,7 @@ fun RecordsScreen(
         ) {
             when (val state = uiState) {
                 is RecordsUiState.Loading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 }
                 
                 is RecordsUiState.Success -> {
@@ -116,23 +163,50 @@ fun RecordsScreen(
                                 "Use the gallery button on the main screen to quick scan documents"
                             else
                                 "Create your first record to add documents",
-                            // ✅ FIX: Don't show action button for Quick Scans
                             actionText = if (state.isQuickScansFolder) null else "Create Record",
                             onActionClick = if (state.isQuickScansFolder) null else {{ showCreateDialog = true }}
                         )
                     } else {
+                        // Reorderable state
+                        val reorderState = rememberReorderableLazyListState(
+                            onMove = { from, to ->
+                                viewModel.reorderRecords(from.index, to.index)
+                            },
+                            onDragEnd = { _, _ ->
+                                viewModel.saveRecordOrder()
+                            }
+                        )
+                        
                         LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
+                            state = reorderState.listState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .reorderable(reorderState),
                             contentPadding = PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(records, key = { it.id.value }) { record ->
-                                RecordCard(
-                                    record = record,
-                                    onClick = { onRecordClick(record.id.value) },
-                                    onLongClick = { editingRecord = record },
-                                    onDelete = { showDeleteDialog = record }
-                                )
+                            itemsIndexed(
+                                items = records,
+                                key = { _, record -> record.id.value }
+                            ) { index, record ->
+                                ReorderableItem(
+                                    reorderableState = reorderState,
+                                    key = record.id.value
+                                ) { isDragging ->
+                                    val elevation by animateDpAsState(
+                                        if (isDragging) 8.dp else 2.dp,
+                                        label = "elevation"
+                                    )
+                                    
+                                    RecordCard(
+                                        record = record,
+                                        isDragging = isDragging,
+                                        elevation = elevation,
+                                        modifier = Modifier.detectReorderAfterLongPress(reorderState),
+                                        onClick = { onRecordClick(record.id.value) },
+                                        onMenuClick = { menuRecord = record }
+                                    )
+                                }
                             }
                         }
                     }
@@ -148,7 +222,67 @@ fun RecordsScreen(
         }
     }
     
-    // Create dialog (only for non-Quick Scans folders)
+    // ═══════════════════════════════════════════════════════════════════════════
+    // МЕНЮ ЗАПИСИ (современный стиль)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    menuRecord?.let { record ->
+        AlertDialog(
+            onDismissRequest = { menuRecord = null }
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Text(
+                        text = record.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                    
+                    HorizontalDivider()
+                    
+                    ListItem(
+                        headlineContent = { Text("Rename") },
+                        leadingContent = { Icon(Icons.Default.Edit, null) },
+                        modifier = Modifier.clickable {
+                            menuRecord = null
+                            editingRecord = record
+                        }
+                    )
+                    
+                    ListItem(
+                        headlineContent = { Text("Move to folder") },
+                        leadingContent = { Icon(Icons.Default.DriveFileMove, null) },
+                        modifier = Modifier.clickable {
+                            menuRecord = null
+                            showMoveDialog = record
+                        }
+                    )
+                    
+                    ListItem(
+                        headlineContent = { Text("Delete") },
+                        leadingContent = { 
+                            Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) 
+                        },
+                        modifier = Modifier.clickable {
+                            menuRecord = null
+                            showDeleteDialog = record
+                        }
+                    )
+                }
+            }
+        }
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DIALOGS
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // Create dialog
     if (showCreateDialog) {
         var name by remember { mutableStateOf("") }
         var description by remember { mutableStateOf("") }
@@ -200,127 +334,66 @@ fun RecordsScreen(
         )
     }
     
-    // Edit menu
+    // Edit/Rename dialog
     editingRecord?.let { record ->
-        var showMenu by remember { mutableStateOf(true) }
-        var showRenameDialog by remember { mutableStateOf(false) }
+        var newName by remember { mutableStateOf(record.name) }
+        var newDescription by remember { mutableStateOf(record.description ?: "") }
         
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            DropdownMenu(
-                expanded = showMenu,
-                onDismissRequest = { 
-                    showMenu = false
-                    editingRecord = null
+        AlertDialog(
+            onDismissRequest = { editingRecord = null },
+            title = { Text("Edit Record") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("Name") },
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    OutlinedTextField(
+                        value = newDescription,
+                        onValueChange = { newDescription = it },
+                        label = { Text("Description") },
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Rename") },
-                    onClick = { 
-                        showMenu = false
-                        showRenameDialog = true
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.Edit, contentDescription = null)
-                    }
-                )
-                
-                DropdownMenuItem(
-                    text = { Text("Move to folder") },
+            },
+            confirmButton = {
+                TextButton(
                     onClick = {
-                        showMenu = false
-                        showMoveDialog = record
-                        editingRecord = null
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.DriveFileMove, contentDescription = null)
-                    }
-                )
-                
-                DropdownMenuItem(
-                    text = { Text("Delete") },
-                    onClick = {
-                        showMenu = false
-                        showDeleteDialog = record
-                        editingRecord = null
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.Delete, contentDescription = null)
-                    }
-                )
-            }
-        }
-        
-        // Rename dialog
-        if (showRenameDialog) {
-            var newName by remember { mutableStateOf(record.name) }
-            var newDescription by remember { mutableStateOf(record.description ?: "") }
-            
-            AlertDialog(
-                onDismissRequest = { 
-                    showRenameDialog = false
-                    editingRecord = null
-                },
-                title = { Text("Edit Record") },
-                text = {
-                    Column {
-                        OutlinedTextField(
-                            value = newName,
-                            onValueChange = { newName = it },
-                            label = { Text("Name") },
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = FontWeight.Bold
-                            ),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        OutlinedTextField(
-                            value = newDescription,
-                            onValueChange = { newDescription = it },
-                            label = { Text("Description") },
-                            maxLines = 3,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            viewModel.updateRecord(
-                                record.copy(
-                                    name = newName,
-                                    description = newDescription.ifBlank { null }
-                                )
+                        viewModel.updateRecord(
+                            record.copy(
+                                name = newName,
+                                description = newDescription.ifBlank { null }
                             )
-                            showRenameDialog = false
-                            editingRecord = null
-                        },
-                        enabled = newName.isNotBlank()
-                    ) {
-                        Text("Save")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { 
-                        showRenameDialog = false
+                        )
                         editingRecord = null
-                    }) {
-                        Text("Cancel")
-                    }
+                    },
+                    enabled = newName.isNotBlank()
+                ) {
+                    Text("Save")
                 }
-            )
-        }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingRecord = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
     
     // Move dialog
     showMoveDialog?.let { record ->
         val selectableFolders = remember(allFolders, record.folderId) {
-            allFolders.filter { it.id != record.folderId && !it.isQuickScans }  // ✅ Exclude Quick Scans as target
+            allFolders.filter { it.id != record.folderId && !it.isQuickScans }
         }
         var selectedFolderId by remember(record.id.value) { mutableStateOf<Long?>(null) }
 
@@ -396,33 +469,51 @@ fun RecordsScreen(
 @Composable
 private fun RecordCard(
     record: Record,
+    isDragging: Boolean,
+    elevation: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    onDelete: () -> Unit
+    onMenuClick: () -> Unit
 ) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            .shadow(elevation, RoundedCornerShape(12.dp))
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = onLongClick
+                onLongClick = { /* Handled by reorderable */ }
             ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDragging) 
+                MaterialTheme.colorScheme.primaryContainer 
+            else 
+                MaterialTheme.colorScheme.surface
+        )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Drag handle
+            Icon(
+                Icons.Default.DragHandle,
+                contentDescription = "Drag to reorder",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+            )
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
             Icon(
                 imageVector = Icons.Default.Description,
                 contentDescription = null,
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier.size(40.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
             
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -431,7 +522,7 @@ private fun RecordCard(
                 )
                 
                 if (record.description != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = record.description,
                         style = MaterialTheme.typography.bodySmall,
@@ -439,7 +530,7 @@ private fun RecordCard(
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 
                 Text(
                     text = "${record.documentCount} pages",
@@ -447,6 +538,15 @@ private fun RecordCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            
+            IconButton(onClick = onMenuClick) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+            }
         }
     }
+}
+
+// Enum для сортировки записей
+enum class RecordSortOrder {
+    NAME_ASC, NAME_DESC, DATE_ASC, DATE_DESC
 }
