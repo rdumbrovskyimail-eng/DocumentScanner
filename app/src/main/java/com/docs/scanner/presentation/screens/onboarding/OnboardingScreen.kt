@@ -160,43 +160,45 @@ fun OnboardingScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     
-                    TextButton(
-                        onClick = { 
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                data = Uri.parse("https://aistudio.google.com/app/apikey")
-                            }
-                            context.startActivity(intent)
-                        }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Default.OpenInNew,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Get free API key")
+                        TextButton(
+                            onClick = { 
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    data = Uri.parse("https://aistudio.google.com/app/apikey")
+                                }
+                                context.startActivity(intent)
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.OpenInNew,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Get free API key")
+                        }
+                        
+                        Button(
+                            onClick = {
+                                viewModel.saveAndContinue(onComplete)
+                            },
+                            enabled = apiKey.isNotBlank() && !isLoading
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text("Continue")
+                            }
+                        }
                     }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Button(
-                onClick = {
-                    viewModel.saveAndContinue(onComplete)
-                },
-                enabled = apiKey.isNotBlank() && !isLoading,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                } else {
-                    Text("Continue")
                 }
             }
             
