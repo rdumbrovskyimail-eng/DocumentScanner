@@ -1,16 +1,20 @@
 /*
  * DocumentScanner - App Database
- * Version: 7.0.0 - PRODUCTION READY 2026
- * * ✅ CRITICAL FIXES:
+ * Version: 7.1.0 - PRODUCTION READY 2026
+ *
+ * ✅ CRITICAL FIXES:
  * - Removed "server-side code" (30GB mmap_size → adaptive)
  * - Fixed SearchDao availability
- * * ✅ SERIOUS FIXES:
+ * - MIGRATION_17_18: Added position field to folders and records
+ *
+ * ✅ SERIOUS FIXES:
  * - Added timeout for PRAGMA operations
  * - Removed manual FTS table creation (Room @Fts4 handles it)
  * - Fixed WAL mode
- * * ✅ UPDATES:
+ *
+ * ✅ UPDATES:
  * - Bumped to Schema Version 18
- * - Added MIGRATION_17_18
+ * - Added MIGRATION_17_18 with position columns
  */
 
 package com.docs.scanner.data.local.database
@@ -26,7 +30,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import timber.log.Timber
-import kotlin.math.min
 
 // ══════════════════════════════════════════════════════════════════════════════
 // DATABASE
@@ -47,32 +50,30 @@ import kotlin.math.min
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
-    
+
     // ─────────────────────────────────────────────────────────────────────────
     // DAOs
     // ─────────────────────────────────────────────────────────────────────────
-    
+
     abstract fun folderDao(): FolderDao
     abstract fun recordDao(): RecordDao
     abstract fun documentDao(): DocumentDao
     abstract fun termDao(): TermDao
     abstract fun translationCacheDao(): TranslationCacheDao
     abstract fun searchHistoryDao(): SearchHistoryDao
-    
-    // abstract fun searchDao(): SearchDao // Uncomment if/when SearchDao is created
-    
+
     companion object {
         const val DATABASE_NAME = "document_scanner.db"
-        
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
-        
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: buildDatabase(context).also { INSTANCE = it }
             }
         }
-        
+
         private fun buildDatabase(context: Context): AppDatabase {
             return Room.databaseBuilder(
                 context.applicationContext,
@@ -111,21 +112,21 @@ abstract class AppDatabase : RoomDatabase() {
 // ══════════════════════════════════════════════════════════════════════════════
 
 class Converters {
-    
-    private val json = Json { 
+
+    private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
         isLenient = true
     }
-    
+
     @TypeConverter
     fun fromStringList(list: List<String>?): String? {
         return list?.let { json.encodeToString(it) }
     }
-    
+
     @TypeConverter
     fun toStringList(value: String?): List<String>? {
-        return value?.let { 
+        return value?.let {
             try {
                 json.decodeFromString<List<String>>(it)
             } catch (e: Exception) {
@@ -134,12 +135,12 @@ class Converters {
             }
         }
     }
-    
+
     @TypeConverter
     fun fromLongList(list: List<Long>?): String? {
         return list?.let { json.encodeToString(it) }
     }
-    
+
     @TypeConverter
     fun toLongList(value: String?): List<Long>? {
         return value?.let {
@@ -151,12 +152,12 @@ class Converters {
             }
         }
     }
-    
+
     @TypeConverter
     fun fromStringMap(map: Map<String, String>?): String? {
         return map?.let { json.encodeToString(it) }
     }
-    
+
     @TypeConverter
     fun toStringMap(value: String?): Map<String, String>? {
         return value?.let {
@@ -175,27 +176,30 @@ class Converters {
 // ══════════════════════════════════════════════════════════════════════════════
 
 class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
-    
+
     companion object {
         private const val MAX_MMAP_SIZE = 256 * 1024 * 1024L // 256MB max
         private const val MMAP_PERCENTAGE = 0.1 // 10% of available memory
     }
-    
+
     override fun onCreate(db: SupportSQLiteDatabase) {
         super.onCreate(db)
-        
+
         // FTS triggers for auto-updating index
         try {
-            db.execSQL("""
+            db.execSQL(
+                """
                 CREATE TRIGGER IF NOT EXISTS documents_fts_insert 
                 AFTER INSERT ON documents 
                 BEGIN
                     INSERT INTO documents_fts(rowid, original_text, translated_text)
                     VALUES (NEW.id, NEW.original_text, NEW.translated_text);
                 END
-            """)
-            
-            db.execSQL("""
+            """
+            )
+
+            db.execSQL(
+                """
                 CREATE TRIGGER IF NOT EXISTS documents_fts_update 
                 AFTER UPDATE ON documents 
                 BEGIN
@@ -203,38 +207,41 @@ class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
                     SET original_text = NEW.original_text, translated_text = NEW.translated_text
                     WHERE rowid = NEW.id;
                 END
-            """)
-            
-            db.execSQL("""
+            """
+            )
+
+            db.execSQL(
+                """
                 CREATE TRIGGER IF NOT EXISTS documents_fts_delete 
                 BEFORE DELETE ON documents 
                 BEGIN
                     DELETE FROM documents_fts WHERE rowid = OLD.id;
                 END
-            """)
-            
+            """
+            )
+
             Timber.d("✅ FTS triggers created")
         } catch (e: Exception) {
             Timber.e(e, "❌ Failed to create FTS triggers")
         }
     }
-    
+
     override fun onOpen(db: SupportSQLiteDatabase) {
         super.onOpen(db)
-        
+
         // Adaptive mmap_size
         try {
             val runtime = Runtime.getRuntime()
             val maxMemory = runtime.maxMemory()
             val adaptiveMmapSize = (maxMemory * MMAP_PERCENTAGE).toLong()
                 .coerceAtMost(MAX_MMAP_SIZE)
-            
+
             db.execSQL("PRAGMA mmap_size=$adaptiveMmapSize")
             Timber.d("✅ Set adaptive mmap_size: ${adaptiveMmapSize / (1024 * 1024)}MB")
         } catch (e: Exception) {
             Timber.w(e, "⚠️ Failed to set mmap_size")
         }
-        
+
         // Performance PRAGMAs
         try {
             db.execSQL("PRAGMA synchronous=NORMAL")
@@ -244,7 +251,7 @@ class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
         } catch (e: Exception) {
             Timber.w(e, "⚠️ Failed to apply PRAGMA settings")
         }
-        
+
         // Integrity check (Debug only)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             try {
@@ -271,7 +278,8 @@ class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("""
+        db.execSQL(
+            """
             CREATE TABLE IF NOT EXISTS terms (
                 id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                 title TEXT NOT NULL,
@@ -288,7 +296,8 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             )
-        """)
+        """
+        )
         db.execSQL("CREATE INDEX IF NOT EXISTS index_terms_due_date ON terms(due_date)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_terms_is_completed ON terms(is_completed)")
         Timber.d("✅ Migration 1→2: terms table created")
@@ -298,7 +307,7 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE documents ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
-        Timber.d("✅ Migration 2→3: position field added")
+        Timber.d("✅ Migration 2→3: position field added to documents")
     }
 }
 
@@ -317,18 +326,23 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
 val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
         // FTS table (if not already created by Room)
-        db.execSQL("""
+        db.execSQL(
+            """
             CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts 
             USING fts4(content="documents", original_text, translated_text)
-        """)
-        
-        db.execSQL("""
+        """
+        )
+
+        db.execSQL(
+            """
             INSERT INTO documents_fts(rowid, original_text, translated_text)
             SELECT id, original_text, translated_text FROM documents
-        """)
-        
+        """
+        )
+
         // Translation cache
-        db.execSQL("""
+        db.execSQL(
+            """
             CREATE TABLE IF NOT EXISTS translation_cache (
                 cache_key TEXT PRIMARY KEY NOT NULL,
                 original_text TEXT NOT NULL,
@@ -337,50 +351,53 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
                 target_language TEXT NOT NULL,
                 timestamp INTEGER NOT NULL
             )
-        """)
+        """
+        )
         db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_cache_timestamp ON translation_cache(timestamp)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_cache_languages ON translation_cache(source_language, target_language)")
-        
+
         // Search history
-        db.execSQL("""
+        db.execSQL(
+            """
             CREATE TABLE IF NOT EXISTS search_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                 query TEXT NOT NULL,
                 result_count INTEGER NOT NULL DEFAULT 0,
                 timestamp INTEGER NOT NULL
             )
-        """)
+        """
+        )
         db.execSQL("CREATE INDEX IF NOT EXISTS index_search_history_query ON search_history(query)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_search_history_timestamp ON search_history(timestamp)")
-        
+
         // New Columns
         db.execSQL("ALTER TABLE records ADD COLUMN source_language TEXT NOT NULL DEFAULT 'auto'")
         db.execSQL("ALTER TABLE records ADD COLUMN target_language TEXT NOT NULL DEFAULT 'en'")
-        
+
         db.execSQL("ALTER TABLE documents ADD COLUMN detected_language TEXT")
         db.execSQL("ALTER TABLE documents ADD COLUMN source_language TEXT NOT NULL DEFAULT 'auto'")
         db.execSQL("ALTER TABLE documents ADD COLUMN target_language TEXT NOT NULL DEFAULT 'en'")
-        
+
         db.execSQL("ALTER TABLE folders ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE folders ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE folders ADD COLUMN color INTEGER")
         db.execSQL("ALTER TABLE folders ADD COLUMN icon TEXT")
-        
+
         db.execSQL("ALTER TABLE records ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE records ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE records ADD COLUMN tags TEXT")
-        
+
         // Indices
         db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_is_pinned ON folders(is_pinned)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_is_archived ON folders(is_archived)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_records_is_pinned ON records(is_pinned)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_records_is_archived ON records(is_archived)")
-        
+
         db.execSQL("CREATE INDEX IF NOT EXISTS index_terms_is_cancelled ON terms(is_cancelled)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_terms_document_id ON terms(document_id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_terms_folder_id ON terms(folder_id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_terms_is_completed_due_date ON terms(is_completed, due_date)")
-        
+
         Timber.d("✅ Migration 4→5: FTS, caching, and language support added")
     }
 }
@@ -459,9 +476,39 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
     }
 }
 
+/**
+ * ✅ CRITICAL FIX: Migration 17→18
+ * 
+ * Adds 'position' column to folders and records tables for drag & drop reordering.
+ * Without this migration, the app crashes when trying to save folder/record order.
+ */
 val MIGRATION_17_18 = object : Migration(17, 18) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        Timber.d("✅ Migration 17→18: Version bump")
+        // ═══════════════════════════════════════════════════════════════════════
+        // ADD POSITION TO FOLDERS
+        // ═══════════════════════════════════════════════════════════════════════
+        try {
+            db.execSQL("ALTER TABLE folders ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_position ON folders(position)")
+            Timber.d("✅ Added position column to folders")
+        } catch (e: Exception) {
+            // Column might already exist from a previous partial migration
+            Timber.w(e, "⚠️ folders.position might already exist: ${e.message}")
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // ADD POSITION TO RECORDS
+        // ═══════════════════════════════════════════════════════════════════════
+        try {
+            db.execSQL("ALTER TABLE records ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_records_position ON records(position)")
+            Timber.d("✅ Added position column to records")
+        } catch (e: Exception) {
+            // Column might already exist from a previous partial migration
+            Timber.w(e, "⚠️ records.position might already exist: ${e.message}")
+        }
+
+        Timber.d("✅ Migration 17→18: Added position field to folders and records for drag & drop support")
     }
 }
 
@@ -523,13 +570,13 @@ suspend fun AppDatabase.validateIntegrity(): Boolean = withContext(Dispatchers.I
             false
         }
         cursor.close()
-        
+
         if (result) {
             Timber.d("✅ Database integrity validated")
         } else {
             Timber.e("❌ Database integrity check failed")
         }
-        
+
         result
     } catch (e: Exception) {
         Timber.e(e, "❌ Integrity validation failed")
