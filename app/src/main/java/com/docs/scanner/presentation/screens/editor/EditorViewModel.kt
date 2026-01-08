@@ -10,6 +10,7 @@ import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.core.RecordId
 import com.docs.scanner.domain.model.Document
 import com.docs.scanner.domain.model.Record
+import com.docs.scanner.domain.usecase.AddDocumentState
 import com.docs.scanner.domain.usecase.AllUseCases
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -56,13 +57,15 @@ class EditorViewModel @Inject constructor(
                 val folderName = folder?.name ?: ""
 
                 // Load move targets (other records in same folder)
-                useCases.getRecords(record.folderId.value)
-                    .catch { /* ignore */ }
-                    .collect { records ->
-                        _moveTargets.value = records.filter { it.id != record.id }
-                    }
+                launch {
+                    useCases.getRecords(record.folderId.value)
+                        .catch { /* ignore */ }
+                        .collect { records ->
+                            _moveTargets.value = records.filter { it.id.value != recordId }
+                        }
+                }
 
-                useCases.documents.observeByRecord(RecordId(recordId))
+                useCases.getDocuments(recordId)
                     .catch { e ->
                         _uiState.value = EditorUiState.Error("Failed to load documents: ${e.message}")
                     }
@@ -80,51 +83,68 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // ADD DOCUMENT - использует useCases.addDocument(recordId, uri)
+    // ══════════════════════════════════════════════════════════════════════════
+    
     fun addDocument(uri: Uri) {
         viewModelScope.launch {
             val currentState = _uiState.value
             if (currentState !is EditorUiState.Success) return@launch
 
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Adding document...",
-                processingProgress = 10
-            )
-
-            try {
-                when (val result = useCases.documents.addFromUri(RecordId(recordId), uri.toString())) {
-                    is DomainResult.Success -> {
-                        _uiState.value = currentState.copy(
-                            isProcessing = true,
-                            processingMessage = "Processing OCR...",
-                            processingProgress = 50
-                        )
-                        // Documents will auto-refresh via Flow
-                    }
-                    is DomainResult.Failure -> {
-                        _uiState.value = currentState.copy(
-                            isProcessing = false,
-                            errorMessage = "Failed to add document: ${result.error.message}"
-                        )
+            useCases.addDocument(recordId, uri)
+                .collect { state ->
+                    when (state) {
+                        is AddDocumentState.Creating -> {
+                            _uiState.value = currentState.copy(
+                                isProcessing = true,
+                                processingMessage = state.message,
+                                processingProgress = state.progress
+                            )
+                        }
+                        is AddDocumentState.ProcessingOcr -> {
+                            _uiState.value = currentState.copy(
+                                isProcessing = true,
+                                processingMessage = state.message,
+                                processingProgress = state.progress
+                            )
+                        }
+                        is AddDocumentState.Translating -> {
+                            _uiState.value = currentState.copy(
+                                isProcessing = true,
+                                processingMessage = state.message,
+                                processingProgress = state.progress
+                            )
+                        }
+                        is AddDocumentState.Success -> {
+                            _uiState.value = currentState.copy(isProcessing = false)
+                            // Documents auto-refresh via Flow
+                        }
+                        is AddDocumentState.Error -> {
+                            _uiState.value = currentState.copy(
+                                isProcessing = false,
+                                errorMessage = state.message
+                            )
+                        }
                     }
                 }
-            } catch (e: Exception) {
-                _uiState.value = currentState.copy(
-                    isProcessing = false,
-                    errorMessage = "Error: ${e.message}"
-                )
-            }
         }
     }
 
     fun deleteDocument(documentId: Long) {
         viewModelScope.launch {
-            when (val result = useCases.documents.delete(DocumentId(documentId))) {
-                is DomainResult.Success -> { /* Auto-refresh */ }
-                is DomainResult.Failure -> updateErrorMessage("Failed to delete: ${result.error.message}")
+            when (val result = useCases.deleteDocument(documentId)) {
+                is com.docs.scanner.domain.model.Result.Success -> { /* Auto-refresh */ }
+                is com.docs.scanner.domain.model.Result.Error -> 
+                    updateErrorMessage("Failed to delete: ${result.exception.message}")
+                else -> {}
             }
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // REORDER - использует useCases.documents.reorder(recordId, docIds)
+    // ══════════════════════════════════════════════════════════════════════════
 
     fun moveDocumentUp(documentId: Long) {
         viewModelScope.launch {
@@ -138,10 +158,9 @@ class EditorViewModel @Inject constructor(
             val doc = docs.removeAt(index)
             docs.add(index - 1, doc)
 
-            // Update positions
-            docs.forEachIndexed { i, d ->
-                useCases.documents.updatePosition(d.id, i)
-            }
+            // Reorder via use case
+            val docIds = docs.map { it.id }
+            useCases.documents.reorder(RecordId(recordId), docIds)
         }
     }
 
@@ -157,10 +176,9 @@ class EditorViewModel @Inject constructor(
             val doc = docs.removeAt(index)
             docs.add(index + 1, doc)
 
-            // Update positions
-            docs.forEachIndexed { i, d ->
-                useCases.documents.updatePosition(d.id, i)
-            }
+            // Reorder via use case
+            val docIds = docs.map { it.id }
+            useCases.documents.reorder(RecordId(recordId), docIds)
         }
     }
 
@@ -194,9 +212,10 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Add tag to record via useCases.records.update
-     */
+    // ══════════════════════════════════════════════════════════════════════════
+    // TAGS - через useCases.updateRecord с измененным списком тегов
+    // ══════════════════════════════════════════════════════════════════════════
+
     fun addTag(tag: String) {
         val t = tag.trim().lowercase().replace(Regex("[^a-z0-9_-]"), "")
         if (t.isBlank()) {
@@ -216,16 +235,15 @@ class EditorViewModel @Inject constructor(
             currentTags.add(t)
             
             val updated = currentState.record.copy(tags = currentTags)
-            when (val result = useCases.records.update(updated)) {
-                is DomainResult.Success -> loadData()
-                is DomainResult.Failure -> updateErrorMessage("Failed to add tag: ${result.error.message}")
+            when (val result = useCases.updateRecord(updated)) {
+                is com.docs.scanner.domain.model.Result.Success -> loadData()
+                is com.docs.scanner.domain.model.Result.Error -> 
+                    updateErrorMessage("Failed to add tag: ${result.exception.message}")
+                else -> {}
             }
         }
     }
 
-    /**
-     * Remove tag from record via useCases.records.update
-     */
     fun removeTag(tag: String) {
         val t = tag.trim().lowercase()
         
@@ -237,9 +255,11 @@ class EditorViewModel @Inject constructor(
             currentTags.remove(t)
             
             val updated = currentState.record.copy(tags = currentTags)
-            when (val result = useCases.records.update(updated)) {
-                is DomainResult.Success -> loadData()
-                is DomainResult.Failure -> updateErrorMessage("Failed to remove tag: ${result.error.message}")
+            when (val result = useCases.updateRecord(updated)) {
+                is com.docs.scanner.domain.model.Result.Success -> loadData()
+                is com.docs.scanner.domain.model.Result.Error -> 
+                    updateErrorMessage("Failed to remove tag: ${result.exception.message}")
+                else -> {}
             }
         }
     }
@@ -262,18 +282,31 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // UPDATE DOCUMENT TEXT - через useCases.updateDocument(doc)
+    // ══════════════════════════════════════════════════════════════════════════
+
     fun updateDocumentText(documentId: Long, originalText: String?, translatedText: String?) {
         viewModelScope.launch {
-            when (val result = useCases.documents.updateText(
-                DocumentId(documentId), 
-                originalText, 
-                translatedText
-            )) {
-                is DomainResult.Success -> { /* Auto-refresh */ }
-                is DomainResult.Failure -> updateErrorMessage("Failed to update text: ${result.error.message}")
+            val doc = useCases.getDocumentById(documentId) ?: return@launch
+            
+            val updated = doc.copy(
+                originalText = originalText,
+                translatedText = translatedText
+            )
+            
+            when (val result = useCases.updateDocument(updated)) {
+                is com.docs.scanner.domain.model.Result.Success -> { /* Auto-refresh */ }
+                is com.docs.scanner.domain.model.Result.Error -> 
+                    updateErrorMessage("Failed to update text: ${result.exception.message}")
+                else -> {}
             }
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // RETRY OCR - через useCases.fixOcr(documentId)
+    // ══════════════════════════════════════════════════════════════════════════
 
     fun retryOcr(documentId: Long) {
         viewModelScope.launch {
@@ -286,19 +319,24 @@ class EditorViewModel @Inject constructor(
                 processingProgress = 30
             )
 
-            when (val result = useCases.documents.retryOcr(DocumentId(documentId))) {
-                is DomainResult.Success -> {
+            when (val result = useCases.fixOcr(documentId)) {
+                is com.docs.scanner.domain.model.Result.Success -> {
                     _uiState.value = currentState.copy(isProcessing = false)
                 }
-                is DomainResult.Failure -> {
+                is com.docs.scanner.domain.model.Result.Error -> {
                     _uiState.value = currentState.copy(
                         isProcessing = false,
-                        errorMessage = "OCR failed: ${result.error.message}"
+                        errorMessage = "OCR failed: ${result.exception.message}"
                     )
                 }
+                else -> {}
             }
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // RETRY TRANSLATION - через useCases.retryTranslation(documentId)
+    // ══════════════════════════════════════════════════════════════════════════
 
     fun retryTranslation(documentId: Long) {
         viewModelScope.launch {
@@ -311,19 +349,24 @@ class EditorViewModel @Inject constructor(
                 processingProgress = 30
             )
 
-            when (val result = useCases.documents.retryTranslation(DocumentId(documentId))) {
-                is DomainResult.Success -> {
+            when (val result = useCases.retryTranslation(documentId)) {
+                is com.docs.scanner.domain.model.Result.Success -> {
                     _uiState.value = currentState.copy(isProcessing = false)
                 }
-                is DomainResult.Failure -> {
+                is com.docs.scanner.domain.model.Result.Error -> {
                     _uiState.value = currentState.copy(
                         isProcessing = false,
-                        errorMessage = "Translation failed: ${result.error.message}"
+                        errorMessage = "Translation failed: ${result.exception.message}"
                     )
                 }
+                else -> {}
             }
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // MOVE DOCUMENT - через useCases.documents.move(id, toRecord)
+    // ══════════════════════════════════════════════════════════════════════════
 
     fun moveDocument(documentId: Long, targetRecordId: Long) {
         viewModelScope.launch {
@@ -336,6 +379,10 @@ class EditorViewModel @Inject constructor(
             }
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // SHARE - через useCases.export
+    // ══════════════════════════════════════════════════════════════════════════
 
     fun shareRecordAsPdf() {
         viewModelScope.launch {
@@ -355,7 +402,7 @@ class EditorViewModel @Inject constructor(
                 when (val result = useCases.export.exportToPdf(docIds, outputPath)) {
                     is DomainResult.Success -> {
                         _uiState.value = currentState.copy(isProcessing = false)
-                        _shareEvent.emit(ShareEvent.File(result.value, "application/pdf"))
+                        _shareEvent.emit(ShareEvent.File(result.data, "application/pdf"))
                     }
                     is DomainResult.Failure -> {
                         _uiState.value = currentState.copy(
@@ -390,7 +437,7 @@ class EditorViewModel @Inject constructor(
                 when (val result = useCases.export.shareDocuments(docIds, asPdf = false)) {
                     is DomainResult.Success -> {
                         _uiState.value = currentState.copy(isProcessing = false)
-                        _shareEvent.emit(ShareEvent.File(result.value, "application/zip"))
+                        _shareEvent.emit(ShareEvent.File(result.data, "application/zip"))
                     }
                     is DomainResult.Failure -> {
                         _uiState.value = currentState.copy(
