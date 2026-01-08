@@ -546,7 +546,4 @@ private fun RecordCard(
     }
 }
 
-// Enum для сортировки записей
-enum class RecordSortOrder {
-    NAME_ASC, NAME_DESC, DATE_ASC, DATE_DESC
-}
+// RecordSortOrder enum определён в RecordsViewModel.kt - НЕ дублируем здесь!
