@@ -325,7 +325,7 @@ sealed interface NavigationEvent {
     data class NavigateToEditor(val recordId: Long) : NavigationEvent
 }
 
-// Enum для сортировки (должен быть в этом файле или отдельном)
+// Enum для сортировки
 enum class SortOrder {
     NAME_ASC, NAME_DESC, DATE_ASC, DATE_DESC
 }
