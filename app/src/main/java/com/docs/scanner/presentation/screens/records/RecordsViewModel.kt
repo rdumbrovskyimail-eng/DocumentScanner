@@ -3,6 +3,7 @@ package com.docs.scanner.presentation.screens.records
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.core.FolderId
+import com.docs.scanner.domain.core.RecordId
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.domain.usecase.AllUseCases
@@ -123,7 +124,7 @@ class RecordsViewModel @Inject constructor(
     fun saveRecordOrder() {
         viewModelScope.launch {
             _reorderableRecords.value.forEachIndexed { index, record ->
-                useCases.updateRecordPosition(record.id.value, index)
+                useCases.records.updatePosition(record.id, index)
             }
         }
     }
@@ -239,7 +240,7 @@ sealed interface RecordsUiState {
     data class Error(val message: String) : RecordsUiState
 }
 
-// Enum для сортировки записей
+// Enum для сортировки записей (единственное место определения)
 enum class RecordSortOrder {
     NAME_ASC, NAME_DESC, DATE_ASC, DATE_DESC
 }
