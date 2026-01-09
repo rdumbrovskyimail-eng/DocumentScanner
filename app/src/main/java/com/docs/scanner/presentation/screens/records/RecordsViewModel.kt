@@ -3,7 +3,6 @@ package com.docs.scanner.presentation.screens.records
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.core.FolderId
-import com.docs.scanner.domain.core.RecordId
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.domain.usecase.AllUseCases
@@ -23,11 +22,13 @@ class RecordsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<RecordsUiState>(RecordsUiState.Loading)
     val uiState: StateFlow<RecordsUiState> = _uiState.asStateFlow()
     
-    private val _sortOrder = MutableStateFlow(RecordSortOrder.DATE_DESC)
-    val sortOrder: StateFlow<RecordSortOrder> = _sortOrder.asStateFlow()
+    // ✅ УПРОЩЕНО: Только 2 варианта сортировки (Name ↔ Date)
+    private val _sortByName = MutableStateFlow(true) // true = Name, false = Date
+    val sortByName: StateFlow<Boolean> = _sortByName.asStateFlow()
     
-    // Mutable list для drag & drop
-    private val _reorderableRecords = MutableStateFlow<List<Record>>(emptyList())
+    // ✅ FIX: Блокируем Flow во время drag
+    private val _isDragging = MutableStateFlow(false)
+    private var _localRecords: List<Record> = emptyList()
 
     val allFolders: StateFlow<List<Folder>> = useCases.getFolders()
         .stateIn(
@@ -55,17 +56,21 @@ class RecordsViewModel @Inject constructor(
 
                 combine(
                     useCases.getRecords(folderId),
-                    _sortOrder
-                ) { records, sort ->
-                    sortRecords(records, sort)
+                    _sortByName,
+                    _isDragging
+                ) { records, byName, isDragging ->
+                    if (isDragging) {
+                        // ✅ Во время drag возвращаем локальную копию
+                        _localRecords
+                    } else {
+                        // ✅ Обновляем локальную копию
+                        sortRecords(records, byName).also { _localRecords = it }
+                    }
                 }
                 .catch { e ->
-                    _uiState.value = RecordsUiState.Error(
-                        "Failed to load records: ${e.message}"
-                    )
+                    _uiState.value = RecordsUiState.Error("Failed to load records: ${e.message}")
                 }
                 .collect { records ->
-                    _reorderableRecords.value = records
                     _uiState.value = RecordsUiState.Success(
                         folderId = folderId,
                         folderName = folderName,
@@ -74,35 +79,30 @@ class RecordsViewModel @Inject constructor(
                     )
                 }
             } catch (e: Exception) {
-                _uiState.value = RecordsUiState.Error(
-                    "Failed to load data: ${e.message}"
-                )
+                _uiState.value = RecordsUiState.Error("Failed to load data: ${e.message}")
             }
         }
     }
     
-    /**
-     * Sort records by selected order
-     */
-    private fun sortRecords(records: List<Record>, sort: RecordSortOrder): List<Record> {
-        return when (sort) {
-            RecordSortOrder.NAME_ASC -> records.sortedBy { it.name.lowercase() }
-            RecordSortOrder.NAME_DESC -> records.sortedByDescending { it.name.lowercase() }
-            RecordSortOrder.DATE_ASC -> records.sortedBy { it.createdAt }
-            RecordSortOrder.DATE_DESC -> records.sortedByDescending { it.createdAt }
+    private fun sortRecords(records: List<Record>, byName: Boolean): List<Record> {
+        return if (byName) {
+            records.sortedBy { it.name.lowercase() }
+        } else {
+            records.sortedByDescending { it.createdAt }
         }
     }
     
-    /**
-     * Set sort order
-     */
-    fun setSortOrder(order: RecordSortOrder) {
-        _sortOrder.value = order
+    // ✅ УПРОЩЕНО: Переключение Name ↔ Date
+    fun toggleSortOrder() {
+        _sortByName.value = !_sortByName.value
     }
     
-    /**
-     * Reorder records during drag & drop
-     */
+    // ✅ FIX: Помечаем начало drag
+    fun startDragging() {
+        _isDragging.value = true
+    }
+    
+    // ✅ FIX: Обновляем только локальную копию
     fun reorderRecords(fromIndex: Int, toIndex: Int) {
         val currentState = _uiState.value
         if (currentState !is RecordsUiState.Success) return
@@ -114,17 +114,22 @@ class RecordsViewModel @Inject constructor(
         val item = records.removeAt(fromIndex)
         records.add(toIndex, item)
         
-        _reorderableRecords.value = records
+        _localRecords = records
         _uiState.value = currentState.copy(records = records)
     }
     
-    /**
-     * Save record order after drag ends
-     */
+    // ✅ FIX: Сохраняем в БД и разблокируем Flow
     fun saveRecordOrder() {
         viewModelScope.launch {
-            _reorderableRecords.value.forEachIndexed { index, record ->
-                useCases.records.updatePosition(record.id, index)
+            try {
+                _localRecords.forEachIndexed { index, record ->
+                    useCases.records.updatePosition(record.id, index)
+                }
+                // ✅ Разблокируем Flow
+                _isDragging.value = false
+            } catch (e: Exception) {
+                updateErrorMessage("Failed to save order: ${e.message}")
+                _isDragging.value = false
             }
         }
     }
@@ -238,9 +243,4 @@ sealed interface RecordsUiState {
     ) : RecordsUiState
     
     data class Error(val message: String) : RecordsUiState
-}
-
-// Enum для сортировки записей (единственное место определения)
-enum class RecordSortOrder {
-    NAME_ASC, NAME_DESC, DATE_ASC, DATE_DESC
 }
