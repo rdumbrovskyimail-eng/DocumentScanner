@@ -24,17 +24,19 @@ class FoldersViewModel @Inject constructor(
     private val _showArchived = MutableStateFlow(false)
     val showArchived: StateFlow<Boolean> = _showArchived.asStateFlow()
     
-    private val _sortOrder = MutableStateFlow(SortOrder.NAME_ASC)
-    val sortOrder: StateFlow<SortOrder> = _sortOrder.asStateFlow()
+    // ✅ УПРОЩЕНО: Только 2 варианта сортировки (Name ↔ Date)
+    private val _sortByName = MutableStateFlow(true) // true = Name, false = Date
+    val sortByName: StateFlow<Boolean> = _sortByName.asStateFlow()
 
     private val _navigationEvent = MutableSharedFlow<NavigationEvent>()
     val navigationEvent: SharedFlow<NavigationEvent> = _navigationEvent.asSharedFlow()
     
-    private val _reorderableFolders = MutableStateFlow<List<Folder>>(emptyList())
-    
-    // Для показа ошибок через Snackbar независимо от состояния
     private val _errorMessage = MutableSharedFlow<String>()
     val errorMessage: SharedFlow<String> = _errorMessage.asSharedFlow()
+
+    // ✅ FIX: Блокируем Flow во время перетаскивания
+    private val _isDragging = MutableStateFlow(false)
+    private var _localFolders: List<Folder> = emptyList()
 
     init {
         loadFolders()
@@ -47,15 +49,21 @@ class FoldersViewModel @Inject constructor(
                     if (includeArchived) useCases.folders.observeIncludingArchived()
                     else useCases.folders.observeAll()
                 },
-                _sortOrder
-            ) { folders, sort ->
-                sortFolders(folders, sort)
+                _sortByName,
+                _isDragging
+            ) { folders, byName, isDragging ->
+                if (isDragging) {
+                    // ✅ Во время drag возвращаем локальную копию
+                    return@combine _localFolders
+                } else {
+                    // ✅ Обновляем локальную копию
+                    sortFolders(folders, byName).also { _localFolders = it }
+                }
             }
             .catch { e ->
                 _uiState.value = FoldersUiState.Error("Failed to load folders: ${e.message}")
             }
             .collect { sortedFolders ->
-                _reorderableFolders.value = sortedFolders.filter { !it.isQuickScans && !it.isPinned }
                 _uiState.value = if (sortedFolders.isEmpty()) {
                     FoldersUiState.Empty
                 } else {
@@ -65,26 +73,34 @@ class FoldersViewModel @Inject constructor(
         }
     }
     
-    private fun sortFolders(folders: List<Folder>, sort: SortOrder): List<Folder> {
+    private fun sortFolders(folders: List<Folder>, byName: Boolean): List<Folder> {
         val quickScans = folders.filter { it.isQuickScans }
         val pinned = folders.filter { !it.isQuickScans && it.isPinned }
             .sortedBy { it.name.lowercase() }
+        
         val others = folders.filter { !it.isQuickScans && !it.isPinned }
             .let { list ->
-                when (sort) {
-                    SortOrder.NAME_ASC -> list.sortedBy { it.name.lowercase() }
-                    SortOrder.NAME_DESC -> list.sortedByDescending { it.name.lowercase() }
-                    SortOrder.DATE_ASC -> list.sortedBy { it.createdAt }
-                    SortOrder.DATE_DESC -> list.sortedByDescending { it.createdAt }
+                if (byName) {
+                    list.sortedBy { it.name.lowercase() }
+                } else {
+                    list.sortedByDescending { it.createdAt }
                 }
             }
+        
         return quickScans + pinned + others
     }
     
-    fun setSortOrder(order: SortOrder) {
-        _sortOrder.value = order
+    // ✅ УПРОЩЕНО: Переключение Name ↔ Date
+    fun toggleSortOrder() {
+        _sortByName.value = !_sortByName.value
     }
     
+    // ✅ FIX: Помечаем начало перетаскивания
+    fun startDragging() {
+        _isDragging.value = true
+    }
+    
+    // ✅ FIX: Обновляем только локальную копию
     fun reorderFolders(fromIndex: Int, toIndex: Int) {
         val currentState = _uiState.value
         if (currentState !is FoldersUiState.Success) return
@@ -98,14 +114,26 @@ class FoldersViewModel @Inject constructor(
         val item = others.removeAt(fromIndex)
         others.add(toIndex, item)
         
-        _reorderableFolders.value = others
-        _uiState.value = FoldersUiState.Success(quickScans + pinned + others)
+        _localFolders = quickScans + pinned + others
+        _uiState.value = FoldersUiState.Success(_localFolders)
     }
     
+    // ✅ FIX: Сохраняем в БД и разблокируем Flow
     fun saveFolderOrder() {
         viewModelScope.launch {
-            _reorderableFolders.value.forEachIndexed { index, folder ->
-                useCases.folders.updatePosition(folder.id, index)
+            try {
+                // Сохраняем position
+                _localFolders.forEachIndexed { index, folder ->
+                    if (!folder.isQuickScans && !folder.isPinned) {
+                        useCases.folders.updatePosition(folder.id, index)
+                    }
+                }
+                
+                // ✅ Разблокируем Flow
+                _isDragging.value = false
+            } catch (e: Exception) {
+                showError("Failed to save folder order: ${e.message}")
+                _isDragging.value = false
             }
         }
     }
@@ -122,12 +150,8 @@ class FoldersViewModel @Inject constructor(
 
         viewModelScope.launch {
             when (val result = useCases.folders.create(name.trim(), desc = description?.takeIf { it.isNotBlank() })) {
-                is DomainResult.Success -> {
-                    // Папка создана - Flow автоматически обновит UI
-                }
-                is DomainResult.Failure -> {
-                    showError("Failed to create folder: ${result.error.message}")
-                }
+                is DomainResult.Success -> { }
+                is DomainResult.Failure -> showError("Failed to create folder: ${result.error.message}")
             }
         }
     }
@@ -135,7 +159,7 @@ class FoldersViewModel @Inject constructor(
     fun updateFolder(folder: Folder) {
         viewModelScope.launch {
             when (val result = useCases.folders.update(folder)) {
-                is DomainResult.Success -> { /* Flow обновит */ }
+                is DomainResult.Success -> { }
                 is DomainResult.Failure -> showError("Failed to update folder: ${result.error.message}")
             }
         }
@@ -144,7 +168,7 @@ class FoldersViewModel @Inject constructor(
     fun deleteFolder(folderId: Long, deleteContents: Boolean = false) {
         viewModelScope.launch {
             when (val result = useCases.folders.delete(FolderId(folderId), deleteContents = deleteContents)) {
-                is DomainResult.Success -> { /* Flow обновит */ }
+                is DomainResult.Success -> { }
                 is DomainResult.Failure -> showError("Failed to delete folder: ${result.error.message}")
             }
         }
@@ -153,7 +177,7 @@ class FoldersViewModel @Inject constructor(
     fun setPinned(folderId: Long, pinned: Boolean) {
         viewModelScope.launch {
             when (val result = useCases.folders.pin(FolderId(folderId), pinned)) {
-                is DomainResult.Success -> { /* Flow обновит */ }
+                is DomainResult.Success -> { }
                 is DomainResult.Failure -> showError("Failed to update pin: ${result.error.message}")
             }
         }
@@ -162,7 +186,7 @@ class FoldersViewModel @Inject constructor(
     fun archive(folderId: Long) {
         viewModelScope.launch {
             when (val result = useCases.folders.archive(FolderId(folderId))) {
-                is DomainResult.Success -> { /* Flow обновит */ }
+                is DomainResult.Success -> { }
                 is DomainResult.Failure -> showError("Failed to archive folder: ${result.error.message}")
             }
         }
@@ -171,7 +195,7 @@ class FoldersViewModel @Inject constructor(
     fun unarchive(folderId: Long) {
         viewModelScope.launch {
             when (val result = useCases.folders.unarchive(FolderId(folderId))) {
-                is DomainResult.Success -> { /* Flow обновит */ }
+                is DomainResult.Success -> { }
                 is DomainResult.Failure -> showError("Failed to unarchive folder: ${result.error.message}")
             }
         }
@@ -269,8 +293,3 @@ sealed interface FoldersUiState {
 
 sealed interface NavigationEvent {
     data class NavigateToEditor(val recordId: Long) : NavigationEvent
-}
-
-enum class SortOrder {
-    NAME_ASC, NAME_DESC, DATE_ASC, DATE_DESC
-}
