@@ -38,6 +38,7 @@ fun FoldersScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showArchived by viewModel.showArchived.collectAsStateWithLifecycle()
+    val sortByName by viewModel.sortByName.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showCreateFolderDialog by remember { mutableStateOf(false) }
@@ -45,9 +46,6 @@ fun FoldersScreen(
     var showDeleteFolderDialog by remember { mutableStateOf<Folder?>(null) }
     var deleteFolderWithContents by remember { mutableStateOf(false) }
     var showClearQuickScansDialog by remember { mutableStateOf(false) }
-    var showSortMenu by remember { mutableStateOf(false) }
-    
-    // Меню для конкретной папки
     var menuFolder by remember { mutableStateOf<Folder?>(null) }
 
     LaunchedEffect(Unit) {
@@ -69,52 +67,15 @@ fun FoldersScreen(
             TopAppBar(
                 title = { Text("Documents") },
                 actions = {
-                    // Сортировка
-                    Box {
-                        IconButton(onClick = { showSortMenu = true }) {
-                            Icon(Icons.Default.Sort, contentDescription = "Sort")
-                        }
-                        DropdownMenu(
-                            expanded = showSortMenu,
-                            onDismissRequest = { showSortMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Name A-Z") },
-                                onClick = { 
-                                    viewModel.setSortOrder(SortOrder.NAME_ASC)
-                                    showSortMenu = false 
-                                },
-                                leadingIcon = { Icon(Icons.Default.SortByAlpha, null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Name Z-A") },
-                                onClick = { 
-                                    viewModel.setSortOrder(SortOrder.NAME_DESC)
-                                    showSortMenu = false 
-                                },
-                                leadingIcon = { Icon(Icons.Default.SortByAlpha, null) }
-                            )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("Newest first") },
-                                onClick = { 
-                                    viewModel.setSortOrder(SortOrder.DATE_DESC)
-                                    showSortMenu = false 
-                                },
-                                leadingIcon = { Icon(Icons.Default.CalendarToday, null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Oldest first") },
-                                onClick = { 
-                                    viewModel.setSortOrder(SortOrder.DATE_ASC)
-                                    showSortMenu = false 
-                                },
-                                leadingIcon = { Icon(Icons.Default.CalendarToday, null) }
-                            )
-                        }
+                    // ✅ УПРОЩЕНО: Одна кнопка сортировки
+                    IconButton(onClick = { viewModel.toggleSortOrder() }) {
+                        Icon(
+                            imageVector = if (sortByName) Icons.Default.SortByAlpha else Icons.Default.CalendarToday,
+                            contentDescription = if (sortByName) "Sort by Name" else "Sort by Date",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                     
-                    // Архив
                     IconButton(onClick = { viewModel.setShowArchived(!showArchived) }) {
                         Icon(
                             Icons.Default.Inventory2,
@@ -187,10 +148,8 @@ fun FoldersScreen(
                     val quickScansFolder = state.folders.find { it.isQuickScans }
                     val otherFolders = state.folders.filter { !it.isQuickScans }
                     
-                    // Reorderable state
                     val reorderState = rememberReorderableLazyListState(
                         onMove = { from, to ->
-                            // Учитываем что Quick Scans всегда первый (index 0)
                             val fromIndex = from.index - 1
                             val toIndex = to.index - 1
                             if (fromIndex >= 0 && toIndex >= 0) {
@@ -202,12 +161,18 @@ fun FoldersScreen(
                         }
                     )
                     
+                    // ✅ FIX: Отслеживаем начало drag
+                    LaunchedEffect(reorderState.draggingItemIndex) {
+                        if (reorderState.draggingItemIndex != null) {
+                            viewModel.startDragging()
+                        }
+                    }
+                    
                     LazyColumn(
                         state = reorderState.listState,
                         modifier = Modifier.reorderable(reorderState),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Quick Scans - не перетаскивается
                         quickScansFolder?.let { folder ->
                             item(key = "quickscans") {
                                 QuickScansFolderCard(
@@ -218,7 +183,6 @@ fun FoldersScreen(
                             }
                         }
                         
-                        // Остальные папки с drag & drop
                         itemsIndexed(
                             items = otherFolders,
                             key = { _, folder -> folder.id.value }
@@ -249,7 +213,7 @@ fun FoldersScreen(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // МЕНЮ ПАПКИ (современный стиль)
+    // МЕНЮ ПАПКИ
     // ═══════════════════════════════════════════════════════════════════════════
     
     menuFolder?.let { folder ->
@@ -532,7 +496,7 @@ private fun QuickScansFolderCard(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// REGULAR FOLDER CARD (с поддержкой drag & drop)
+// REGULAR FOLDER CARD
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -544,8 +508,7 @@ private fun RegularFolderCard(
     onClick: () -> Unit,
     onMenuClick: () -> Unit
 ) {
-    Card(
-        modifier = modifier
+    Card(modifier = modifier
             .fillMaxWidth()
             .shadow(elevation, RoundedCornerShape(12.dp))
             .combinedClickable(
@@ -612,5 +575,3 @@ private fun RegularFolderCard(
         }
     }
 }
-
-// SortOrder enum определён в FoldersViewModel.kt - НЕ дублируем здесь!
