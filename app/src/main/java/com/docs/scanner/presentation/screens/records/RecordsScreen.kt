@@ -33,13 +33,11 @@ fun RecordsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val currentFolderId by viewModel.currentFolderId.collectAsStateWithLifecycle()
     val allFolders by viewModel.allFolders.collectAsStateWithLifecycle()
+    val sortByName by viewModel.sortByName.collectAsStateWithLifecycle()
     
     var showCreateDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf<Record?>(null) }
     var showMoveDialog by remember { mutableStateOf<Record?>(null) }
-    var showSortMenu by remember { mutableStateOf(false) }
-    
-    // Меню для конкретной записи
     var menuRecord by remember { mutableStateOf<Record?>(null) }
     var editingRecord by remember { mutableStateOf<Record?>(null) }
     
@@ -69,49 +67,13 @@ fun RecordsScreen(
                     }
                 },
                 actions = {
-                    // Сортировка
-                    Box {
-                        IconButton(onClick = { showSortMenu = true }) {
-                            Icon(Icons.Default.Sort, contentDescription = "Sort")
-                        }
-                        DropdownMenu(
-                            expanded = showSortMenu,
-                            onDismissRequest = { showSortMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Name A-Z") },
-                                onClick = { 
-                                    viewModel.setSortOrder(RecordSortOrder.NAME_ASC)
-                                    showSortMenu = false 
-                                },
-                                leadingIcon = { Icon(Icons.Default.SortByAlpha, null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Name Z-A") },
-                                onClick = { 
-                                    viewModel.setSortOrder(RecordSortOrder.NAME_DESC)
-                                    showSortMenu = false 
-                                },
-                                leadingIcon = { Icon(Icons.Default.SortByAlpha, null) }
-                            )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("Newest first") },
-                                onClick = { 
-                                    viewModel.setSortOrder(RecordSortOrder.DATE_DESC)
-                                    showSortMenu = false 
-                                },
-                                leadingIcon = { Icon(Icons.Default.CalendarToday, null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Oldest first") },
-                                onClick = { 
-                                    viewModel.setSortOrder(RecordSortOrder.DATE_ASC)
-                                    showSortMenu = false 
-                                },
-                                leadingIcon = { Icon(Icons.Default.CalendarToday, null) }
-                            )
-                        }
+                    // ✅ УПРОЩЕНО: Одна кнопка сортировки
+                    IconButton(onClick = { viewModel.toggleSortOrder() }) {
+                        Icon(
+                            imageVector = if (sortByName) Icons.Default.SortByAlpha else Icons.Default.CalendarToday,
+                            contentDescription = if (sortByName) "Sort by Name" else "Sort by Date",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             )
@@ -167,7 +129,6 @@ fun RecordsScreen(
                             onActionClick = if (state.isQuickScansFolder) null else {{ showCreateDialog = true }}
                         )
                     } else {
-                        // Reorderable state
                         val reorderState = rememberReorderableLazyListState(
                             onMove = { from, to ->
                                 viewModel.reorderRecords(from.index, to.index)
@@ -176,6 +137,13 @@ fun RecordsScreen(
                                 viewModel.saveRecordOrder()
                             }
                         )
+                        
+                        // ✅ FIX: Отслеживаем начало drag
+                        LaunchedEffect(reorderState.draggingItemIndex) {
+                            if (reorderState.draggingItemIndex != null) {
+                                viewModel.startDragging()
+                            }
+                        }
                         
                         LazyColumn(
                             state = reorderState.listState,
@@ -223,7 +191,7 @@ fun RecordsScreen(
     }
     
     // ═══════════════════════════════════════════════════════════════════════════
-    // МЕНЮ ЗАПИСИ (современный стиль)
+    // МЕНЮ ЗАПИСИ
     // ═══════════════════════════════════════════════════════════════════════════
     
     menuRecord?.let { record ->
@@ -282,7 +250,6 @@ fun RecordsScreen(
     // DIALOGS
     // ═══════════════════════════════════════════════════════════════════════════
     
-    // Create dialog
     if (showCreateDialog) {
         var name by remember { mutableStateOf("") }
         var description by remember { mutableStateOf("") }
@@ -334,7 +301,6 @@ fun RecordsScreen(
         )
     }
     
-    // Edit/Rename dialog
     editingRecord?.let { record ->
         var newName by remember { mutableStateOf(record.name) }
         var newDescription by remember { mutableStateOf(record.description ?: "") }
@@ -390,7 +356,6 @@ fun RecordsScreen(
         )
     }
     
-    // Move dialog
     showMoveDialog?.let { record ->
         val selectableFolders = remember(allFolders, record.folderId) {
             allFolders.filter { it.id != record.folderId && !it.isQuickScans }
@@ -451,7 +416,6 @@ fun RecordsScreen(
         )
     }
     
-    // Delete confirmation
     showDeleteDialog?.let { record ->
         ConfirmDialog(
             title = "Delete Record?",
@@ -545,5 +509,3 @@ private fun RecordCard(
         }
     }
 }
-
-// RecordSortOrder enum определён в RecordsViewModel.kt - НЕ дублируем здесь!
