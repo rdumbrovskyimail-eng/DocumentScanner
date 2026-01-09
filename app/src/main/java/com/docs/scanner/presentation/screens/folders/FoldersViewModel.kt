@@ -24,7 +24,6 @@ class FoldersViewModel @Inject constructor(
     private val _showArchived = MutableStateFlow(false)
     val showArchived: StateFlow<Boolean> = _showArchived.asStateFlow()
     
-    // ✅ УПРОЩЕНО: Только 2 варианта сортировки (Name ↔ Date)
     private val _sortByName = MutableStateFlow(true) // true = Name, false = Date
     val sortByName: StateFlow<Boolean> = _sortByName.asStateFlow()
 
@@ -34,7 +33,6 @@ class FoldersViewModel @Inject constructor(
     private val _errorMessage = MutableSharedFlow<String>()
     val errorMessage: SharedFlow<String> = _errorMessage.asSharedFlow()
 
-    // ✅ FIX: Блокируем Flow во время перетаскивания
     private val _isDragging = MutableStateFlow(false)
     private var _localFolders: List<Folder> = emptyList()
 
@@ -53,10 +51,8 @@ class FoldersViewModel @Inject constructor(
                 _isDragging
             ) { folders, byName, isDragging ->
                 if (isDragging) {
-                    // ✅ Во время drag возвращаем локальную копию
                     return@combine _localFolders
                 } else {
-                    // ✅ Обновляем локальную копию
                     sortFolders(folders, byName).also { _localFolders = it }
                 }
             }
@@ -90,17 +86,14 @@ class FoldersViewModel @Inject constructor(
         return quickScans + pinned + others
     }
     
-    // ✅ УПРОЩЕНО: Переключение Name ↔ Date
     fun toggleSortOrder() {
         _sortByName.value = !_sortByName.value
     }
     
-    // ✅ FIX: Помечаем начало перетаскивания
     fun startDragging() {
         _isDragging.value = true
     }
     
-    // ✅ FIX: Обновляем только локальную копию
     fun reorderFolders(fromIndex: Int, toIndex: Int) {
         val currentState = _uiState.value
         if (currentState !is FoldersUiState.Success) return
@@ -118,18 +111,14 @@ class FoldersViewModel @Inject constructor(
         _uiState.value = FoldersUiState.Success(_localFolders)
     }
     
-    // ✅ FIX: Сохраняем в БД и разблокируем Flow
     fun saveFolderOrder() {
         viewModelScope.launch {
             try {
-                // Сохраняем position
                 _localFolders.forEachIndexed { index, folder ->
                     if (!folder.isQuickScans && !folder.isPinned) {
                         useCases.folders.updatePosition(folder.id, index)
                     }
                 }
-                
-                // ✅ Разблокируем Flow
                 _isDragging.value = false
             } catch (e: Exception) {
                 showError("Failed to save folder order: ${e.message}")
@@ -291,5 +280,7 @@ sealed interface FoldersUiState {
     data class Error(val message: String) : FoldersUiState
 }
 
+// ✅ FIX: Добавлена закрывающая скобка для sealed interface
 sealed interface NavigationEvent {
     data class NavigateToEditor(val recordId: Long) : NavigationEvent
+}
