@@ -1,17 +1,10 @@
 /*
  * DocumentScanner - App Database
- * Version: 7.1.0 (Build 710) - PRODUCTION READY 2026
+ * Version: 7.1.1 (Build 711) - PRODUCTION READY 2026
  *
- * ✅ CRITICAL FIXES (Session 12):
- * - Schema bumped to 18 (from 17)
- * - MIGRATION_17_18 adds 'position' column to folders & records
- * - Removed "server-side code" (adaptive mmap_size)
- * - Fixed SearchDao availability
- *
- * Database Schema v18:
- * - folders: Added position INTEGER NOT NULL DEFAULT 0
- * - records: Added position INTEGER NOT NULL DEFAULT 0
- * - All other tables unchanged
+ * ✅ CRITICAL FIXES (Session 13):
+ * - Fixed syntax error in MIGRATION_4_5 (line 328)
+ * - Schema remains at version 18
  */
 
 package com.docs.scanner.data.local.database
@@ -40,7 +33,7 @@ import timber.log.Timber
         TranslationCacheEntity::class,
         SearchHistoryEntity::class
     ],
-    version = 18, // ✅ Bumped from 17 → 18
+    version = 18,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -92,7 +85,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_14_15,
                     MIGRATION_15_16,
                     MIGRATION_16_17,
-                    MIGRATION_17_18 // ✅ NEW MIGRATION
+                    MIGRATION_17_18
                 )
                 .addCallback(DatabaseCallback(context))
                 .fallbackToDestructiveMigrationOnDowngrade()
@@ -224,7 +217,7 @@ class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
     override fun onOpen(db: SupportSQLiteDatabase) {
         super.onOpen(db)
 
-        // ✅ Adaptive mmap_size (NOT server-side 30GB!)
+        // ✅ Adaptive mmap_size
         try {
             val runtime = Runtime.getRuntime()
             val maxMemory = runtime.maxMemory()
@@ -320,12 +313,15 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
 
 val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
+        // ✅ FIX: Removed extra ) before db.execSQL
         db.execSQL(
             """
             CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts 
             USING fts4(content="documents", original_text, translated_text)
         """
-        )db.execSQL(
+        )
+        
+        db.execSQL(
             """
             INSERT INTO documents_fts(rowid, original_text, translated_text)
             SELECT id, original_text, translated_text FROM documents
@@ -468,29 +464,18 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
  * ✅ CRITICAL FIX: Migration 17→18 (Session 12)
  * 
  * Adds 'position' column to folders and records tables for drag & drop reordering.
- * Without this migration, the app crashes when trying to save folder/record order.
- * 
- * Changes:
- * - folders: Added position INTEGER NOT NULL DEFAULT 0
- * - records: Added position INTEGER NOT NULL DEFAULT 0
- * - Initializes positions based on current sort order (pinned first, then by updated_at)
- * - Creates indices for efficient sorting
  */
 val MIGRATION_17_18 = object : Migration(17, 18) {
     override fun migrate(db: SupportSQLiteDatabase) {
         try {
-            // ═══════════════════════════════════════════════════════════════════════
             // ADD POSITION TO FOLDERS
-            // ═══════════════════════════════════════════════════════════════════════
             try {
                 db.execSQL("ALTER TABLE folders ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
                 Timber.d("✅ Added position column to folders")
             } catch (e: Exception) {
-                // Column might already exist from a previous partial migration
-                Timber.w(e, "⚠️ folders.position might already exist: ${e.message}")
+                Timber.w(e, "⚠️ folders.position might already exist")
             }
 
-            // Initialize positions based on current order (pinned first, then by updated_at DESC)
             db.execSQL("""
                 UPDATE folders 
                 SET position = (
@@ -501,21 +486,16 @@ val MIGRATION_17_18 = object : Migration(17, 18) {
                 )
             """)
 
-            // Create index for efficient sorting by position
             db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_position ON folders(position)")
 
-            // ═══════════════════════════════════════════════════════════════════════
             // ADD POSITION TO RECORDS
-            // ═══════════════════════════════════════════════════════════════════════
             try {
                 db.execSQL("ALTER TABLE records ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
                 Timber.d("✅ Added position column to records")
             } catch (e: Exception) {
-                // Column might already exist from a previous partial migration
-                Timber.w(e, "⚠️ records.position might already exist: ${e.message}")
+                Timber.w(e, "⚠️ records.position might already exist")
             }
 
-            // Initialize positions per folder (pinned first, then by updated_at DESC)
             db.execSQL("""
                 UPDATE records 
                 SET position = (
@@ -527,14 +507,13 @@ val MIGRATION_17_18 = object : Migration(17, 18) {
                 )
             """)
 
-            // Create index for efficient sorting by position
             db.execSQL("CREATE INDEX IF NOT EXISTS index_records_position ON records(position)")
 
-            Timber.d("✅ Migration 17→18: Added position field to folders and records for drag & drop support")
+            Timber.d("✅ Migration 17→18: Added position field to folders and records")
 
         } catch (e: Exception) {
-            Timber.e(e, "❌ Migration 17→18 FAILED - This is CRITICAL!")
-            throw e // Room will handle fallback to destructive migration
+            Timber.e(e, "❌ Migration 17→18 FAILED")
+            throw e
         }
     }
 }
