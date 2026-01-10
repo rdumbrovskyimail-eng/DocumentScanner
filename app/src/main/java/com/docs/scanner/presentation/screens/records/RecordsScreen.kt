@@ -6,6 +6,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -20,7 +21,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.presentation.components.*
-import org.burnoutcrew.reorderable.*
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,7 +69,6 @@ fun RecordsScreen(
                     }
                 },
                 actions = {
-                    // ✅ УПРОЩЕНО: Одна кнопка сортировки
                     IconButton(onClick = { viewModel.toggleSortOrder() }) {
                         Icon(
                             imageVector = if (sortByName) Icons.Default.SortByAlpha else Icons.Default.CalendarToday,
@@ -129,27 +130,15 @@ fun RecordsScreen(
                             onActionClick = if (state.isQuickScansFolder) null else {{ showCreateDialog = true }}
                         )
                     } else {
-                        val reorderState = rememberReorderableLazyListState(
-                            onMove = { from, to ->
-                                viewModel.reorderRecords(from.index, to.index)
-                            },
-                            onDragEnd = { _, _ ->
-                                viewModel.saveRecordOrder()
-                            }
-                        )
-                        
-                        // ✅ FIX: Отслеживаем начало drag
-                        LaunchedEffect(reorderState.draggingItemIndex) {
-                            if (reorderState.draggingItemIndex != null) {
-                                viewModel.startDragging()
-                            }
+                        // ✅ НОВЫЙ API: sh.calvin.reorderable
+                        val lazyListState = rememberLazyListState()
+                        val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
+                            viewModel.reorderRecords(from.index, to.index)
                         }
                         
                         LazyColumn(
-                            state = reorderState.listState,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .reorderable(reorderState),
+                            state = lazyListState,
+                            modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
@@ -158,7 +147,7 @@ fun RecordsScreen(
                                 key = { _, record -> record.id.value }
                             ) { index, record ->
                                 ReorderableItem(
-                                    reorderableState = reorderState,
+                                    state = reorderState,
                                     key = record.id.value
                                 ) { isDragging ->
                                     val elevation by animateDpAsState(
@@ -170,7 +159,10 @@ fun RecordsScreen(
                                         record = record,
                                         isDragging = isDragging,
                                         elevation = elevation,
-                                        modifier = Modifier.detectReorderAfterLongPress(reorderState),
+                                        modifier = Modifier.longPressDraggableHandle(
+                                            onDragStarted = { viewModel.startDragging() },
+                                            onDragStopped = { viewModel.saveRecordOrder() }
+                                        ),
                                         onClick = { onRecordClick(record.id.value) },
                                         onMenuClick = { menuRecord = record }
                                     )
