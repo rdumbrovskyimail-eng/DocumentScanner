@@ -230,7 +230,8 @@ dependencies {
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.perf)
 
-    implementation("org.burnoutcrew.composereorderable:reorderable:0.9.6")
+    // ✅ FIXED: Updated reorderable library (compatible with Compose 1.7+)
+    implementation("sh.calvin.reorderable:reorderable:2.4.3")
 
     implementation(libs.kotlinx.datetime)
     implementation(libs.kotlinx.collections.immutable)
