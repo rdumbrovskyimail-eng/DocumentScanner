@@ -5,9 +5,8 @@
  * Version: 7.1.1 (Build 711) - PRODUCTION READY
  * 
  * ✅ FIXES (Session 13):
- * - Fixed Coil 3.x API compatibility
- * - Fixed File to Path conversion for cache directory
- * - Removed deprecated Coil methods
+ * - Fixed Coil 3.x API compatibility - using okio.Path instead of java.nio.file.Path
+ * - Fixed cache directory path conversion
  * - Updated MemoryCache and DiskCache builders
  */
 
@@ -44,8 +43,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okio.Path.Companion.toOkioPath
 import timber.log.Timber
-import java.io.File
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -397,7 +396,7 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     }
 
     // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ COIL 3.x IMAGE LOADER - FIXED API
+    // ✅ COIL 3.x IMAGE LOADER - FIXED WITH OKIO PATH
     // ════════════════════════════════════════════════════════════════════════════════
     
     override fun newImageLoader(context: PlatformContext): ImageLoader {
@@ -409,8 +408,8 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
             }
             .diskCache {
                 DiskCache.Builder()
-                    // ✅ FIX: Convert File to Path for Coil 3.x
-                    .directory(cacheDir.resolve("image_cache").toPath())
+                    // ✅ FIX: Use okio.Path instead of java.nio.file.Path
+                    .directory(cacheDir.resolve("image_cache").toOkioPath())
                     .maxSizeBytes(DISK_CACHE_SIZE_MB * 1024 * 1024)
                     .build()
             }
