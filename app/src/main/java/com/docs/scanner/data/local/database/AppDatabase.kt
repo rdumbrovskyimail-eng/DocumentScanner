@@ -4,6 +4,7 @@
  *
  * ✅ CRITICAL FIXES (Session 13):
  * - Fixed syntax error in MIGRATION_4_5 (line 328)
+ * - Fixed serializer() references - added proper imports
  * - Schema remains at version 18
  */
 
@@ -17,6 +18,9 @@ import com.docs.scanner.data.local.database.dao.*
 import com.docs.scanner.data.local.database.entity.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import timber.log.Timber
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -109,14 +113,22 @@ class Converters {
 
     @TypeConverter
     fun fromStringList(list: List<String>?): String? {
-        return list?.let { json.encodeToString(kotlinx.serialization.builtins.ListSerializer(kotlinx.serialization.builtins.serializer()), it) }
+        return list?.let { 
+            json.encodeToString(
+                ListSerializer(String.serializer()), 
+                it
+            ) 
+        }
     }
 
     @TypeConverter
     fun toStringList(value: String?): List<String>? {
         return value?.let {
             try {
-                json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(kotlinx.serialization.builtins.serializer()), it)
+                json.decodeFromString(
+                    ListSerializer(String.serializer()), 
+                    it
+                )
             } catch (e: Exception) {
                 Timber.w(e, "⚠️ Failed to decode string list")
                 null
@@ -126,14 +138,22 @@ class Converters {
 
     @TypeConverter
     fun fromLongList(list: List<Long>?): String? {
-        return list?.let { json.encodeToString(kotlinx.serialization.builtins.ListSerializer(kotlinx.serialization.builtins.serializer()), it) }
+        return list?.let { 
+            json.encodeToString(
+                ListSerializer(Long.serializer()), 
+                it
+            ) 
+        }
     }
 
     @TypeConverter
     fun toLongList(value: String?): List<Long>? {
         return value?.let {
             try {
-                json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(kotlinx.serialization.builtins.serializer()), it)
+                json.decodeFromString(
+                    ListSerializer(Long.serializer()), 
+                    it
+                )
             } catch (e: Exception) {
                 Timber.w(e, "⚠️ Failed to decode long list")
                 null
@@ -143,14 +163,22 @@ class Converters {
 
     @TypeConverter
     fun fromStringMap(map: Map<String, String>?): String? {
-        return map?.let { json.encodeToString(kotlinx.serialization.builtins.MapSerializer(kotlinx.serialization.builtins.serializer(), kotlinx.serialization.builtins.serializer()), it) }
+        return map?.let { 
+            json.encodeToString(
+                MapSerializer(String.serializer(), String.serializer()), 
+                it
+            ) 
+        }
     }
 
     @TypeConverter
     fun toStringMap(value: String?): Map<String, String>? {
         return value?.let {
             try {
-                json.decodeFromString(kotlinx.serialization.builtins.MapSerializer(kotlinx.serialization.builtins.serializer(), kotlinx.serialization.builtins.serializer()), it)
+                json.decodeFromString(
+                    MapSerializer(String.serializer(), String.serializer()), 
+                    it
+                )
             } catch (e: Exception) {
                 Timber.w(e, "⚠️ Failed to decode string map")
                 null
@@ -313,19 +341,19 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
 
 val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        // ✅ FIX: Removed extra ) before db.execSQL
+        // ✅ FIX: Properly formatted SQL
         db.execSQL(
             """
             CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts 
             USING fts4(content="documents", original_text, translated_text)
-        """
+            """
         )
         
         db.execSQL(
             """
             INSERT INTO documents_fts(rowid, original_text, translated_text)
             SELECT id, original_text, translated_text FROM documents
-        """
+            """
         )
 
         db.execSQL(
@@ -338,7 +366,7 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
                 target_language TEXT NOT NULL,
                 timestamp INTEGER NOT NULL
             )
-        """
+            """
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_cache_timestamp ON translation_cache(timestamp)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_cache_languages ON translation_cache(source_language, target_language)")
@@ -351,7 +379,7 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
                 result_count INTEGER NOT NULL DEFAULT 0,
                 timestamp INTEGER NOT NULL
             )
-        """
+            """
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS index_search_history_query ON search_history(query)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_search_history_timestamp ON search_history(timestamp)")
