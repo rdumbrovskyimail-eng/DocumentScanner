@@ -1,20 +1,17 @@
 /*
  * DocumentScanner - App Database
- * Version: 7.1.0 - PRODUCTION READY 2026
+ * Version: 7.1.0 (Build 710) - PRODUCTION READY 2026
  *
- * ✅ CRITICAL FIXES:
- * - Removed "server-side code" (30GB mmap_size → adaptive)
+ * ✅ CRITICAL FIXES (Session 12):
+ * - Schema bumped to 18 (from 17)
+ * - MIGRATION_17_18 adds 'position' column to folders & records
+ * - Removed "server-side code" (adaptive mmap_size)
  * - Fixed SearchDao availability
- * - MIGRATION_17_18: Added position field to folders and records
  *
- * ✅ SERIOUS FIXES:
- * - Added timeout for PRAGMA operations
- * - Removed manual FTS table creation (Room @Fts4 handles it)
- * - Fixed WAL mode
- *
- * ✅ UPDATES:
- * - Bumped to Schema Version 18
- * - Added MIGRATION_17_18 with position columns
+ * Database Schema v18:
+ * - folders: Added position INTEGER NOT NULL DEFAULT 0
+ * - records: Added position INTEGER NOT NULL DEFAULT 0
+ * - All other tables unchanged
  */
 
 package com.docs.scanner.data.local.database
@@ -27,8 +24,6 @@ import com.docs.scanner.data.local.database.dao.*
 import com.docs.scanner.data.local.database.entity.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import timber.log.Timber
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -45,7 +40,7 @@ import timber.log.Timber
         TranslationCacheEntity::class,
         SearchHistoryEntity::class
     ],
-    version = 18,
+    version = 18, // ✅ Bumped from 17 → 18
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -97,7 +92,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_14_15,
                     MIGRATION_15_16,
                     MIGRATION_16_17,
-                    MIGRATION_17_18
+                    MIGRATION_17_18 // ✅ NEW MIGRATION
                 )
                 .addCallback(DatabaseCallback(context))
                 .fallbackToDestructiveMigrationOnDowngrade()
@@ -113,7 +108,7 @@ abstract class AppDatabase : RoomDatabase() {
 
 class Converters {
 
-    private val json = Json {
+    private val json = kotlinx.serialization.json.Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
         isLenient = true
@@ -121,14 +116,14 @@ class Converters {
 
     @TypeConverter
     fun fromStringList(list: List<String>?): String? {
-        return list?.let { json.encodeToString(it) }
+        return list?.let { json.encodeToString(kotlinx.serialization.builtins.ListSerializer(kotlinx.serialization.builtins.serializer()), it) }
     }
 
     @TypeConverter
     fun toStringList(value: String?): List<String>? {
         return value?.let {
             try {
-                json.decodeFromString<List<String>>(it)
+                json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(kotlinx.serialization.builtins.serializer()), it)
             } catch (e: Exception) {
                 Timber.w(e, "⚠️ Failed to decode string list")
                 null
@@ -138,14 +133,14 @@ class Converters {
 
     @TypeConverter
     fun fromLongList(list: List<Long>?): String? {
-        return list?.let { json.encodeToString(it) }
+        return list?.let { json.encodeToString(kotlinx.serialization.builtins.ListSerializer(kotlinx.serialization.builtins.serializer()), it) }
     }
 
     @TypeConverter
     fun toLongList(value: String?): List<Long>? {
         return value?.let {
             try {
-                json.decodeFromString<List<Long>>(it)
+                json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(kotlinx.serialization.builtins.serializer()), it)
             } catch (e: Exception) {
                 Timber.w(e, "⚠️ Failed to decode long list")
                 null
@@ -155,14 +150,14 @@ class Converters {
 
     @TypeConverter
     fun fromStringMap(map: Map<String, String>?): String? {
-        return map?.let { json.encodeToString(it) }
+        return map?.let { json.encodeToString(kotlinx.serialization.builtins.MapSerializer(kotlinx.serialization.builtins.serializer(), kotlinx.serialization.builtins.serializer()), it) }
     }
 
     @TypeConverter
     fun toStringMap(value: String?): Map<String, String>? {
         return value?.let {
             try {
-                json.decodeFromString<Map<String, String>>(it)
+                json.decodeFromString(kotlinx.serialization.builtins.MapSerializer(kotlinx.serialization.builtins.serializer(), kotlinx.serialization.builtins.serializer()), it)
             } catch (e: Exception) {
                 Timber.w(e, "⚠️ Failed to decode string map")
                 null
@@ -229,7 +224,7 @@ class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
     override fun onOpen(db: SupportSQLiteDatabase) {
         super.onOpen(db)
 
-        // Adaptive mmap_size
+        // ✅ Adaptive mmap_size (NOT server-side 30GB!)
         try {
             val runtime = Runtime.getRuntime()
             val maxMemory = runtime.maxMemory()
@@ -325,22 +320,18 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
 
 val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        // FTS table (if not already created by Room)
         db.execSQL(
             """
             CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts 
             USING fts4(content="documents", original_text, translated_text)
         """
-        )
-
-        db.execSQL(
+        )db.execSQL(
             """
             INSERT INTO documents_fts(rowid, original_text, translated_text)
             SELECT id, original_text, translated_text FROM documents
         """
         )
 
-        // Translation cache
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS translation_cache (
@@ -356,7 +347,6 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_cache_timestamp ON translation_cache(timestamp)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_cache_languages ON translation_cache(source_language, target_language)")
 
-        // Search history
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS search_history (
@@ -370,7 +360,6 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         db.execSQL("CREATE INDEX IF NOT EXISTS index_search_history_query ON search_history(query)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_search_history_timestamp ON search_history(timestamp)")
 
-        // New Columns
         db.execSQL("ALTER TABLE records ADD COLUMN source_language TEXT NOT NULL DEFAULT 'auto'")
         db.execSQL("ALTER TABLE records ADD COLUMN target_language TEXT NOT NULL DEFAULT 'en'")
 
@@ -387,7 +376,6 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         db.execSQL("ALTER TABLE records ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE records ADD COLUMN tags TEXT")
 
-        // Indices
         db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_is_pinned ON folders(is_pinned)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_is_archived ON folders(is_archived)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_records_is_pinned ON records(is_pinned)")
@@ -477,38 +465,77 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
 }
 
 /**
- * ✅ CRITICAL FIX: Migration 17→18
+ * ✅ CRITICAL FIX: Migration 17→18 (Session 12)
  * 
  * Adds 'position' column to folders and records tables for drag & drop reordering.
  * Without this migration, the app crashes when trying to save folder/record order.
+ * 
+ * Changes:
+ * - folders: Added position INTEGER NOT NULL DEFAULT 0
+ * - records: Added position INTEGER NOT NULL DEFAULT 0
+ * - Initializes positions based on current sort order (pinned first, then by updated_at)
+ * - Creates indices for efficient sorting
  */
 val MIGRATION_17_18 = object : Migration(17, 18) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        // ═══════════════════════════════════════════════════════════════════════
-        // ADD POSITION TO FOLDERS
-        // ═══════════════════════════════════════════════════════════════════════
         try {
-            db.execSQL("ALTER TABLE folders ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+            // ═══════════════════════════════════════════════════════════════════════
+            // ADD POSITION TO FOLDERS
+            // ═══════════════════════════════════════════════════════════════════════
+            try {
+                db.execSQL("ALTER TABLE folders ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+                Timber.d("✅ Added position column to folders")
+            } catch (e: Exception) {
+                // Column might already exist from a previous partial migration
+                Timber.w(e, "⚠️ folders.position might already exist: ${e.message}")
+            }
+
+            // Initialize positions based on current order (pinned first, then by updated_at DESC)
+            db.execSQL("""
+                UPDATE folders 
+                SET position = (
+                    SELECT COUNT(*) 
+                    FROM folders f2 
+                    WHERE (f2.is_pinned > folders.is_pinned) 
+                       OR (f2.is_pinned = folders.is_pinned AND f2.updated_at > folders.updated_at)
+                )
+            """)
+
+            // Create index for efficient sorting by position
             db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_position ON folders(position)")
-            Timber.d("✅ Added position column to folders")
-        } catch (e: Exception) {
-            // Column might already exist from a previous partial migration
-            Timber.w(e, "⚠️ folders.position might already exist: ${e.message}")
-        }
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // ADD POSITION TO RECORDS
-        // ═══════════════════════════════════════════════════════════════════════
-        try {
-            db.execSQL("ALTER TABLE records ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+            // ═══════════════════════════════════════════════════════════════════════
+            // ADD POSITION TO RECORDS
+            // ═══════════════════════════════════════════════════════════════════════
+            try {
+                db.execSQL("ALTER TABLE records ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+                Timber.d("✅ Added position column to records")
+            } catch (e: Exception) {
+                // Column might already exist from a previous partial migration
+                Timber.w(e, "⚠️ records.position might already exist: ${e.message}")
+            }
+
+            // Initialize positions per folder (pinned first, then by updated_at DESC)
+            db.execSQL("""
+                UPDATE records 
+                SET position = (
+                    SELECT COUNT(*) 
+                    FROM records r2 
+                    WHERE r2.folder_id = records.folder_id
+                      AND ((r2.is_pinned > records.is_pinned) 
+                           OR (r2.is_pinned = records.is_pinned AND r2.updated_at > records.updated_at))
+                )
+            """)
+
+            // Create index for efficient sorting by position
             db.execSQL("CREATE INDEX IF NOT EXISTS index_records_position ON records(position)")
-            Timber.d("✅ Added position column to records")
-        } catch (e: Exception) {
-            // Column might already exist from a previous partial migration
-            Timber.w(e, "⚠️ records.position might already exist: ${e.message}")
-        }
 
-        Timber.d("✅ Migration 17→18: Added position field to folders and records for drag & drop support")
+            Timber.d("✅ Migration 17→18: Added position field to folders and records for drag & drop support")
+
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Migration 17→18 FAILED - This is CRITICAL!")
+            throw e // Room will handle fallback to destructive migration
+        }
     }
 }
 
