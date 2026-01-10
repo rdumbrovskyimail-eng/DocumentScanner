@@ -5,10 +5,10 @@
  * Version: 7.1.1 (Build 711) - PRODUCTION READY
  * 
  * ✅ FIXES (Session 13):
- * - Fixed Coil 3.x API compatibility (context -> platformContext)
+ * - Fixed Coil 3.x API compatibility
+ * - Fixed File to Path conversion for cache directory
  * - Removed deprecated Coil methods
  * - Updated MemoryCache and DiskCache builders
- * - Fixed memory percentage calculation
  */
 
 package com.docs.scanner
@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.File
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -408,7 +409,8 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
             }
             .diskCache {
                 DiskCache.Builder()
-                    .directory(cacheDir.resolve("image_cache"))
+                    // ✅ FIX: Convert File to Path for Coil 3.x
+                    .directory(cacheDir.resolve("image_cache").toPath())
                     .maxSizeBytes(DISK_CACHE_SIZE_MB * 1024 * 1024)
                     .build()
             }
