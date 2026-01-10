@@ -2,13 +2,13 @@
  * DocumentScanner - App.kt
  * Application class оптимизированный для 2026 Standards
  *
- * Version: 7.1.0 (Build 710) - PRODUCTION READY
+ * Version: 7.1.1 (Build 711) - PRODUCTION READY
  * 
- * ✅ FIXES (Session 12):
- * - Integrated LogcatCollector with proper lifecycle
- * - Memory leak fix (applicationScope properly cancelled)
- * - Quick Scans folder created on startup
- * - Background initialization for heavy operations
+ * ✅ FIXES (Session 13):
+ * - Fixed Coil 3.x API compatibility (context -> platformContext)
+ * - Removed deprecated Coil methods
+ * - Updated MemoryCache and DiskCache builders
+ * - Fixed memory percentage calculation
  */
 
 package com.docs.scanner
@@ -17,8 +17,6 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationChannelGroup
 import android.app.NotificationManager
-import android.content.Context
-import android.graphics.Bitmap
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
@@ -34,12 +32,7 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
-import coil3.disk.directory
 import coil3.memory.MemoryCache
-import coil3.request.CachePolicy
-import coil3.request.allowHardware
-import coil3.request.crossfade
-import coil3.size.Precision
 import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.domain.repository.FolderRepository
 import com.docs.scanner.util.LogcatCollector
@@ -88,7 +81,7 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
         const val GROUP_OPERATIONS = "group_operations"
         
         // Memory thresholds
-        private const val MEMORY_CACHE_PERCENT = 0.20
+        private const val MEMORY_CACHE_SIZE_MB = 50L // 50MB for memory cache
         private const val DISK_CACHE_SIZE_MB = 100L
         
         private const val QUICK_SCANS_FOLDER_NAME = "Quick Scans"
@@ -403,23 +396,22 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     }
 
     // ════════════════════════════════════════════════════════════════════════════════
-    // COIL IMAGE LOADER
+    // ✅ COIL 3.x IMAGE LOADER - FIXED API
     // ════════════════════════════════════════════════════════════════════════════════
     
     override fun newImageLoader(context: PlatformContext): ImageLoader {
         return ImageLoader.Builder(context)
             .memoryCache {
                 MemoryCache.Builder()
-                    .maxSizePercent(context, percent = MEMORY_CACHE_PERCENT)
+                    .maxSizeBytes(MEMORY_CACHE_SIZE_MB * 1024 * 1024)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
-                    .directory(context.cacheDir.resolve("image_cache"))
+                    .directory(cacheDir.resolve("image_cache"))
                     .maxSizeBytes(DISK_CACHE_SIZE_MB * 1024 * 1024)
                     .build()
             }
-            .crossfade(true)
             .build()
     }
 
