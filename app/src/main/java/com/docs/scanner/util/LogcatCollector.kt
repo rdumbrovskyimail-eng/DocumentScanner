@@ -13,24 +13,28 @@ import java.io.File
 import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Collects logcat output for debugging purposes.
  * ⚠️ ONLY WORKS IN DEBUG MODE for security and battery preservation.
  * 
- * ✅ FIXED (Session 13):
- * - Saves to /storage/emulated/0/Android/DocumentScanner_Logs/
- * - Directly in Android folder, visible in file manager
- * - Proper crash handler integration
- * - Thread-safe log buffer
- * - Automatic old log cleanup
+ * ✅ FIXED (Session 14 - CRASH SAFETY):
+ * - ALL logs in: /storage/emulated/0/DocumentScanner_Logs/
+ * - Accessible from ANY file manager (Internal Storage/DocumentScanner_Logs)
+ * - Saves IMMEDIATELY on critical events
+ * - Background auto-save every 10 seconds
+ * - Synchronous crash handling
+ * - Emergency save to cache if main fails
  */
 class LogcatCollector private constructor(private val context: Context) {
     
     private var logcatProcess: Process? = null
     private var collectJob: Job? = null
+    private var autoSaveJob: Job? = null
     private val logBuffer = StringBuilder()
     private val maxBufferSize = 5 * 1024 * 1024 // 5MB
+    private val isSaving = AtomicBoolean(false)
     
     companion object {
         @Volatile
@@ -44,25 +48,22 @@ class LogcatCollector private constructor(private val context: Context) {
             }
         }
         
-        private const val MAX_LOG_FILES = 5 // Keep only 5 most recent
+        private const val MAX_LOG_FILES = 5
+        private const val AUTO_SAVE_INTERVAL_MS = 10_000L // 10 seconds
     }
     
     /**
-     * ✅ FIX: Returns /storage/emulated/0/Android/DocumentScanner_Logs/
+     * ✅ SINGLE LOCATION: /storage/emulated/0/DocumentScanner_Logs/
      * 
-     * Path: /storage/emulated/0/Android/DocumentScanner_Logs/
+     * Прямо в корне хранилища - легко найти в любом файловом менеджере!
      * 
-     * This is directly in the Android folder, visible in file managers.
+     * Path in file managers: Internal Storage/DocumentScanner_Logs/
      */
     private fun getLogsDir(): File {
-        val androidDir = File(Environment.getExternalStorageDirectory(), "Android")
-        val logsDir = File(androidDir, "DocumentScanner_Logs")
-        
+        val logsDir = File(Environment.getExternalStorageDirectory(), "DocumentScanner_Logs")
         if (!logsDir.exists()) {
             logsDir.mkdirs()
-            Timber.d("📁 Created logs directory: ${logsDir.absolutePath}")
         }
-        
         return logsDir
     }
     
@@ -104,8 +105,10 @@ class LogcatCollector private constructor(private val context: Context) {
                     16384
                 )
                 
+                val logsDir = getLogsDir()
                 Timber.d("✅ LogcatCollector started (PID: $pid)")
-                Timber.d("📁 Logs will be saved to: ${getLogsDir().absolutePath}")
+                Timber.d("📁 Logs directory: ${logsDir.absolutePath}")
+                android.util.Log.i("LogcatCollector", "📁 Logs will be saved to: ${logsDir.absolutePath}")
                 
                 while (isActive) {
                     val line = reader.readLine() ?: break
@@ -120,6 +123,7 @@ class LogcatCollector private constructor(private val context: Context) {
                 }
             } catch (e: Exception) {
                 Timber.e(e, "❌ LogcatCollector error")
+                android.util.Log.e("LogcatCollector", "❌ Collection error", e)
                 synchronized(logBuffer) {
                     logBuffer.append("\n=== COLLECTOR ERROR ===\n")
                     logBuffer.append(e.stackTraceToString())
@@ -129,11 +133,34 @@ class LogcatCollector private constructor(private val context: Context) {
         }
         
         setupCrashHandler()
+        startAutoSave()
+    }
+    
+    /**
+     * ✅ NEW: Auto-save every 10 seconds to prevent data loss
+     */
+    private fun startAutoSave() {
+        autoSaveJob?.cancel()
+        autoSaveJob = CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+            delay(AUTO_SAVE_INTERVAL_MS) // Initial delay
+            
+            while (isActive) {
+                try {
+                    saveLogsToFileBlocking(isAutoSave = true)
+                    delay(AUTO_SAVE_INTERVAL_MS)
+                } catch (e: Exception) {
+                    android.util.Log.e("LogcatCollector", "❌ Auto-save failed", e)
+                    delay(AUTO_SAVE_INTERVAL_MS)
+                }
+            }
+        }
+        
+        android.util.Log.i("LogcatCollector", "✅ Auto-save started (every 10s)")
     }
     
     /**
      * Setup crash handler to save logs on app crash.
-     * ✅ FIX: Properly chains to default handler
+     * ✅ FIX: SYNCHRONOUS save, no coroutines in crash handler
      */
     private fun setupCrashHandler() {
         if (!BuildConfig.DEBUG) return
@@ -141,27 +168,51 @@ class LogcatCollector private constructor(private val context: Context) {
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
-                Timber.e(throwable, "💥 CRASH DETECTED")
+                android.util.Log.e("LogcatCollector", "💥 CRASH DETECTED: ${throwable.message}", throwable)
                 
+                // ✅ CRITICAL: Append crash info BEFORE saving
                 synchronized(logBuffer) {
-                    logBuffer.append("\n\n=== 💥 CRASH ===\n")
+                    logBuffer.append("\n\n")
+                    logBuffer.append("=".repeat(80)).append("\n")
+                    logBuffer.append("💥 APPLICATION CRASHED\n")
+                    logBuffer.append("=".repeat(80)).append("\n")
                     logBuffer.append("Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())}\n")
                     logBuffer.append("Thread: ${thread.name}\n")
-                    logBuffer.append("Exception: ${throwable.javaClass.simpleName}\n")
-                    logBuffer.append("Message: ${throwable.message}\n\n")
+                    logBuffer.append("Exception: ${throwable.javaClass.name}\n")
+                    logBuffer.append("Message: ${throwable.message}\n")
+                    logBuffer.append("\nStack Trace:\n")
                     logBuffer.append(throwable.stackTraceToString())
+                    logBuffer.append("\n")
+                    logBuffer.append("=".repeat(80)).append("\n")
                 }
                 
-                saveLogsToFileBlocking()
+                // ✅ CRITICAL: SYNCHRONOUS save (blocking)
+                saveLogsToFileBlocking(isCrash = true)
+                
+                // ✅ Give time for file system to flush
+                Thread.sleep(500)
                 
             } catch (e: Exception) {
-                android.util.Log.e("LogcatCollector", "❌ Failed to save crash log", e)
+                android.util.Log.e("LogcatCollector", "❌ CRITICAL: Failed to save crash log", e)
+                
+                // ✅ EMERGENCY: Try to save to cache dir as last resort
+                try {
+                    val emergencyFile = File(context.cacheDir, "CRASH_${System.currentTimeMillis()}.txt")
+                    synchronized(logBuffer) {
+                        emergencyFile.writeText(logBuffer.toString())
+                    }
+                    android.util.Log.e("LogcatCollector", "✅ Emergency save to: ${emergencyFile.absolutePath}")
+                } catch (e2: Exception) {
+                    android.util.Log.e("LogcatCollector", "❌ CRITICAL: Emergency save also failed", e2)
+                }
             } finally {
+                // ✅ Call original handler to finish the crash
                 defaultHandler?.uncaughtException(thread, throwable)
             }
         }
         
         Timber.d("✅ Crash handler installed")
+        android.util.Log.i("LogcatCollector", "✅ Crash handler active")
     }
     
     /**
@@ -171,8 +222,12 @@ class LogcatCollector private constructor(private val context: Context) {
         if (!BuildConfig.DEBUG) return
         
         Timber.d("⏹️ Stopping LogcatCollector")
+        android.util.Log.i("LogcatCollector", "⏹️ Stopping collection")
+        
+        autoSaveJob?.cancel()
         collectJob?.cancel()
         logcatProcess?.destroy()
+        
         saveLogsToFileBlocking()
     }
     
@@ -183,70 +238,133 @@ class LogcatCollector private constructor(private val context: Context) {
         if (!BuildConfig.DEBUG) return
         
         Timber.d("💾 Force saving logs")
+        android.util.Log.i("LogcatCollector", "💾 Force save triggered")
+        
         CoroutineScope(Dispatchers.IO).launch {
             saveLogsToFileBlocking()
         }
     }
     
     /**
-     * ✅ FIX: Save logs to /storage/emulated/0/Android/DocumentScanner_Logs/
+     * ✅ CRITICAL: BLOCKING save - works even during crash
      * 
-     * Output: /storage/emulated/0/Android/DocumentScanner_Logs/logcat_2026-01-10_15-30-45.txt
+     * @param isCrash If true, adds "_CRASH" to filename for easy identification
+     * @param isAutoSave If true, uses "_autosave" suffix (will be overwritten)
      */
-    private fun saveLogsToFileBlocking() {
+    private fun saveLogsToFileBlocking(isCrash: Boolean = false, isAutoSave: Boolean = false) {
+        // ✅ Prevent concurrent saves
+        if (!isSaving.compareAndSet(false, true)) {
+            android.util.Log.w("LogcatCollector", "⚠️ Save already in progress, skipping")
+            return
+        }
+        
         try {
             val timestamp = SimpleDateFormat(
                 "yyyy-MM-dd_HH-mm-ss", 
                 Locale.getDefault()
             ).format(Date())
-            val fileName = "logcat_$timestamp.txt"
+            
+            val suffix = when {
+                isCrash -> "_CRASH"
+                isAutoSave -> "_autosave"
+                else -> ""
+            }
+            val fileName = "logcat_$timestamp$suffix.txt"
             
             val logContent = synchronized(logBuffer) {
                 buildString {
-                    append("=== DocumentScanner Debug Log ===\n")
+                    append("=".repeat(80)).append("\n")
+                    append("DocumentScanner Debug Log\n")
+                    append("=".repeat(80)).append("\n")
                     append("Timestamp: $timestamp\n")
                     append("Device: ${Build.MANUFACTURER} ${Build.MODEL}\n")
                     append("Android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\n")
                     append("Package: ${context.packageName}\n")
                     append("Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n")
                     append("App PID: ${android.os.Process.myPid()}\n")
-                    append("\n")
+                    if (isCrash) {
+                        append("⚠️ TYPE: CRASH LOG\n")
+                    } else if (isAutoSave) {
+                        append("TYPE: Auto-save\n")
+                    }
+                    append("=".repeat(80)).append("\n\n")
                     append(logBuffer.toString())
                 }
             }
             
-            // ✅ Save directly to Android folder
+            // ✅ Save to logs directory
             val logsDir = getLogsDir()
             val file = File(logsDir, fileName)
             file.writeText(logContent)
             
-            Timber.d("✅ Logs saved: ${file.absolutePath}")
-            android.util.Log.i("LogcatCollector", "✅ Logs saved: ${file.absolutePath}")
+            val message = if (isCrash) {
+                "💥 CRASH LOG SAVED: ${file.absolutePath}"
+            } else if (isAutoSave) {
+                "💾 Auto-save: ${file.name}"
+            } else {
+                "✅ Logs saved: ${file.absolutePath}"
+            }
             
-            // Cleanup old logs
-            cleanOldLogs()
+            Timber.d(message)
+            android.util.Log.i("LogcatCollector", message)
+            
+            // ✅ Cleanup old logs (but not during crash to save time)
+            if (!isCrash) {
+                cleanOldLogs()
+            }
             
         } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to save logs")
-            android.util.Log.e("LogcatCollector", "❌ Failed to save logs", e)
+            val errorMsg = "❌ Failed to save logs: ${e.message}"
+            Timber.e(e, errorMsg)
+            android.util.Log.e("LogcatCollector", errorMsg, e)
+            
+            // ✅ EMERGENCY: Try cache dir
+            if (isCrash) {
+                try {
+                    val emergencyFile = File(context.cacheDir, "CRASH_EMERGENCY_${System.currentTimeMillis()}.txt")
+                    synchronized(logBuffer) {
+                        emergencyFile.writeText(logBuffer.toString())
+                    }
+                    android.util.Log.e("LogcatCollector", "✅ Emergency save: ${emergencyFile.absolutePath}")
+                } catch (e2: Exception) {
+                    android.util.Log.e("LogcatCollector", "❌ Emergency save failed", e2)
+                }
+            }
+        } finally {
+            isSaving.set(false)
         }
     }
     
     /**
      * Delete old log files, keep only MAX_LOG_FILES most recent.
+     * ✅ FIX: Don't delete crash logs
      */
     private fun cleanOldLogs() {
         try {
             val logsDir = getLogsDir()
-            logsDir.listFiles { file ->
+            
+            // Separate crash logs from regular logs
+            val (crashLogs, regularLogs) = logsDir.listFiles { file ->
                 file.name.startsWith("logcat_") && file.name.endsWith(".txt")
-            }?.sortedByDescending { it.lastModified() }
-                ?.drop(MAX_LOG_FILES)
-                ?.forEach { file ->
+            }?.partition { it.name.contains("_CRASH") } ?: return
+            
+            // Keep ALL crash logs, delete old regular logs
+            regularLogs
+                .sortedByDescending { it.lastModified() }
+                .drop(MAX_LOG_FILES)
+                .forEach { file ->
                     if (file.delete()) {
                         Timber.d("🗑️ Deleted old log: ${file.name}")
                     }
                 }
+            
+            // Also delete old autosave files (keep only latest)
+            regularLogs
+                .filter { it.name.contains("_autosave") }
+                .sortedByDescending { it.lastModified() }
+                .drop(1)
+                .forEach { it.delete() }
+                
         } catch (e: Exception) {
             Timber.w(e, "⚠️ Failed to clean old logs")
         }
@@ -267,9 +385,6 @@ class LogcatCollector private constructor(private val context: Context) {
     
     /**
      * Share log file via system share dialog.
-     * 
-     * @param file Log file to share
-     * @return Intent to launch share dialog, or null if failed
      */
     fun shareLogs(file: File): Intent? {
         if (!BuildConfig.DEBUG) return null
