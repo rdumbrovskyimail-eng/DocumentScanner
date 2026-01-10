@@ -116,7 +116,6 @@ class LogcatCollector private constructor(private val context: Context) {
                     16384
                 )
                 
-                val logsDir = getLogsDir()
                 Timber.d("✅ LogcatCollector started (PID: $pid)")
                 Timber.d("📁 Logs directory: ${logsDir.absolutePath}")
                 Timber.d("📝 Directory exists: ${logsDir.exists()}, canWrite: ${logsDir.canWrite()}")
@@ -314,7 +313,7 @@ class LogcatCollector private constructor(private val context: Context) {
             
             android.util.Log.i("LogcatCollector", "📝 Content size: ${logContent.length} bytes")
             
-            // ✅ Save to logs directory
+            // ✅ ИСПРАВЛЕНИЕ: Объявляем logsDir только ОДИН раз
             val logsDir = getLogsDir()
             android.util.Log.i("LogcatCollector", "📁 Target dir: ${logsDir.absolutePath}")
             android.util.Log.i("LogcatCollector", "📂 Dir exists: ${logsDir.exists()}, canWrite: ${logsDir.canWrite()}")
