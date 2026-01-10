@@ -1,6 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    FileProvider paths configuration
+    Version: 7.1.0 (Build 710)
+    
+    ✅ FIXED: Added external-path for Downloads directory (LogcatCollector)
+    ✅ Added cache paths for thumbnails and exports
+-->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <files-path name="documents" path="documents/" />
-    <cache-path name="cache" path="." />
-    <external-files-path name="external_files" path="." />
+    
+    <!-- ════════════════════════════════════════════════════════════════════
+         INTERNAL STORAGE (NO PERMISSIONS NEEDED)
+         ════════════════════════════════════════════════════════════════════ -->
+    
+    <!-- Document images: /data/data/com.docs.scanner/files/documents/ -->
+    <files-path 
+        name="documents" 
+        path="documents/" />
+    
+    <!-- All internal files -->
+    <files-path 
+        name="files" 
+        path="." />
+    
+    <!-- Internal cache (temp files) -->
+    <cache-path 
+        name="cache" 
+        path="." />
+    
+    <!-- Thumbnails cache -->
+    <cache-path 
+        name="thumbnails" 
+        path="thumbnails/" />
+    
+    <!-- ════════════════════════════════════════════════════════════════════
+         EXTERNAL STORAGE - APP-SPECIFIC (ANDROID 10+ SCOPED STORAGE)
+         ════════════════════════════════════════════════════════════════════ -->
+    
+    <!-- External files: /storage/emulated/0/Android/data/com.docs.scanner/files/ -->
+    <external-files-path 
+        name="external_files" 
+        path="." />
+    
+    <!-- ✅ FIX: LogcatCollector logs (Android 10+)
+         Path: /storage/emulated/0/Android/data/com.docs.scanner/files/Download/Logs/ -->
+    <external-files-path 
+        name="logs" 
+        path="Download/Logs" />
+    
+    <!-- Exported PDFs and ZIPs -->
+    <external-files-path 
+        name="exports" 
+        path="exports/" />
+    
+    <!-- External cache -->
+    <external-cache-path 
+        name="external_cache" 
+        path="." />
+    
+    <!-- ════════════════════════════════════════════════════════════════════
+         PUBLIC DOWNLOADS (ANDROID 9 AND BELOW - LEGACY)
+         ════════════════════════════════════════════════════════════════════ -->
+    
+    <!-- ✅ FIX: Legacy Downloads path for Android 9-
+         Path: /storage/emulated/0/Download/DocumentScanner_Logs/ -->
+    <external-path 
+        name="external_downloads" 
+        path="Download/DocumentScanner_Logs" />
+    
 </paths>
