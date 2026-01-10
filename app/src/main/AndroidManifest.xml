@@ -11,6 +11,7 @@
     - Added FileProvider paths for Downloads
     - Fixed query declarations
     - Added crash logging support
+    - Fixed encoding issues (removed Cyrillic comments)
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
@@ -26,10 +27,10 @@
          ============================================================================ -->
     <uses-permission android:name="android.permission.CAMERA" />
     
-    <!-- Android 13+ (API 33+) - гранулярные разрешения на медиа -->
+    <!-- Android 13+ (API 33+) - Granular media permissions -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     
-    <!-- Android 12 и ниже (API 32-) - legacy storage -->
+    <!-- Android 12 and below (API 32-) - Legacy storage -->
     <uses-permission 
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -136,7 +137,7 @@
                     android:host="document" />
             </intent-filter>
             
-            <!-- Открытие изображений -->
+            <!-- Open images -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
