@@ -1,7 +1,11 @@
+
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Document Scanner</string>
 
+    <!-- ════════════════════════════════════════════════════════════════════
+         NOTIFICATION CHANNELS
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="notification_group_reminders">Reminders</string>
     <string name="notification_group_operations">Operations</string>
 
@@ -17,6 +21,9 @@
     <string name="notification_channel_general">General</string>
     <string name="notification_channel_general_desc">General application notifications</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         SCREEN TITLES
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="screen_camera">Camera</string>
     <string name="screen_editor">Editor</string>
     <string name="screen_folders">Folders</string>
@@ -27,6 +34,9 @@
     <string name="screen_debug">Debug Logs</string>
     <string name="screen_onboarding">Welcome</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         COMMON BUTTONS
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="btn_save">Save</string>
     <string name="btn_delete">Delete</string>
     <string name="btn_cancel">Cancel</string>
@@ -39,6 +49,9 @@
     <string name="btn_back">Back</string>
     <string name="btn_done">Done</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         FOLDERS SCREEN
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="folders_title">Document Scanner</string>
     <string name="folders_empty_title">No folders yet</string>
     <string name="folders_empty_message">Create your first folder to organize documents</string>
@@ -51,6 +64,9 @@
     <string name="folders_label_name">Folder Name</string>
     <string name="folders_label_description">Description (optional)</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         RECORDS SCREEN
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="records_title">Records</string>
     <string name="records_empty_title">No records yet</string>
     <string name="records_empty_message">Create your first record to add documents</string>
@@ -63,6 +79,9 @@
     <string name="records_label_name">Name</string>
     <string name="records_label_description">Description (optional)</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         EDITOR SCREEN
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="editor_title">Documents</string>
     <string name="editor_empty_title">No documents yet</string>
     <string name="editor_empty_message">Add your first document to scan and translate</string>
@@ -72,12 +91,18 @@
     <string name="editor_edit_text">Edit Text</string>
     <string name="editor_processing">Processing document...</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         CAMERA SCREEN
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="camera_title">Document Scanner</string>
     <string name="camera_initializing">Initializing scanner...</string>
     <string name="camera_error_title">Scanner Error</string>
     <string name="camera_permission_required">Camera permission is required to scan documents</string>
     <string name="camera_grant_permission">Grant Permission</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         SEARCH SCREEN
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="search_title">Search</string>
     <string name="search_hint">Search documents...</string>
     <string name="search_empty_title">No results found</string>
@@ -88,6 +113,9 @@
     <string name="search_result_original">Original text</string>
     <string name="search_result_translation">Translation</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         SETTINGS SCREEN
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="settings_title">Settings</string>
     <string name="settings_api_keys_title">Gemini API Keys</string>
     <string name="settings_api_keys_empty">No API keys added. Add a Gemini API key to enable translation.</string>
@@ -120,6 +148,9 @@
     <string name="settings_debug_title">Debug</string>
     <string name="settings_debug_save_log">Save Debug Log</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         TERMS SCREEN
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="terms_title">Terms &amp; Deadlines</string>
     <string name="terms_tab_upcoming">Upcoming</string>
     <string name="terms_tab_completed">Completed</string>
@@ -145,6 +176,9 @@
     <string name="terms_in_days">In %1$d days</string>
     <string name="terms_in_weeks">In %1$d weeks</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         ONBOARDING SCREEN
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="onboarding_title">Welcome to Document Scanner</string>
     <string name="onboarding_subtitle">Scan, recognize, and translate documents</string>
     <string name="onboarding_feature_scan_title">Smart Scanning</string>
@@ -156,10 +190,16 @@
     <string name="onboarding_api_key_required">Gemini API Key Required</string>
     <string name="onboarding_api_key_message">Enter your Google Gemini API key to enable translation</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         ✅ QUICK SCANS FOLDER (USED IN App.kt)
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="quick_scans">Quick Scans</string>
     <string name="quick_scans_folder_name">Quick Scans</string>
     <string name="quick_scans_description">Automatically created for quick scans</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         ERROR MESSAGES
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="error_network">Network error</string>
     <string name="error_no_api_key">Please add API key in settings</string>
     <string name="error_invalid_api_key">Invalid API key format</string>
@@ -171,6 +211,9 @@
     <string name="error_translation_failed">Translation failed</string>
     <string name="error_unknown">Unknown error occurred</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         CONTENT DESCRIPTIONS (ACCESSIBILITY)
+         ════════════════════════════════════════════════════════════════════ -->
     <string name="cd_back">Back</string>
     <string name="cd_search">Search</string>
     <string name="cd_settings">Settings</string>
@@ -182,6 +225,9 @@
     <string name="cd_add_button">Add</string>
     <string name="cd_menu">Menu</string>
     
+    <!-- ════════════════════════════════════════════════════════════════════
+         PLURALS
+         ════════════════════════════════════════════════════════════════════ -->
     <plurals name="documents_count">
         <item quantity="one">%d document</item>
         <item quantity="other">%d documents</item>
