@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- App Name -->
     <string name="app_name">Document Scanner</string>
 
     <!-- Notification Groups -->
@@ -99,6 +100,8 @@
     
     <!-- Settings Screen -->
     <string name="settings_title">Settings</string>
+    
+    <!-- Settings - API Keys -->
     <string name="settings_api_keys_title">Gemini API Keys</string>
     <string name="settings_api_keys_empty">No API keys added. Add a Gemini API key to enable translation.</string>
     <string name="settings_api_key_active">Active</string>
@@ -106,8 +109,7 @@
     <string name="settings_api_key_copy">Copy key</string>
     <string name="settings_api_key_delete">Delete key</string>
     <string name="settings_add_key_title">Add Gemini API Key</string>
-    <string name="settings_add_key_message">Get your API key from Google AI Studio:</string>
-    <string name="settings_add_key_url">https://aistudio.google.com/app/apikey</string>
+    <string name="settings_add_key_message">Get your API key from Google AI Studio: https://aistudio.google.com/app/apikey</string>
     <string name="settings_add_key_label">API Key</string>
     <string name="settings_add_key_hint">AIza...</string>
     <string name="settings_add_key_optional_label">Label (optional)</string>
@@ -118,6 +120,7 @@
     <string name="settings_delete_key_message">Are you sure you want to delete this API key?</string>
     <string name="settings_delete_key_warning">This is your active key. Translation will stop working.</string>
     
+    <!-- Settings - Google Drive -->
     <string name="settings_drive_title">Google Drive Backup</string>
     <string name="settings_drive_message">Connect Google Drive to backup your documents</string>
     <string name="settings_drive_signin">Sign in with Google</string>
@@ -127,6 +130,7 @@
     <string name="settings_drive_backing_up">Backing up...</string>
     <string name="settings_drive_restore">Restore from Backup</string>
     
+    <!-- Settings - Debug -->
     <string name="settings_debug_title">Debug</string>
     <string name="settings_debug_save_log">Save Debug Log</string>
     
@@ -185,6 +189,14 @@
     <string name="error_translation_failed">Translation failed</string>
     <string name="error_unknown">Unknown error occurred</string>
     
+    <!-- Success Messages -->
+    <string name="success_saved">Saved successfully</string>
+    <string name="success_deleted">Deleted successfully</string>
+    <string name="success_api_key_added">API key added</string>
+    <string name="success_api_key_copied">API key copied to clipboard</string>
+    <string name="success_backup_complete">Backup completed</string>
+    <string name="success_restore_complete">Restore completed</string>
+    
     <!-- Content Descriptions -->
     <string name="cd_back">Back</string>
     <string name="cd_search">Search</string>
@@ -196,6 +208,9 @@
     <string name="cd_edit_button">Edit</string>
     <string name="cd_add_button">Add</string>
     <string name="cd_menu">Menu</string>
+    <string name="cd_close">Close</string>
+    <string name="cd_expand">Expand</string>
+    <string name="cd_collapse">Collapse</string>
     
     <!-- Plurals -->
     <plurals name="documents_count">
@@ -211,5 +226,10 @@
     <plurals name="pages_count">
         <item quantity="one">%d page</item>
         <item quantity="other">%d pages</item>
+    </plurals>
+    
+    <plurals name="folders_count">
+        <item quantity="one">%d folder</item>
+        <item quantity="other">%d folders</item>
     </plurals>
 </resources>
