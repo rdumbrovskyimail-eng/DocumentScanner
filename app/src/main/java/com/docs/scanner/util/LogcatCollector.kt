@@ -20,12 +20,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * ⚠️ ONLY WORKS IN DEBUG MODE for security and battery preservation.
  * 
  * ✅ FIXED (Session 14 - CRASH SAFETY):
- * - ALL logs in: /storage/emulated/0/DocumentScanner_Logs/
- * - Accessible from ANY file manager (Internal Storage/DocumentScanner_Logs)
+ * - Logs in DOWNLOADS: Download/DocumentScanner_Logs/
  * - Saves IMMEDIATELY on critical events
  * - Background auto-save every 10 seconds
  * - Synchronous crash handling
- * - Emergency save to cache if main fails
  */
 class LogcatCollector private constructor(private val context: Context) {
     
@@ -53,17 +51,19 @@ class LogcatCollector private constructor(private val context: Context) {
     }
     
     /**
-     * ✅ SINGLE LOCATION: /storage/emulated/0/DocumentScanner_Logs/
+     * ✅ DOWNLOADS FOLDER: /storage/emulated/0/Download/DocumentScanner_Logs/
      * 
-     * Прямо в корне хранилища - легко найти в любом файловом менеджере!
-     * 
-     * Path in file managers: Internal Storage/DocumentScanner_Logs/
+     * Легко найти: Загрузки → DocumentScanner_Logs
      */
     private fun getLogsDir(): File {
-        val logsDir = File(Environment.getExternalStorageDirectory(), "DocumentScanner_Logs")
+        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val logsDir = File(downloadsDir, "DocumentScanner_Logs")
+        
         if (!logsDir.exists()) {
-            logsDir.mkdirs()
+            val created = logsDir.mkdirs()
+            android.util.Log.i("LogcatCollector", "📁 Created logs dir: ${logsDir.absolutePath}, success=$created")
         }
+        
         return logsDir
     }
     
@@ -85,6 +85,17 @@ class LogcatCollector private constructor(private val context: Context) {
         
         collectJob = CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {
+                // ✅ TEST: Verify we can actually write to logs directory
+                val logsDir = getLogsDir()
+                val testFile = File(logsDir, ".test_write")
+                try {
+                    testFile.writeText("test")
+                    testFile.delete()
+                    android.util.Log.i("LogcatCollector", "✅ Write test passed")
+                } catch (e: Exception) {
+                    android.util.Log.e("LogcatCollector", "❌ CRITICAL: Cannot write to logs dir!", e)
+                }
+                
                 // Clear previous logcat buffer
                 Runtime.getRuntime().exec("logcat -c").waitFor()
                 delay(50)
@@ -108,7 +119,9 @@ class LogcatCollector private constructor(private val context: Context) {
                 val logsDir = getLogsDir()
                 Timber.d("✅ LogcatCollector started (PID: $pid)")
                 Timber.d("📁 Logs directory: ${logsDir.absolutePath}")
+                Timber.d("📝 Directory exists: ${logsDir.exists()}, canWrite: ${logsDir.canWrite()}")
                 android.util.Log.i("LogcatCollector", "📁 Logs will be saved to: ${logsDir.absolutePath}")
+                android.util.Log.i("LogcatCollector", "📝 Directory state - exists: ${logsDir.exists()}, canWrite: ${logsDir.canWrite()}")
                 
                 while (isActive) {
                     val line = reader.readLine() ?: break
@@ -258,6 +271,8 @@ class LogcatCollector private constructor(private val context: Context) {
             return
         }
         
+        android.util.Log.i("LogcatCollector", "💾 Starting save (crash=$isCrash, auto=$isAutoSave)")
+        
         try {
             val timestamp = SimpleDateFormat(
                 "yyyy-MM-dd_HH-mm-ss", 
@@ -271,7 +286,12 @@ class LogcatCollector private constructor(private val context: Context) {
             }
             val fileName = "logcat_$timestamp$suffix.txt"
             
+            android.util.Log.i("LogcatCollector", "📄 Creating file: $fileName")
+            
             val logContent = synchronized(logBuffer) {
+                val bufferSize = logBuffer.length
+                android.util.Log.i("LogcatCollector", "📊 Buffer size: $bufferSize bytes")
+                
                 buildString {
                     append("=".repeat(80)).append("\n")
                     append("DocumentScanner Debug Log\n")
@@ -292,10 +312,21 @@ class LogcatCollector private constructor(private val context: Context) {
                 }
             }
             
+            android.util.Log.i("LogcatCollector", "📝 Content size: ${logContent.length} bytes")
+            
             // ✅ Save to logs directory
             val logsDir = getLogsDir()
+            android.util.Log.i("LogcatCollector", "📁 Target dir: ${logsDir.absolutePath}")
+            android.util.Log.i("LogcatCollector", "📂 Dir exists: ${logsDir.exists()}, canWrite: ${logsDir.canWrite()}")
+            
             val file = File(logsDir, fileName)
+            android.util.Log.i("LogcatCollector", "💾 Writing to: ${file.absolutePath}")
+            
             file.writeText(logContent)
+            
+            val fileExists = file.exists()
+            val fileSize = if (fileExists) file.length() else 0
+            android.util.Log.i("LogcatCollector", "✅ File written - exists: $fileExists, size: $fileSize bytes")
             
             val message = if (isCrash) {
                 "💥 CRASH LOG SAVED: ${file.absolutePath}"
@@ -317,11 +348,13 @@ class LogcatCollector private constructor(private val context: Context) {
             val errorMsg = "❌ Failed to save logs: ${e.message}"
             Timber.e(e, errorMsg)
             android.util.Log.e("LogcatCollector", errorMsg, e)
+            android.util.Log.e("LogcatCollector", "Stack trace:", e)
             
             // ✅ EMERGENCY: Try cache dir
             if (isCrash) {
                 try {
                     val emergencyFile = File(context.cacheDir, "CRASH_EMERGENCY_${System.currentTimeMillis()}.txt")
+                    android.util.Log.i("LogcatCollector", "🚨 Trying emergency save to: ${emergencyFile.absolutePath}")
                     synchronized(logBuffer) {
                         emergencyFile.writeText(logBuffer.toString())
                     }
