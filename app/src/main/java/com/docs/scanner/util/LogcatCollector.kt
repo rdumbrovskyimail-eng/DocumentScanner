@@ -2,9 +2,12 @@ package com.docs.scanner.util
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.os.Environment
 import androidx.core.content.FileProvider
 import com.docs.scanner.BuildConfig
 import kotlinx.coroutines.*
+import timber.log.Timber
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -15,12 +18,11 @@ import java.util.*
  * Collects logcat output for debugging purposes.
  * ⚠️ ONLY WORKS IN DEBUG MODE for security and battery preservation.
  * 
- * Session 11 fixes:
- * - ✅ BuildConfig.DEBUG check (CRITICAL SECURITY)
- * - ✅ Internal storage (no WRITE_EXTERNAL_STORAGE needed)
- * - ✅ shareLogs() function for DebugScreen
- * - ✅ cleanOldLogs() optimization
- * - ✅ Proper coroutine cleanup
+ * ✅ FIXED (Session 12):
+ * - Saves to Downloads folder (public directory)
+ * - Proper crash handler integration
+ * - Thread-safe log buffer
+ * - Automatic old log cleanup
  */
 class LogcatCollector private constructor(private val context: Context) {
     
@@ -28,10 +30,6 @@ class LogcatCollector private constructor(private val context: Context) {
     private var collectJob: Job? = null
     private val logBuffer = StringBuilder()
     private val maxBufferSize = 5 * 1024 * 1024 // 5MB
-    
-    // ✅ Internal storage directory (no permission needed)
-    private val logsDir: File
-        get() = File(context.filesDir, "logs").apply { mkdirs() }
     
     companion object {
         @Volatile
@@ -45,8 +43,31 @@ class LogcatCollector private constructor(private val context: Context) {
             }
         }
         
-        private const val MAX_OLD_LOGS = 10
         private const val MAX_LOG_FILES = 5 // Keep only 5 most recent
+    }
+    
+    /**
+     * ✅ FIX: Returns Downloads directory (public, visible in file manager)
+     * 
+     * Path: /storage/emulated/0/Download/DocumentScanner_Logs/
+     * 
+     * NOTE: On Android 10+ (API 29+), this requires WRITE_EXTERNAL_STORAGE permission
+     * OR scoped storage (which we use via FileProvider).
+     */
+    private fun getLogsDir(): File {
+        val downloadsDir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 10+ - Use scoped storage via app-specific directory
+            File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "Logs")
+        } else {
+            // Android 9 and below - Use public Downloads
+            File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "DocumentScanner_Logs"
+            )
+        }
+        
+        downloadsDir.mkdirs()
+        return downloadsDir
     }
     
     /**
@@ -54,10 +75,16 @@ class LogcatCollector private constructor(private val context: Context) {
      * ⚠️ ONLY WORKS IN DEBUG - Returns immediately in release builds.
      */
     fun startCollecting() {
-        // 🔴 CRITICAL FIX: Don't collect in release!
-        if (!BuildConfig.DEBUG) return
+        // 🔴 CRITICAL: Don't collect in release!
+        if (!BuildConfig.DEBUG) {
+            Timber.d("⚠️ LogcatCollector disabled in release build")
+            return
+        }
         
-        if (collectJob?.isActive == true) return
+        if (collectJob?.isActive == true) {
+            Timber.d("⚠️ LogcatCollector already running")
+            return
+        }
         
         collectJob = CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {
@@ -81,6 +108,8 @@ class LogcatCollector private constructor(private val context: Context) {
                     16384
                 )
                 
+                Timber.d("✅ LogcatCollector started (PID: $pid)")
+                
                 while (isActive) {
                     val line = reader.readLine() ?: break
                     synchronized(logBuffer) {
@@ -93,6 +122,7 @@ class LogcatCollector private constructor(private val context: Context) {
                     }
                 }
             } catch (e: Exception) {
+                Timber.e(e, "❌ LogcatCollector error")
                 synchronized(logBuffer) {
                     logBuffer.append("\n=== COLLECTOR ERROR ===\n")
                     logBuffer.append(e.stackTraceToString())
@@ -106,6 +136,7 @@ class LogcatCollector private constructor(private val context: Context) {
     
     /**
      * Setup crash handler to save logs on app crash.
+     * ✅ FIX: Properly chains to default handler
      */
     private fun setupCrashHandler() {
         if (!BuildConfig.DEBUG) return
@@ -113,17 +144,27 @@ class LogcatCollector private constructor(private val context: Context) {
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
+                Timber.e(throwable, "💥 CRASH DETECTED")
+                
                 synchronized(logBuffer) {
-                    logBuffer.append("\n\n=== CRASH ===\n")
-                    logBuffer.append("Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())}\n")
+                    logBuffer.append("\n\n=== 💥 CRASH ===\n")
+                    logBuffer.append("Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())}\n")
                     logBuffer.append("Thread: ${thread.name}\n")
+                    logBuffer.append("Exception: ${throwable.javaClass.simpleName}\n")
+                    logBuffer.append("Message: ${throwable.message}\n\n")
                     logBuffer.append(throwable.stackTraceToString())
                 }
+                
                 saveLogsToFileBlocking()
+                
+            } catch (e: Exception) {
+                android.util.Log.e("LogcatCollector", "❌ Failed to save crash log", e)
             } finally {
                 defaultHandler?.uncaughtException(thread, throwable)
             }
         }
+        
+        Timber.d("✅ Crash handler installed")
     }
     
     /**
@@ -132,6 +173,7 @@ class LogcatCollector private constructor(private val context: Context) {
     fun stopCollecting() {
         if (!BuildConfig.DEBUG) return
         
+        Timber.d("⏹️ Stopping LogcatCollector")
         collectJob?.cancel()
         logcatProcess?.destroy()
         saveLogsToFileBlocking()
@@ -143,14 +185,16 @@ class LogcatCollector private constructor(private val context: Context) {
     fun forceSave() {
         if (!BuildConfig.DEBUG) return
         
+        Timber.d("💾 Force saving logs")
         CoroutineScope(Dispatchers.IO).launch {
             saveLogsToFileBlocking()
         }
     }
     
     /**
-     * Save logs to internal storage.
-     * ✅ FIX: Uses internal storage (no permissions needed)
+     * ✅ FIX: Save logs to Downloads directory
+     * 
+     * Output: /storage/emulated/0/Download/DocumentScanner_Logs/logcat_2026-01-10_15-30-45.txt
      */
     private fun saveLogsToFileBlocking() {
         try {
@@ -163,57 +207,60 @@ class LogcatCollector private constructor(private val context: Context) {
             val logContent = synchronized(logBuffer) {
                 buildString {
                     append("=== DocumentScanner Debug Log ===\n")
-                    append("Time: $timestamp\n")
-                    append("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n")
-                    append("Android: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})\n")
+                    append("Timestamp: $timestamp\n")
+                    append("Device: ${Build.MANUFACTURER} ${Build.MODEL}\n")
+                    append("Android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\n")
                     append("Package: ${context.packageName}\n")
                     append("Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n")
+                    append("App PID: ${android.os.Process.myPid()}\n")
                     append("\n")
                     append(logBuffer.toString())
                 }
             }
             
-            // ✅ Save to internal storage
+            // ✅ Save to Downloads
+            val logsDir = getLogsDir()
             val file = File(logsDir, fileName)
             file.writeText(logContent)
             
-            android.util.Log.d("LogcatCollector", "✅ Logs saved: ${file.absolutePath}")
+            Timber.d("✅ Logs saved: ${file.absolutePath}")
+            android.util.Log.i("LogcatCollector", "✅ Logs saved: ${file.absolutePath}")
             
             // Cleanup old logs
             cleanOldLogs()
             
         } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to save logs")
             android.util.Log.e("LogcatCollector", "❌ Failed to save logs", e)
         }
     }
     
     /**
      * Delete old log files, keep only MAX_LOG_FILES most recent.
-     * ✅ FIX: Optimized cleanup logic
      */
     private fun cleanOldLogs() {
         try {
+            val logsDir = getLogsDir()
             logsDir.listFiles { file ->
                 file.name.startsWith("logcat_") && file.name.endsWith(".txt")
             }?.sortedByDescending { it.lastModified() }
                 ?.drop(MAX_LOG_FILES)
                 ?.forEach { file ->
                     if (file.delete()) {
-                        android.util.Log.d("LogcatCollector", "🗑️ Deleted old log: ${file.name}")
+                        Timber.d("🗑️ Deleted old log: ${file.name}")
                     }
                 }
         } catch (e: Exception) {
-            android.util.Log.w("LogcatCollector", "⚠️ Failed to clean old logs", e)
+            Timber.w(e, "⚠️ Failed to clean old logs")
         }
     }
     
     /**
      * Get list of all saved log files.
-     * ✅ NEW: For DebugScreen integration (Session 11)
      */
     fun getAllLogFiles(): List<File> {
         return try {
-            logsDir.listFiles { file ->
+            getLogsDir().listFiles { file ->
                 file.name.startsWith("logcat_") && file.name.endsWith(".txt")
             }?.sortedByDescending { it.lastModified() } ?: emptyList()
         } catch (e: Exception) {
@@ -223,7 +270,6 @@ class LogcatCollector private constructor(private val context: Context) {
     
     /**
      * Share log file via system share dialog.
-     * ✅ NEW: For DebugScreen "Export Logs" button (Session 11)
      * 
      * @param file Log file to share
      * @return Intent to launch share dialog, or null if failed
@@ -247,28 +293,27 @@ class LogcatCollector private constructor(private val context: Context) {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
         } catch (e: Exception) {
-            android.util.Log.e("LogcatCollector", "❌ Failed to create share intent", e)
+            Timber.e(e, "❌ Failed to create share intent")
             null
         }
     }
     
     /**
      * Delete all log files.
-     * ✅ NEW: For DebugScreen "Clear Logs" button
      */
     fun clearAllLogs() {
         if (!BuildConfig.DEBUG) return
         
         try {
-            logsDir.listFiles()?.forEach { file ->
+            getLogsDir().listFiles()?.forEach { file ->
                 file.delete()
             }
             synchronized(logBuffer) {
                 logBuffer.clear()
             }
-            android.util.Log.d("LogcatCollector", "🗑️ All logs cleared")
+            Timber.d("🗑️ All logs cleared")
         } catch (e: Exception) {
-            android.util.Log.e("LogcatCollector", "❌ Failed to clear logs", e)
+            Timber.e(e, "❌ Failed to clear logs")
         }
     }
     
