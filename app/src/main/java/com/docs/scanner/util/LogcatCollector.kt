@@ -18,8 +18,9 @@ import java.util.*
  * Collects logcat output for debugging purposes.
  * ⚠️ ONLY WORKS IN DEBUG MODE for security and battery preservation.
  * 
- * ✅ FIXED (Session 12):
- * - Saves to Downloads folder (public directory)
+ * ✅ FIXED (Session 13):
+ * - Saves to /storage/emulated/0/Android/DocumentScanner_Logs/
+ * - Directly in Android folder, visible in file manager
  * - Proper crash handler integration
  * - Thread-safe log buffer
  * - Automatic old log cleanup
@@ -47,27 +48,22 @@ class LogcatCollector private constructor(private val context: Context) {
     }
     
     /**
-     * ✅ FIX: Returns Downloads directory (public, visible in file manager)
+     * ✅ FIX: Returns /storage/emulated/0/Android/DocumentScanner_Logs/
      * 
-     * Path: /storage/emulated/0/Download/DocumentScanner_Logs/
+     * Path: /storage/emulated/0/Android/DocumentScanner_Logs/
      * 
-     * NOTE: On Android 10+ (API 29+), this requires WRITE_EXTERNAL_STORAGE permission
-     * OR scoped storage (which we use via FileProvider).
+     * This is directly in the Android folder, visible in file managers.
      */
     private fun getLogsDir(): File {
-        val downloadsDir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Android 10+ - Use scoped storage via app-specific directory
-            File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "Logs")
-        } else {
-            // Android 9 and below - Use public Downloads
-            File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                "DocumentScanner_Logs"
-            )
+        val androidDir = File(Environment.getExternalStorageDirectory(), "Android")
+        val logsDir = File(androidDir, "DocumentScanner_Logs")
+        
+        if (!logsDir.exists()) {
+            logsDir.mkdirs()
+            Timber.d("📁 Created logs directory: ${logsDir.absolutePath}")
         }
         
-        downloadsDir.mkdirs()
-        return downloadsDir
+        return logsDir
     }
     
     /**
@@ -109,6 +105,7 @@ class LogcatCollector private constructor(private val context: Context) {
                 )
                 
                 Timber.d("✅ LogcatCollector started (PID: $pid)")
+                Timber.d("📁 Logs will be saved to: ${getLogsDir().absolutePath}")
                 
                 while (isActive) {
                     val line = reader.readLine() ?: break
@@ -192,9 +189,9 @@ class LogcatCollector private constructor(private val context: Context) {
     }
     
     /**
-     * ✅ FIX: Save logs to Downloads directory
+     * ✅ FIX: Save logs to /storage/emulated/0/Android/DocumentScanner_Logs/
      * 
-     * Output: /storage/emulated/0/Download/DocumentScanner_Logs/logcat_2026-01-10_15-30-45.txt
+     * Output: /storage/emulated/0/Android/DocumentScanner_Logs/logcat_2026-01-10_15-30-45.txt
      */
     private fun saveLogsToFileBlocking() {
         try {
@@ -218,7 +215,7 @@ class LogcatCollector private constructor(private val context: Context) {
                 }
             }
             
-            // ✅ Save to Downloads
+            // ✅ Save directly to Android folder
             val logsDir = getLogsDir()
             val file = File(logsDir, fileName)
             file.writeText(logContent)
