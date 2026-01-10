@@ -10,6 +10,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -23,7 +24,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.presentation.components.ConfirmDialog
-import org.burnoutcrew.reorderable.*
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -67,7 +69,6 @@ fun FoldersScreen(
             TopAppBar(
                 title = { Text("Documents") },
                 actions = {
-                    // ✅ УПРОЩЕНО: Одна кнопка сортировки
                     IconButton(onClick = { viewModel.toggleSortOrder() }) {
                         Icon(
                             imageVector = if (sortByName) Icons.Default.SortByAlpha else Icons.Default.CalendarToday,
@@ -148,29 +149,19 @@ fun FoldersScreen(
                     val quickScansFolder = state.folders.find { it.isQuickScans }
                     val otherFolders = state.folders.filter { !it.isQuickScans }
                     
-                    val reorderState = rememberReorderableLazyListState(
-                        onMove = { from, to ->
-                            val fromIndex = from.index - 1
-                            val toIndex = to.index - 1
-                            if (fromIndex >= 0 && toIndex >= 0) {
-                                viewModel.reorderFolders(fromIndex, toIndex)
-                            }
-                        },
-                        onDragEnd = { _, _ ->
-                            viewModel.saveFolderOrder()
-                        }
-                    )
-                    
-                    // ✅ FIX: Отслеживаем начало drag
-                    LaunchedEffect(reorderState.draggingItemIndex) {
-                        if (reorderState.draggingItemIndex != null) {
-                            viewModel.startDragging()
+                    // ✅ НОВЫЙ API: sh.calvin.reorderable
+                    val lazyListState = rememberLazyListState()
+                    val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
+                        // Учитываем offset из-за QuickScans
+                        val fromIndex = from.index - 1
+                        val toIndex = to.index - 1
+                        if (fromIndex >= 0 && toIndex >= 0) {
+                            viewModel.reorderFolders(fromIndex, toIndex)
                         }
                     }
                     
                     LazyColumn(
-                        state = reorderState.listState,
-                        modifier = Modifier.reorderable(reorderState),
+                        state = lazyListState,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         quickScansFolder?.let { folder ->
@@ -188,7 +179,7 @@ fun FoldersScreen(
                             key = { _, folder -> folder.id.value }
                         ) { index, folder ->
                             ReorderableItem(
-                                reorderableState = reorderState,
+                                state = reorderState,
                                 key = folder.id.value
                             ) { isDragging ->
                                 val elevation by animateDpAsState(
@@ -200,7 +191,10 @@ fun FoldersScreen(
                                     folder = folder,
                                     isDragging = isDragging,
                                     elevation = elevation,
-                                    modifier = Modifier.detectReorderAfterLongPress(reorderState),
+                                    modifier = Modifier.longPressDraggableHandle(
+                                        onDragStarted = { viewModel.startDragging() },
+                                        onDragStopped = { viewModel.saveFolderOrder() }
+                                    ),
                                     onClick = { onFolderClick(folder.id.value) },
                                     onMenuClick = { menuFolder = folder }
                                 )
@@ -508,7 +502,8 @@ private fun RegularFolderCard(
     onClick: () -> Unit,
     onMenuClick: () -> Unit
 ) {
-    Card(modifier = modifier
+    Card(
+        modifier = modifier
             .fillMaxWidth()
             .shadow(elevation, RoundedCornerShape(12.dp))
             .combinedClickable(
