@@ -88,8 +88,6 @@ class FoldersViewModel @Inject constructor(
     }
     
     private fun getFoldersFlow(showArchived: Boolean, sortMode: SortMode): Flow<List<Folder>> {
-        // Здесь нужно будет добавить методы в Repository для разных сортировок
-        // Пока используем существующие методы и сортируем локально
         val baseFlow = if (showArchived) {
             useCases.folders.observeIncludingArchived()
         } else {
@@ -102,6 +100,7 @@ class FoldersViewModel @Inject constructor(
     }
     
     private fun sortFolders(folders: List<Folder>, sortMode: SortMode): List<Folder> {
+        // QuickScans всегда первый
         val quickScans = folders.filter { it.isQuickScans }
         val pinned = folders.filter { !it.isQuickScans && it.isPinned }
         val others = folders.filter { !it.isQuickScans && !it.isPinned }
@@ -141,36 +140,36 @@ class FoldersViewModel @Inject constructor(
         val currentState = _uiState.value
         if (currentState !is FoldersUiState.Success) return
         
-        // Разделяем на группы
+        // Отделяем QuickScans (он не перемещается, всегда item с key="quickscans")
         val quickScans = currentState.folders.filter { it.isQuickScans }
-        val pinned = currentState.folders.filter { !it.isQuickScans && it.isPinned }
-        val others = currentState.folders.filter { !it.isQuickScans && !it.isPinned }.toMutableList()
+        val movableFolders = currentState.folders.filter { !it.isQuickScans }.toMutableList()
         
-        // Учитываем offset (QuickScans + Pinned)
-        val offset = quickScans.size + pinned.size
+        // Учитываем offset от QuickScans (1 элемент сверху в LazyColumn)
+        val offset = quickScans.size
         val adjustedFrom = fromIndex - offset
         val adjustedTo = toIndex - offset
         
-        if (adjustedFrom < 0 || adjustedFrom >= others.size || 
-            adjustedTo < 0 || adjustedTo >= others.size) return
+        if (adjustedFrom < 0 || adjustedFrom >= movableFolders.size || 
+            adjustedTo < 0 || adjustedTo >= movableFolders.size) return
         
         // Перемещаем элемент
-        val item = others.removeAt(adjustedFrom)
-        others.add(adjustedTo, item)
+        val item = movableFolders.removeAt(adjustedFrom)
+        movableFolders.add(adjustedTo, item)
         
         // Обновляем локальный список
-        _localFolders = quickScans + pinned + others
+        _localFolders = quickScans + movableFolders
         _uiState.value = FoldersUiState.Success(_localFolders)
     }
     
     fun saveFolderOrder() {
         viewModelScope.launch {
             try {
-                // Сохраняем позиции только для обычных папок (не QuickScans, не Pinned)
-                val others = _localFolders.filter { !it.isQuickScans && !it.isPinned }
-                others.forEachIndexed { index, folder ->
-                    useCases.folders.updatePosition(folder.id, index)
-                }
+                // Сохраняем позиции для всех папок кроме QuickScans
+                _localFolders
+                    .filter { !it.isQuickScans }
+                    .forEachIndexed { index, folder ->
+                        useCases.folders.updatePosition(folder.id, index)
+                    }
             } catch (e: Exception) {
                 showError("Failed to save folder order: ${e.message}")
             } finally {
@@ -181,8 +180,6 @@ class FoldersViewModel @Inject constructor(
     
     fun cancelDragging() {
         _isDragging.value = false
-        // Перезагрузить данные из БД
-        loadFolders()
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
