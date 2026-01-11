@@ -8,10 +8,22 @@ import android.content.Intent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.data.local.security.ApiKeyData
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
 import com.docs.scanner.data.remote.drive.DriveRepository
+import com.docs.scanner.data.remote.gemini.GeminiApi
+import com.docs.scanner.domain.core.DomainResult
+import com.docs.scanner.domain.core.BackupInfo
+import com.docs.scanner.domain.core.ImageQuality
+import com.docs.scanner.domain.core.Language
+import com.docs.scanner.domain.core.ThemeMode
+import com.docs.scanner.domain.core.TranslationCacheStats
+import com.docs.scanner.domain.repository.FileRepository
 import com.docs.scanner.domain.repository.SettingsRepository
+import com.docs.scanner.domain.repository.StorageUsage
+import com.docs.scanner.domain.usecase.AllUseCases
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -19,8 +31,10 @@ import com.google.android.gms.common.api.Scope
 import com.google.api.services.drive.DriveScopes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -37,9 +51,14 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val settingsRepository: SettingsRepository,
     private val driveRepository: DriveRepository,
-    private val encryptedKeyStorage: EncryptedKeyStorage
+    private val encryptedKeyStorage: EncryptedKeyStorage,
+    private val settingsDataStore: SettingsDataStore,
+    private val fileRepository: FileRepository,
+    private val geminiApi: GeminiApi,
+    private val useCases: AllUseCases
 ) : ViewModel() {
 
     private val _apiKeys = MutableStateFlow<List<ApiKeyData>>(emptyList())
@@ -54,15 +73,66 @@ class SettingsViewModel @Inject constructor(
     private val _driveEmail = MutableStateFlow<String?>(null)
     val driveEmail: StateFlow<String?> = _driveEmail.asStateFlow()
 
+    private val _driveBackups = MutableStateFlow<List<BackupInfo>>(emptyList())
+    val driveBackups: StateFlow<List<BackupInfo>> = _driveBackups.asStateFlow()
+
     private val _isBackingUp = MutableStateFlow(false)
     val isBackingUp: StateFlow<Boolean> = _isBackingUp.asStateFlow()
 
     private val _backupMessage = MutableStateFlow("")
     val backupMessage: StateFlow<String> = _backupMessage.asStateFlow()
 
+    private val _keyTestMessage = MutableStateFlow("")
+    val keyTestMessage: StateFlow<String> = _keyTestMessage.asStateFlow()
+
+    val themeMode: StateFlow<ThemeMode> =
+        useCases.settings.observeThemeMode()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThemeMode.SYSTEM)
+
+    val appLanguage: StateFlow<String> =
+        useCases.settings.observeAppLanguage()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    val autoTranslate: StateFlow<Boolean> =
+        useCases.settings.observeAutoTranslate()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    val targetLanguage: StateFlow<Language> =
+        useCases.settings.observeTargetLanguage()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Language.ENGLISH)
+
+    val ocrMode: StateFlow<String> =
+        settingsDataStore.ocrLanguage
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "LATIN")
+
+    val cacheEnabled: StateFlow<Boolean> =
+        settingsDataStore.cacheEnabled
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    val cacheTtlDays: StateFlow<Int> =
+        settingsDataStore.cacheTtlDays
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 30)
+
+    val imageQuality: StateFlow<ImageQuality> =
+        kotlinx.coroutines.flow.flow {
+            emit(useCases.settings.getImageQuality())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ImageQuality.HIGH)
+
+    private val _storageUsage = MutableStateFlow<StorageUsage?>(null)
+    val storageUsage: StateFlow<StorageUsage?> = _storageUsage.asStateFlow()
+
+    private val _cacheStats = MutableStateFlow<TranslationCacheStats?>(null)
+    val cacheStats: StateFlow<TranslationCacheStats?> = _cacheStats.asStateFlow()
+
+    private val _localBackups = MutableStateFlow<List<LocalBackup>>(emptyList())
+    val localBackups: StateFlow<List<LocalBackup>> = _localBackups.asStateFlow()
+
     init {
         checkDriveConnection()
         loadApiKeys()
+        refreshCacheStats()
+        refreshStorageUsage()
+        refreshLocalBackups()
     }
 
     private fun loadApiKeys() {
@@ -78,11 +148,22 @@ class SettingsViewModel @Inject constructor(
                 when (val result = driveRepository.signIn()) {
                     is com.docs.scanner.domain.model.Result.Success -> {
                         _driveEmail.value = result.data
+                        refreshDriveBackups()
                     }
                     else -> {
                         _driveEmail.value = null
+                        _driveBackups.value = emptyList()
                     }
                 }
+            }
+        }
+    }
+
+    fun refreshDriveBackups() {
+        viewModelScope.launch {
+            when (val r = useCases.backup.listGoogleDriveBackups()) {
+                is DomainResult.Success -> _driveBackups.value = r.data.sortedByDescending { it.timestamp }
+                is DomainResult.Failure -> _backupMessage.value = "✗ Drive list failed: ${r.error.message}"
             }
         }
     }
@@ -172,6 +253,201 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun testApiKey(keyId: String) {
+        val key = _apiKeys.value.find { it.id == keyId }?.key ?: return
+        testApiKeyRaw(key)
+    }
+
+    fun testApiKeyRaw(key: String) {
+        viewModelScope.launch {
+            _keyTestMessage.value = "Testing key..."
+            when (
+                val result = geminiApi.generateText(
+                    apiKey = key.trim(),
+                    prompt = "Reply with: OK",
+                    model = "gemini-2.5-flash-lite",
+                    fallbackModels = listOf("gemini-1.5-flash")
+                )
+            ) {
+                is DomainResult.Success -> _keyTestMessage.value = "✓ OK: ${result.data.take(80)}"
+                is DomainResult.Failure -> _keyTestMessage.value = "✗ Failed: ${result.error.message}"
+            }
+        }
+    }
+
+    fun clearMessages() {
+        _saveMessage.value = ""
+        _backupMessage.value = ""
+        _keyTestMessage.value = ""
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch {
+            when (val r = useCases.settings.setThemeMode(mode)) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> _saveMessage.value = "✗ Theme: ${r.error.message}"
+            }
+        }
+    }
+
+    fun setAppLanguage(code: String) {
+        viewModelScope.launch {
+            when (val r = useCases.settings.setAppLanguage(code)) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> _saveMessage.value = "✗ Language: ${r.error.message}"
+            }
+        }
+    }
+
+    fun setOcrMode(mode: String) {
+        viewModelScope.launch {
+            runCatching { settingsDataStore.setOcrLanguage(mode) }
+                .onFailure { _saveMessage.value = "✗ OCR: ${it.message}" }
+        }
+    }
+
+    fun setTargetLanguage(lang: Language) {
+        viewModelScope.launch {
+            when (val r = useCases.settings.setTargetLanguage(lang)) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> _saveMessage.value = "✗ Target: ${r.error.message}"
+            }
+        }
+    }
+
+    fun setAutoTranslate(enabled: Boolean) {
+        viewModelScope.launch {
+            when (val r = useCases.settings.setAutoTranslate(enabled)) {
+                is DomainResult.Success -> Unit
+                is DomainResult.Failure -> _saveMessage.value = "✗ Auto-translate: ${r.error.message}"
+            }
+        }
+    }
+
+    fun setCacheEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            runCatching { settingsDataStore.setCacheEnabled(enabled) }
+                .onFailure { _saveMessage.value = "✗ Cache: ${it.message}" }
+        }
+    }
+
+    fun setCacheTtl(days: Int) {
+        viewModelScope.launch {
+            runCatching { settingsDataStore.setCacheTtl(days) }
+                .onFailure { _saveMessage.value = "✗ Cache TTL: ${it.message}" }
+        }
+    }
+
+    fun refreshCacheStats() {
+        viewModelScope.launch {
+            _cacheStats.value = runCatching { useCases.translation.getCacheStats() }.getOrNull()
+        }
+    }
+
+    fun clearCache() {
+        viewModelScope.launch {
+            when (val r = useCases.translation.clearCache()) {
+                is DomainResult.Success -> {
+                    _saveMessage.value = "✓ Cache cleared"
+                    refreshCacheStats()
+                }
+                is DomainResult.Failure -> _saveMessage.value = "✗ Cache: ${r.error.message}"
+            }
+        }
+    }
+
+    fun clearOldCache(days: Int) {
+        viewModelScope.launch {
+            when (val r = useCases.translation.clearOldCache(days)) {
+                is DomainResult.Success -> {
+                    _saveMessage.value = "✓ Deleted ${r.data} expired entries"
+                    refreshCacheStats()
+                }
+                is DomainResult.Failure -> _saveMessage.value = "✗ Cache: ${r.error.message}"
+            }
+        }
+    }
+
+    fun refreshStorageUsage() {
+        viewModelScope.launch {
+            _storageUsage.value = runCatching { fileRepository.getStorageUsage() }.getOrNull()
+        }
+    }
+
+    fun clearTempFiles() {
+        viewModelScope.launch {
+            val deleted = runCatching { fileRepository.clearTempFiles() }.getOrNull() ?: 0
+            _saveMessage.value = "✓ Cleared $deleted temp files"
+            refreshStorageUsage()
+        }
+    }
+
+    fun setImageQuality(quality: ImageQuality) {
+        viewModelScope.launch {
+            when (val r = useCases.settings.setImageQuality(quality)) {
+                is DomainResult.Success -> _saveMessage.value = "✓ Image quality: ${quality.name}"
+                is DomainResult.Failure -> _saveMessage.value = "✗ Image quality: ${r.error.message}"
+            }
+        }
+    }
+
+    fun createLocalBackup(includeImages: Boolean) {
+        viewModelScope.launch {
+            _isBackingUp.value = true
+            _backupMessage.value = "Creating backup..."
+            try {
+                when (val r = useCases.backup.createLocal(includeImages)) {
+                    is DomainResult.Success -> {
+                        _backupMessage.value = "✓ Backup created"
+                        refreshLocalBackups()
+                    }
+                    is DomainResult.Failure -> _backupMessage.value = "✗ Backup failed: ${r.error.message}"
+                }
+            } finally {
+                _isBackingUp.value = false
+            }
+        }
+    }
+
+    fun restoreLocalBackup(path: String, merge: Boolean) {
+        viewModelScope.launch {
+            _isBackingUp.value = true
+            _backupMessage.value = "Restoring..."
+            try {
+                when (val r = useCases.backup.restoreFromLocal(path, merge)) {
+                    is DomainResult.Success -> {
+                        val rr = r.data
+                        _backupMessage.value =
+                            if (rr.isFullSuccess) "✓ Restored ${rr.totalRestored} items"
+                            else "⚠️ Restored ${rr.totalRestored} items with ${rr.errors.size} warnings"
+                    }
+                    is DomainResult.Failure -> _backupMessage.value = "✗ Restore failed: ${r.error.message}"
+                }
+            } finally {
+                _isBackingUp.value = false
+            }
+        }
+    }
+
+    fun refreshLocalBackups() {
+        viewModelScope.launch {
+            val dir = appContext.getExternalFilesDir("backups")
+            val files = dir?.listFiles()
+                ?.filter { it.isFile && it.name.endsWith(".zip", ignoreCase = true) }
+                ?.sortedByDescending { it.lastModified() }
+                .orEmpty()
+
+            _localBackups.value = files.map {
+                LocalBackup(
+                    name = it.name,
+                    path = it.absolutePath,
+                    sizeBytes = it.length(),
+                    lastModified = it.lastModified()
+                )
+            }
+        }
+    }
+
     fun signInGoogleDrive(context: Context, launcher: ActivityResultLauncher<Intent>) {
         try {
             val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
@@ -199,6 +475,7 @@ class SettingsViewModel @Inject constructor(
                             is com.docs.scanner.domain.model.Result.Success -> {
                                 _driveEmail.value = result.data
                                 _backupMessage.value = "✓ Connected to Google Drive"
+                                refreshDriveBackups()
                             }
                             is com.docs.scanner.domain.model.Result.Error -> {
                                 _backupMessage.value = "✗ Connection failed: ${result.exception.message}"
@@ -221,10 +498,10 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun backupToGoogleDrive() {
+    fun uploadBackupToGoogleDrive(includeImages: Boolean) {
         viewModelScope.launch {
             _isBackingUp.value = true
-            _backupMessage.value = "Backing up..."
+            _backupMessage.value = "Creating backup..."
 
             try {
                 if (!driveRepository.isSignedIn()) {
@@ -233,16 +510,22 @@ class SettingsViewModel @Inject constructor(
                     return@launch
                 }
 
-                when (val result = driveRepository.uploadBackup()) {
-                    is com.docs.scanner.domain.model.Result.Success -> {
-                        _backupMessage.value = "✓ Backup completed successfully"
+                val local = useCases.backup.createLocal(includeImages).getOrElse {
+                    _backupMessage.value = "✗ Backup create failed: ${it.message}"
+                    return@launch
+                }
+
+                _backupMessage.value = "Uploading to Drive..."
+                when (
+                    val upload = useCases.backup.uploadToGoogleDrive(localPath = local) { p ->
+                        _backupMessage.value = "Uploading… ${p.percent}%"
                     }
-                    is com.docs.scanner.domain.model.Result.Error -> {
-                        _backupMessage.value = "✗ Backup failed: ${result.exception.message}"
+                ) {
+                    is DomainResult.Success -> {
+                        _backupMessage.value = "✓ Uploaded to Google Drive"
+                        refreshDriveBackups()
                     }
-                    else -> {
-                        _backupMessage.value = "✗ Backup failed"
-                    }
+                    is DomainResult.Failure -> _backupMessage.value = "✗ Upload failed: ${upload.error.message}"
                 }
             } catch (e: Exception) {
                 _backupMessage.value = "✗ Backup error: ${e.message}"
@@ -252,10 +535,10 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun restoreFromGoogleDrive() {
+    fun restoreDriveBackup(fileId: String, merge: Boolean) {
         viewModelScope.launch {
             _isBackingUp.value = true
-            _backupMessage.value = "Fetching backups..."
+            _backupMessage.value = "Downloading backup..."
 
             try {
                 if (!driveRepository.isSignedIn()) {
@@ -264,26 +547,26 @@ class SettingsViewModel @Inject constructor(
                     return@launch
                 }
 
-                val backupsResult = driveRepository.listBackups()
-
-                if (backupsResult is com.docs.scanner.domain.model.Result.Success && backupsResult.data.isNotEmpty()) {
-                    val latestBackup = backupsResult.data.first()
-
-                    _backupMessage.value = "Restoring from ${latestBackup.fileName}..."
-
-                    when (val result = driveRepository.restoreBackup(latestBackup.fileId)) {
-                        is com.docs.scanner.domain.model.Result.Success -> {
-                            _backupMessage.value = "✓ Restore completed! Restart app to apply changes."
-                        }
-                        is com.docs.scanner.domain.model.Result.Error -> {
-                            _backupMessage.value = "✗ Restore failed: ${result.exception.message}"
-                        }
-                        else -> {
-                            _backupMessage.value = "✗ Restore failed"
-                        }
+                val localPath = when (
+                    val d = useCases.backup.downloadFromGoogleDrive(fileId) { p ->
+                        _backupMessage.value = "Downloading… ${p.percent}%"
                     }
-                } else {
-                    _backupMessage.value = "✗ No backups found"
+                ) {
+                    is DomainResult.Success -> d.data
+                    is DomainResult.Failure -> {
+                        _backupMessage.value = "✗ Download failed: ${d.error.message}"
+                        return@launch
+                    }
+                }
+
+                _backupMessage.value = "Restoring..."
+                when (val r = useCases.backup.restoreFromLocal(localPath, merge = merge)) {
+                    is DomainResult.Success -> {
+                        _backupMessage.value =
+                            if (merge) "✓ Restore merged"
+                            else "✓ Restore completed! Restart app to apply changes."
+                    }
+                    is DomainResult.Failure -> _backupMessage.value = "✗ Restore failed: ${r.error.message}"
                 }
             } catch (e: Exception) {
                 _backupMessage.value = "✗ Restore error: ${e.message}"
@@ -293,10 +576,38 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun deleteDriveBackup(fileId: String) {
+        viewModelScope.launch {
+            _isBackingUp.value = true
+            _backupMessage.value = "Deleting backup..."
+            try {
+                when (val r = useCases.backup.deleteGoogleDriveBackup(fileId)) {
+                    is DomainResult.Success -> {
+                        _backupMessage.value = "✓ Deleted"
+                        refreshDriveBackups()
+                    }
+                    is DomainResult.Failure -> _backupMessage.value = "✗ Delete failed: ${r.error.message}"
+                }
+            } finally {
+                _isBackingUp.value = false
+            }
+        }
+    }
+
     fun signOutGoogleDrive() {
         viewModelScope.launch {
+            // Sign out from Google account used for Drive.
+            runCatching {
+                val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                    .requestEmail()
+                    .requestScopes(Scope(DriveScopes.DRIVE_FILE), Scope(DriveScopes.DRIVE_APPDATA))
+                    .build()
+                GoogleSignIn.getClient(appContext, gso).signOut()
+            }
+
             driveRepository.signOut()
             _driveEmail.value = null
+            _driveBackups.value = emptyList()
             _backupMessage.value = "Disconnected from Google Drive"
         }
     }
@@ -305,3 +616,10 @@ class SettingsViewModel @Inject constructor(
         return key.matches(Regex("^AIza[A-Za-z0-9_-]{35}$"))
     }
 }
+
+data class LocalBackup(
+    val name: String,
+    val path: String,
+    val sizeBytes: Long,
+    val lastModified: Long
+)

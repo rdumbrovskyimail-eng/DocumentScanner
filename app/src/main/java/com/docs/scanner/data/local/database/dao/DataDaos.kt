@@ -1,10 +1,12 @@
 /*
  * DocumentScanner - Data Access Objects
- * Version: 6.3.0 - PRODUCTION READY 2026 (FINAL)
- * * ✅ Merged all DAOs into single file
+ * Version: 6.4.0 - PRODUCTION READY 2026 (WITH POSITION SORTING)
+ * 
+ * ✅ Merged all DAOs into single file
  * ✅ Added getAllModifiedSince() methods for incremental backup
  * ✅ Optimized SQL queries with JOINs
  * ✅ Full compatibility with Domain v4.1.0
+ * ✅ Added ORDER BY position queries for manual sorting
  */
 
 package com.docs.scanner.data.local.database.dao
@@ -56,7 +58,10 @@ interface FolderDao {
     """)
     suspend fun getByIdWithCount(folderId: Long): FolderWithCount?
     
-    // Список активных папок
+    // ═══════════════════════════════════════════════════════════════════════════
+    // СОРТИРОВКА ПО ДАТЕ (updated_at DESC)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
     @Query("""
         SELECT f.id, f.name, f.description, f.color, f.icon, f.is_pinned AS isPinned,
                f.is_archived AS isArchived, f.created_at AS createdAt, f.updated_at AS updatedAt,
@@ -69,7 +74,6 @@ interface FolderDao {
     """)
     fun observeAllWithCount(): Flow<List<FolderWithCount>>
     
-    // Список всех папок (включая архив)
     @Query("""
         SELECT f.id, f.name, f.description, f.color, f.icon, f.is_pinned AS isPinned,
                f.is_archived AS isArchived, f.created_at AS createdAt, f.updated_at AS updatedAt,
@@ -81,6 +85,62 @@ interface FolderDao {
     """)
     fun observeAllIncludingArchivedWithCount(): Flow<List<FolderWithCount>>
     
+    // ═══════════════════════════════════════════════════════════════════════════
+    // СОРТИРОВКА ПО ИМЕНИ (name ASC)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    @Query("""
+        SELECT f.id, f.name, f.description, f.color, f.icon, f.is_pinned AS isPinned,
+               f.is_archived AS isArchived, f.created_at AS createdAt, f.updated_at AS updatedAt,
+               COUNT(r.id) AS recordCount
+        FROM folders f
+        LEFT JOIN records r ON f.id = r.folder_id AND r.is_archived = 0
+        WHERE f.is_archived = 0
+        GROUP BY f.id
+        ORDER BY f.is_pinned DESC, f.name COLLATE NOCASE ASC
+    """)
+    fun observeAllByName(): Flow<List<FolderWithCount>>
+    
+    @Query("""
+        SELECT f.id, f.name, f.description, f.color, f.icon, f.is_pinned AS isPinned,
+               f.is_archived AS isArchived, f.created_at AS createdAt, f.updated_at AS updatedAt,
+               COUNT(r.id) AS recordCount
+        FROM folders f
+        LEFT JOIN records r ON f.id = r.folder_id
+        GROUP BY f.id
+        ORDER BY f.is_pinned DESC, f.name COLLATE NOCASE ASC
+    """)
+    fun observeAllIncludingArchivedByName(): Flow<List<FolderWithCount>>
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // СОРТИРОВКА ПО ПОЗИЦИИ (position ASC) - для ручного режима
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    @Query("""
+        SELECT f.id, f.name, f.description, f.color, f.icon, f.is_pinned AS isPinned,
+               f.is_archived AS isArchived, f.created_at AS createdAt, f.updated_at AS updatedAt,
+               COUNT(r.id) AS recordCount
+        FROM folders f
+        LEFT JOIN records r ON f.id = r.folder_id AND r.is_archived = 0
+        WHERE f.is_archived = 0
+        GROUP BY f.id
+        ORDER BY f.is_pinned DESC, f.position ASC
+    """)
+    fun observeAllByPosition(): Flow<List<FolderWithCount>>
+    
+    @Query("""
+        SELECT f.id, f.name, f.description, f.color, f.icon, f.is_pinned AS isPinned,
+               f.is_archived AS isArchived, f.created_at AS createdAt, f.updated_at AS updatedAt,
+               COUNT(r.id) AS recordCount
+        FROM folders f
+        LEFT JOIN records r ON f.id = r.folder_id
+        GROUP BY f.id
+        ORDER BY f.is_pinned DESC, f.position ASC
+    """)
+    fun observeAllIncludingArchivedByPosition(): Flow<List<FolderWithCount>>
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    
     @Query("SELECT EXISTS(SELECT 1 FROM folders WHERE id = :folderId)")
     suspend fun exists(folderId: Long): Boolean
     
@@ -90,9 +150,14 @@ interface FolderDao {
     @Query("SELECT COUNT(*) FROM folders WHERE is_archived = 0")
     suspend fun getCount(): Int
 
-    // ✅ CRITICAL FIX: Добавлен метод для инкрементального бэкапа
     @Query("SELECT * FROM folders WHERE updated_at > :timestamp")
     suspend fun getAllModifiedSince(timestamp: Long): List<FolderEntity>
+
+    @Query("UPDATE folders SET position = :position, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updatePosition(id: Long, position: Int, updatedAt: Long = System.currentTimeMillis())
+    
+    @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM folders WHERE is_archived = 0")
+    suspend fun getNextPosition(): Int
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -147,6 +212,10 @@ interface RecordDao {
     """)
     suspend fun getByIdWithCount(recordId: Long): RecordWithCount?
     
+    // ═══════════════════════════════════════════════════════════════════════════
+    // СОРТИРОВКА ПО ДАТЕ (updated_at DESC)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
     @Query("""
         SELECT r.id, r.folder_id AS folderId, r.name, r.description, r.tags,
                r.source_language AS sourceLanguage, r.target_language AS targetLanguage,
@@ -174,6 +243,74 @@ interface RecordDao {
         ORDER BY r.is_pinned DESC, r.updated_at DESC
     """)
     fun observeByFolderIncludingArchivedWithCount(folderId: Long): Flow<List<RecordWithCount>>
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // СОРТИРОВКА ПО ИМЕНИ (name ASC)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    @Query("""
+        SELECT r.id, r.folder_id AS folderId, r.name, r.description, r.tags,
+               r.source_language AS sourceLanguage, r.target_language AS targetLanguage,
+               r.is_pinned AS isPinned, r.is_archived AS isArchived,
+               r.created_at AS createdAt, r.updated_at AS updatedAt,
+               COUNT(d.id) AS documentCount
+        FROM records r
+        LEFT JOIN documents d ON r.id = d.record_id
+        WHERE r.folder_id = :folderId AND r.is_archived = 0
+        GROUP BY r.id
+        ORDER BY r.is_pinned DESC, r.name COLLATE NOCASE ASC
+    """)
+    fun observeByFolderByName(folderId: Long): Flow<List<RecordWithCount>>
+    
+    @Query("""
+        SELECT r.id, r.folder_id AS folderId, r.name, r.description, r.tags,
+               r.source_language AS sourceLanguage, r.target_language AS targetLanguage,
+               r.is_pinned AS isPinned, r.is_archived AS isArchived,
+               r.created_at AS createdAt, r.updated_at AS updatedAt,
+               COUNT(d.id) AS documentCount
+        FROM records r
+        LEFT JOIN documents d ON r.id = d.record_id
+        WHERE r.folder_id = :folderId
+        GROUP BY r.id
+        ORDER BY r.is_pinned DESC, r.name COLLATE NOCASE ASC
+    """)
+    fun observeByFolderIncludingArchivedByName(folderId: Long): Flow<List<RecordWithCount>>
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // СОРТИРОВКА ПО ПОЗИЦИИ (position ASC) - для ручного режима
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    @Query("""
+        SELECT r.id, r.folder_id AS folderId, r.name, r.description, r.tags,
+               r.source_language AS sourceLanguage, r.target_language AS targetLanguage,
+               r.is_pinned AS isPinned, r.is_archived AS isArchived,
+               r.created_at AS createdAt, r.updated_at AS updatedAt,
+               COUNT(d.id) AS documentCount
+        FROM records r
+        LEFT JOIN documents d ON r.id = d.record_id
+        WHERE r.folder_id = :folderId AND r.is_archived = 0
+        GROUP BY r.id
+        ORDER BY r.is_pinned DESC, r.position ASC
+    """)
+    fun observeByFolderByPosition(folderId: Long): Flow<List<RecordWithCount>>
+    
+    @Query("""
+        SELECT r.id, r.folder_id AS folderId, r.name, r.description, r.tags,
+               r.source_language AS sourceLanguage, r.target_language AS targetLanguage,
+               r.is_pinned AS isPinned, r.is_archived AS isArchived,
+               r.created_at AS createdAt, r.updated_at AS updatedAt,
+               COUNT(d.id) AS documentCount
+        FROM records r
+        LEFT JOIN documents d ON r.id = d.record_id
+        WHERE r.folder_id = :folderId
+        GROUP BY r.id
+        ORDER BY r.is_pinned DESC, r.position ASC
+    """)
+    fun observeByFolderIncludingArchivedByPosition(folderId: Long): Flow<List<RecordWithCount>>
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ОСТАЛЬНЫЕ ЗАПРОСЫ
+    // ═══════════════════════════════════════════════════════════════════════════
     
     @Query("""
         SELECT r.id, r.folder_id AS folderId, r.name, r.description, r.tags,
@@ -223,6 +360,9 @@ interface RecordDao {
     
     @Query("SELECT COUNT(*) FROM records WHERE folder_id = :folderId AND is_archived = 0")
     suspend fun getCountByFolder(folderId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM records WHERE is_archived = 0")
+    suspend fun getCount(): Int
     
     @Query("SELECT DISTINCT tags FROM records WHERE tags IS NOT NULL AND tags != '' AND tags != '[]'")
     suspend fun getAllTagsJson(): List<String>
@@ -237,9 +377,31 @@ interface RecordDao {
     """)
     suspend fun search(query: String, limit: Int = 50): List<RecordEntity>
 
-    // ✅ CRITICAL FIX: Добавлен метод для инкрементального бэкапа
+    @Query("""
+        SELECT r.id, r.folder_id AS folderId, r.name, r.description, r.tags,
+               r.source_language AS sourceLanguage, r.target_language AS targetLanguage,
+               r.is_pinned AS isPinned, r.is_archived AS isArchived,
+               r.created_at AS createdAt, r.updated_at AS updatedAt,
+               COUNT(d.id) AS documentCount
+        FROM records r
+        LEFT JOIN documents d ON r.id = d.record_id
+        WHERE r.is_archived = 0
+          AND (LOWER(r.name) LIKE LOWER('%' || :query || '%')
+               OR LOWER(r.description) LIKE LOWER('%' || :query || '%'))
+        GROUP BY r.id
+        ORDER BY r.updated_at DESC
+        LIMIT :limit
+    """)
+    suspend fun searchWithCount(query: String, limit: Int = 50): List<RecordWithCount>
+
     @Query("SELECT * FROM records WHERE updated_at > :timestamp")
     suspend fun getAllModifiedSince(timestamp: Long): List<RecordEntity>
+
+    @Query("UPDATE records SET position = :position, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updatePosition(id: Long, position: Int, updatedAt: Long = System.currentTimeMillis())
+    
+    @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM records WHERE folder_id = :folderId AND is_archived = 0")
+    suspend fun getNextPosition(folderId: Long): Int
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -298,11 +460,9 @@ interface DocumentDao {
     @Query("SELECT * FROM documents WHERE record_id = :recordId ORDER BY position ASC")
     suspend fun getByRecord(recordId: Long): List<DocumentEntity>
     
-    // Status codes updated for ProcessingStatusMapper (Pending/Queued/InProgress = 0,1,2,5)
     @Query("SELECT * FROM documents WHERE processing_status IN (0, 1, 2, 5) ORDER BY created_at DESC")
     fun observePending(): Flow<List<DocumentEntity>>
     
-    // Status codes for Failed (4, 7, 10)
     @Query("SELECT * FROM documents WHERE processing_status IN (4, 7, 10) ORDER BY created_at DESC")
     fun observeFailed(): Flow<List<DocumentEntity>>
     
@@ -332,12 +492,35 @@ interface DocumentDao {
         LIMIT :limit
     """)
     fun searchWithPath(query: String, limit: Int = 50): Flow<List<DocumentWithPath>>
+
+    @Query("""
+        SELECT d.id, d.record_id AS recordId, d.image_path AS imagePath, d.thumbnail_path AS thumbnailPath,
+               d.original_text AS originalText, d.translated_text AS translatedText,
+               d.detected_language AS detectedLanguage, d.source_language AS sourceLanguage,
+               d.target_language AS targetLanguage, d.position, d.processing_status AS processingStatus,
+               d.ocr_confidence AS ocrConfidence, d.file_size AS fileSize, d.width, d.height,
+               d.created_at AS createdAt, d.updated_at AS updatedAt,
+               r.name AS recordName, f.name AS folderName
+        FROM documents_fts fts
+        INNER JOIN documents d ON d.id = fts.rowid
+        INNER JOIN records r ON d.record_id = r.id
+        INNER JOIN folders f ON r.folder_id = f.id
+        WHERE documents_fts MATCH :ftsQuery
+          AND r.is_archived = 0
+          AND f.is_archived = 0
+        ORDER BY d.updated_at DESC
+        LIMIT :limit
+    """)
+    fun searchFtsWithPath(ftsQuery: String, limit: Int = 50): Flow<List<DocumentWithPath>>
     
     @Query("SELECT EXISTS(SELECT 1 FROM documents WHERE id = :documentId)")
     suspend fun exists(documentId: Long): Boolean
     
     @Query("SELECT COUNT(*) FROM documents WHERE record_id = :recordId")
     suspend fun getCountByRecord(recordId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM documents")
+    suspend fun getCount(): Int
     
     @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM documents WHERE record_id = :recordId")
     suspend fun getNextPosition(recordId: Long): Int
@@ -349,7 +532,6 @@ interface DocumentDao {
         }
     }
 
-    // ✅ CRITICAL FIX: Добавлен метод для инкрементального бэкапа
     @Query("SELECT * FROM documents WHERE updated_at > :timestamp")
     suspend fun getAllModifiedSince(timestamp: Long): List<DocumentEntity>
 }
@@ -386,6 +568,12 @@ interface TermDao {
     
     @Query("DELETE FROM terms WHERE is_cancelled = 1")
     suspend fun deleteAllCancelled(): Int
+
+    @Query("SELECT id FROM terms WHERE is_completed = 1")
+    suspend fun getCompletedIds(): List<Long>
+
+    @Query("SELECT id FROM terms WHERE is_cancelled = 1")
+    suspend fun getCancelledIds(): List<Long>
     
     @Query("SELECT * FROM terms WHERE id = :termId")
     suspend fun getById(termId: Long): TermEntity?
@@ -496,9 +684,18 @@ interface SearchHistoryDao {
     
     @Query("DELETE FROM search_history WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM search_history WHERE LOWER(query) = LOWER(:query)")
+    suspend fun deleteByQuery(query: String)
     
     @Query("DELETE FROM search_history")
     suspend fun clearAll()
+
+    @Query("""
+        DELETE FROM search_history
+        WHERE id NOT IN (SELECT id FROM search_history ORDER BY timestamp DESC LIMIT :limit)
+    """)
+    suspend fun trimToLimit(limit: Int)
     
     @Query("DELETE FROM search_history WHERE timestamp < :timestamp")
     suspend fun deleteOlderThan(timestamp: Long)

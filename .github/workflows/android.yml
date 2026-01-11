@@ -1,9 +1,10 @@
 # ================================================================================
 # Android CI/CD Pipeline
-# Version: 7.0.1 - FIXED (2026 Standards)
+# Version: 8.0.0 - OPTIMIZED FOR SPEED (2026 Standards)
 #
-# ✅ FIX SERIOUS-7: Java 17 → Java 21
-#    build.gradle.kts требует Java 21 (compileOptions, kotlinOptions.jvmTarget)
+# ✅ FIX: gradle/actions/setup-gradle@v4 (fixes removeUnusedEntriesOlderThan error)
+# ✅ SPEED: Parallel builds, configuration cache, build cache
+# ✅ SPEED: Optimized caching strategy
 # ================================================================================
 
 name: Android CI
@@ -11,63 +12,125 @@ name: Android CI
 on:
   push:
     branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
+
+# Cancel in-progress runs for same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      # ✅ SPEED: Gradle performance flags for CI (7GB RAM limit on GitHub runners)
+      GRADLE_OPTS: >-
+        -Dorg.gradle.daemon=true
+        -Dorg.gradle.parallel=true
+        -Dorg.gradle.caching=true
+        -Dorg.gradle.configureondemand=true
+      # ✅ Override JVM args for CI (less memory than local gradle.properties)
+      JAVA_TOOL_OPTIONS: >-
+        -Xmx4g
+        -Xms512m
+        -XX:+UseParallelGC
+        -XX:+HeapDumpOnOutOfMemoryError
+        -Dfile.encoding=UTF-8
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1  # ✅ SPEED: Shallow clone
     
-    # ✅ FIX SERIOUS-7: Java 21 вместо 17
-    # build.gradle.kts:
-    #   compileOptions { sourceCompatibility = JavaVersion.VERSION_21 }
-    #   kotlinOptions { jvmTarget = "21" }
+    # ✅ Java 21 (required by build.gradle.kts)
     - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
         java-version: '21'
         distribution: 'temurin'
-    
-    # ✅ Кэширование Gradle
-    - name: Cache Gradle packages
+
+    # ✅ Android SDK
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+
+    # ✅ Cache Android SDK components
+    - name: Cache Android SDK packages
       uses: actions/cache@v4
       with:
         path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-          ~/.gradle/build-cache
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-
+          /usr/local/lib/android/sdk/platform-tools
+          /usr/local/lib/android/sdk/platforms/android-36
+          /usr/local/lib/android/sdk/build-tools/36.0.0
+          /usr/local/lib/android/sdk/licenses
+          /usr/local/lib/android/sdk/cmdline-tools
+        key: ${{ runner.os }}-androidsdk-api36-bt3600-v2
+
+    - name: Install Android SDK packages
+      run: |
+        sdkmanager --install \
+          "platform-tools" \
+          "platforms;android-36" \
+          "build-tools;36.0.0"
     
-    # ✅ Кэширование Kotlin
-    - name: Cache Kotlin Native
-      uses: actions/cache@v4
-      with:
-        path: ~/.konan
-        key: ${{ runner.os }}-konan-${{ hashFiles('**/*.gradle*') }}
-        restore-keys: |
-          ${{ runner.os }}-konan-
-    
-    # ✅ Права на gradlew
+    # ✅ Make gradlew executable
     - name: Make gradlew executable
       run: chmod +x gradlew
     
-    # ✅ Setup Gradle
+    # ✅ FIX: Updated to v4 - fixes "removeUnusedEntriesOlderThan" error
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+        cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+        # ✅ SPEED: Don't generate dependency graph (saves ~30s)
+        dependency-graph: disabled
+        # ✅ SPEED: Add build scan for debugging (optional)
+        add-job-summary: on-failure
+
+    # ✅ Cache local Gradle build cache directory
+    - name: Cache Gradle build-cache directory
+      uses: actions/cache@v4
+      with:
+        path: |
+          build-cache
+          ~/.gradle/caches/build-cache-1
+        key: ${{ runner.os }}-build-cache-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-build-cache-
         
-    # ✅ Сборка
+    # ✅ SPEED: Build with all optimizations
+    # Note: Override gradle.properties JVM args for CI (ZGC requires more memory than CI has)
     - name: Build with Gradle
       id: build
-      continue-on-error: true
-      run: ./gradlew assembleDebug --stacktrace
+      run: |
+        ./gradlew assembleDebug \
+          --stacktrace \
+          --parallel \
+          --build-cache \
+          --configuration-cache \
+          --no-watch-fs \
+          -Dorg.gradle.jvmargs="-Xmx4g -Xms512m -XX:+UseParallelGC -XX:MaxMetaspaceSize=512m" \
+          -Dkotlin.daemon.jvm.options="-Xmx2g -XX:+UseParallelGC" \
+          -Dkotlin.incremental=true \
+          -Dkotlin.compiler.execution.strategy=in-process
+
+    - name: Upload debug APK artifact
+      if: steps.build.outcome == 'success'
+      uses: actions/upload-artifact@v4
+      with:
+        name: debug-apk
+        path: app/build/outputs/apk/debug/*.apk
+        if-no-files-found: error
+        retention-days: 7  # ✅ SPEED: Reduce storage
       
-    # ⚠️ ВАЖНО: always() чтобы выполнялось даже при ошибке!
+    # ⚠️ always() to execute even on error
     - name: Get commit info
       if: always()
       id: commit
@@ -75,86 +138,66 @@ jobs:
         echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
         echo "date=$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
         
-    # ✅ Создание Release (только при успехе)
-    - name: Create Release
-      if: steps.build.outcome == 'success'
-      id: create_release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: build-${{ steps.commit.outputs.date }}
-        name: Build ${{ steps.commit.outputs.short_sha }}
-        body: |
-          🤖 Автоматическая сборка
-          📱 Commit: ${{ github.event.head_commit.message }}
-          👤 Автор: ${{ github.actor }}
-          🕐 Время: ${{ steps.commit.outputs.date }}
-        files: app/build/outputs/apk/debug/*.apk
-        draft: false
-        prerelease: true
-      continue-on-error: true
-    
-    # ✅ Отправка успешного уведомления (только если Release создан)
+    # ✅ Success notification
     - name: Send Success Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome == 'success'
+      if: steps.build.outcome == 'success'
+      continue-on-error: true
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        COMMIT_MSG: ${{ github.event.pull_request.title || github.event.head_commit.message || github.sha }}
       run: |
+        if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+          echo "Telegram secrets not set; skipping notification."
+          exit 0
+        fi
+        
         APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
         APK_NAME=$(basename "$APK_PATH")
         APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/build-${{ steps.commit.outputs.date }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="✅ <b>APK собран успешно!</b>
+        ARTIFACTS_URL="${RUN_URL}#artifacts"
+
+        TEXT="✅ <b>APK собран успешно!</b>
         
         📱 Файл: <code>${APK_NAME}</code>
         📦 Размер: ${APK_SIZE}
-        📝 Commit: ${COMMIT_MSG}
+        📝 Commit/PR: ${COMMIT_MSG}
         👤 Автор: ${{ github.actor }}
         🕐 Время: ${{ steps.commit.outputs.date }}
         #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
         
-        📥 <a href='${RELEASE_URL}'>Скачать APK</a>"
+        📥 <a href='${ARTIFACTS_URL}'>Скачать APK (Artifacts)</a>
+        🔗 <a href='${RUN_URL}'>Открыть run</a>"
+
+        curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          -d chat_id="${TELEGRAM_CHAT_ID}" \
+          -d parse_mode="HTML" \
+          --data-urlencode "text=${TEXT}"
     
-    # ⚠️ Уведомление если сборка прошла, но Release не создался
-    - name: Send Release Failure Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome != 'success'
-      run: |
-        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-        APK_NAME=$(basename "$APK_PATH")
-        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="⚠️ <b>APK собран, но Release не создан!</b>
-        
-        📱 Файл: <code>${APK_NAME}</code>
-        📦 Размер: ${APK_SIZE}
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        ⚠️ Проверьте права доступа к репозиторию
-        🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Посмотреть логи</a>"
-    
-    # ❌ Уведомление об ошибке сборки
+    # ❌ Failure notification
     - name: Send Build Failure Notification to Telegram
       if: steps.build.outcome == 'failure'
+      continue-on-error: true
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        COMMIT_MSG: ${{ github.event.pull_request.title || github.event.head_commit.message || github.sha }}
       run: |
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
+        if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+          echo "Telegram secrets not set; skipping notification."
+          exit 0
+        fi
         
         curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
              -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
              -d parse_mode="HTML" \
              -d text="❌ <b>Сборка упала!</b>
         
-        📝 Commit: ${COMMIT_MSG}
+        📝 Commit/PR: ${COMMIT_MSG}
         👤 Автор: ${{ github.actor }}
         🕐 Время: ${{ steps.commit.outputs.date }}
         #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
         
-        🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Посмотреть логи</a>"
+        🔗 <a href='${RUN_URL}'>Посмотреть логи</a>"

@@ -182,12 +182,14 @@ object NetworkModule {
     fun provideGeminiTranslator(
         geminiApi: GeminiApi,
         translationCacheManager: TranslationCacheManager,
-        encryptedKeyStorage: EncryptedKeyStorage
+        encryptedKeyStorage: EncryptedKeyStorage,
+        settingsDataStore: SettingsDataStore
     ): GeminiTranslator {
         return GeminiTranslator(
             geminiApi = geminiApi,
             translationCacheManager = translationCacheManager,
-            encryptedKeyStorage = encryptedKeyStorage
+            encryptedKeyStorage = encryptedKeyStorage,
+            settingsDataStore = settingsDataStore
         )
     }
     

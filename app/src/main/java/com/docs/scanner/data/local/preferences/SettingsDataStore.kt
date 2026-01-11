@@ -87,6 +87,9 @@ class SettingsDataStore @Inject constructor(
         // Cache Settings
         private val KEY_CACHE_ENABLED = booleanPreferencesKey("cache_enabled")
         private val KEY_CACHE_TTL = intPreferencesKey("cache_ttl_days")
+
+        // Image settings
+        private val KEY_IMAGE_QUALITY = stringPreferencesKey("image_quality")
         
         // Legacy key for migration
         private val KEY_LEGACY_API_KEY = stringPreferencesKey("gemini_api_key")
@@ -427,6 +430,34 @@ class SettingsDataStore @Inject constructor(
             }
         } catch (e: Exception) {
             Timber.e(e, "Error setting cache TTL")
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════════
+    // IMAGE SETTINGS
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Image quality preset used when saving images.
+     * Values: LOW / MEDIUM / HIGH / ORIGINAL
+     */
+    val imageQuality: Flow<String> = dataStore.data
+        .catch { exception ->
+            Timber.e(exception, "Error reading image quality")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_IMAGE_QUALITY] ?: "HIGH" }
+
+    suspend fun setImageQuality(quality: String) {
+        require(quality in listOf("LOW", "MEDIUM", "HIGH", "ORIGINAL")) {
+            "Invalid image quality: $quality"
+        }
+        try {
+            dataStore.edit { prefs ->
+                prefs[KEY_IMAGE_QUALITY] = quality
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting image quality")
         }
     }
     
