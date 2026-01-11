@@ -3,9 +3,11 @@ package com.docs.scanner.presentation.screens.records
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.core.FolderId
+import com.docs.scanner.domain.core.RecordId
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.domain.usecase.AllUseCases
+import com.docs.scanner.presentation.screens.folders.SortMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -22,11 +24,10 @@ class RecordsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<RecordsUiState>(RecordsUiState.Loading)
     val uiState: StateFlow<RecordsUiState> = _uiState.asStateFlow()
     
-    // ✅ УПРОЩЕНО: Только 2 варианта сортировки (Name ↔ Date)
-    private val _sortByName = MutableStateFlow(true) // true = Name, false = Date
-    val sortByName: StateFlow<Boolean> = _sortByName.asStateFlow()
+    private val _sortMode = MutableStateFlow(SortMode.BY_DATE)
+    val sortMode: StateFlow<SortMode> = _sortMode.asStateFlow()
     
-    // ✅ FIX: Блокируем Flow во время drag
+    // Для drag & drop
     private val _isDragging = MutableStateFlow(false)
     private var _localRecords: List<Record> = emptyList()
 
@@ -56,15 +57,15 @@ class RecordsViewModel @Inject constructor(
 
                 combine(
                     useCases.getRecords(folderId),
-                    _sortByName,
+                    _sortMode,
                     _isDragging
-                ) { records, byName, isDragging ->
+                ) { records, sortMode, isDragging ->
                     if (isDragging) {
-                        // ✅ Во время drag возвращаем локальную копию
+                        // Во время перетаскивания возвращаем локальную копию
                         _localRecords
                     } else {
-                        // ✅ Обновляем локальную копию
-                        sortRecords(records, byName).also { _localRecords = it }
+                        // Сортируем и обновляем локальную копию
+                        sortRecords(records, sortMode).also { _localRecords = it }
                     }
                 }
                 .catch { e ->
@@ -84,55 +85,94 @@ class RecordsViewModel @Inject constructor(
         }
     }
     
-    private fun sortRecords(records: List<Record>, byName: Boolean): List<Record> {
-        return if (byName) {
-            records.sortedBy { it.name.lowercase() }
-        } else {
-            records.sortedByDescending { it.createdAt }
+    private fun sortRecords(records: List<Record>, sortMode: SortMode): List<Record> {
+        val pinned = records.filter { it.isPinned }
+        val others = records.filter { !it.isPinned }
+        
+        val sortedPinned = when (sortMode) {
+            SortMode.BY_DATE -> pinned.sortedByDescending { it.updatedAt }
+            SortMode.BY_NAME -> pinned.sortedBy { it.name.lowercase() }
+            SortMode.MANUAL -> pinned // Позиция уже из БД
         }
+        
+        val sortedOthers = when (sortMode) {
+            SortMode.BY_DATE -> others.sortedByDescending { it.updatedAt }
+            SortMode.BY_NAME -> others.sortedBy { it.name.lowercase() }
+            SortMode.MANUAL -> others // Позиция уже из БД
+        }
+        
+        return sortedPinned + sortedOthers
     }
     
-    // ✅ УПРОЩЕНО: Переключение Name ↔ Date
-    fun toggleSortOrder() {
-        _sortByName.value = !_sortByName.value
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SORT MODE
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    fun setSortMode(mode: SortMode) {
+        _sortMode.value = mode
     }
     
-    // ✅ FIX: Помечаем начало drag
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DRAG & DROP
+    // ═══════════════════════════════════════════════════════════════════════════
+    
     fun startDragging() {
         _isDragging.value = true
     }
     
-    // ✅ FIX: Обновляем только локальную копию
     fun reorderRecords(fromIndex: Int, toIndex: Int) {
         val currentState = _uiState.value
         if (currentState !is RecordsUiState.Success) return
         
-        val records = currentState.records.toMutableList()
+        // Разделяем на группы
+        val pinned = currentState.records.filter { it.isPinned }
+        val others = currentState.records.filter { !it.isPinned }.toMutableList()
         
-        if (fromIndex < 0 || fromIndex >= records.size || toIndex < 0 || toIndex >= records.size) return
+        // Учитываем offset (Pinned записи сверху)
+        val offset = pinned.size
+        val adjustedFrom = fromIndex - offset
+        val adjustedTo = toIndex - offset
         
-        val item = records.removeAt(fromIndex)
-        records.add(toIndex, item)
+        if (adjustedFrom < 0 || adjustedFrom >= others.size || 
+            adjustedTo < 0 || adjustedTo >= others.size) return
         
-        _localRecords = records
-        _uiState.value = currentState.copy(records = records)
+        // Перемещаем элемент
+        val item = others.removeAt(adjustedFrom)
+        others.add(adjustedTo, item)
+        
+        // Обновляем локальный список
+        _localRecords = pinned + others
+        _uiState.value = currentState.copy(records = _localRecords)
     }
     
-    // ✅ FIX: Сохраняем в БД и разблокируем Flow
     fun saveRecordOrder() {
         viewModelScope.launch {
             try {
-                _localRecords.forEachIndexed { index, record ->
+                // Сохраняем позиции только для обычных записей (не Pinned)
+                val others = _localRecords.filter { !it.isPinned }
+                others.forEachIndexed { index, record ->
                     useCases.records.updatePosition(record.id, index)
                 }
-                // ✅ Разблокируем Flow
-                _isDragging.value = false
             } catch (e: Exception) {
                 updateErrorMessage("Failed to save order: ${e.message}")
+            } finally {
                 _isDragging.value = false
             }
         }
     }
+    
+    fun cancelDragging() {
+        _isDragging.value = false
+        // Перезагрузить данные из БД
+        val folderId = _currentFolderId.value
+        if (folderId != 0L) {
+            loadRecords(folderId)
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CRUD OPERATIONS
+    // ═══════════════════════════════════════════════════════════════════════════
 
     fun createRecord(name: String, description: String?) {
         if (name.isBlank()) {
@@ -214,6 +254,10 @@ class RecordsViewModel @Inject constructor(
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // HELPERS
+    // ═══════════════════════════════════════════════════════════════════════════
+
     fun clearError() {
         val currentState = _uiState.value
         if (currentState is RecordsUiState.Success) {
@@ -230,6 +274,10 @@ class RecordsViewModel @Inject constructor(
         }
     }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UI STATE
+// ══════════════════════════════════════════════════════════════════════════════
 
 sealed interface RecordsUiState {
     data object Loading : RecordsUiState
