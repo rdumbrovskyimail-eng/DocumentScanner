@@ -22,6 +22,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.presentation.components.ConfirmDialog
+import sh.calvin.reorderable.ReorderableCollectionItemScope
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -48,7 +49,6 @@ fun FoldersScreen(
     var showClearQuickScansDialog by remember { mutableStateOf(false) }
     var menuFolder by remember { mutableStateOf<Folder?>(null) }
     
-    // Выпадающее меню сортировки
     var showSortMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -70,9 +70,6 @@ fun FoldersScreen(
             TopAppBar(
                 title = { Text("Documents") },
                 actions = {
-                    // ═══════════════════════════════════════════════════════════
-                    // КНОПКА СОРТИРОВКИ С ВЫПАДАЮЩИМ МЕНЮ
-                    // ═══════════════════════════════════════════════════════════
                     Box {
                         IconButton(onClick = { showSortMenu = true }) {
                             Icon(
@@ -92,20 +89,11 @@ fun FoldersScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            Icons.Default.CalendarToday,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp)
-                                        )
+                                        Icon(Icons.Default.CalendarToday, null, Modifier.size(20.dp))
                                         Text("By Date")
                                         if (sortMode == SortMode.BY_DATE) {
                                             Spacer(Modifier.weight(1f))
-                                            Icon(
-                                                Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                                         }
                                     }
                                 },
@@ -121,20 +109,11 @@ fun FoldersScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            Icons.Default.SortByAlpha,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp)
-                                        )
+                                        Icon(Icons.Default.SortByAlpha, null, Modifier.size(20.dp))
                                         Text("By Name")
                                         if (sortMode == SortMode.BY_NAME) {
                                             Spacer(Modifier.weight(1f))
-                                            Icon(
-                                                Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                                         }
                                     }
                                 },
@@ -150,20 +129,11 @@ fun FoldersScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            Icons.Default.DragHandle,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp)
-                                        )
+                                        Icon(Icons.Default.DragHandle, null, Modifier.size(20.dp))
                                         Text("Manual")
                                         if (sortMode == SortMode.MANUAL) {
                                             Spacer(Modifier.weight(1f))
-                                            Icon(
-                                                Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                                         }
                                     }
                                 },
@@ -470,7 +440,7 @@ fun FoldersScreen(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// FOLDERS LIST WITH REORDERABLE
+// FOLDERS LIST
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -491,12 +461,8 @@ private fun FoldersList(
     
     val lazyListState = rememberLazyListState()
     
-    // ✅ ИСПРАВЛЕНО: Правильная инициализация reorderable state
-    val reorderableLazyListState = rememberReorderableLazyListState(
-        lazyListState = lazyListState
-    ) { from, to ->
+    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
         if (isManualMode) {
-            // Учитываем offset от QuickScans (1 элемент сверху)
             val offset = if (quickScansFolder != null) 1 else 0
             val fromIndex = from.index - offset
             val toIndex = to.index - offset
@@ -511,7 +477,6 @@ private fun FoldersList(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Quick Scans - всегда сверху, не перетаскивается
         quickScansFolder?.let { folder ->
             item(key = "quickscans") {
                 QuickScansFolderCard(
@@ -522,7 +487,6 @@ private fun FoldersList(
             }
         }
         
-        // Остальные папки
         itemsIndexed(
             items = otherFolders,
             key = { _, folder -> folder.id.value }
@@ -536,7 +500,9 @@ private fun FoldersList(
                     label = "elevation"
                 )
                 
+                // Передаём scope (this) в дочерний composable
                 RegularFolderCard(
+                    scope = this,
                     folder = folder,
                     isDragging = isDragging,
                     elevation = elevation,
@@ -629,7 +595,8 @@ private fun QuickScansFolderCard(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun ReorderableItemScope.RegularFolderCard(
+private fun RegularFolderCard(
+    scope: ReorderableCollectionItemScope,
     folder: Folder,
     isDragging: Boolean,
     elevation: androidx.compose.ui.unit.Dp,
@@ -655,22 +622,25 @@ private fun ReorderableItemScope.RegularFolderCard(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // ✅ ИСПРАВЛЕНО: Drag handle с правильным modifier
+            // Drag handle - только в режиме MANUAL
             if (isManualMode) {
-                Icon(
-                    imageVector = Icons.Default.DragHandle,
-                    contentDescription = "Drag to reorder",
-                    tint = if (isDragging) 
-                        MaterialTheme.colorScheme.primary 
-                    else 
-                        MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .size(24.dp)
-                        .draggableHandle(
-                            onDragStarted = { onDragStart() },
-                            onDragStopped = { onDragEnd() }
-                        )
-                )
+                // Используем scope для доступа к draggableHandle
+                with(scope) {
+                    Icon(
+                        imageVector = Icons.Default.DragHandle,
+                        contentDescription = "Drag to reorder",
+                        tint = if (isDragging) 
+                            MaterialTheme.colorScheme.primary 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .draggableHandle(
+                                onDragStarted = { onDragStart() },
+                                onDragStopped = { onDragEnd() }
+                            )
+                    )
+                }
                 Spacer(modifier = Modifier.width(12.dp))
             }
             
