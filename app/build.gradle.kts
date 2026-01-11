@@ -1,9 +1,9 @@
 /*
  * DocumentScanner - App Module Configuration
- * Version: 7.1.0 - PERFECT 10/10 (2026 Standards)
+ * Version: 7.2.0 - NATIVE COMPOSE DRAG & DROP (2026 Standards)
  * 
- * ✅ CRITICAL FIX: versionCode increased to 710 (forces database migration)
- * ✅ Room schema export enabled for migration debugging
+ * ✅ REMOVED: sh.calvin.reorderable library
+ * ✅ USING: Native Compose drag & drop implementation
  */
 
 import java.util.Properties
@@ -50,10 +50,8 @@ android {
         minSdk = 26
         targetSdk = 36
         
-        // ✅ CRITICAL FIX: Increased from 700 to 710
-        // This forces Android to recognize it as a new version and run migrations
-        versionCode = 710
-        versionName = "7.1.0"
+        versionCode = 720
+        versionName = "7.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -66,14 +64,12 @@ android {
         
         manifestPlaceholders["googleClientId"] = getSecret("GOOGLE_DRIVE_CLIENT_ID")
 
-        // ✅ CRITICAL FIX: Room schema export for debugging migrations
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
             arg("room.incremental", "true")
             arg("room.generateKotlin", "true")
             arg("room.expandProjection", "true")
             
-            // Hilt optimizations
             arg("dagger.hilt.shareTestComponents", "true")
             arg("dagger.fastInit", "enabled")
         }
@@ -136,6 +132,8 @@ android {
         freeCompilerArgs += listOf(
             "-opt-in=kotlin.RequiresOptIn",
             "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
+            "-opt-in=androidx.compose.animation.ExperimentalAnimationApi",
             "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
             "-opt-in=kotlinx.coroutines.FlowPreview",
             "-Xcontext-receivers",
@@ -230,8 +228,7 @@ dependencies {
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.perf)
 
-    // ✅ FIXED: Updated reorderable library (compatible with Compose 1.7+)
-    implementation("sh.calvin.reorderable:reorderable:2.4.3")
+    // ✅ Native Compose drag & drop - no external library needed
 
     implementation(libs.kotlinx.datetime)
     implementation(libs.kotlinx.collections.immutable)
