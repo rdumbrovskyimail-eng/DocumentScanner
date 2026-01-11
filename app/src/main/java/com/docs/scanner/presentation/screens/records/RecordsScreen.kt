@@ -21,6 +21,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.presentation.components.*
+import com.docs.scanner.presentation.screens.folders.SortMode
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -35,13 +36,16 @@ fun RecordsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val currentFolderId by viewModel.currentFolderId.collectAsStateWithLifecycle()
     val allFolders by viewModel.allFolders.collectAsStateWithLifecycle()
-    val sortByName by viewModel.sortByName.collectAsStateWithLifecycle()
+    val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
     
     var showCreateDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf<Record?>(null) }
     var showMoveDialog by remember { mutableStateOf<Record?>(null) }
     var menuRecord by remember { mutableStateOf<Record?>(null) }
     var editingRecord by remember { mutableStateOf<Record?>(null) }
+    
+    // Выпадающее меню сортировки
+    var showSortMenu by remember { mutableStateOf(false) }
     
     LaunchedEffect(folderId) {
         viewModel.loadRecords(folderId)
@@ -69,12 +73,109 @@ fun RecordsScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.toggleSortOrder() }) {
-                        Icon(
-                            imageVector = if (sortByName) Icons.Default.SortByAlpha else Icons.Default.CalendarToday,
-                            contentDescription = if (sortByName) "Sort by Name" else "Sort by Date",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                    // ═══════════════════════════════════════════════════════════
+                    // КНОПКА СОРТИРОВКИ С ВЫПАДАЮЩИМ МЕНЮ
+                    // ═══════════════════════════════════════════════════════════
+                    Box {
+                        IconButton(onClick = { showSortMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.SwapVert,
+                                contentDescription = "Sort",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        
+                        DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { 
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.CalendarToday,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text("By Date")
+                                        if (sortMode == SortMode.BY_DATE) {
+                                            Spacer(Modifier.weight(1f))
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setSortMode(SortMode.BY_DATE)
+                                    showSortMenu = false
+                                }
+                            )
+                            
+                            DropdownMenuItem(
+                                text = { 
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.SortByAlpha,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text("By Name")
+                                        if (sortMode == SortMode.BY_NAME) {
+                                            Spacer(Modifier.weight(1f))
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setSortMode(SortMode.BY_NAME)
+                                    showSortMenu = false
+                                }
+                            )
+                            
+                            DropdownMenuItem(
+                                text = { 
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.DragHandle,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text("Manual")
+                                        if (sortMode == SortMode.MANUAL) {
+                                            Spacer(Modifier.weight(1f))
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setSortMode(SortMode.MANUAL)
+                                    showSortMenu = false
+                                }
+                            )
+                        }
                     }
                 }
             )
@@ -130,10 +231,14 @@ fun RecordsScreen(
                             onActionClick = if (state.isQuickScansFolder) null else {{ showCreateDialog = true }}
                         )
                     } else {
-                        // ✅ НОВЫЙ API: sh.calvin.reorderable
+                        // Drag & drop только в режиме MANUAL
+                        val isManualMode = sortMode == SortMode.MANUAL
+                        
                         val lazyListState = rememberLazyListState()
                         val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
-                            viewModel.reorderRecords(from.index, to.index)
+                            if (isManualMode) {
+                                viewModel.reorderRecords(from.index, to.index)
+                            }
                         }
                         
                         LazyColumn(
@@ -146,23 +251,38 @@ fun RecordsScreen(
                                 items = records,
                                 key = { _, record -> record.id.value }
                             ) { index, record ->
-                                ReorderableItem(
-                                    state = reorderState,
-                                    key = record.id.value
-                                ) { isDragging ->
-                                    val elevation by animateDpAsState(
-                                        if (isDragging) 8.dp else 2.dp,
-                                        label = "elevation"
-                                    )
-                                    
+                                if (isManualMode) {
+                                    // С drag & drop
+                                    ReorderableItem(
+                                        state = reorderState,
+                                        key = record.id.value
+                                    ) { isDragging ->
+                                        val elevation by animateDpAsState(
+                                            if (isDragging) 8.dp else 2.dp,
+                                            label = "elevation"
+                                        )
+                                        
+                                        RecordCard(
+                                            record = record,
+                                            isDragging = isDragging,
+                                            elevation = elevation,
+                                            showDragHandle = true,
+                                            modifier = Modifier.longPressDraggableHandle(
+                                                onDragStarted = { viewModel.startDragging() },
+                                                onDragStopped = { viewModel.saveRecordOrder() }
+                                            ),
+                                            onClick = { onRecordClick(record.id.value) },
+                                            onMenuClick = { menuRecord = record }
+                                        )
+                                    }
+                                } else {
+                                    // Без drag & drop
                                     RecordCard(
                                         record = record,
-                                        isDragging = isDragging,
-                                        elevation = elevation,
-                                        modifier = Modifier.longPressDraggableHandle(
-                                            onDragStarted = { viewModel.startDragging() },
-                                            onDragStopped = { viewModel.saveRecordOrder() }
-                                        ),
+                                        isDragging = false,
+                                        elevation = 2.dp,
+                                        showDragHandle = false,
+                                        modifier = Modifier,
                                         onClick = { onRecordClick(record.id.value) },
                                         onMenuClick = { menuRecord = record }
                                     )
@@ -422,11 +542,16 @@ fun RecordsScreen(
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// RECORD CARD
+// ═══════════════════════════════════════════════════════════════════════════════
+
 @Composable
 private fun RecordCard(
     record: Record,
     isDragging: Boolean,
     elevation: androidx.compose.ui.unit.Dp,
+    showDragHandle: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onMenuClick: () -> Unit
@@ -452,15 +577,16 @@ private fun RecordCard(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Drag handle
-            Icon(
-                Icons.Default.DragHandle,
-                contentDescription = "Drag to reorder",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp)
-            )
-            
-            Spacer(modifier = Modifier.width(12.dp))
+            // Drag handle - только в режиме MANUAL
+            if (showDragHandle) {
+                Icon(
+                    Icons.Default.DragHandle,
+                    contentDescription = "Drag to reorder",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+            }
             
             Icon(
                 imageVector = Icons.Default.Description,
@@ -472,10 +598,23 @@ private fun RecordCard(
             Spacer(modifier = Modifier.width(12.dp))
             
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = record.name,
-                    style = MaterialTheme.typography.titleMedium
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = record.name,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    if (record.isPinned) {
+                        Icon(
+                            Icons.Default.PushPin,
+                            contentDescription = "Pinned",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 
                 if (record.description != null) {
                     Spacer(modifier = Modifier.height(2.dp))
