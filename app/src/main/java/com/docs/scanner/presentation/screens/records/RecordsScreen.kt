@@ -21,8 +21,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.presentation.components.*
 import com.docs.scanner.presentation.screens.folders.SortMode
+import sh.calvin.reorderable.ReorderableCollectionItemScope
 import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.ReorderableItemScope
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,7 +44,6 @@ fun RecordsScreen(
     var menuRecord by remember { mutableStateOf<Record?>(null) }
     var editingRecord by remember { mutableStateOf<Record?>(null) }
     
-    // Выпадающее меню сортировки
     var showSortMenu by remember { mutableStateOf(false) }
     
     val snackbarHostState = remember { SnackbarHostState() }
@@ -75,9 +74,6 @@ fun RecordsScreen(
                     }
                 },
                 actions = {
-                    // ═══════════════════════════════════════════════════════════
-                    // КНОПКА СОРТИРОВКИ С ВЫПАДАЮЩИМ МЕНЮ
-                    // ═══════════════════════════════════════════════════════════
                     Box {
                         IconButton(onClick = { showSortMenu = true }) {
                             Icon(
@@ -97,20 +93,11 @@ fun RecordsScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            Icons.Default.CalendarToday,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp)
-                                        )
+                                        Icon(Icons.Default.CalendarToday, null, Modifier.size(20.dp))
                                         Text("By Date")
                                         if (sortMode == SortMode.BY_DATE) {
                                             Spacer(Modifier.weight(1f))
-                                            Icon(
-                                                Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                                         }
                                     }
                                 },
@@ -126,20 +113,11 @@ fun RecordsScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            Icons.Default.SortByAlpha,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp)
-                                        )
+                                        Icon(Icons.Default.SortByAlpha, null, Modifier.size(20.dp))
                                         Text("By Name")
                                         if (sortMode == SortMode.BY_NAME) {
                                             Spacer(Modifier.weight(1f))
-                                            Icon(
-                                                Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                                         }
                                     }
                                 },
@@ -155,20 +133,11 @@ fun RecordsScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            Icons.Default.DragHandle,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp)
-                                        )
+                                        Icon(Icons.Default.DragHandle, null, Modifier.size(20.dp))
                                         Text("Manual")
                                         if (sortMode == SortMode.MANUAL) {
                                             Spacer(Modifier.weight(1f))
-                                            Icon(
-                                                Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                                         }
                                     }
                                 },
@@ -499,7 +468,7 @@ fun RecordsScreen(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// RECORDS LIST WITH REORDERABLE
+// RECORDS LIST
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -516,10 +485,7 @@ private fun RecordsList(
     
     val lazyListState = rememberLazyListState()
     
-    // ✅ ИСПРАВЛЕНО: Правильная инициализация reorderable state
-    val reorderableLazyListState = rememberReorderableLazyListState(
-        lazyListState = lazyListState
-    ) { from, to ->
+    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
         if (isManualMode) {
             onReorder(from.index, to.index)
         }
@@ -544,7 +510,9 @@ private fun RecordsList(
                     label = "elevation"
                 )
                 
+                // Передаём scope (this) в дочерний composable
                 RecordCard(
+                    scope = this,
                     record = record,
                     isDragging = isDragging,
                     elevation = elevation,
@@ -564,7 +532,8 @@ private fun RecordsList(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun ReorderableItemScope.RecordCard(
+private fun RecordCard(
+    scope: ReorderableCollectionItemScope,
     record: Record,
     isDragging: Boolean,
     elevation: androidx.compose.ui.unit.Dp,
@@ -592,22 +561,25 @@ private fun ReorderableItemScope.RecordCard(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // ✅ ИСПРАВЛЕНО: Drag handle с правильным modifier
+            // Drag handle - только в режиме MANUAL
             if (isManualMode) {
-                Icon(
-                    imageVector = Icons.Default.DragHandle,
-                    contentDescription = "Drag to reorder",
-                    tint = if (isDragging) 
-                        MaterialTheme.colorScheme.primary 
-                    else 
-                        MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .size(24.dp)
-                        .draggableHandle(
-                            onDragStarted = { onDragStart() },
-                            onDragStopped = { onDragEnd() }
-                        )
-                )
+                // Используем scope для доступа к draggableHandle
+                with(scope) {
+                    Icon(
+                        imageVector = Icons.Default.DragHandle,
+                        contentDescription = "Drag to reorder",
+                        tint = if (isDragging) 
+                            MaterialTheme.colorScheme.primary 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .draggableHandle(
+                                onDragStarted = { onDragStart() },
+                                onDragStopped = { onDragEnd() }
+                            )
+                    )
+                }
                 Spacer(modifier = Modifier.width(12.dp))
             }
             
