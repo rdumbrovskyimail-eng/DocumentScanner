@@ -5,7 +5,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -245,77 +244,16 @@ fun FoldersScreen(
                         }
                     }
                     
-                    val quickScansFolder = state.folders.find { it.isQuickScans }
-                    val otherFolders = state.folders.filter { !it.isQuickScans }
-                    
-                    // Drag & drop только в режиме MANUAL
-                    val isManualMode = sortMode == SortMode.MANUAL
-                    
-                    val lazyListState = rememberLazyListState()
-                    val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
-                        if (isManualMode) {
-                            viewModel.reorderFolders(from.index, to.index)
-                        }
-                    }
-                    
-                    LazyColumn(
-                        state = lazyListState,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Quick Scans - всегда сверху, не перетаскивается
-                        quickScansFolder?.let { folder ->
-                            item(key = "quickscans") {
-                                QuickScansFolderCard(
-                                    folder = folder,
-                                    onClick = { onFolderClick(folder.id.value) },
-                                    onClearClick = { showClearQuickScansDialog = true }
-                                )
-                            }
-                        }
-                        
-                        // Остальные папки
-                        itemsIndexed(
-                            items = otherFolders,
-                            key = { _, folder -> folder.id.value }
-                        ) { index, folder ->
-                            if (isManualMode) {
-                                // С drag & drop
-                                ReorderableItem(
-                                    state = reorderState,
-                                    key = folder.id.value
-                                ) { isDragging ->
-                                    val elevation by animateDpAsState(
-                                        if (isDragging) 8.dp else 0.dp,
-                                        label = "elevation"
-                                    )
-                                    
-                                    RegularFolderCard(
-                                        folder = folder,
-                                        isDragging = isDragging,
-                                        elevation = elevation,
-                                        showDragHandle = true,
-                                        modifier = Modifier.longPressDraggableHandle(
-                                            onDragStarted = { viewModel.startDragging() },
-                                            onDragStopped = { viewModel.saveFolderOrder() }
-                                        ),
-                                        onClick = { onFolderClick(folder.id.value) },
-                                        onMenuClick = { menuFolder = folder }
-                                    )
-                                }
-                            } else {
-                                // Без drag & drop
-                                RegularFolderCard(
-                                    folder = folder,
-                                    isDragging = false,
-                                    elevation = 0.dp,
-                                    showDragHandle = false,
-                                    modifier = Modifier,
-                                    onClick = { onFolderClick(folder.id.value) },
-                                    onMenuClick = { menuFolder = folder }
-                                )
-                            }
-                        }
-                    }
+                    FoldersList(
+                        folders = state.folders,
+                        sortMode = sortMode,
+                        onFolderClick = onFolderClick,
+                        onMenuClick = { menuFolder = it },
+                        onClearQuickScans = { showClearQuickScansDialog = true },
+                        onReorder = viewModel::reorderFolders,
+                        onDragStart = viewModel::startDragging,
+                        onDragEnd = viewModel::saveFolderOrder
+                    )
                 }
             }
         }
@@ -532,6 +470,88 @@ fun FoldersScreen(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// FOLDERS LIST WITH REORDERABLE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun FoldersList(
+    folders: List<Folder>,
+    sortMode: SortMode,
+    onFolderClick: (Long) -> Unit,
+    onMenuClick: (Folder) -> Unit,
+    onClearQuickScans: () -> Unit,
+    onReorder: (Int, Int) -> Unit,
+    onDragStart: () -> Unit,
+    onDragEnd: () -> Unit
+) {
+    val quickScansFolder = folders.find { it.isQuickScans }
+    val otherFolders = folders.filter { !it.isQuickScans }
+    
+    val isManualMode = sortMode == SortMode.MANUAL
+    
+    val lazyListState = rememberLazyListState()
+    
+    // ✅ ИСПРАВЛЕНО: Правильная инициализация reorderable state
+    val reorderableLazyListState = rememberReorderableLazyListState(
+        lazyListState = lazyListState
+    ) { from, to ->
+        if (isManualMode) {
+            // Учитываем offset от QuickScans (1 элемент сверху)
+            val offset = if (quickScansFolder != null) 1 else 0
+            val fromIndex = from.index - offset
+            val toIndex = to.index - offset
+            if (fromIndex >= 0 && toIndex >= 0) {
+                onReorder(fromIndex, toIndex)
+            }
+        }
+    }
+    
+    LazyColumn(
+        state = lazyListState,
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Quick Scans - всегда сверху, не перетаскивается
+        quickScansFolder?.let { folder ->
+            item(key = "quickscans") {
+                QuickScansFolderCard(
+                    folder = folder,
+                    onClick = { onFolderClick(folder.id.value) },
+                    onClearClick = onClearQuickScans
+                )
+            }
+        }
+        
+        // Остальные папки
+        itemsIndexed(
+            items = otherFolders,
+            key = { _, folder -> folder.id.value }
+        ) { _, folder ->
+            ReorderableItem(
+                state = reorderableLazyListState,
+                key = folder.id.value
+            ) { isDragging ->
+                val elevation by animateDpAsState(
+                    targetValue = if (isDragging) 8.dp else 0.dp,
+                    label = "elevation"
+                )
+                
+                RegularFolderCard(
+                    folder = folder,
+                    isDragging = isDragging,
+                    elevation = elevation,
+                    isManualMode = isManualMode,
+                    onDragStart = onDragStart,
+                    onDragEnd = onDragEnd,
+                    onClick = { onFolderClick(folder.id.value) },
+                    onMenuClick = { onMenuClick(folder) }
+                )
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // QUICK SCANS FOLDER CARD
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -546,7 +566,7 @@ private fun QuickScansFolderCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = {}),
+            .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
         )
@@ -609,23 +629,21 @@ private fun QuickScansFolderCard(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun RegularFolderCard(
+private fun ReorderableItemScope.RegularFolderCard(
     folder: Folder,
     isDragging: Boolean,
     elevation: androidx.compose.ui.unit.Dp,
-    showDragHandle: Boolean,
-    modifier: Modifier = Modifier,
+    isManualMode: Boolean,
+    onDragStart: () -> Unit,
+    onDragEnd: () -> Unit,
     onClick: () -> Unit,
     onMenuClick: () -> Unit
 ) {
     Card(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .shadow(elevation, RoundedCornerShape(12.dp))
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = { /* Handled by reorderable */ }
-            ),
+            .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = if (isDragging) 
                 MaterialTheme.colorScheme.primaryContainer 
@@ -637,13 +655,21 @@ private fun RegularFolderCard(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Drag handle - только в режиме MANUAL
-            if (showDragHandle) {
+            // ✅ ИСПРАВЛЕНО: Drag handle с правильным modifier
+            if (isManualMode) {
                 Icon(
-                    Icons.Default.DragHandle,
+                    imageVector = Icons.Default.DragHandle,
                     contentDescription = "Drag to reorder",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
+                    tint = if (isDragging) 
+                        MaterialTheme.colorScheme.primary 
+                    else 
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .draggableHandle(
+                            onDragStarted = { onDragStart() },
+                            onDragStopped = { onDragEnd() }
+                        )
                 )
                 Spacer(modifier = Modifier.width(12.dp))
             }
