@@ -3,7 +3,6 @@ package com.docs.scanner.presentation.screens.records
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.core.FolderId
-import com.docs.scanner.domain.core.RecordId
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.domain.usecase.AllUseCases
@@ -60,6 +59,9 @@ class RecordsViewModel @Inject constructor(
                     _sortMode,
                     _isDragging
                 ) { records, sortMode, isDragging ->
+                    Triple(records, sortMode, isDragging)
+                }
+                .map { (records, sortMode, isDragging) ->
                     if (isDragging) {
                         // Во время перетаскивания возвращаем локальную копию
                         _localRecords
@@ -124,33 +126,25 @@ class RecordsViewModel @Inject constructor(
         val currentState = _uiState.value
         if (currentState !is RecordsUiState.Success) return
         
-        // Разделяем на группы
-        val pinned = currentState.records.filter { it.isPinned }
-        val others = currentState.records.filter { !it.isPinned }.toMutableList()
+        val records = currentState.records.toMutableList()
         
-        // Учитываем offset (Pinned записи сверху)
-        val offset = pinned.size
-        val adjustedFrom = fromIndex - offset
-        val adjustedTo = toIndex - offset
-        
-        if (adjustedFrom < 0 || adjustedFrom >= others.size || 
-            adjustedTo < 0 || adjustedTo >= others.size) return
+        if (fromIndex < 0 || fromIndex >= records.size || 
+            toIndex < 0 || toIndex >= records.size) return
         
         // Перемещаем элемент
-        val item = others.removeAt(adjustedFrom)
-        others.add(adjustedTo, item)
+        val item = records.removeAt(fromIndex)
+        records.add(toIndex, item)
         
         // Обновляем локальный список
-        _localRecords = pinned + others
-        _uiState.value = currentState.copy(records = _localRecords)
+        _localRecords = records
+        _uiState.value = currentState.copy(records = records)
     }
     
     fun saveRecordOrder() {
         viewModelScope.launch {
             try {
-                // Сохраняем позиции только для обычных записей (не Pinned)
-                val others = _localRecords.filter { !it.isPinned }
-                others.forEachIndexed { index, record ->
+                // Сохраняем позиции для ВСЕХ записей
+                _localRecords.forEachIndexed { index, record ->
                     useCases.records.updatePosition(record.id, index)
                 }
             } catch (e: Exception) {
