@@ -4,7 +4,6 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -27,7 +26,7 @@ import com.docs.scanner.presentation.components.ConfirmDialog
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FoldersScreen(
     viewModel: FoldersViewModel = hiltViewModel(),
@@ -40,7 +39,7 @@ fun FoldersScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showArchived by viewModel.showArchived.collectAsStateWithLifecycle()
-    val sortByName by viewModel.sortByName.collectAsStateWithLifecycle()
+    val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showCreateFolderDialog by remember { mutableStateOf(false) }
@@ -49,6 +48,9 @@ fun FoldersScreen(
     var deleteFolderWithContents by remember { mutableStateOf(false) }
     var showClearQuickScansDialog by remember { mutableStateOf(false) }
     var menuFolder by remember { mutableStateOf<Folder?>(null) }
+    
+    // Выпадающее меню сортировки
+    var showSortMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.navigationEvent.collect { event ->
@@ -69,12 +71,109 @@ fun FoldersScreen(
             TopAppBar(
                 title = { Text("Documents") },
                 actions = {
-                    IconButton(onClick = { viewModel.toggleSortOrder() }) {
-                        Icon(
-                            imageVector = if (sortByName) Icons.Default.SortByAlpha else Icons.Default.CalendarToday,
-                            contentDescription = if (sortByName) "Sort by Name" else "Sort by Date",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                    // ═══════════════════════════════════════════════════════════
+                    // КНОПКА СОРТИРОВКИ С ВЫПАДАЮЩИМ МЕНЮ
+                    // ═══════════════════════════════════════════════════════════
+                    Box {
+                        IconButton(onClick = { showSortMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.SwapVert,
+                                contentDescription = "Sort",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        
+                        DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { 
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.CalendarToday,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text("By Date")
+                                        if (sortMode == SortMode.BY_DATE) {
+                                            Spacer(Modifier.weight(1f))
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setSortMode(SortMode.BY_DATE)
+                                    showSortMenu = false
+                                }
+                            )
+                            
+                            DropdownMenuItem(
+                                text = { 
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.SortByAlpha,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text("By Name")
+                                        if (sortMode == SortMode.BY_NAME) {
+                                            Spacer(Modifier.weight(1f))
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setSortMode(SortMode.BY_NAME)
+                                    showSortMenu = false
+                                }
+                            )
+                            
+                            DropdownMenuItem(
+                                text = { 
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.DragHandle,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text("Manual")
+                                        if (sortMode == SortMode.MANUAL) {
+                                            Spacer(Modifier.weight(1f))
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setSortMode(SortMode.MANUAL)
+                                    showSortMenu = false
+                                }
+                            )
+                        }
                     }
                     
                     IconButton(onClick = { viewModel.setShowArchived(!showArchived) }) {
@@ -149,14 +248,13 @@ fun FoldersScreen(
                     val quickScansFolder = state.folders.find { it.isQuickScans }
                     val otherFolders = state.folders.filter { !it.isQuickScans }
                     
-                    // ✅ НОВЫЙ API: sh.calvin.reorderable
+                    // Drag & drop только в режиме MANUAL
+                    val isManualMode = sortMode == SortMode.MANUAL
+                    
                     val lazyListState = rememberLazyListState()
                     val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
-                        // Учитываем offset из-за QuickScans
-                        val fromIndex = from.index - 1
-                        val toIndex = to.index - 1
-                        if (fromIndex >= 0 && toIndex >= 0) {
-                            viewModel.reorderFolders(fromIndex, toIndex)
+                        if (isManualMode) {
+                            viewModel.reorderFolders(from.index, to.index)
                         }
                     }
                     
@@ -164,6 +262,7 @@ fun FoldersScreen(
                         state = lazyListState,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // Quick Scans - всегда сверху, не перетаскивается
                         quickScansFolder?.let { folder ->
                             item(key = "quickscans") {
                                 QuickScansFolderCard(
@@ -174,27 +273,43 @@ fun FoldersScreen(
                             }
                         }
                         
+                        // Остальные папки
                         itemsIndexed(
                             items = otherFolders,
                             key = { _, folder -> folder.id.value }
                         ) { index, folder ->
-                            ReorderableItem(
-                                state = reorderState,
-                                key = folder.id.value
-                            ) { isDragging ->
-                                val elevation by animateDpAsState(
-                                    if (isDragging) 8.dp else 0.dp,
-                                    label = "elevation"
-                                )
-                                
+                            if (isManualMode) {
+                                // С drag & drop
+                                ReorderableItem(
+                                    state = reorderState,
+                                    key = folder.id.value
+                                ) { isDragging ->
+                                    val elevation by animateDpAsState(
+                                        if (isDragging) 8.dp else 0.dp,
+                                        label = "elevation"
+                                    )
+                                    
+                                    RegularFolderCard(
+                                        folder = folder,
+                                        isDragging = isDragging,
+                                        elevation = elevation,
+                                        showDragHandle = true,
+                                        modifier = Modifier.longPressDraggableHandle(
+                                            onDragStarted = { viewModel.startDragging() },
+                                            onDragStopped = { viewModel.saveFolderOrder() }
+                                        ),
+                                        onClick = { onFolderClick(folder.id.value) },
+                                        onMenuClick = { menuFolder = folder }
+                                    )
+                                }
+                            } else {
+                                // Без drag & drop
                                 RegularFolderCard(
                                     folder = folder,
-                                    isDragging = isDragging,
-                                    elevation = elevation,
-                                    modifier = Modifier.longPressDraggableHandle(
-                                        onDragStarted = { viewModel.startDragging() },
-                                        onDragStopped = { viewModel.saveFolderOrder() }
-                                    ),
+                                    isDragging = false,
+                                    elevation = 0.dp,
+                                    showDragHandle = false,
+                                    modifier = Modifier,
                                     onClick = { onFolderClick(folder.id.value) },
                                     onMenuClick = { menuFolder = folder }
                                 )
@@ -498,6 +613,7 @@ private fun RegularFolderCard(
     folder: Folder,
     isDragging: Boolean,
     elevation: androidx.compose.ui.unit.Dp,
+    showDragHandle: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onMenuClick: () -> Unit
@@ -521,15 +637,16 @@ private fun RegularFolderCard(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Drag handle
-            Icon(
-                Icons.Default.DragHandle,
-                contentDescription = "Drag to reorder",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp)
-            )
-            
-            Spacer(modifier = Modifier.width(12.dp))
+            // Drag handle - только в режиме MANUAL
+            if (showDragHandle) {
+                Icon(
+                    Icons.Default.DragHandle,
+                    contentDescription = "Drag to reorder",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+            }
             
             Column(modifier = Modifier.weight(1f)) {
                 Row(
