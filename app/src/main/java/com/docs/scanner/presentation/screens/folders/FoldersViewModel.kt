@@ -13,6 +13,20 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+// ══════════════════════════════════════════════════════════════════════════════
+// SORT MODE ENUM
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum class SortMode {
+    BY_DATE,    // Автоматически по дате (новые сверху)
+    BY_NAME,    // Автоматически по имени (A-Z)
+    MANUAL      // Вручную (drag & drop)
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VIEW MODEL
+// ══════════════════════════════════════════════════════════════════════════════
+
 @HiltViewModel
 class FoldersViewModel @Inject constructor(
     private val useCases: AllUseCases
@@ -24,8 +38,8 @@ class FoldersViewModel @Inject constructor(
     private val _showArchived = MutableStateFlow(false)
     val showArchived: StateFlow<Boolean> = _showArchived.asStateFlow()
     
-    private val _sortByName = MutableStateFlow(true) // true = Name, false = Date
-    val sortByName: StateFlow<Boolean> = _sortByName.asStateFlow()
+    private val _sortMode = MutableStateFlow(SortMode.BY_DATE)
+    val sortMode: StateFlow<SortMode> = _sortMode.asStateFlow()
 
     private val _navigationEvent = MutableSharedFlow<NavigationEvent>()
     val navigationEvent: SharedFlow<NavigationEvent> = _navigationEvent.asSharedFlow()
@@ -33,6 +47,7 @@ class FoldersViewModel @Inject constructor(
     private val _errorMessage = MutableSharedFlow<String>()
     val errorMessage: SharedFlow<String> = _errorMessage.asSharedFlow()
 
+    // Для drag & drop
     private val _isDragging = MutableStateFlow(false)
     private var _localFolders: List<Folder> = emptyList()
 
@@ -43,52 +58,80 @@ class FoldersViewModel @Inject constructor(
     private fun loadFolders() {
         viewModelScope.launch {
             combine(
-                showArchived.flatMapLatest { includeArchived ->
-                    if (includeArchived) useCases.folders.observeIncludingArchived()
-                    else useCases.folders.observeAll()
-                },
-                _sortByName,
+                _showArchived,
+                _sortMode,
                 _isDragging
-            ) { folders, byName, isDragging ->
+            ) { showArchived, sortMode, isDragging ->
+                Triple(showArchived, sortMode, isDragging)
+            }
+            .flatMapLatest { (showArchived, sortMode, isDragging) ->
                 if (isDragging) {
-                    return@combine _localFolders
+                    // Во время перетаскивания возвращаем локальную копию
+                    flowOf(_localFolders)
                 } else {
-                    sortFolders(folders, byName).also { _localFolders = it }
+                    // Получаем данные из репозитория с нужной сортировкой
+                    getFoldersFlow(showArchived, sortMode)
                 }
             }
             .catch { e ->
                 _uiState.value = FoldersUiState.Error("Failed to load folders: ${e.message}")
             }
-            .collect { sortedFolders ->
-                _uiState.value = if (sortedFolders.isEmpty()) {
+            .collect { folders ->
+                _localFolders = folders
+                _uiState.value = if (folders.isEmpty()) {
                     FoldersUiState.Empty
                 } else {
-                    FoldersUiState.Success(sortedFolders)
+                    FoldersUiState.Success(folders)
                 }
             }
         }
     }
     
-    private fun sortFolders(folders: List<Folder>, byName: Boolean): List<Folder> {
-        val quickScans = folders.filter { it.isQuickScans }
-        val pinned = folders.filter { !it.isQuickScans && it.isPinned }
-            .sortedBy { it.name.lowercase() }
+    private fun getFoldersFlow(showArchived: Boolean, sortMode: SortMode): Flow<List<Folder>> {
+        // Здесь нужно будет добавить методы в Repository для разных сортировок
+        // Пока используем существующие методы и сортируем локально
+        val baseFlow = if (showArchived) {
+            useCases.folders.observeIncludingArchived()
+        } else {
+            useCases.folders.observeAll()
+        }
         
-        val others = folders.filter { !it.isQuickScans && !it.isPinned }
-            .let { list ->
-                if (byName) {
-                    list.sortedBy { it.name.lowercase() }
-                } else {
-                    list.sortedByDescending { it.createdAt }
-                }
-            }
-        
-        return quickScans + pinned + others
+        return baseFlow.map { folders ->
+            sortFolders(folders, sortMode)
+        }
     }
     
-    fun toggleSortOrder() {
-        _sortByName.value = !_sortByName.value
+    private fun sortFolders(folders: List<Folder>, sortMode: SortMode): List<Folder> {
+        val quickScans = folders.filter { it.isQuickScans }
+        val pinned = folders.filter { !it.isQuickScans && it.isPinned }
+        val others = folders.filter { !it.isQuickScans && !it.isPinned }
+        
+        val sortedPinned = when (sortMode) {
+            SortMode.BY_DATE -> pinned.sortedByDescending { it.updatedAt }
+            SortMode.BY_NAME -> pinned.sortedBy { it.name.lowercase() }
+            SortMode.MANUAL -> pinned // Позиция уже из БД
+        }
+        
+        val sortedOthers = when (sortMode) {
+            SortMode.BY_DATE -> others.sortedByDescending { it.updatedAt }
+            SortMode.BY_NAME -> others.sortedBy { it.name.lowercase() }
+            SortMode.MANUAL -> others // Позиция уже из БД
+        }
+        
+        return quickScans + sortedPinned + sortedOthers
     }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SORT MODE
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    fun setSortMode(mode: SortMode) {
+        _sortMode.value = mode
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DRAG & DROP
+    // ═══════════════════════════════════════════════════════════════════════════
     
     fun startDragging() {
         _isDragging.value = true
@@ -98,15 +141,24 @@ class FoldersViewModel @Inject constructor(
         val currentState = _uiState.value
         if (currentState !is FoldersUiState.Success) return
         
+        // Разделяем на группы
         val quickScans = currentState.folders.filter { it.isQuickScans }
         val pinned = currentState.folders.filter { !it.isQuickScans && it.isPinned }
         val others = currentState.folders.filter { !it.isQuickScans && !it.isPinned }.toMutableList()
         
-        if (fromIndex < 0 || fromIndex >= others.size || toIndex < 0 || toIndex >= others.size) return
+        // Учитываем offset (QuickScans + Pinned)
+        val offset = quickScans.size + pinned.size
+        val adjustedFrom = fromIndex - offset
+        val adjustedTo = toIndex - offset
         
-        val item = others.removeAt(fromIndex)
-        others.add(toIndex, item)
+        if (adjustedFrom < 0 || adjustedFrom >= others.size || 
+            adjustedTo < 0 || adjustedTo >= others.size) return
         
+        // Перемещаем элемент
+        val item = others.removeAt(adjustedFrom)
+        others.add(adjustedTo, item)
+        
+        // Обновляем локальный список
         _localFolders = quickScans + pinned + others
         _uiState.value = FoldersUiState.Success(_localFolders)
     }
@@ -114,22 +166,36 @@ class FoldersViewModel @Inject constructor(
     fun saveFolderOrder() {
         viewModelScope.launch {
             try {
-                _localFolders.forEachIndexed { index, folder ->
-                    if (!folder.isQuickScans && !folder.isPinned) {
-                        useCases.folders.updatePosition(folder.id, index)
-                    }
+                // Сохраняем позиции только для обычных папок (не QuickScans, не Pinned)
+                val others = _localFolders.filter { !it.isQuickScans && !it.isPinned }
+                others.forEachIndexed { index, folder ->
+                    useCases.folders.updatePosition(folder.id, index)
                 }
-                _isDragging.value = false
             } catch (e: Exception) {
                 showError("Failed to save folder order: ${e.message}")
+            } finally {
                 _isDragging.value = false
             }
         }
     }
+    
+    fun cancelDragging() {
+        _isDragging.value = false
+        // Перезагрузить данные из БД
+        loadFolders()
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ARCHIVE
+    // ═══════════════════════════════════════════════════════════════════════════
 
     fun setShowArchived(enabled: Boolean) {
         _showArchived.value = enabled
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CRUD OPERATIONS
+    // ═══════════════════════════════════════════════════════════════════════════
 
     fun createFolder(name: String, description: String?) {
         if (name.isBlank()) {
@@ -205,6 +271,10 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // QUICK SCAN
+    // ═══════════════════════════════════════════════════════════════════════════
+
     fun quickScan(imageUri: Uri) {
         viewModelScope.launch {
             _uiState.value = FoldersUiState.Processing(progress = 0, message = "Starting quick scan...")
@@ -249,6 +319,10 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // HELPERS
+    // ═══════════════════════════════════════════════════════════════════════════
+
     fun clearError() {
         val currentState = _uiState.value
         if (currentState is FoldersUiState.Success) {
@@ -262,6 +336,10 @@ class FoldersViewModel @Inject constructor(
         }
     }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UI STATE
+// ══════════════════════════════════════════════════════════════════════════════
 
 sealed interface FoldersUiState {
     data object Loading : FoldersUiState
@@ -280,7 +358,10 @@ sealed interface FoldersUiState {
     data class Error(val message: String) : FoldersUiState
 }
 
-// ✅ FIX: Добавлена закрывающая скобка для sealed interface
+// ══════════════════════════════════════════════════════════════════════════════
+// NAVIGATION EVENT
+// ══════════════════════════════════════════════════════════════════════════════
+
 sealed interface NavigationEvent {
     data class NavigateToEditor(val recordId: Long) : NavigationEvent
 }
