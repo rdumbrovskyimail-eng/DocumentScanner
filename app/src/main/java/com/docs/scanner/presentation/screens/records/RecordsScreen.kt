@@ -2,7 +2,6 @@ package com.docs.scanner.presentation.screens.records
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -23,6 +22,7 @@ import com.docs.scanner.domain.model.Record
 import com.docs.scanner.presentation.components.*
 import com.docs.scanner.presentation.screens.folders.SortMode
 import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.ReorderableItemScope
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,6 +46,8 @@ fun RecordsScreen(
     
     // Выпадающее меню сортировки
     var showSortMenu by remember { mutableStateOf(false) }
+    
+    val snackbarHostState = remember { SnackbarHostState() }
     
     LaunchedEffect(folderId) {
         viewModel.loadRecords(folderId)
@@ -187,11 +189,7 @@ fun RecordsScreen(
                 }
             }
         },
-        snackbarHost = {
-            SnackbarHost(hostState = remember { SnackbarHostState() }) { data ->
-                Snackbar(snackbarData = data)
-            }
-        }
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Box(
             modifier = Modifier
@@ -204,6 +202,13 @@ fun RecordsScreen(
                 }
                 
                 is RecordsUiState.Success -> {
+                    state.errorMessage?.let { msg ->
+                        LaunchedEffect(msg) {
+                            snackbarHostState.showSnackbar(msg)
+                            viewModel.clearError()
+                        }
+                    }
+                    
                     val records = state.records
                     
                     if (records.isEmpty()) {
@@ -231,64 +236,15 @@ fun RecordsScreen(
                             onActionClick = if (state.isQuickScansFolder) null else {{ showCreateDialog = true }}
                         )
                     } else {
-                        // Drag & drop только в режиме MANUAL
-                        val isManualMode = sortMode == SortMode.MANUAL
-                        
-                        val lazyListState = rememberLazyListState()
-                        val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
-                            if (isManualMode) {
-                                viewModel.reorderRecords(from.index, to.index)
-                            }
-                        }
-                        
-                        LazyColumn(
-                            state = lazyListState,
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            itemsIndexed(
-                                items = records,
-                                key = { _, record -> record.id.value }
-                            ) { index, record ->
-                                if (isManualMode) {
-                                    // С drag & drop
-                                    ReorderableItem(
-                                        state = reorderState,
-                                        key = record.id.value
-                                    ) { isDragging ->
-                                        val elevation by animateDpAsState(
-                                            if (isDragging) 8.dp else 2.dp,
-                                            label = "elevation"
-                                        )
-                                        
-                                        RecordCard(
-                                            record = record,
-                                            isDragging = isDragging,
-                                            elevation = elevation,
-                                            showDragHandle = true,
-                                            modifier = Modifier.longPressDraggableHandle(
-                                                onDragStarted = { viewModel.startDragging() },
-                                                onDragStopped = { viewModel.saveRecordOrder() }
-                                            ),
-                                            onClick = { onRecordClick(record.id.value) },
-                                            onMenuClick = { menuRecord = record }
-                                        )
-                                    }
-                                } else {
-                                    // Без drag & drop
-                                    RecordCard(
-                                        record = record,
-                                        isDragging = false,
-                                        elevation = 2.dp,
-                                        showDragHandle = false,
-                                        modifier = Modifier,
-                                        onClick = { onRecordClick(record.id.value) },
-                                        onMenuClick = { menuRecord = record }
-                                    )
-                                }
-                            }
-                        }
+                        RecordsList(
+                            records = records,
+                            sortMode = sortMode,
+                            onRecordClick = onRecordClick,
+                            onMenuClick = { menuRecord = it },
+                            onReorder = viewModel::reorderRecords,
+                            onDragStart = viewModel::startDragging,
+                            onDragEnd = viewModel::saveRecordOrder
+                        )
                     }
                 }
                 
@@ -543,27 +499,86 @@ fun RecordsScreen(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// RECORDS LIST WITH REORDERABLE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun RecordsList(
+    records: List<Record>,
+    sortMode: SortMode,
+    onRecordClick: (Long) -> Unit,
+    onMenuClick: (Record) -> Unit,
+    onReorder: (Int, Int) -> Unit,
+    onDragStart: () -> Unit,
+    onDragEnd: () -> Unit
+) {
+    val isManualMode = sortMode == SortMode.MANUAL
+    
+    val lazyListState = rememberLazyListState()
+    
+    // ✅ ИСПРАВЛЕНО: Правильная инициализация reorderable state
+    val reorderableLazyListState = rememberReorderableLazyListState(
+        lazyListState = lazyListState
+    ) { from, to ->
+        if (isManualMode) {
+            onReorder(from.index, to.index)
+        }
+    }
+    
+    LazyColumn(
+        state = lazyListState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        itemsIndexed(
+            items = records,
+            key = { _, record -> record.id.value }
+        ) { _, record ->
+            ReorderableItem(
+                state = reorderableLazyListState,
+                key = record.id.value
+            ) { isDragging ->
+                val elevation by animateDpAsState(
+                    targetValue = if (isDragging) 8.dp else 2.dp,
+                    label = "elevation"
+                )
+                
+                RecordCard(
+                    record = record,
+                    isDragging = isDragging,
+                    elevation = elevation,
+                    isManualMode = isManualMode,
+                    onDragStart = onDragStart,
+                    onDragEnd = onDragEnd,
+                    onClick = { onRecordClick(record.id.value) },
+                    onMenuClick = { onMenuClick(record) }
+                )
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // RECORD CARD
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun RecordCard(
+private fun ReorderableItemScope.RecordCard(
     record: Record,
     isDragging: Boolean,
     elevation: androidx.compose.ui.unit.Dp,
-    showDragHandle: Boolean,
-    modifier: Modifier = Modifier,
+    isManualMode: Boolean,
+    onDragStart: () -> Unit,
+    onDragEnd: () -> Unit,
     onClick: () -> Unit,
     onMenuClick: () -> Unit
 ) {
     Card(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .shadow(elevation, RoundedCornerShape(12.dp))
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = { /* Handled by reorderable */ }
-            ),
+            .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = if (isDragging) 
                 MaterialTheme.colorScheme.primaryContainer 
@@ -577,13 +592,21 @@ private fun RecordCard(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Drag handle - только в режиме MANUAL
-            if (showDragHandle) {
+            // ✅ ИСПРАВЛЕНО: Drag handle с правильным modifier
+            if (isManualMode) {
                 Icon(
-                    Icons.Default.DragHandle,
+                    imageVector = Icons.Default.DragHandle,
                     contentDescription = "Drag to reorder",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
+                    tint = if (isDragging) 
+                        MaterialTheme.colorScheme.primary 
+                    else 
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .draggableHandle(
+                            onDragStarted = { onDragStart() },
+                            onDragStopped = { onDragEnd() }
+                        )
                 )
                 Spacer(modifier = Modifier.width(12.dp))
             }
