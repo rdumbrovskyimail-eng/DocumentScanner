@@ -1,9 +1,7 @@
 package com.docs.scanner.presentation.screens.records
 
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,17 +11,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.presentation.components.*
+import com.docs.scanner.presentation.components.dragdrop.*
 import com.docs.scanner.presentation.screens.folders.SortMode
-import sh.calvin.reorderable.ReorderableCollectionItemScope
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,7 +31,6 @@ fun RecordsScreen(
     onRecordClick: (Long) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val currentFolderId by viewModel.currentFolderId.collectAsStateWithLifecycle()
     val allFolders by viewModel.allFolders.collectAsStateWithLifecycle()
     val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
     
@@ -87,60 +83,30 @@ fun RecordsScreen(
                             expanded = showSortMenu,
                             onDismissRequest = { showSortMenu = false }
                         ) {
-                            DropdownMenuItem(
-                                text = { 
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.CalendarToday, null, Modifier.size(20.dp))
-                                        Text("By Date")
-                                        if (sortMode == SortMode.BY_DATE) {
-                                            Spacer(Modifier.weight(1f))
-                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                                        }
-                                    }
-                                },
+                            SortMenuItem(
+                                text = "By Date",
+                                icon = Icons.Default.CalendarToday,
+                                selected = sortMode == SortMode.BY_DATE,
                                 onClick = {
                                     viewModel.setSortMode(SortMode.BY_DATE)
                                     showSortMenu = false
                                 }
                             )
                             
-                            DropdownMenuItem(
-                                text = { 
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.SortByAlpha, null, Modifier.size(20.dp))
-                                        Text("By Name")
-                                        if (sortMode == SortMode.BY_NAME) {
-                                            Spacer(Modifier.weight(1f))
-                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                                        }
-                                    }
-                                },
+                            SortMenuItem(
+                                text = "By Name",
+                                icon = Icons.Default.SortByAlpha,
+                                selected = sortMode == SortMode.BY_NAME,
                                 onClick = {
                                     viewModel.setSortMode(SortMode.BY_NAME)
                                     showSortMenu = false
                                 }
                             )
                             
-                            DropdownMenuItem(
-                                text = { 
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.DragHandle, null, Modifier.size(20.dp))
-                                        Text("Manual")
-                                        if (sortMode == SortMode.MANUAL) {
-                                            Spacer(Modifier.weight(1f))
-                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                                        }
-                                    }
-                                },
+                            SortMenuItem(
+                                text = "Manual",
+                                icon = Icons.Default.DragHandle,
+                                selected = sortMode == SortMode.MANUAL,
                                 onClick = {
                                     viewModel.setSortMode(SortMode.MANUAL)
                                     showSortMenu = false
@@ -181,28 +147,9 @@ fun RecordsScreen(
                     val records = state.records
                     
                     if (records.isEmpty()) {
-                        EmptyState(
-                            icon = {
-                                Icon(
-                                    imageVector = if (state.isQuickScansFolder) 
-                                        Icons.Default.FlashOn 
-                                    else 
-                                        Icons.Default.Description,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(64.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            },
-                            title = if (state.isQuickScansFolder) 
-                                "No quick scans yet" 
-                            else 
-                                "No records yet",
-                            message = if (state.isQuickScansFolder)
-                                "Use the gallery button on the main screen to quick scan documents"
-                            else
-                                "Create your first record to add documents",
-                            actionText = if (state.isQuickScansFolder) null else "Create Record",
-                            onActionClick = if (state.isQuickScansFolder) null else {{ showCreateDialog = true }}
+                        EmptyRecordsState(
+                            isQuickScansFolder = state.isQuickScansFolder,
+                            onCreateClick = { showCreateDialog = true }
                         )
                     } else {
                         RecordsList(
@@ -232,55 +179,22 @@ fun RecordsScreen(
     // ═══════════════════════════════════════════════════════════════════════════
     
     menuRecord?.let { record ->
-        AlertDialog(
-            onDismissRequest = { menuRecord = null }
-        ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 6.dp
-            ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    Text(
-                        text = record.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                    
-                    HorizontalDivider()
-                    
-                    ListItem(
-                        headlineContent = { Text("Rename") },
-                        leadingContent = { Icon(Icons.Default.Edit, null) },
-                        modifier = Modifier.clickable {
-                            menuRecord = null
-                            editingRecord = record
-                        }
-                    )
-                    
-                    ListItem(
-                        headlineContent = { Text("Move to folder") },
-                        leadingContent = { Icon(Icons.Default.DriveFileMove, null) },
-                        modifier = Modifier.clickable {
-                            menuRecord = null
-                            showMoveDialog = record
-                        }
-                    )
-                    
-                    ListItem(
-                        headlineContent = { Text("Delete") },
-                        leadingContent = { 
-                            Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) 
-                        },
-                        modifier = Modifier.clickable {
-                            menuRecord = null
-                            showDeleteDialog = record
-                        }
-                    )
-                }
+        RecordMenu(
+            record = record,
+            onDismiss = { menuRecord = null },
+            onRename = {
+                menuRecord = null
+                editingRecord = record
+            },
+            onMove = {
+                menuRecord = null
+                showMoveDialog = record
+            },
+            onDelete = {
+                menuRecord = null
+                showDeleteDialog = record
             }
-        }
+        )
     }
     
     // ═══════════════════════════════════════════════════════════════════════════
@@ -288,167 +202,39 @@ fun RecordsScreen(
     // ═══════════════════════════════════════════════════════════════════════════
     
     if (showCreateDialog) {
-        var name by remember { mutableStateOf("") }
-        var description by remember { mutableStateOf("") }
-        
-        AlertDialog(
-            onDismissRequest = { showCreateDialog = false },
-            title = { Text("Create Record") },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Name") },
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    OutlinedTextField(
-                        value = description,
-                        onValueChange = { description = it },
-                        label = { Text("Description (optional)") },
-                        singleLine = false,
-                        maxLines = 3,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.createRecord(name, description.ifBlank { null })
-                        showCreateDialog = false
-                    },
-                    enabled = name.isNotBlank()
-                ) {
-                    Text("Create")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCreateDialog = false }) {
-                    Text("Cancel")
-                }
+        CreateRecordDialog(
+            onDismiss = { showCreateDialog = false },
+            onCreate = { name, description ->
+                viewModel.createRecord(name, description)
+                showCreateDialog = false
             }
         )
     }
     
     editingRecord?.let { record ->
-        var newName by remember { mutableStateOf(record.name) }
-        var newDescription by remember { mutableStateOf(record.description ?: "") }
-        
-        AlertDialog(
-            onDismissRequest = { editingRecord = null },
-            title = { Text("Edit Record") },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = newName,
-                        onValueChange = { newName = it },
-                        label = { Text("Name") },
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+        EditRecordDialog(
+            record = record,
+            onDismiss = { editingRecord = null },
+            onSave = { name, description ->
+                viewModel.updateRecord(
+                    record.copy(
+                        name = name,
+                        description = description
                     )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    OutlinedTextField(
-                        value = newDescription,
-                        onValueChange = { newDescription = it },
-                        label = { Text("Description") },
-                        maxLines = 3,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.updateRecord(
-                            record.copy(
-                                name = newName,
-                                description = newDescription.ifBlank { null }
-                            )
-                        )
-                        editingRecord = null
-                    },
-                    enabled = newName.isNotBlank()
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingRecord = null }) {
-                    Text("Cancel")
-                }
+                )
+                editingRecord = null
             }
         )
     }
     
     showMoveDialog?.let { record ->
-        val selectableFolders = remember(allFolders, record.folderId) {
-            allFolders.filter { it.id != record.folderId && !it.isQuickScans }
-        }
-        var selectedFolderId by remember(record.id.value) { mutableStateOf<Long?>(null) }
-
-        AlertDialog(
-            onDismissRequest = { showMoveDialog = null },
-            title = { Text("Move to folder") },
-            text = {
-                if (selectableFolders.isEmpty()) {
-                    Text("No other folders available.")
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        selectableFolders.forEach { folder ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { selectedFolderId = folder.id.value }
-                                    .padding(vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = selectedFolderId == folder.id.value,
-                                    onClick = { selectedFolderId = folder.id.value }
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(folder.name, style = MaterialTheme.typography.bodyLarge)
-                                    folder.description?.let {
-                                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = selectedFolderId != null,
-                    onClick = {
-                        val target = selectedFolderId
-                        if (target != null) {
-                            viewModel.moveRecord(record.id.value, target)
-                        }
-                        showMoveDialog = null
-                    }
-                ) {
-                    Text("Move")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showMoveDialog = null }) {
-                    Text("Cancel")
-                }
+        MoveRecordDialog(
+            record = record,
+            folders = allFolders,
+            onDismiss = { showMoveDialog = null },
+            onMove = { targetFolderId ->
+                viewModel.moveRecord(record.id.value, targetFolderId)
+                showMoveDialog = null
             }
         )
     }
@@ -467,9 +253,9 @@ fun RecordsScreen(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// RECORDS LIST
-// ═══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// RECORDS LIST WITH DRAG & DROP
+// ══════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun RecordsList(
@@ -482,77 +268,83 @@ private fun RecordsList(
     onDragEnd: () -> Unit
 ) {
     val isManualMode = sortMode == SortMode.MANUAL
-    
     val lazyListState = rememberLazyListState()
+    val hapticFeedback = LocalHapticFeedback.current
     
-    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        if (isManualMode) {
-            onReorder(from.index, to.index)
-        }
-    }
+    val dragDropState = rememberDragDropState(
+        lazyListState = lazyListState,
+        onMove = { from, to ->
+            if (isManualMode) {
+                onReorder(from, to)
+            }
+        },
+        onDragStart = { onDragStart() },
+        onDragEnd = { _, _ -> onDragEnd() },
+        hapticFeedback = if (isManualMode) hapticFeedback else null
+    )
     
-    LazyColumn(
-        state = lazyListState,
+    DragDropLazyColumn(
         modifier = Modifier.fillMaxSize(),
+        state = lazyListState,
+        dragDropState = dragDropState,
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        enabled = isManualMode
     ) {
         itemsIndexed(
             items = records,
             key = { _, record -> record.id.value }
-        ) { _, record ->
-            ReorderableItem(
-                state = reorderableLazyListState,
-                key = record.id.value
+        ) { index, record ->
+            DragDropItem(
+                dragDropState = dragDropState,
+                index = index,
+                enabled = isManualMode
             ) { isDragging ->
-                val elevation by animateDpAsState(
-                    targetValue = if (isDragging) 8.dp else 2.dp,
-                    label = "elevation"
-                )
-                
-                // Передаём scope (this) в дочерний composable
                 RecordCard(
-                    scope = this,
                     record = record,
                     isDragging = isDragging,
-                    elevation = elevation,
                     isManualMode = isManualMode,
-                    onDragStart = onDragStart,
-                    onDragEnd = onDragEnd,
+                    dragDropState = dragDropState,
+                    index = index,
                     onClick = { onRecordClick(record.id.value) },
-                    onMenuClick = { onMenuClick(record) }
+                    onMenuClick = { onMenuClick(record) },
+                    onDragStart = onDragStart,
+                    onDragEnd = onDragEnd
                 )
             }
         }
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
 // RECORD CARD
-// ═══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun RecordCard(
-    scope: ReorderableCollectionItemScope,
     record: Record,
     isDragging: Boolean,
-    elevation: androidx.compose.ui.unit.Dp,
     isManualMode: Boolean,
-    onDragStart: () -> Unit,
-    onDragEnd: () -> Unit,
+    dragDropState: DragDropState,
+    index: Int,
     onClick: () -> Unit,
-    onMenuClick: () -> Unit
+    onMenuClick: () -> Unit,
+    onDragStart: () -> Unit,
+    onDragEnd: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(elevation, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick),
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = !isDragging, onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = if (isDragging) 
-                MaterialTheme.colorScheme.primaryContainer 
-            else 
-                MaterialTheme.colorScheme.surface
+            containerColor = when {
+                isDragging -> MaterialTheme.colorScheme.primaryContainer
+                else -> MaterialTheme.colorScheme.surface
+            }
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDragging) 8.dp else 2.dp
         )
     ) {
         Row(
@@ -561,10 +353,15 @@ private fun RecordCard(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Drag handle - только в режиме MANUAL
+            // Drag handle — только в режиме MANUAL
             if (isManualMode) {
-                // Используем scope для доступа к draggableHandle
-                with(scope) {
+                DragHandle(
+                    dragDropState = dragDropState,
+                    index = index,
+                    enabled = true,
+                    onDragStarted = onDragStart,
+                    onDragEnded = onDragEnd
+                ) {
                     Icon(
                         imageVector = Icons.Default.DragHandle,
                         contentDescription = "Drag to reorder",
@@ -572,12 +369,7 @@ private fun RecordCard(
                             MaterialTheme.colorScheme.primary 
                         else 
                             MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .size(24.dp)
-                            .draggableHandle(
-                                onDragStarted = { onDragStart() },
-                                onDragStopped = { onDragEnd() }
-                            )
+                        modifier = Modifier.size(24.dp)
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -634,4 +426,314 @@ private fun RecordCard(
             }
         }
     }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// HELPER COMPOSABLES
+// ══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun SortMenuItem(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    DropdownMenuItem(
+        text = { 
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(icon, null, Modifier.size(20.dp))
+                Text(text, modifier = Modifier.weight(1f))
+                if (selected) {
+                    Icon(
+                        Icons.Default.Check, 
+                        null, 
+                        tint = MaterialTheme.colorScheme.primary, 
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        },
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun EmptyRecordsState(
+    isQuickScansFolder: Boolean,
+    onCreateClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(
+                imageVector = if (isQuickScansFolder) 
+                    Icons.Default.FlashOn 
+                else 
+                    Icons.Default.Description,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Text(
+                text = if (isQuickScansFolder) 
+                    "No quick scans yet" 
+                else 
+                    "No records yet",
+                style = MaterialTheme.typography.titleMedium
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = if (isQuickScansFolder)
+                    "Use the gallery button on the main screen to quick scan documents"
+                else
+                    "Create your first record to add documents",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            if (!isQuickScansFolder) {
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(onClick = onCreateClick) {
+                    Icon(Icons.Default.Add, null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Create Record")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecordMenu(
+    record: Record,
+    onDismiss: () -> Unit,
+    onRename: () -> Unit,
+    onMove: () -> Unit,
+    onDelete: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(modifier = Modifier.padding(8.dp)) {
+                Text(
+                    text = record.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(16.dp)
+                )
+                
+                HorizontalDivider()
+                
+                ListItem(
+                    headlineContent = { Text("Rename") },
+                    leadingContent = { Icon(Icons.Default.Edit, null) },
+                    modifier = Modifier.clickable(onClick = onRename)
+                )
+                
+                ListItem(
+                    headlineContent = { Text("Move to folder") },
+                    leadingContent = { Icon(Icons.Default.DriveFileMove, null) },
+                    modifier = Modifier.clickable(onClick = onMove)
+                )
+                
+                ListItem(
+                    headlineContent = { Text("Delete") },
+                    leadingContent = { 
+                        Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) 
+                    },
+                    modifier = Modifier.clickable(onClick = onDelete)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreateRecordDialog(
+    onDismiss: () -> Unit,
+    onCreate: (name: String, description: String?) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create Record") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    ),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description (optional)") },
+                    singleLine = false,
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onCreate(name, description.ifBlank { null }) },
+                enabled = name.isNotBlank()
+            ) {
+                Text("Create")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun EditRecordDialog(
+    record: Record,
+    onDismiss: () -> Unit,
+    onSave: (name: String, description: String?) -> Unit
+) {
+    var newName by remember { mutableStateOf(record.name) }
+    var newDescription by remember { mutableStateOf(record.description ?: "") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Record") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text("Name") },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    ),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = newDescription,
+                    onValueChange = { newDescription = it },
+                    label = { Text("Description") },
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(newName, newDescription.ifBlank { null }) },
+                enabled = newName.isNotBlank()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun MoveRecordDialog(
+    record: Record,
+    folders: List<com.docs.scanner.domain.model.Folder>,
+    onDismiss: () -> Unit,
+    onMove: (targetFolderId: Long) -> Unit
+) {
+    val selectableFolders = remember(folders, record.folderId) {
+        folders.filter { it.id != record.folderId && !it.isQuickScans }
+    }
+    var selectedFolderId by remember(record.id.value) { mutableStateOf<Long?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Move to folder") },
+        text = {
+            if (selectableFolders.isEmpty()) {
+                Text("No other folders available.")
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    selectableFolders.forEach { folder ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedFolderId = folder.id.value }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedFolderId == folder.id.value,
+                                onClick = { selectedFolderId = folder.id.value }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(folder.name, style = MaterialTheme.typography.bodyLarge)
+                                folder.description?.let {
+                                    Text(
+                                        it, 
+                                        style = MaterialTheme.typography.bodySmall, 
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = selectedFolderId != null,
+                onClick = {
+                    selectedFolderId?.let { onMove(it) }
+                }
+            ) {
+                Text("Move")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
