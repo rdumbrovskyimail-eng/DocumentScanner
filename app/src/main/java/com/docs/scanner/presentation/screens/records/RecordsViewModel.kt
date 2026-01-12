@@ -28,6 +28,8 @@ class RecordsViewModel @Inject constructor(
     
     // Для drag & drop
     private val _isDragging = MutableStateFlow(false)
+    val isDragging: StateFlow<Boolean> = _isDragging.asStateFlow()
+    
     private var _localRecords: List<Record> = emptyList()
 
     val allFolders: StateFlow<List<Folder>> = useCases.getFolders()
@@ -63,10 +65,8 @@ class RecordsViewModel @Inject constructor(
                 }
                 .map { (records, sortMode, isDragging) ->
                     if (isDragging) {
-                        // Во время перетаскивания возвращаем локальную копию
                         _localRecords
                     } else {
-                        // Сортируем и обновляем локальную копию
                         sortRecords(records, sortMode).also { _localRecords = it }
                     }
                 }
@@ -94,13 +94,13 @@ class RecordsViewModel @Inject constructor(
         val sortedPinned = when (sortMode) {
             SortMode.BY_DATE -> pinned.sortedByDescending { it.updatedAt }
             SortMode.BY_NAME -> pinned.sortedBy { it.name.lowercase() }
-            SortMode.MANUAL -> pinned // Позиция уже из БД
+            SortMode.MANUAL -> pinned.sortedBy { it.position }
         }
         
         val sortedOthers = when (sortMode) {
             SortMode.BY_DATE -> others.sortedByDescending { it.updatedAt }
             SortMode.BY_NAME -> others.sortedBy { it.name.lowercase() }
-            SortMode.MANUAL -> others // Позиция уже из БД
+            SortMode.MANUAL -> others.sortedBy { it.position }
         }
         
         return sortedPinned + sortedOthers
@@ -122,14 +122,19 @@ class RecordsViewModel @Inject constructor(
         _isDragging.value = true
     }
     
+    /**
+     * Переместить запись в списке (только визуально, без сохранения).
+     */
     fun reorderRecords(fromIndex: Int, toIndex: Int) {
         val currentState = _uiState.value
         if (currentState !is RecordsUiState.Success) return
         
         val records = currentState.records.toMutableList()
         
-        if (fromIndex < 0 || fromIndex >= records.size || 
+        if (fromIndex < 0 || fromIndex >= records.size ||
             toIndex < 0 || toIndex >= records.size) return
+        
+        if (fromIndex == toIndex) return
         
         // Перемещаем элемент
         val item = records.removeAt(fromIndex)
@@ -140,10 +145,12 @@ class RecordsViewModel @Inject constructor(
         _uiState.value = currentState.copy(records = records)
     }
     
+    /**
+     * Сохранить новый порядок записей в БД.
+     */
     fun saveRecordOrder() {
         viewModelScope.launch {
             try {
-                // Сохраняем позиции для ВСЕХ записей
                 _localRecords.forEachIndexed { index, record ->
                     useCases.records.updatePosition(record.id, index)
                 }
