@@ -3,10 +3,8 @@ package com.docs.scanner.presentation.screens.folders
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,15 +14,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.presentation.components.ConfirmDialog
-import sh.calvin.reorderable.ReorderableCollectionItemScope
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import com.docs.scanner.presentation.components.dragdrop.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,6 +55,12 @@ fun FoldersScreen(
             }
         }
     }
+    
+    LaunchedEffect(Unit) {
+        viewModel.errorMessage.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -70,6 +73,7 @@ fun FoldersScreen(
             TopAppBar(
                 title = { Text("Documents") },
                 actions = {
+                    // Sort button
                     Box {
                         IconButton(onClick = { showSortMenu = true }) {
                             Icon(
@@ -83,60 +87,30 @@ fun FoldersScreen(
                             expanded = showSortMenu,
                             onDismissRequest = { showSortMenu = false }
                         ) {
-                            DropdownMenuItem(
-                                text = { 
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.CalendarToday, null, Modifier.size(20.dp))
-                                        Text("By Date")
-                                        if (sortMode == SortMode.BY_DATE) {
-                                            Spacer(Modifier.weight(1f))
-                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                                        }
-                                    }
-                                },
+                            SortMenuItem(
+                                text = "By Date",
+                                icon = Icons.Default.CalendarToday,
+                                selected = sortMode == SortMode.BY_DATE,
                                 onClick = {
                                     viewModel.setSortMode(SortMode.BY_DATE)
                                     showSortMenu = false
                                 }
                             )
                             
-                            DropdownMenuItem(
-                                text = { 
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.SortByAlpha, null, Modifier.size(20.dp))
-                                        Text("By Name")
-                                        if (sortMode == SortMode.BY_NAME) {
-                                            Spacer(Modifier.weight(1f))
-                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                                        }
-                                    }
-                                },
+                            SortMenuItem(
+                                text = "By Name",
+                                icon = Icons.Default.SortByAlpha,
+                                selected = sortMode == SortMode.BY_NAME,
                                 onClick = {
                                     viewModel.setSortMode(SortMode.BY_NAME)
                                     showSortMenu = false
                                 }
                             )
                             
-                            DropdownMenuItem(
-                                text = { 
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.DragHandle, null, Modifier.size(20.dp))
-                                        Text("Manual")
-                                        if (sortMode == SortMode.MANUAL) {
-                                            Spacer(Modifier.weight(1f))
-                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                                        }
-                                    }
-                                },
+                            SortMenuItem(
+                                text = "Manual",
+                                icon = Icons.Default.DragHandle,
+                                selected = sortMode == SortMode.MANUAL,
                                 onClick = {
                                     viewModel.setSortMode(SortMode.MANUAL)
                                     showSortMenu = false
@@ -178,42 +152,63 @@ fun FoldersScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             when (val state = uiState) {
                 is FoldersUiState.Loading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 }
                 
                 is FoldersUiState.Error -> {
-                    Text(state.message, color = MaterialTheme.colorScheme.error)
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(state.message, color = MaterialTheme.colorScheme.error)
+                    }
                 }
                 
                 is FoldersUiState.Empty -> {
-                    Text(
-                        "No folders yet. Create one or run a quick scan.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            Icons.Default.FolderOpen,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            "No folders yet",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            "Create a folder or use quick scan",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 
                 is FoldersUiState.Processing -> {
-                    Text(state.message)
-                    CircularProgressIndicator()
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(state.message)
+                    }
                 }
                 
                 is FoldersUiState.Success -> {
-                    state.errorMessage?.let { msg ->
-                        LaunchedEffect(msg) {
-                            snackbarHostState.showSnackbar(msg)
-                            viewModel.clearError()
-                        }
-                    }
-                    
                     FoldersList(
                         folders = state.folders,
                         sortMode = sortMode,
@@ -234,74 +229,31 @@ fun FoldersScreen(
     // ═══════════════════════════════════════════════════════════════════════════
     
     menuFolder?.let { folder ->
-        AlertDialog(
-            onDismissRequest = { menuFolder = null }
-        ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 6.dp
-            ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    Text(
-                        text = folder.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                    
-                    HorizontalDivider()
-                    
-                    ListItem(
-                        headlineContent = { Text("Rename") },
-                        leadingContent = { Icon(Icons.Default.Edit, null) },
-                        modifier = Modifier.clickable {
-                            menuFolder = null
-                            editingFolder = folder
-                        }
-                    )
-                    
-                    ListItem(
-                        headlineContent = { Text(if (folder.isPinned) "Unpin" else "Pin to top") },
-                        leadingContent = { Icon(Icons.Default.PushPin, null) },
-                        modifier = Modifier.clickable {
-                            viewModel.setPinned(folder.id.value, !folder.isPinned)
-                            menuFolder = null
-                        }
-                    )
-                    
-                    ListItem(
-                        headlineContent = { Text(if (folder.isArchived) "Unarchive" else "Archive") },
-                        leadingContent = { 
-                            Icon(
-                                if (folder.isArchived) Icons.Default.Unarchive else Icons.Default.Archive, 
-                                null
-                            ) 
-                        },
-                        modifier = Modifier.clickable {
-                            if (folder.isArchived) {
-                                viewModel.unarchive(folder.id.value)
-                            } else {
-                                viewModel.archive(folder.id.value)
-                            }
-                            menuFolder = null
-                        }
-                    )
-                    
-                    ListItem(
-                        headlineContent = { Text("Delete") },
-                        leadingContent = { 
-                            Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) 
-                        },
-                        modifier = Modifier.clickable {
-                            menuFolder = null
-                            deleteFolderWithContents = false
-                            showDeleteFolderDialog = folder
-                        }
-                    )
+        FolderMenu(
+            folder = folder,
+            onDismiss = { menuFolder = null },
+            onRename = {
+                menuFolder = null
+                editingFolder = folder
+            },
+            onPin = {
+                viewModel.setPinned(folder.id.value, !folder.isPinned)
+                menuFolder = null
+            },
+            onArchive = {
+                if (folder.isArchived) {
+                    viewModel.unarchive(folder.id.value)
+                } else {
+                    viewModel.archive(folder.id.value)
                 }
+                menuFolder = null
+            },
+            onDelete = {
+                menuFolder = null
+                deleteFolderWithContents = false
+                showDeleteFolderDialog = folder
             }
-        }
+        )
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -322,126 +274,43 @@ fun FoldersScreen(
     }
 
     if (showCreateFolderDialog) {
-        var name by remember { mutableStateOf("") }
-        var description by remember { mutableStateOf("") }
-
-        AlertDialog(
-            onDismissRequest = { showCreateFolderDialog = false },
-            title = { Text("Create folder") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = description,
-                        onValueChange = { description = it },
-                        label = { Text("Description (optional)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = name.isNotBlank(),
-                    onClick = {
-                        viewModel.createFolder(name, description.ifBlank { null })
-                        showCreateFolderDialog = false
-                    }
-                ) { Text("Create") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCreateFolderDialog = false }) { Text("Cancel") }
+        CreateFolderDialog(
+            onDismiss = { showCreateFolderDialog = false },
+            onCreate = { name, description ->
+                viewModel.createFolder(name, description)
+                showCreateFolderDialog = false
             }
         )
     }
 
     editingFolder?.let { folder ->
-        var name by remember(folder.id.value) { mutableStateOf(folder.name) }
-        var description by remember(folder.id.value) { mutableStateOf(folder.description ?: "") }
-
-        AlertDialog(
-            onDismissRequest = { editingFolder = null },
-            title = { Text("Rename folder") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = description,
-                        onValueChange = { description = it },
-                        label = { Text("Description") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = name.isNotBlank(),
-                    onClick = {
-                        viewModel.updateFolder(folder.copy(name = name.trim(), description = description.ifBlank { null }))
-                        editingFolder = null
-                    }
-                ) { Text("Save") }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingFolder = null }) { Text("Cancel") }
+        EditFolderDialog(
+            folder = folder,
+            onDismiss = { editingFolder = null },
+            onSave = { name, description ->
+                viewModel.updateFolder(folder.copy(name = name.trim(), description = description))
+                editingFolder = null
             }
         )
     }
 
     showDeleteFolderDialog?.let { folder ->
-        AlertDialog(
-            onDismissRequest = { showDeleteFolderDialog = null },
-            title = { Text("Delete folder?") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("This will delete \"${folder.name}\".")
-                    if (folder.recordCount > 0) {
-                        Text(
-                            text = "Folder contains ${folder.recordCount} records.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Switch(
-                                checked = deleteFolderWithContents,
-                                onCheckedChange = { deleteFolderWithContents = it }
-                            )
-                            Text("Delete contents too")
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.deleteFolder(folder.id.value, deleteContents = deleteFolderWithContents)
-                        showDeleteFolderDialog = null
-                    }
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteFolderDialog = null }) { Text("Cancel") }
+        DeleteFolderDialog(
+            folder = folder,
+            deleteContents = deleteFolderWithContents,
+            onDeleteContentsChange = { deleteFolderWithContents = it },
+            onDismiss = { showDeleteFolderDialog = null },
+            onConfirm = {
+                viewModel.deleteFolder(folder.id.value, deleteContents = deleteFolderWithContents)
+                showDeleteFolderDialog = null
             }
         )
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// FOLDERS LIST
-// ═══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// FOLDERS LIST WITH DRAG & DROP
+// ══════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun FoldersList(
@@ -458,25 +327,30 @@ private fun FoldersList(
     val otherFolders = folders.filter { !it.isQuickScans }
     
     val isManualMode = sortMode == SortMode.MANUAL
-    
     val lazyListState = rememberLazyListState()
+    val hapticFeedback = LocalHapticFeedback.current
     
-    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        if (isManualMode) {
-            val offset = if (quickScansFolder != null) 1 else 0
-            val fromIndex = from.index - offset
-            val toIndex = to.index - offset
-            if (fromIndex >= 0 && toIndex >= 0) {
-                onReorder(fromIndex, toIndex)
+    val dragDropState = rememberDragDropState(
+        lazyListState = lazyListState,
+        onMove = { from, to ->
+            if (isManualMode) {
+                onReorder(from, to)
             }
-        }
-    }
+        },
+        onDragStart = { onDragStart() },
+        onDragEnd = { _, _ -> onDragEnd() },
+        hapticFeedback = if (isManualMode) hapticFeedback else null
+    )
     
-    LazyColumn(
-        state = lazyListState,
+    DragDropLazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        state = lazyListState,
+        dragDropState = dragDropState,
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        enabled = isManualMode
     ) {
+        // QuickScans — всегда первый, не перетаскивается
         quickScansFolder?.let { folder ->
             item(key = "quickscans") {
                 QuickScansFolderCard(
@@ -487,39 +361,38 @@ private fun FoldersList(
             }
         }
         
+        // Остальные папки с drag & drop
         itemsIndexed(
             items = otherFolders,
             key = { _, folder -> folder.id.value }
-        ) { _, folder ->
-            ReorderableItem(
-                state = reorderableLazyListState,
-                key = folder.id.value
+        ) { index, folder ->
+            // Индекс с учётом QuickScans
+            val actualIndex = if (quickScansFolder != null) index + 1 else index
+            
+            DragDropItem(
+                dragDropState = dragDropState,
+                index = actualIndex,
+                enabled = isManualMode
             ) { isDragging ->
-                val elevation by animateDpAsState(
-                    targetValue = if (isDragging) 8.dp else 0.dp,
-                    label = "elevation"
-                )
-                
-                // Передаём scope (this) в дочерний composable
-                RegularFolderCard(
-                    scope = this,
+                FolderCard(
                     folder = folder,
                     isDragging = isDragging,
-                    elevation = elevation,
                     isManualMode = isManualMode,
-                    onDragStart = onDragStart,
-                    onDragEnd = onDragEnd,
+                    dragDropState = dragDropState,
+                    index = actualIndex,
                     onClick = { onFolderClick(folder.id.value) },
-                    onMenuClick = { onMenuClick(folder) }
+                    onMenuClick = { onMenuClick(folder) },
+                    onDragStart = onDragStart,
+                    onDragEnd = onDragEnd
                 )
             }
         }
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
 // QUICK SCANS FOLDER CARD
-// ═══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun QuickScansFolderCard(
@@ -532,6 +405,7 @@ private fun QuickScansFolderCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
@@ -590,42 +464,50 @@ private fun QuickScansFolderCard(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// REGULAR FOLDER CARD
-// ═══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// FOLDER CARD
+// ══════════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun RegularFolderCard(
-    scope: ReorderableCollectionItemScope,
+private fun FolderCard(
     folder: Folder,
     isDragging: Boolean,
-    elevation: androidx.compose.ui.unit.Dp,
     isManualMode: Boolean,
-    onDragStart: () -> Unit,
-    onDragEnd: () -> Unit,
+    dragDropState: DragDropState,
+    index: Int,
     onClick: () -> Unit,
-    onMenuClick: () -> Unit
+    onMenuClick: () -> Unit,
+    onDragStart: () -> Unit,
+    onDragEnd: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(elevation, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick),
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = !isDragging, onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = if (isDragging) 
-                MaterialTheme.colorScheme.primaryContainer 
-            else 
-                MaterialTheme.colorScheme.surface
+            containerColor = when {
+                isDragging -> MaterialTheme.colorScheme.primaryContainer
+                else -> MaterialTheme.colorScheme.surface
+            }
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isDragging) 8.dp else 1.dp
         )
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Drag handle - только в режиме MANUAL
+            // Drag handle — только в режиме MANUAL
             if (isManualMode) {
-                // Используем scope для доступа к draggableHandle
-                with(scope) {
+                DragHandle(
+                    dragDropState = dragDropState,
+                    index = index,
+                    enabled = true,
+                    onDragStarted = onDragStart,
+                    onDragEnded = onDragEnd
+                ) {
                     Icon(
                         imageVector = Icons.Default.DragHandle,
                         contentDescription = "Drag to reorder",
@@ -633,12 +515,7 @@ private fun RegularFolderCard(
                             MaterialTheme.colorScheme.primary 
                         else 
                             MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .size(24.dp)
-                            .draggableHandle(
-                                onDragStarted = { onDragStart() },
-                                onDragStopped = { onDragEnd() }
-                            )
+                        modifier = Modifier.size(24.dp)
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -668,7 +545,11 @@ private fun RegularFolderCard(
                     }
                 }
                 folder.description?.let { 
-                    Text(it, style = MaterialTheme.typography.bodyMedium) 
+                    Text(
+                        it, 
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    ) 
                 }
                 Text(
                     text = "${folder.recordCount} records",
@@ -682,4 +563,222 @@ private fun RegularFolderCard(
             }
         }
     }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// HELPER COMPOSABLES
+// ══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun SortMenuItem(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    DropdownMenuItem(
+        text = { 
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(icon, null, Modifier.size(20.dp))
+                Text(text, modifier = Modifier.weight(1f))
+                if (selected) {
+                    Icon(
+                        Icons.Default.Check, 
+                        null, 
+                        tint = MaterialTheme.colorScheme.primary, 
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        },
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun FolderMenu(
+    folder: Folder,
+    onDismiss: () -> Unit,
+    onRename: () -> Unit,
+    onPin: () -> Unit,
+    onArchive: () -> Unit,
+    onDelete: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(modifier = Modifier.padding(8.dp)) {
+                Text(
+                    text = folder.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(16.dp)
+                )
+                
+                HorizontalDivider()
+                
+                ListItem(
+                    headlineContent = { Text("Rename") },
+                    leadingContent = { Icon(Icons.Default.Edit, null) },
+                    modifier = Modifier.clickable(onClick = onRename)
+                )
+                
+                ListItem(
+                    headlineContent = { Text(if (folder.isPinned) "Unpin" else "Pin to top") },
+                    leadingContent = { Icon(Icons.Default.PushPin, null) },
+                    modifier = Modifier.clickable(onClick = onPin)
+                )
+                
+                ListItem(
+                    headlineContent = { Text(if (folder.isArchived) "Unarchive" else "Archive") },
+                    leadingContent = { 
+                        Icon(
+                            if (folder.isArchived) Icons.Default.Unarchive else Icons.Default.Archive, 
+                            null
+                        ) 
+                    },
+                    modifier = Modifier.clickable(onClick = onArchive)
+                )
+                
+                ListItem(
+                    headlineContent = { Text("Delete") },
+                    leadingContent = { 
+                        Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) 
+                    },
+                    modifier = Modifier.clickable(onClick = onDelete)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreateFolderDialog(
+    onDismiss: () -> Unit,
+    onCreate: (name: String, description: String?) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create folder") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description (optional)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank(),
+                onClick = { onCreate(name, description.ifBlank { null }) }
+            ) { Text("Create") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun EditFolderDialog(
+    folder: Folder,
+    onDismiss: () -> Unit,
+    onSave: (name: String, description: String?) -> Unit
+) {
+    var name by remember(folder.id.value) { mutableStateOf(folder.name) }
+    var description by remember(folder.id.value) { mutableStateOf(folder.description ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename folder") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank(),
+                onClick = { onSave(name, description.ifBlank { null }) }
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun DeleteFolderDialog(
+    folder: Folder,
+    deleteContents: Boolean,
+    onDeleteContentsChange: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete folder?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("This will delete \"${folder.name}\".")
+                if (folder.recordCount > 0) {
+                    Text(
+                        text = "Folder contains ${folder.recordCount} records.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Switch(
+                            checked = deleteContents,
+                            onCheckedChange = onDeleteContentsChange
+                        )
+                        Text("Delete contents too")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("Delete") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
