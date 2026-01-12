@@ -18,9 +18,9 @@ import javax.inject.Inject
 // ══════════════════════════════════════════════════════════════════════════════
 
 enum class SortMode {
-    BY_DATE,    // Автоматически по дате (новые сверху)
-    BY_NAME,    // Автоматически по имени (A-Z)
-    MANUAL      // Вручную (drag & drop)
+    BY_DATE,
+    BY_NAME,
+    MANUAL
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -47,8 +47,10 @@ class FoldersViewModel @Inject constructor(
     private val _errorMessage = MutableSharedFlow<String>()
     val errorMessage: SharedFlow<String> = _errorMessage.asSharedFlow()
 
-    // Для drag & drop
+    // Для drag & drop — локальная копия списка
     private val _isDragging = MutableStateFlow(false)
+    val isDragging: StateFlow<Boolean> = _isDragging.asStateFlow()
+    
     private var _localFolders: List<Folder> = emptyList()
 
     init {
@@ -66,10 +68,8 @@ class FoldersViewModel @Inject constructor(
             }
             .flatMapLatest { (showArchived, sortMode, isDragging) ->
                 if (isDragging) {
-                    // Во время перетаскивания возвращаем локальную копию
                     flowOf(_localFolders)
                 } else {
-                    // Получаем данные из репозитория с нужной сортировкой
                     getFoldersFlow(showArchived, sortMode)
                 }
             }
@@ -100,7 +100,6 @@ class FoldersViewModel @Inject constructor(
     }
     
     private fun sortFolders(folders: List<Folder>, sortMode: SortMode): List<Folder> {
-        // QuickScans всегда первый
         val quickScans = folders.filter { it.isQuickScans }
         val pinned = folders.filter { !it.isQuickScans && it.isPinned }
         val others = folders.filter { !it.isQuickScans && !it.isPinned }
@@ -108,13 +107,13 @@ class FoldersViewModel @Inject constructor(
         val sortedPinned = when (sortMode) {
             SortMode.BY_DATE -> pinned.sortedByDescending { it.updatedAt }
             SortMode.BY_NAME -> pinned.sortedBy { it.name.lowercase() }
-            SortMode.MANUAL -> pinned // Позиция уже из БД
+            SortMode.MANUAL -> pinned.sortedBy { it.position }
         }
         
         val sortedOthers = when (sortMode) {
             SortMode.BY_DATE -> others.sortedByDescending { it.updatedAt }
             SortMode.BY_NAME -> others.sortedBy { it.name.lowercase() }
-            SortMode.MANUAL -> others // Позиция уже из БД
+            SortMode.MANUAL -> others.sortedBy { it.position }
         }
         
         return quickScans + sortedPinned + sortedOthers
@@ -136,21 +135,27 @@ class FoldersViewModel @Inject constructor(
         _isDragging.value = true
     }
     
+    /**
+     * Переместить папку в списке (только визуально, без сохранения).
+     * Вызывается во время перетаскивания.
+     */
     fun reorderFolders(fromIndex: Int, toIndex: Int) {
         val currentState = _uiState.value
         if (currentState !is FoldersUiState.Success) return
         
-        // Отделяем QuickScans (он не перемещается, всегда item с key="quickscans")
+        // QuickScans не участвует в reorder
         val quickScans = currentState.folders.filter { it.isQuickScans }
         val movableFolders = currentState.folders.filter { !it.isQuickScans }.toMutableList()
         
-        // Учитываем offset от QuickScans (1 элемент сверху в LazyColumn)
+        // Корректируем индексы с учётом QuickScans
         val offset = quickScans.size
         val adjustedFrom = fromIndex - offset
         val adjustedTo = toIndex - offset
         
-        if (adjustedFrom < 0 || adjustedFrom >= movableFolders.size || 
+        if (adjustedFrom < 0 || adjustedFrom >= movableFolders.size ||
             adjustedTo < 0 || adjustedTo >= movableFolders.size) return
+        
+        if (adjustedFrom == adjustedTo) return
         
         // Перемещаем элемент
         val item = movableFolders.removeAt(adjustedFrom)
@@ -161,10 +166,13 @@ class FoldersViewModel @Inject constructor(
         _uiState.value = FoldersUiState.Success(_localFolders)
     }
     
+    /**
+     * Сохранить новый порядок папок в БД.
+     * Вызывается после завершения перетаскивания.
+     */
     fun saveFolderOrder() {
         viewModelScope.launch {
             try {
-                // Сохраняем позиции для всех папок кроме QuickScans
                 _localFolders
                     .filter { !it.isQuickScans }
                     .forEachIndexed { index, folder ->
