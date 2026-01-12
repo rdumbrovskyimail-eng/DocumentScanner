@@ -437,6 +437,7 @@ data class Folder(
     val color: Int? = null,
     val icon: String? = null,
     val recordCount: Int = 0,
+    val position: Int = 0,  // ✅ ADDED for drag & drop
     val isPinned: Boolean = false,
     val isArchived: Boolean = false,
     val createdAt: Long,
@@ -444,7 +445,7 @@ data class Folder(
 ) {
     val isQuickScans: Boolean get() = id.isQuickScans
     val isEmpty: Boolean get() = recordCount == 0
-    
+
     companion object {
         fun quickScans(name: String, timestamp: Long) = Folder(
             id = FolderId.QUICK_SCANS,
@@ -476,6 +477,7 @@ data class Record(
     val description: String? = null,
     val tags: List<String> = emptyList(),
     val documentCount: Int = 0,
+    val position: Int = 0,  // ✅ ADDED for drag & drop
     val sourceLanguage: Language = Language.AUTO,
     val targetLanguage: Language = Language.ENGLISH,
     val isPinned: Boolean = false,
