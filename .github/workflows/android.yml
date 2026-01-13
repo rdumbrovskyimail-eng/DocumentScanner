@@ -1,6 +1,6 @@
 # ================================================================================
 # Android CI/CD Pipeline
-# Version: 9.0.0 - WITH ERROR CAPTURE & TELEGRAM FILE UPLOAD
+# Version: 9.1.0 - WITH ERROR CAPTURE & TELEGRAM FILE UPLOAD (FIXED)
 #
 # ✅ FIX: gradle/actions/setup-gradle@v4 (fixes removeUnusedEntriesOlderThan error)
 # ✅ SPEED: Parallel builds, configuration cache, build cache
@@ -100,12 +100,13 @@ jobs:
     # ============================================================================
     - name: Build with Gradle
       id: build
+      continue-on-error: true
       run: |
-        # Создаём файл для полного лога
         FULL_LOG="build_full.log"
         ERRORS_FILE="build_errors.txt"
         
         # Запускаем сборку и сохраняем ВСЁ в лог
+        set +e
         ./gradlew assembleDebug \
           --stacktrace \
           --parallel \
@@ -116,7 +117,9 @@ jobs:
           -Dkotlin.daemon.jvm.options="-Xmx2g -XX:+UseParallelGC" \
           -Dkotlin.incremental=true \
           -Dkotlin.compiler.execution.strategy=in-process \
-          2>&1 | tee "$FULL_LOG" || BUILD_FAILED=true
+          2>&1 | tee "$FULL_LOG"
+        BUILD_EXIT_CODE=$?
+        set -e
         
         # ============================================================================
         # ИЗВЛЕКАЕМ ВСЕ ОШИБКИ (100% coverage)
@@ -125,47 +128,48 @@ jobs:
           echo "═══════════════════════════════════════════════════════════════"
           echo "  BUILD ERRORS - $(date '+%Y-%m-%d %H:%M:%S')"
           echo "  Commit: $(git rev-parse --short HEAD)"
+          echo "  Exit code: $BUILD_EXIT_CODE"
           echo "═══════════════════════════════════════════════════════════════"
           echo ""
           
           # 1. Kotlin ошибки компиляции (e: file.kt:line: error)
           echo "▶ KOTLIN COMPILATION ERRORS:"
-          grep -E "^e: " "$FULL_LOG" || echo "  (none)"
+          grep -E "^e: " "$FULL_LOG" 2>/dev/null || echo "  (none)"
           echo ""
           
           # 2. Java ошибки
           echo "▶ JAVA ERRORS:"
-          grep -E "error: |Error: " "$FULL_LOG" | grep -v "^e: " || echo "  (none)"
+          grep -E "error: |Error: " "$FULL_LOG" 2>/dev/null | grep -v "^e: " || echo "  (none)"
           echo ""
           
           # 3. Unresolved references (очень частая ошибка)
           echo "▶ UNRESOLVED REFERENCES:"
-          grep -i "unresolved reference" "$FULL_LOG" || echo "  (none)"
+          grep -i "unresolved reference" "$FULL_LOG" 2>/dev/null || echo "  (none)"
           echo ""
           
           # 4. Gradle FAILURE блок
           echo "▶ GRADLE FAILURE:"
-          grep -A 20 "^FAILURE:" "$FULL_LOG" || echo "  (none)"
+          grep -A 20 "^FAILURE:" "$FULL_LOG" 2>/dev/null || echo "  (none)"
           echo ""
           
           # 5. Exception stacktraces
           echo "▶ EXCEPTIONS:"
-          grep -E "Exception|Error:" "$FULL_LOG" | grep -v "HeapDumpOnOutOfMemoryError" | head -30 || echo "  (none)"
+          grep -E "Exception|Error:" "$FULL_LOG" 2>/dev/null | grep -v "HeapDumpOnOutOfMemoryError" | head -30 || echo "  (none)"
           echo ""
           
           # 6. Could not resolve / find
           echo "▶ DEPENDENCY ISSUES:"
-          grep -iE "could not (resolve|find|determine)" "$FULL_LOG" || echo "  (none)"
+          grep -iE "could not (resolve|find|determine)" "$FULL_LOG" 2>/dev/null || echo "  (none)"
           echo ""
           
           # 7. Task failures
           echo "▶ FAILED TASKS:"
-          grep -E "Task .* FAILED|BUILD FAILED" "$FULL_LOG" || echo "  (none)"
+          grep -E "Task .* FAILED|BUILD FAILED" "$FULL_LOG" 2>/dev/null || echo "  (none)"
           echo ""
           
           # 8. Любые строки с "error" которые могли пропустить
           echo "▶ OTHER ERRORS (grep 'error'):"
-          grep -i "error" "$FULL_LOG" | grep -v -E "^e: |HeapDump|error: $" | head -20 || echo "  (none)"
+          grep -i "error" "$FULL_LOG" 2>/dev/null | grep -v -E "^e: |HeapDump|errorprone|error: $" | head -20 || echo "  (none)"
           echo ""
           
           echo "═══════════════════════════════════════════════════════════════"
@@ -175,17 +179,16 @@ jobs:
           
         } > "$ERRORS_FILE"
         
-        # Проверяем, есть ли реальные ошибки
-        ERROR_COUNT=$(grep -cE "^e: |error:|FAILURE:|Exception" "$FULL_LOG" || echo "0")
-        echo "error_count=$ERROR_COUNT" >> $GITHUB_OUTPUT
-        echo "errors_file=$ERRORS_FILE" >> $GITHUB_OUTPUT
+        # Считаем ошибки
+        ERROR_COUNT=$(grep -cE "^e: |error:|FAILURE:|Exception" "$FULL_LOG" 2>/dev/null || echo "0")
         
-        # Если сборка упала - выходим с ошибкой (но ПОСЛЕ сохранения логов)
-        if [ "$BUILD_FAILED" = "true" ]; then
-          echo "build_status=failure" >> $GITHUB_OUTPUT
-          exit 1
-        else
+        # Записываем outputs
+        echo "error_count=$ERROR_COUNT" >> $GITHUB_OUTPUT
+        
+        if [ $BUILD_EXIT_CODE -eq 0 ]; then
           echo "build_status=success" >> $GITHUB_OUTPUT
+        else
+          echo "build_status=failure" >> $GITHUB_OUTPUT
         fi
 
     # ============================================================================
@@ -238,22 +241,20 @@ jobs:
           exit 0
         fi
         
-        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-        APK_NAME=$(basename "$APK_PATH")
-        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" 2>/dev/null | head -n 1)
+        APK_NAME=$(basename "$APK_PATH" 2>/dev/null || echo "app-debug.apk")
+        APK_SIZE=$(du -h "$APK_PATH" 2>/dev/null | cut -f1 || echo "?")
         ARTIFACTS_URL="${RUN_URL}#artifacts"
 
-        TEXT="✅ <b>APK собран успешно!</b>
+        TEXT="✅ <b>APK собран!</b>
 
-📱 Файл: <code>${APK_NAME}</code>
-📦 Размер: ${APK_SIZE}
-📝 Commit/PR: ${COMMIT_MSG}
-👤 Автор: ${{ github.actor }}
-🕐 Время: ${{ steps.commit.outputs.date }}
-#️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
+📱 <code>${APK_NAME}</code>
+📦 ${APK_SIZE}
+📝 ${COMMIT_MSG:0:50}
+👤 ${{ github.actor }}
+🕐 ${{ steps.commit.outputs.date }}
 
-📥 <a href='${ARTIFACTS_URL}'>Скачать APK (Artifacts)</a>
-🔗 <a href='${RUN_URL}'>Открыть run</a>"
+📥 <a href='${ARTIFACTS_URL}'>Скачать</a> | 🔗 <a href='${RUN_URL}'>Logs</a>"
 
         curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
           -d chat_id="${TELEGRAM_CHAT_ID}" \
@@ -264,13 +265,12 @@ jobs:
     # ❌ FAILURE NOTIFICATION - SENDS ERROR FILE TO TELEGRAM
     # ============================================================================
     - name: Send Build Failure with Errors to Telegram
-      if: failure() || steps.build.outputs.build_status == 'failure'
+      if: steps.build.outputs.build_status == 'failure'
       continue-on-error: true
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        COMMIT_MSG: ${{ github.event.pull_request.title || github.event.head_commit.message || github.sha }}
       run: |
         if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
           echo "Telegram secrets not set; skipping notification."
@@ -280,31 +280,32 @@ jobs:
         ERRORS_FILE="build_errors.txt"
         ERROR_COUNT="${{ steps.build.outputs.error_count }}"
         
-        # Короткое сообщение (caption для файла)
-        CAPTION="❌ <b>Build Failed!</b>
-
-📝 ${COMMIT_MSG}
+        # Caption для файла (лимит Telegram: 1024 символа для caption)
+        CAPTION="❌ Build Failed!
+⚠️ Errors: ${ERROR_COUNT:-?}
 👤 ${{ github.actor }}
 🕐 ${{ steps.commit.outputs.date }}
-#️⃣ ${{ steps.commit.outputs.short_sha }}
-⚠️ Errors: ${ERROR_COUNT:-?}
-
-🔗 <a href='${RUN_URL}'>Full logs</a>"
+🔗 ${RUN_URL}"
 
         # Отправляем файл с ошибками в Telegram
         if [ -f "$ERRORS_FILE" ] && [ -s "$ERRORS_FILE" ]; then
-          # Файл существует и не пустой - отправляем как документ
           curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
             -F chat_id="${TELEGRAM_CHAT_ID}" \
             -F document=@"${ERRORS_FILE}" \
-            -F caption="${CAPTION}" \
-            -F parse_mode="HTML"
+            -F caption="${CAPTION}"
         else
-          # Файла нет - отправляем просто сообщение
           curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d parse_mode="HTML" \
             --data-urlencode "text=${CAPTION}
 
-(Error log file not found)"
+(Error log not found)"
         fi
+
+    # ============================================================================
+    # ✅ FAIL THE JOB IF BUILD FAILED
+    # ============================================================================
+    - name: Check build result
+      if: steps.build.outputs.build_status == 'failure'
+      run: |
+        echo "Build failed - see errors above"
+        exit 1
