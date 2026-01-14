@@ -528,13 +528,3 @@ private fun DocumentActionButtons(
         }
     }
 }
-
-// ============================================
-// HELPER EXTENSIONS
-// ============================================
-
-private fun ProcessingStatus.canRetryOcr(): Boolean =
-    this is ProcessingStatus.Ocr.Failed || this is ProcessingStatus.Error
-
-private fun ProcessingStatus.canRetryTranslation(): Boolean =
-    this is ProcessingStatus.Translation.Failed
