@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -434,6 +435,3 @@ private fun VerticalDivider(
             .background(color)
     )
 }
-
-@Composable
-private fun rememberScrollState() = androidx.compose.foundation.rememberScrollState()
