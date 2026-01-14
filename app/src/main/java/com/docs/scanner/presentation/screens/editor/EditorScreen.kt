@@ -1,60 +1,24 @@
 package com.docs.scanner.presentation.screens.editor
 
-import android.net.Uri
 import android.content.Intent
-import androidx.core.content.FileProvider
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Label
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -62,7 +26,15 @@ import com.docs.scanner.BuildConfig
 import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.model.Document
 import com.docs.scanner.presentation.components.FullscreenTextEditor
+import com.docs.scanner.presentation.components.SmartDivider
+import com.docs.scanner.presentation.screens.editor.components.*
+import com.docs.scanner.presentation.theme.*
 import java.io.File
+
+// ============================================
+// EDITOR SCREEN 2.0 (Google Docs Style 2026)
+// Fully synchronized with existing codebase
+// ============================================
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,34 +45,78 @@ fun EditorScreen(
     onImageClick: (Long) -> Unit,
     onCameraClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STATE
+    // ═══════════════════════════════════════════════════════════════════════════
+    
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
     val moveTargets by viewModel.moveTargets.collectAsStateWithLifecycle()
-    val context = androidx.compose.ui.platform.LocalContext.current
-
+    val selectedDocIds by viewModel.selectedDocIds.collectAsStateWithLifecycle()
+    val isSelectionMode by viewModel.isSelectionMode.collectAsStateWithLifecycle()
+    val failedCount by viewModel.failedDocumentsCount.collectAsStateWithLifecycle()
+    
+    val snackbarHostState = remember { SnackbarHostState() }
+    val lazyListState = rememberLazyListState()
+    
+    // Dialog states
     var recordMenuExpanded by remember { mutableStateOf(false) }
     var showRenameRecordDialog by remember { mutableStateOf(false) }
     var showEditDescriptionDialog by remember { mutableStateOf(false) }
     var showTagsDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
-
-    var editDocTextTarget by remember { mutableStateOf<Pair<Document, Boolean>?>(null) } // (doc, isOriginal)
+    var showAddDocumentDialog by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showSmartRetryBanner by remember { mutableStateOf(true) }
+    
+    // Text editor state
+    var editDocTextTarget by remember { mutableStateOf<Pair<Document, Boolean>?>(null) }
     var showMoveDocumentDialog by remember { mutableStateOf<Document?>(null) }
-
+    
+    // Page menu state
+    var docMenuExpanded by remember { mutableStateOf<Long?>(null) }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // LAUNCHERS
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // Multi-image picker (NEW)
+    val multiGalleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.addDocuments(uris)
+        }
+    }
+    
+    // Single image picker (legacy compatibility)
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { viewModel.addDocument(it) }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // EFFECTS
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // Show add document dialog for empty records
     LaunchedEffect(uiState) {
         val state = uiState
-        if (state is EditorUiState.Success && state.errorMessage != null) {
-            snackbarHostState.showSnackbar(state.errorMessage)
-            viewModel.clearError()
+        if (state is EditorUiState.Success) {
+            if (state.documents.isEmpty()) {
+                showAddDocumentDialog = true
+            }
+            if (state.errorMessage != null) {
+                snackbarHostState.showSnackbar(state.errorMessage)
+                viewModel.clearError()
+            }
         }
     }
 
+    // Handle share events
     LaunchedEffect(Unit) {
         viewModel.shareEvent.collect { event ->
             when (event) {
@@ -127,93 +143,155 @@ fun EditorScreen(
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // UI
+    // ═══════════════════════════════════════════════════════════════════════════
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = when (val state = uiState) {
-                            is EditorUiState.Success -> state.record.name.ifBlank { state.folderName.ifBlank { "Documents" } }
-                            else -> "Documents"
+            if (isSelectionMode) {
+                // Selection mode TopBar
+                SelectionTopBar(
+                    selectedCount = selectedDocIds.size,
+                    totalCount = (uiState as? EditorUiState.Success)?.documents?.size ?: 0,
+                    onCloseClick = { viewModel.exitSelectionMode() },
+                    onSelectAllClick = {
+                        if (selectedDocIds.size == (uiState as? EditorUiState.Success)?.documents?.size) {
+                            viewModel.deselectAll()
+                        } else {
+                            viewModel.selectAll()
                         }
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
-                },
-                actions = {
-                    IconButton(onClick = onCameraClick) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = "Camera")
-                    }
-                    IconButton(onClick = { galleryLauncher.launch("image/*") }) {
-                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Gallery")
-                    }
-                    IconButton(onClick = { recordMenuExpanded = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Record menu")
-                    }
+                )
+            } else {
+                // Normal TopBar
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = when (val state = uiState) {
+                                is EditorUiState.Success -> state.record.name.ifBlank { 
+                                    state.folderName.ifBlank { "Documents" } 
+                                }
+                                else -> "Documents"
+                            }
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBackClick) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onCameraClick) {
+                            Icon(Icons.Default.CameraAlt, contentDescription = "Camera")
+                        }
+                        IconButton(onClick = { multiGalleryLauncher.launch("image/*") }) {
+                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Gallery")
+                        }
+                        IconButton(onClick = { recordMenuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Record menu")
+                        }
 
-                    DropdownMenu(
-                        expanded = recordMenuExpanded,
-                        onDismissRequest = { recordMenuExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Rename") },
-                            onClick = {
-                                recordMenuExpanded = false
-                                showRenameRecordDialog = true
-                            },
-                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Description") },
-                            onClick = {
-                                recordMenuExpanded = false
-                                showEditDescriptionDialog = true
-                            },
-                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Tags") },
-                            onClick = {
-                                recordMenuExpanded = false
-                                showTagsDialog = true
-                            },
-                            leadingIcon = { Icon(Icons.Default.Label, contentDescription = null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Languages") },
-                            onClick = {
-                                recordMenuExpanded = false
-                                showLanguageDialog = true
-                            },
-                            leadingIcon = { Icon(Icons.Default.Language, contentDescription = null) }
-                        )
+                        // Record Menu Dropdown
+                        DropdownMenu(
+                            expanded = recordMenuExpanded,
+                            onDismissRequest = { recordMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Rename") },
+                                onClick = {
+                                    recordMenuExpanded = false
+                                    showRenameRecordDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Description") },
+                                onClick = {
+                                    recordMenuExpanded = false
+                                    showEditDescriptionDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Tags") },
+                                onClick = {
+                                    recordMenuExpanded = false
+                                    showTagsDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Label, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Languages") },
+                                onClick = {
+                                    recordMenuExpanded = false
+                                    showLanguageDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Language, contentDescription = null) }
+                            )
 
-                        DropdownMenuItem(
-                            text = { Text("Share as PDF") },
-                            onClick = {
-                                recordMenuExpanded = false
-                                viewModel.shareRecordAsPdf()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
-                        )
+                            HorizontalDivider()
+                            
+                            // NEW: Select pages
+                            val hasDocuments = (uiState as? EditorUiState.Success)?.documents?.isNotEmpty() == true
+                            if (hasDocuments) {
+                                DropdownMenuItem(
+                                    text = { Text("Select pages") },
+                                    onClick = {
+                                        recordMenuExpanded = false
+                                        viewModel.enterSelectionMode()
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Checklist, contentDescription = null) }
+                                )
+                                
+                                HorizontalDivider()
+                            }
 
-                        DropdownMenuItem(
-                            text = { Text("Share images (ZIP)") },
-                            onClick = {
-                                recordMenuExpanded = false
-                                viewModel.shareRecordImagesZip()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
-                        )
+                            DropdownMenuItem(
+                                text = { Text("Share as PDF") },
+                                onClick = {
+                                    recordMenuExpanded = false
+                                    viewModel.shareRecordAsPdf()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Share images (ZIP)") },
+                                onClick = {
+                                    recordMenuExpanded = false
+                                    viewModel.shareRecordImagesZip()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                            )
+                        }
                     }
-                }
-            )
+                )
+            }
+        },
+        bottomBar = {
+            // Batch actions bar (when in selection mode)
+            if (isSelectionMode && selectedDocIds.isNotEmpty()) {
+                BatchActionsBar(
+                    selectedCount = selectedDocIds.size,
+                    totalCount = (uiState as? EditorUiState.Success)?.documents?.size ?: 0,
+                    onDeleteClick = { showDeleteDialog = true },
+                    onExportClick = { showExportDialog = true },
+                    onMoveClick = { showMoveDocumentDialog = (uiState as? EditorUiState.Success)?.documents?.firstOrNull() },
+                    onSelectAllClick = {
+                        if (selectedDocIds.size == (uiState as? EditorUiState.Success)?.documents?.size) {
+                            viewModel.deselectAll()
+                        } else {
+                            viewModel.selectAll()
+                        }
+                    },
+                    onClearSelection = { viewModel.exitSelectionMode() }
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
+        
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -224,7 +302,9 @@ fun EditorScreen(
             when (val state = uiState) {
                 is EditorUiState.Loading -> {
                     Spacer(modifier = Modifier.height(24.dp))
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
                 }
 
                 is EditorUiState.Error -> {
@@ -236,91 +316,99 @@ fun EditorScreen(
                 }
 
                 is EditorUiState.Success -> {
+                    // Processing indicator
                     if (state.isProcessing) {
-                        Text(
-                            text = state.processingMessage.ifBlank { "Processing..." },
-                            style = MaterialTheme.typography.bodyMedium
+                        BatchProgressBanner(
+                            processedCount = state.processingProgress,
+                            totalCount = 100,
+                            currentStage = state.processingMessage
                         )
-                        LinearProgressIndicator(
-                            progress = { (state.processingProgress.coerceIn(0, 100) / 100f) },
-                            modifier = Modifier.fillMaxWidth()
+                    }
+                    
+                    // Smart Retry Banner (for failed documents)
+                    if (failedCount > 0 && showSmartRetryBanner && !state.isProcessing) {
+                        SmartRetryBanner(
+                            failedCount = failedCount,
+                            onRetryClick = { viewModel.retryFailedDocuments() },
+                            onDismiss = { showSmartRetryBanner = false }
                         )
                     }
 
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(state.documents, key = { it.id.value }) { doc ->
-                            var docMenuExpanded by remember(doc.id.value) { mutableStateOf(false) }
-                            Card(modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    AsyncImage(
-                                        model = doc.imagePath,
-                                        contentDescription = "Document image",
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(220.dp)
-                                            .clickable { onImageClick(doc.id.value) }
+                    if (state.documents.isEmpty()) {
+                        // Empty state
+                        EmptyRecordState(
+                            onCameraClick = onCameraClick,
+                            onGalleryClick = { multiGalleryLauncher.launch("image/*") }
+                        )
+                    } else {
+                        // Document list with drag & drop
+                        LazyColumn(
+                            state = lazyListState,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            items(
+                                items = state.documents, 
+                                key = { it.id.value }
+                            ) { doc ->
+                                val index = state.documents.indexOf(doc)
+                                
+                                DocumentCard(
+                                    document = doc,
+                                    index = index,
+                                    isSelected = selectedDocIds.contains(doc.id.value),
+                                    isSelectionMode = isSelectionMode,
+                                    isDragging = false, // TODO: Connect to drag state
+                                    onImageClick = { onImageClick(doc.id.value) },
+                                    onOcrTextClick = { editDocTextTarget = doc to true },
+                                    onTranslationClick = { editDocTextTarget = doc to false },
+                                    onSelectionToggle = {
+                                        if (!isSelectionMode) {
+                                            viewModel.enterSelectionMode()
+                                        }
+                                        viewModel.toggleDocumentSelection(doc.id.value)
+                                    },
+                                    onMenuClick = { docMenuExpanded = doc.id.value },
+                                    onRetryOcr = { viewModel.retryOcr(doc.id.value) },
+                                    onRetryTranslation = { viewModel.retryTranslation(doc.id.value) }
+                                )
+                                
+                                // Page menu dropdown
+                                DropdownMenu(
+                                    expanded = docMenuExpanded == doc.id.value,
+                                    onDismissRequest = { docMenuExpanded = null }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Share page") },
+                                        onClick = {
+                                            docMenuExpanded = null
+                                            viewModel.shareSingleImage(doc.imagePath)
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
                                     )
-
-                                    Text(
-                                        text = doc.originalText?.takeIf { it.isNotBlank() } ?: "No OCR text",
-                                        style = MaterialTheme.typography.bodyMedium
+                                    DropdownMenuItem(
+                                        text = { Text("Edit OCR text") },
+                                        onClick = {
+                                            docMenuExpanded = null
+                                            editDocTextTarget = doc to true
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
                                     )
-
-                                    doc.translatedText?.takeIf { it.isNotBlank() }?.let { translated ->
-                                        Text(
-                                            text = translated,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        IconButton(onClick = { viewModel.moveDocumentUp(doc.id.value) }) {
-                                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move up")
-                                        }
-                                        IconButton(onClick = { viewModel.moveDocumentDown(doc.id.value) }) {
-                                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move down")
-                                        }
-                                        IconButton(onClick = { docMenuExpanded = true }) {
-                                            Icon(Icons.Default.MoreVert, contentDescription = "Page menu")
-                                        }
-                                        IconButton(onClick = { viewModel.deleteDocument(doc.id.value) }) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete")
-                                        }
-                                    }
-
-                                    DropdownMenu(
-                                        expanded = docMenuExpanded,
-                                        onDismissRequest = { docMenuExpanded = false }
-                                    ) {
-                                        DropdownMenuItem(
-                                            text = { Text("Share page") },
-                                            onClick = {
-                                                docMenuExpanded = false
-                                                viewModel.shareSingleImage(doc.imagePath)
-                                            },
-                                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Edit OCR text") },
-                                            onClick = {
-                                                docMenuExpanded = false
-                                                editDocTextTarget = doc to true
-                                            },
-                                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Edit translation") },
-                                            onClick = {
-                                                docMenuExpanded = false
-                                                editDocTextTarget = doc to false
-                                            },
-                                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
-                                        )
+                                    DropdownMenuItem(
+                                        text = { Text("Edit translation") },
+                                        onClick = {
+                                            docMenuExpanded = null
+                                            editDocTextTarget = doc to false
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                                    )
+                                    
+                                    if (doc.processingStatus.isFailed) {
+                                        HorizontalDivider()
                                         DropdownMenuItem(
                                             text = { Text("Retry OCR") },
                                             onClick = {
-                                                docMenuExpanded = false
+                                                docMenuExpanded = null
                                                 viewModel.retryOcr(doc.id.value)
                                             },
                                             leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) }
@@ -328,35 +416,88 @@ fun EditorScreen(
                                         DropdownMenuItem(
                                             text = { Text("Retry translation") },
                                             onClick = {
-                                                docMenuExpanded = false
+                                                docMenuExpanded = null
                                                 viewModel.retryTranslation(doc.id.value)
                                             },
                                             leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) }
                                         )
-                                        DropdownMenuItem(
-                                            enabled = moveTargets.isNotEmpty(),
-                                            text = { Text("Move to another record") },
-                                            onClick = {
-                                                docMenuExpanded = false
-                                                showMoveDocumentDialog = doc
-                                            },
-                                            leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null) }
-                                        )
                                     }
+                                    
+                                    HorizontalDivider()
+                                    
+                                    DropdownMenuItem(
+                                        enabled = moveTargets.isNotEmpty(),
+                                        text = { Text("Move to another record") },
+                                        onClick = {
+                                            docMenuExpanded = null
+                                            showMoveDocumentDialog = doc
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null) }
+                                    )
+                                    
+                                    HorizontalDivider()
+                                    
+                                    DropdownMenuItem(
+                                        text = { Text("Delete", color = GoogleDocsError) },
+                                        onClick = {
+                                            docMenuExpanded = null
+                                            viewModel.deleteDocument(doc.id.value)
+                                        },
+                                        leadingIcon = { 
+                                            Icon(Icons.Default.Delete, contentDescription = null, tint = GoogleDocsError) 
+                                        }
+                                    )
+                                }
+                                
+                                // Divider between cards
+                                if (index < state.documents.lastIndex) {
+                                    SmartDivider()
                                 }
                             }
                         }
+                    }
+                    
+                    // FAB row (when not in selection mode and has documents)
+                    if (!isSelectionMode && state.documents.isNotEmpty()) {
+                        FloatingActionButtons(
+                            onCameraClick = onCameraClick,
+                            onGalleryClick = { multiGalleryLauncher.launch("image/*") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .wrapContentWidth(Alignment.End)
+                        )
                     }
                 }
             }
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DIALOGS
+    // ═══════════════════════════════════════════════════════════════════════════
+    
     val success = uiState as? EditorUiState.Success
+    
+    // Add Document Dialog (for empty record)
+    if (showAddDocumentDialog) {
+        AddDocumentDialog(
+            onDismiss = { showAddDocumentDialog = false },
+            onCameraClick = {
+                showAddDocumentDialog = false
+                onCameraClick()
+            },
+            onGalleryClick = {
+                showAddDocumentDialog = false
+                multiGalleryLauncher.launch("image/*")
+            },
+            isFirstTime = success?.documents?.isEmpty() == true
+        )
+    }
 
+    // Rename record dialog
     if (showRenameRecordDialog && success != null) {
         var name by remember(success.record.id.value) { mutableStateOf(success.record.name) }
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { showRenameRecordDialog = false },
             title = { Text("Rename record") },
             text = {
@@ -369,7 +510,7 @@ fun EditorScreen(
                 )
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(
+                TextButton(
                     enabled = name.isNotBlank(),
                     onClick = {
                         viewModel.updateRecordName(name)
@@ -378,14 +519,15 @@ fun EditorScreen(
                 ) { Text("Save") }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showRenameRecordDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showRenameRecordDialog = false }) { Text("Cancel") }
             }
         )
     }
 
+    // Edit description dialog
     if (showEditDescriptionDialog && success != null) {
         var desc by remember(success.record.id.value) { mutableStateOf(success.record.description.orEmpty()) }
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { showEditDescriptionDialog = false },
             title = { Text("Edit description") },
             text = {
@@ -397,7 +539,7 @@ fun EditorScreen(
                 )
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(
+                TextButton(
                     onClick = {
                         viewModel.updateRecordDescription(desc.ifBlank { null })
                         showEditDescriptionDialog = false
@@ -405,14 +547,15 @@ fun EditorScreen(
                 ) { Text("Save") }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showEditDescriptionDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showEditDescriptionDialog = false }) { Text("Cancel") }
             }
         )
     }
 
+    // Tags dialog
     if (showTagsDialog && success != null) {
         var newTag by remember(success.record.id.value) { mutableStateOf("") }
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { showTagsDialog = false },
             title = { Text("Tags") },
             text = {
@@ -442,7 +585,7 @@ fun EditorScreen(
                 }
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(
+                TextButton(
                     enabled = newTag.isNotBlank(),
                     onClick = {
                         viewModel.addTag(newTag)
@@ -451,11 +594,12 @@ fun EditorScreen(
                 ) { Text("Add") }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showTagsDialog = false }) { Text("Close") }
+                TextButton(onClick = { showTagsDialog = false }) { Text("Close") }
             }
         )
     }
 
+    // Language dialog
     if (showLanguageDialog && success != null) {
         var source by remember(success.record.id.value) { mutableStateOf(success.record.sourceLanguage) }
         var target by remember(success.record.id.value) { mutableStateOf(success.record.targetLanguage) }
@@ -463,7 +607,7 @@ fun EditorScreen(
         val sourceOptions = Language.ocrSourceOptions
         val targetOptions = Language.translationSupported.filter { it != Language.AUTO }
 
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { showLanguageDialog = false },
             title = { Text("Languages") },
             text = {
@@ -504,7 +648,7 @@ fun EditorScreen(
                 }
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(
+                TextButton(
                     onClick = {
                         viewModel.updateLanguages(source, target)
                         showLanguageDialog = false
@@ -512,11 +656,12 @@ fun EditorScreen(
                 ) { Text("Save") }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showLanguageDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showLanguageDialog = false }) { Text("Cancel") }
             }
         )
     }
 
+    // Text editor (fullscreen)
     editDocTextTarget?.let { (doc, isOriginal) ->
         FullscreenTextEditor(
             initialText = if (isOriginal) doc.originalText.orEmpty() else doc.translatedText.orEmpty(),
@@ -532,11 +677,12 @@ fun EditorScreen(
         )
     }
 
+    // Move document dialog
     showMoveDocumentDialog?.let { doc ->
         var selectedRecordId by remember(doc.id.value) { mutableStateOf<Long?>(null) }
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { showMoveDocumentDialog = null },
-            title = { Text("Move page to record") },
+            title = { Text(if (isSelectionMode) "Move ${selectedDocIds.size} pages" else "Move page to record") },
             text = {
                 if (moveTargets.isEmpty()) {
                     Text("No other records in this folder.")
@@ -564,19 +710,52 @@ fun EditorScreen(
                 }
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(
+                TextButton(
                     enabled = selectedRecordId != null,
                     onClick = {
                         val targetId = selectedRecordId
-                        if (targetId != null) viewModel.moveDocument(doc.id.value, targetId)
+                        if (targetId != null) {
+                            if (isSelectionMode) {
+                                viewModel.moveSelectedToRecord(targetId)
+                            } else {
+                                viewModel.moveDocument(doc.id.value, targetId)
+                            }
+                        }
                         showMoveDocumentDialog = null
                     }
                 ) { Text("Move") }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showMoveDocumentDialog = null }) { Text("Cancel") }
+                TextButton(onClick = { showMoveDocumentDialog = null }) { Text("Cancel") }
+            }
+        )
+    }
+    
+    // Export dialog (for selection mode)
+    if (showExportDialog) {
+        ExportOptionsDialog(
+            selectedCount = selectedDocIds.size,
+            onDismiss = { showExportDialog = false },
+            onExportPdf = { 
+                viewModel.exportSelectedDocuments(asPdf = true)
+                showExportDialog = false
+            },
+            onExportZip = { 
+                viewModel.exportSelectedDocuments(asPdf = false)
+                showExportDialog = false
+            }
+        )
+    }
+    
+    // Delete confirmation dialog (for selection mode)
+    if (showDeleteDialog) {
+        DeletePagesDialog(
+            count = selectedDocIds.size,
+            onDismiss = { showDeleteDialog = false },
+            onConfirm = { 
+                viewModel.deleteSelectedDocuments()
+                showDeleteDialog = false
             }
         )
     }
 }
-
