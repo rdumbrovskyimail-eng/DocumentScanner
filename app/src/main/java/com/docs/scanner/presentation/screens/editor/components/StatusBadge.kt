@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -323,7 +324,7 @@ private fun ProcessingStatus.toStatusInfo(): StatusInfo = when (this) {
     )
     
     ProcessingStatus.Translation.Failed -> StatusInfo(
-        icon = Icons.Default.TranslateOutlined,
+        icon = Icons.Outlined.Translate,
         label = "Translation Failed",
         dotColor = Color(0xFFFF9800),
         iconColor = Color(0xFFEF6C00),
