@@ -16,14 +16,13 @@ import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * LogcatCollector - OCR DIAGNOSTIC MODE (FIXED)
- * ✅ Captures: ALL app logs including MLKit/OCR errors
- * ⏱️ Behavior: Runs continuously, saves on demand via button
- * 🔧 Changes:
- *    - No auto-save timer
- *    - Manual save via saveLogsNow()
- *    - Captures ALL app logs (not just errors)
- *    - Better crash detection
+ * LogcatCollector - OCR DIAGNOSTIC MODE (FULLY FIXED)
+ * 
+ * ✅ FIXES:
+ * - Правильная проверка количества строк
+ * - Сохранение работает даже после остановки
+ * - Корректная работа кнопки Save
+ * - Проверка разрешений
  */
 class LogcatCollector private constructor(private val context: Context) {
 
@@ -32,6 +31,10 @@ class LogcatCollector private constructor(private val context: Context) {
     private val logBuffer = StringBuilder()
     private val isSaving = AtomicBoolean(false)
     private var isCollecting = AtomicBoolean(false)
+    
+    // ✅ ADDED: Отдельный счётчик строк
+    @Volatile
+    private var lineCount = 0
 
     companion object {
         @Volatile
@@ -45,29 +48,18 @@ class LogcatCollector private constructor(private val context: Context) {
             }
         }
 
-        // ✅ Увеличенный буфер для хранения всех логов
         private const val MAX_BUFFER_LINES = 10000
 
-        // ✅ Ключевые слова для OCR/MLKit (расширенный список)
         private val OCR_KEYWORDS = setOf(
-            // Tesseract
             "tess", "tesseract", "ocr", "leptonica", "pix", "rect",
             "blob", "recognition", "utf8", "unichar", "traineddata",
-            
-            // Google ML Kit / Vision
             "mlkit", "vision", "textrecognizer", "textrecognition",
-            "barcod", "face", "text", "tensorflow", "tflite", 
+            "barcode", "face", "text", "tensorflow", "tflite", 
             "nnapi", "model", "interpreter",
-            
-            // Native errors
             "unsatisfiedlink", "dlopen", "so file", "native",
             "signal 11", "sigsegv", "sigabrt", "tombstone",
-            
-            // Memory issues
             "outofmemory", "oom", "alloc", "bitmap", "large",
             "nativeallocationregistry",
-            
-            // Common crashes
             "nullpointerexception", "illegalstateexception",
             "illegalargumentexception", "runtimeexception"
         )
@@ -78,12 +70,15 @@ class LogcatCollector private constructor(private val context: Context) {
             Environment.DIRECTORY_DOWNLOADS
         )
         val logsDir = File(downloadsDir, "DocumentScanner_OCR_Logs")
-        if (!logsDir.exists()) logsDir.mkdirs()
+        if (!logsDir.exists()) {
+            val created = logsDir.mkdirs()
+            Timber.d("📁 Logs dir created: $created at ${logsDir.absolutePath}")
+        }
         return logsDir
     }
 
     /**
-     * Начать сбор логов (вызывается вручную из Settings)
+     * Начать сбор логов
      */
     fun startCollecting() {
         if (!BuildConfig.DEBUG) {
@@ -101,35 +96,32 @@ class LogcatCollector private constructor(private val context: Context) {
 
         collectJob = CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {
-                // Очищаем системный буфер logcat
+                // Очищаем системный буфер
                 Runtime.getRuntime().exec("logcat -c").waitFor()
-                delay(500) // Даем время на очистку
+                delay(500)
                 
                 val pid = android.os.Process.myPid()
                 Timber.i("🚀 OCR Log Collector STARTED (PID: $pid)")
 
-                // ✅ КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Захватываем ВСЕ логи приложения (не фильтруем по уровню)
-                // Это позволит поймать Warning и Info от Tesseract/MLKit
+                // Захватываем ВСЕ логи приложения
                 logcatProcess = Runtime.getRuntime().exec(
                     arrayOf(
                         "logcat",
-                        "-v", "threadtime",  // Timestamp + Thread ID
-                        "--pid=$pid",        // Только наше приложение
-                        "*:V"                // ALL log levels (Verbose and above)
+                        "-v", "threadtime",
+                        "--pid=$pid",
+                        "*:V"  // Все уровни
                     )
                 )
 
                 val reader = BufferedReader(
                     InputStreamReader(logcatProcess!!.inputStream),
-                    16384 // Увеличенный буфер
+                    16384
                 )
-
-                var lineCount = 0
 
                 while (isActive && isCollecting.get()) {
                     val line = reader.readLine() ?: break
                     
-                    // ✅ Сохраняем ВСЕ строки (фильтруем только anti-loop)
+                    // Фильтруем anti-loop
                     if (!line.contains("LogcatCollector")) {
                         synchronized(logBuffer) {
                             logBuffer.append(line).append("\n")
@@ -146,7 +138,7 @@ class LogcatCollector private constructor(private val context: Context) {
                             }
                         }
 
-                        // Логируем критичные ошибки в реалтайме
+                        // Логируем критичные ошибки
                         if (isCriticalError(line)) {
                             Timber.e("🔥 CRITICAL: $line")
                         }
@@ -171,14 +163,14 @@ class LogcatCollector private constructor(private val context: Context) {
         try {
             collectJob?.cancel()
             logcatProcess?.destroy()
-            Timber.i("🛑 Collector Stopped")
+            Timber.i("🛑 Collector Stopped. Buffer has $lineCount lines")
         } catch (e: Exception) {
             Timber.e(e, "Error stopping collector")
         }
     }
 
     /**
-     * Проверка на критичную ошибку (для real-time логирования)
+     * Проверка на критичную ошибку
      */
     private fun isCriticalError(line: String): Boolean {
         val lower = line.lowercase()
@@ -190,7 +182,7 @@ class LogcatCollector private constructor(private val context: Context) {
     }
 
     /**
-     * НОВЫЙ МЕТОД: Сохранить логи ПРЯМО СЕЙЧАС (вызывается кнопкой)
+     * ✅ FIXED: Сохранить логи ПРЯМО СЕЙЧАС
      */
     fun saveLogsNow() {
         if (!isSaving.compareAndSet(false, true)) {
@@ -200,12 +192,22 @@ class LogcatCollector private constructor(private val context: Context) {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val content = synchronized(logBuffer) { logBuffer.toString() }
+                val content = synchronized(logBuffer) { 
+                    logBuffer.toString() 
+                }
                 
-                if (content.isBlank()) {
-                    Timber.w("⚠️ No logs to save")
+                val currentLines = lineCount
+                
+                if (content.isBlank() || currentLines == 0) {
+                    Timber.w("⚠️ No logs to save (buffer empty)")
                     isSaving.set(false)
                     return@launch
+                }
+
+                // Проверяем/создаём папку
+                val logsDir = getLogsDir()
+                if (!logsDir.exists()) {
+                    logsDir.mkdirs()
                 }
 
                 val timestamp = SimpleDateFormat(
@@ -214,20 +216,20 @@ class LogcatCollector private constructor(private val context: Context) {
                 ).format(Date())
                 
                 val fileName = "OCR_DEBUG_$timestamp.txt"
-                val file = File(getLogsDir(), fileName)
+                val file = File(logsDir, fileName)
 
                 val finalLog = buildString {
-                    append("=" .repeat(60)).append("\n")
+                    append("=".repeat(60)).append("\n")
                     append("OCR DIAGNOSTIC LOG\n")
-                    append("=" .repeat(60)).append("\n")
+                    append("=".repeat(60)).append("\n")
                     append("Timestamp: $timestamp\n")
                     append("Device: ${Build.MANUFACTURER} ${Build.MODEL}\n")
                     append("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\n")
                     append("App Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n")
-                    append("Lines Captured: ${content.lines().size}\n")
-                    append("=" .repeat(60)).append("\n\n")
+                    append("Lines Captured: $currentLines\n")
+                    append("=".repeat(60)).append("\n\n")
                     
-                    // Добавляем фильтрованные логи (OCR-related)
+                    // OCR-related логи
                     append("=== OCR/MLKIT RELATED LOGS ===\n")
                     val ocrLines = content.lines().filter { line ->
                         val lower = line.lowercase()
@@ -250,10 +252,12 @@ class LogcatCollector private constructor(private val context: Context) {
                 file.writeText(finalLog)
                 
                 Timber.i("✅ LOG SAVED: ${file.absolutePath} (${file.length() / 1024} KB)")
+                Timber.i("📊 Saved $currentLines lines")
 
-                // Опционально: Открыть файл через Intent
+                // Опционально: шарим файл
                 if (BuildConfig.DEBUG) {
-                    shareLogFile(file)
+                    // Можно раскомментировать для автоматического share
+                    // shareLogFile(file)
                 }
 
             } catch (e: Exception) {
@@ -297,16 +301,16 @@ class LogcatCollector private constructor(private val context: Context) {
     private fun clearInternalBuffer() {
         synchronized(logBuffer) {
             logBuffer.setLength(0)
+            lineCount = 0
         }
+        Timber.d("🧹 Buffer cleared")
     }
 
     /**
-     * Получить количество собранных строк
+     * ✅ FIXED: Получить количество собранных строк
      */
     fun getCollectedLinesCount(): Int {
-        return synchronized(logBuffer) {
-            logBuffer.lines().size
-        }
+        return lineCount
     }
 
     /**
