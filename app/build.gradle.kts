@@ -1,9 +1,9 @@
 /*
  * DocumentScanner - App Module Configuration
- * Version: 7.2.0 - NATIVE COMPOSE DRAG & DROP (2026 Standards)
+ * Version: 7.2.1 - COIL ADDED FOR MLKIT SETTINGS (2026 Standards)
  * 
- * ✅ REMOVED: sh.calvin.reorderable library
- * ✅ USING: Native Compose drag & drop implementation
+ * ✅ ADDED: Coil image loading library
+ * ✅ FIXED: MLKit settings image preview support
  */
 
 import java.util.Properties
@@ -50,8 +50,8 @@ android {
         minSdk = 26
         targetSdk = 36
         
-        versionCode = 720
-        versionName = "7.2.0"
+        versionCode = 721
+        versionName = "7.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -217,8 +217,13 @@ dependencies {
     ksp(libs.androidx.hilt.compiler)
     ksp(libs.room.compiler)
 
+    // ✅ COIL - Image Loading Library (CRITICAL FOR MLKIT SETTINGS)
+    // Version check: либо используй libs.coil.compose если есть в libs.versions.toml,
+    // либо добавь явно версию ниже
     implementation(libs.coil.compose)
     implementation(libs.coil.network)
+    // АЛЬТЕРНАТИВА если нет в version catalog:
+    // implementation("io.coil-kt:coil-compose:2.5.0")
 
     implementation(libs.google.material)
 
