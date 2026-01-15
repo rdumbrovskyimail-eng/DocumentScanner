@@ -1,3 +1,17 @@
+/*
+ * SettingsViewModel.kt
+ * Version: 8.0.0 - PRODUCTION READY 2026
+ * 
+ * ✅ ALL FEATURES:
+ * - API Keys management (encrypted)
+ * - Google Drive backup
+ * - Theme & Language settings
+ * - Cache management
+ * - MLKit OCR Settings & Testing
+ * - Storage management
+ * - Local backup
+ */
+
 package com.docs.scanner.presentation.screens.settings
 
 import android.app.Activity
@@ -5,6 +19,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -13,8 +28,11 @@ import com.docs.scanner.data.local.security.ApiKeyData
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
 import com.docs.scanner.data.remote.drive.DriveRepository
 import com.docs.scanner.data.remote.gemini.GeminiApi
-import com.docs.scanner.domain.core.DomainResult
+import com.docs.scanner.data.remote.mlkit.MLKitScanner
+import com.docs.scanner.data.remote.mlkit.OcrScriptMode
+import com.docs.scanner.data.remote.mlkit.OcrTestResult
 import com.docs.scanner.domain.core.BackupInfo
+import com.docs.scanner.domain.core.DomainResult
 import com.docs.scanner.domain.core.ImageQuality
 import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.core.ThemeMode
@@ -23,32 +41,25 @@ import com.docs.scanner.domain.repository.FileRepository
 import com.docs.scanner.domain.repository.SettingsRepository
 import com.docs.scanner.domain.repository.StorageUsage
 import com.docs.scanner.domain.usecase.AllUseCases
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.docs.scanner.presentation.screens.settings.components.MlkitSettingsState
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import com.google.api.services.drive.DriveScopes
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
-/**
- * Settings Screen ViewModel.
- * 
- * Session 8: Already excellent (75/100)
- * - ✅ Uses EncryptedKeyStorage (secure)
- * - ✅ Good error handling
- * - ✅ Multiple StateFlows (acceptable for settings)
- * 
- * Minor note: Multiple StateFlows are OK here since settings
- * are independent concerns (API keys, Drive, theme, etc.)
- */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
@@ -58,8 +69,13 @@ class SettingsViewModel @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val fileRepository: FileRepository,
     private val geminiApi: GeminiApi,
+    private val mlKitScanner: MLKitScanner,
     private val useCases: AllUseCases
 ) : ViewModel() {
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // API KEYS STATE
+    // ═══════════════════════════════════════════════════════════════════════════
 
     private val _apiKeys = MutableStateFlow<List<ApiKeyData>>(emptyList())
     val apiKeys: StateFlow<List<ApiKeyData>> = _apiKeys.asStateFlow()
@@ -69,6 +85,13 @@ class SettingsViewModel @Inject constructor(
 
     private val _saveMessage = MutableStateFlow("")
     val saveMessage: StateFlow<String> = _saveMessage.asStateFlow()
+
+    private val _keyTestMessage = MutableStateFlow("")
+    val keyTestMessage: StateFlow<String> = _keyTestMessage.asStateFlow()
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // GOOGLE DRIVE STATE
+    // ═══════════════════════════════════════════════════════════════════════════
 
     private val _driveEmail = MutableStateFlow<String?>(null)
     val driveEmail: StateFlow<String?> = _driveEmail.asStateFlow()
@@ -82,8 +105,9 @@ class SettingsViewModel @Inject constructor(
     private val _backupMessage = MutableStateFlow("")
     val backupMessage: StateFlow<String> = _backupMessage.asStateFlow()
 
-    private val _keyTestMessage = MutableStateFlow("")
-    val keyTestMessage: StateFlow<String> = _keyTestMessage.asStateFlow()
+    // ═══════════════════════════════════════════════════════════════════════════
+    // APP SETTINGS STATE
+    // ═══════════════════════════════════════════════════════════════════════════
 
     val themeMode: StateFlow<ThemeMode> =
         useCases.settings.observeThemeMode()
@@ -103,7 +127,7 @@ class SettingsViewModel @Inject constructor(
 
     val ocrMode: StateFlow<String> =
         settingsDataStore.ocrLanguage
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "LATIN")
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "AUTO")
 
     val cacheEnabled: StateFlow<Boolean> =
         settingsDataStore.cacheEnabled
@@ -113,10 +137,9 @@ class SettingsViewModel @Inject constructor(
         settingsDataStore.cacheTtlDays
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 30)
 
-    val imageQuality: StateFlow<ImageQuality> =
-        kotlinx.coroutines.flow.flow {
-            emit(useCases.settings.getImageQuality())
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ImageQuality.HIGH)
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STORAGE & CACHE STATE
+    // ═══════════════════════════════════════════════════════════════════════════
 
     private val _storageUsage = MutableStateFlow<StorageUsage?>(null)
     val storageUsage: StateFlow<StorageUsage?> = _storageUsage.asStateFlow()
@@ -127,17 +150,47 @@ class SettingsViewModel @Inject constructor(
     private val _localBackups = MutableStateFlow<List<LocalBackup>>(emptyList())
     val localBackups: StateFlow<List<LocalBackup>> = _localBackups.asStateFlow()
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ML KIT SETTINGS STATE
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private val _mlkitSettings = MutableStateFlow(MlkitSettingsState())
+    val mlkitSettings: StateFlow<MlkitSettingsState> = _mlkitSettings.asStateFlow()
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // INITIALIZATION
+    // ═══════════════════════════════════════════════════════════════════════════
+
     init {
         checkDriveConnection()
         loadApiKeys()
         refreshCacheStats()
         refreshStorageUsage()
         refreshLocalBackups()
+        loadMlkitSettings()
     }
 
     private fun loadApiKeys() {
         viewModelScope.launch {
             _apiKeys.value = encryptedKeyStorage.getAllKeys()
+        }
+    }
+
+    private fun loadMlkitSettings() {
+        viewModelScope.launch {
+            try {
+                val scriptMode = when (settingsDataStore.ocrLanguage.first().uppercase()) {
+                    "LATIN" -> OcrScriptMode.LATIN
+                    "CHINESE" -> OcrScriptMode.CHINESE
+                    "JAPANESE" -> OcrScriptMode.JAPANESE
+                    "KOREAN" -> OcrScriptMode.KOREAN
+                    "DEVANAGARI" -> OcrScriptMode.DEVANAGARI
+                    else -> OcrScriptMode.AUTO
+                }
+                _mlkitSettings.update { it.copy(scriptMode = scriptMode) }
+            } catch (e: Exception) {
+                Timber.w(e, "⚠️ Failed to load MLKit settings")
+            }
         }
     }
 
@@ -159,14 +212,9 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun refreshDriveBackups() {
-        viewModelScope.launch {
-            when (val r = useCases.backup.listGoogleDriveBackups()) {
-                is DomainResult.Success -> _driveBackups.value = r.data.sortedByDescending { it.timestamp }
-                is DomainResult.Failure -> _backupMessage.value = "✗ Drive list failed: ${r.error.message}"
-            }
-        }
-    }
+    // ═══════════════════════════════════════════════════════════════════════════
+    // API KEYS MANAGEMENT
+    // ═══════════════════════════════════════════════════════════════════════════
 
     fun addApiKey(key: String, label: String?) {
         viewModelScope.launch {
@@ -175,9 +223,7 @@ class SettingsViewModel @Inject constructor(
                     _saveMessage.value = "✗ Invalid API key format"
                     return@launch
                 }
-
                 val trimmedKey = key.trim()
-
                 val newKey = ApiKeyData(
                     id = System.currentTimeMillis().toString(),
                     key = trimmedKey,
@@ -185,19 +231,9 @@ class SettingsViewModel @Inject constructor(
                     isActive = true,
                     createdAt = System.currentTimeMillis()
                 )
-
                 encryptedKeyStorage.addKey(newKey)
                 encryptedKeyStorage.setActiveApiKey(trimmedKey)
-
-                // ⚠️ Backward compatibility - remove after Session 3
-                try {
-                    settingsRepository.setApiKey(trimmedKey)
-                } catch (e: Exception) {
-                    // Method removed in Session 3
-                }
-
                 loadApiKeys()
-
                 _saveMessage.value = "✓ API key added successfully"
             } catch (e: Exception) {
                 _saveMessage.value = "✗ Failed to add key: ${e.message}"
@@ -211,15 +247,7 @@ class SettingsViewModel @Inject constructor(
                 val key = _apiKeys.value.find { it.id == keyId }
                 if (key != null) {
                     encryptedKeyStorage.setActiveApiKey(key.key)
-
-                    try {
-                        settingsRepository.setApiKey(key.key)
-                    } catch (e: Exception) {
-                        // Method removed in Session 3
-                    }
-
                     loadApiKeys()
-
                     _saveMessage.value = "✓ API key activated"
                 } else {
                     _saveMessage.value = "✗ Key not found"
@@ -281,11 +309,17 @@ class SettingsViewModel @Inject constructor(
         _keyTestMessage.value = ""
     }
 
+    private fun isValidApiKey(key: String): Boolean = key.matches(Regex("^AIza[A-Za-z0-9_-]{35}$"))
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // APP SETTINGS
+    // ═══════════════════════════════════════════════════════════════════════════
+
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch {
             when (val r = useCases.settings.setThemeMode(mode)) {
-                is DomainResult.Success -> Unit
                 is DomainResult.Failure -> _saveMessage.value = "✗ Theme: ${r.error.message}"
+                else -> Unit
             }
         }
     }
@@ -293,8 +327,8 @@ class SettingsViewModel @Inject constructor(
     fun setAppLanguage(code: String) {
         viewModelScope.launch {
             when (val r = useCases.settings.setAppLanguage(code)) {
-                is DomainResult.Success -> Unit
                 is DomainResult.Failure -> _saveMessage.value = "✗ Language: ${r.error.message}"
+                else -> Unit
             }
         }
     }
@@ -309,8 +343,8 @@ class SettingsViewModel @Inject constructor(
     fun setTargetLanguage(lang: Language) {
         viewModelScope.launch {
             when (val r = useCases.settings.setTargetLanguage(lang)) {
-                is DomainResult.Success -> Unit
                 is DomainResult.Failure -> _saveMessage.value = "✗ Target: ${r.error.message}"
+                else -> Unit
             }
         }
     }
@@ -318,8 +352,8 @@ class SettingsViewModel @Inject constructor(
     fun setAutoTranslate(enabled: Boolean) {
         viewModelScope.launch {
             when (val r = useCases.settings.setAutoTranslate(enabled)) {
-                is DomainResult.Success -> Unit
                 is DomainResult.Failure -> _saveMessage.value = "✗ Auto-translate: ${r.error.message}"
+                else -> Unit
             }
         }
     }
@@ -337,6 +371,19 @@ class SettingsViewModel @Inject constructor(
                 .onFailure { _saveMessage.value = "✗ Cache TTL: ${it.message}" }
         }
     }
+
+    fun setImageQuality(quality: ImageQuality) {
+        viewModelScope.launch {
+            when (val r = useCases.settings.setImageQuality(quality)) {
+                is DomainResult.Success -> _saveMessage.value = "✓ Image quality: ${quality.name}"
+                is DomainResult.Failure -> _saveMessage.value = "✗ Image quality: ${r.error.message}"
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CACHE & STORAGE
+    // ═══════════════════════════════════════════════════════════════════════════
 
     fun refreshCacheStats() {
         viewModelScope.launch {
@@ -382,14 +429,9 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setImageQuality(quality: ImageQuality) {
-        viewModelScope.launch {
-            when (val r = useCases.settings.setImageQuality(quality)) {
-                is DomainResult.Success -> _saveMessage.value = "✓ Image quality: ${quality.name}"
-                is DomainResult.Failure -> _saveMessage.value = "✗ Image quality: ${r.error.message}"
-            }
-        }
-    }
+    // ═══════════════════════════════════════════════════════════════════════════
+    // LOCAL BACKUP
+    // ═══════════════════════════════════════════════════════════════════════════
 
     fun createLocalBackup(includeImages: Boolean) {
         viewModelScope.launch {
@@ -436,14 +478,21 @@ class SettingsViewModel @Inject constructor(
                 ?.filter { it.isFile && it.name.endsWith(".zip", ignoreCase = true) }
                 ?.sortedByDescending { it.lastModified() }
                 .orEmpty()
-
             _localBackups.value = files.map {
-                LocalBackup(
-                    name = it.name,
-                    path = it.absolutePath,
-                    sizeBytes = it.length(),
-                    lastModified = it.lastModified()
-                )
+                LocalBackup(it.name, it.absolutePath, it.length(), it.lastModified())
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // GOOGLE DRIVE
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    fun refreshDriveBackups() {
+        viewModelScope.launch {
+            when (val r = useCases.backup.listGoogleDriveBackups()) {
+                is DomainResult.Success -> _driveBackups.value = r.data.sortedByDescending { it.timestamp }
+                is DomainResult.Failure -> _backupMessage.value = "✗ Drive list failed: ${r.error.message}"
             }
         }
     }
@@ -454,10 +503,7 @@ class SettingsViewModel @Inject constructor(
                 .requestEmail()
                 .requestScopes(Scope(DriveScopes.DRIVE_FILE), Scope(DriveScopes.DRIVE_APPDATA))
                 .build()
-
-            val client = GoogleSignIn.getClient(context, gso)
-            launcher.launch(client.signInIntent)
-
+            launcher.launch(GoogleSignIn.getClient(context, gso).signInIntent)
         } catch (e: Exception) {
             _backupMessage.value = "✗ Failed to start sign in: ${e.message}"
         }
@@ -469,7 +515,6 @@ class SettingsViewModel @Inject constructor(
                 if (resultCode == Activity.RESULT_OK && data != null) {
                     val task = GoogleSignIn.getSignedInAccountFromIntent(data)
                     val account = task.getResult(ApiException::class.java)
-
                     if (account != null) {
                         when (val result = driveRepository.signIn()) {
                             is com.docs.scanner.domain.model.Result.Success -> {
@@ -480,9 +525,7 @@ class SettingsViewModel @Inject constructor(
                             is com.docs.scanner.domain.model.Result.Error -> {
                                 _backupMessage.value = "✗ Connection failed: ${result.exception.message}"
                             }
-                            else -> {
-                                _backupMessage.value = "✗ Connection failed"
-                            }
+                            else -> _backupMessage.value = "✗ Connection failed"
                         }
                     } else {
                         _backupMessage.value = "✗ No account selected"
@@ -502,25 +545,19 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _isBackingUp.value = true
             _backupMessage.value = "Creating backup..."
-
             try {
                 if (!driveRepository.isSignedIn()) {
                     _backupMessage.value = "✗ Not signed in to Google Drive"
-                    _isBackingUp.value = false
                     return@launch
                 }
-
                 val local = useCases.backup.createLocal(includeImages).getOrElse {
                     _backupMessage.value = "✗ Backup create failed: ${it.message}"
                     return@launch
                 }
-
                 _backupMessage.value = "Uploading to Drive..."
-                when (
-                    val upload = useCases.backup.uploadToGoogleDrive(localPath = local) { p ->
-                        _backupMessage.value = "Uploading… ${p.percent}%"
-                    }
-                ) {
+                when (val upload = useCases.backup.uploadToGoogleDrive(local) { p ->
+                    _backupMessage.value = "Uploading… ${p.percent}%"
+                }) {
                     is DomainResult.Success -> {
                         _backupMessage.value = "✓ Uploaded to Google Drive"
                         refreshDriveBackups()
@@ -539,32 +576,24 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _isBackingUp.value = true
             _backupMessage.value = "Downloading backup..."
-
             try {
                 if (!driveRepository.isSignedIn()) {
                     _backupMessage.value = "✗ Not signed in to Google Drive"
-                    _isBackingUp.value = false
                     return@launch
                 }
-
-                val localPath = when (
-                    val d = useCases.backup.downloadFromGoogleDrive(fileId) { p ->
-                        _backupMessage.value = "Downloading… ${p.percent}%"
-                    }
-                ) {
+                val localPath = when (val d = useCases.backup.downloadFromGoogleDrive(fileId) { p ->
+                    _backupMessage.value = "Downloading… ${p.percent}%"
+                }) {
                     is DomainResult.Success -> d.data
                     is DomainResult.Failure -> {
                         _backupMessage.value = "✗ Download failed: ${d.error.message}"
                         return@launch
                     }
                 }
-
                 _backupMessage.value = "Restoring..."
-                when (val r = useCases.backup.restoreFromLocal(localPath, merge = merge)) {
+                when (val r = useCases.backup.restoreFromLocal(localPath, merge)) {
                     is DomainResult.Success -> {
-                        _backupMessage.value =
-                            if (merge) "✓ Restore merged"
-                            else "✓ Restore completed! Restart app to apply changes."
+                        _backupMessage.value = if (merge) "✓ Restore merged" else "✓ Restore completed! Restart app."
                     }
                     is DomainResult.Failure -> _backupMessage.value = "✗ Restore failed: ${r.error.message}"
                 }
@@ -596,7 +625,6 @@ class SettingsViewModel @Inject constructor(
 
     fun signOutGoogleDrive() {
         viewModelScope.launch {
-            // Sign out from Google account used for Drive.
             runCatching {
                 val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                     .requestEmail()
@@ -604,7 +632,6 @@ class SettingsViewModel @Inject constructor(
                     .build()
                 GoogleSignIn.getClient(appContext, gso).signOut()
             }
-
             driveRepository.signOut()
             _driveEmail.value = null
             _driveBackups.value = emptyList()
@@ -612,8 +639,94 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private fun isValidApiKey(key: String): Boolean {
-        return key.matches(Regex("^AIza[A-Za-z0-9_-]{35}$"))
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ML KIT SETTINGS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    fun setMlkitScriptMode(mode: OcrScriptMode) {
+        viewModelScope.launch {
+            _mlkitSettings.update { it.copy(scriptMode = mode) }
+            val modeStr = when (mode) {
+                OcrScriptMode.AUTO -> "AUTO"
+                OcrScriptMode.LATIN -> "LATIN"
+                OcrScriptMode.CHINESE -> "CHINESE"
+                OcrScriptMode.JAPANESE -> "JAPANESE"
+                OcrScriptMode.KOREAN -> "KOREAN"
+                OcrScriptMode.DEVANAGARI -> "DEVANAGARI"
+            }
+            runCatching { settingsDataStore.setOcrLanguage(modeStr) }
+        }
+    }
+
+    fun setMlkitAutoDetect(enabled: Boolean) {
+        _mlkitSettings.update { it.copy(autoDetectLanguage = enabled) }
+    }
+
+    fun setMlkitConfidenceThreshold(threshold: Float) {
+        _mlkitSettings.update { it.copy(confidenceThreshold = threshold) }
+    }
+
+    fun setMlkitHighlightLowConfidence(enabled: Boolean) {
+        _mlkitSettings.update { it.copy(highlightLowConfidence = enabled) }
+    }
+
+    fun setMlkitShowWordConfidences(enabled: Boolean) {
+        _mlkitSettings.update { it.copy(showWordConfidences = enabled) }
+    }
+
+    fun setMlkitSelectedImage(uri: Uri?) {
+        _mlkitSettings.update { it.copy(selectedImageUri = uri) }
+    }
+
+    fun clearMlkitTestResult() {
+        _mlkitSettings.update { it.copy(testResult = null, testError = null) }
+    }
+
+    fun runMlkitOcrTest() {
+        val currentState = _mlkitSettings.value
+        val imageUri = currentState.selectedImageUri
+        if (imageUri == null) {
+            _mlkitSettings.update { it.copy(testError = "No image selected") }
+            return
+        }
+        viewModelScope.launch {
+            _mlkitSettings.update { it.copy(isTestRunning = true, testResult = null, testError = null) }
+            try {
+                Timber.d("🔍 Running OCR test with mode: ${currentState.scriptMode}")
+                when (val result = mlKitScanner.testOcr(
+                    uri = imageUri,
+                    scriptMode = currentState.scriptMode,
+                    autoDetectLanguage = currentState.autoDetectLanguage,
+                    confidenceThreshold = currentState.confidenceThreshold
+                )) {
+                    is DomainResult.Success -> {
+                        Timber.d("✅ OCR test success: ${result.data.totalWords} words")
+                        _mlkitSettings.update { it.copy(testResult = result.data, isTestRunning = false) }
+                    }
+                    is DomainResult.Failure -> {
+                        Timber.e("❌ OCR test failed: ${result.error.message}")
+                        _mlkitSettings.update { it.copy(testError = result.error.message, isTestRunning = false) }
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "❌ OCR test exception")
+                _mlkitSettings.update { it.copy(testError = "OCR failed: ${e.message}", isTestRunning = false) }
+            }
+        }
+    }
+
+    fun clearMlkitCache() {
+        viewModelScope.launch {
+            mlKitScanner.clearCache()
+            _saveMessage.value = "✓ MLKit cache cleared"
+        }
+    }
+
+    fun getAvailableScriptModes(): List<OcrScriptMode> = mlKitScanner.getAvailableScriptModes()
+
+    override fun onCleared() {
+        super.onCleared()
+        mlKitScanner.clearCache()
     }
 }
 
