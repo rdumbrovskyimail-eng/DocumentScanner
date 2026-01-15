@@ -49,8 +49,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import coil3.compose.AsyncImage     // ✅ CORRECT - Coil 3.x
+import coil3.request.ImageRequest   // ✅ CORRECT - Coil 3.x
 import com.docs.scanner.data.remote.mlkit.ConfidenceLevel
 import com.docs.scanner.data.remote.mlkit.OcrScriptMode
 import com.docs.scanner.data.remote.mlkit.OcrTestResult
