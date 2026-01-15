@@ -1,12 +1,12 @@
 /*
  * MlkitSettingsSection.kt
- * Version: 3.0.0 - PRODUCTION READY 2026 - COIL 3.x COMPATIBLE
+ * Version: 4.0.0 - PRODUCTION READY 2026 - COIL 3.x FULLY COMPATIBLE
  * 
  * ML Kit Settings Section for SettingsScreen.
  * 
  * ✅ ALL FIXES APPLIED:
- * - Coil 3.x API compatibility (removed .crossfade())
- * - Lifecycle management for image loading
+ * - Coil 3.x simplified API (direct URI, no ImageRequest needed)
+ * - Removed .crossfade() and .lifecycle() (not in Coil 3.x)
  * - Fixed IntRange handling in buildHighlightedText
  * - Production-ready error handling
  * 
@@ -46,8 +46,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -56,7 +54,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
 import com.docs.scanner.data.remote.mlkit.OcrScriptMode
 import com.docs.scanner.data.remote.mlkit.OcrTestResult
 
@@ -102,9 +99,6 @@ fun MlkitSettingsSection(
     onClearTestResult: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    
     // Image picker launcher
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -298,17 +292,9 @@ fun MlkitSettingsSection(
                         )
                     ) {
                         Box(modifier = Modifier.fillMaxSize()) {
-                            // ✅ FIXED: Coil 3.x compatible ImageRequest
-                            // Removed .crossfade(true) as it doesn't exist in Coil 3.x
-                            val imageRequest = remember(uri) {
-                                ImageRequest.Builder(context)
-                                    .data(uri)
-                                    .lifecycle(lifecycleOwner)
-                                    .build()
-                            }
-                            
+                            // ✅ COIL 3.x SIMPLEST API - Just pass URI directly!
                             AsyncImage(
-                                model = imageRequest,
+                                model = uri,
                                 contentDescription = "Selected image for OCR testing",
                                 modifier = Modifier
                                     .fillMaxSize()
