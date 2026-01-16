@@ -17,6 +17,7 @@
 
 package com.docs.scanner.domain.core
 
+import com.docs.scanner.domain.core.OcrSource
 import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.time.ZoneId
@@ -638,7 +639,8 @@ data class OcrResult(
     val text: String,
     val detectedLanguage: Language?,
     val confidence: Float?,
-    val processingTimeMs: Long
+    val processingTimeMs: Long,
+    val source: OcrSource = OcrSource.UNKNOWN
 )
 
 data class TranslationResult(
