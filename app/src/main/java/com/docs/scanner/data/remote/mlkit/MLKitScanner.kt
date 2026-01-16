@@ -334,89 +334,85 @@ class MLKitScanner @Inject constructor(
     }
 
     /**
-     * ⚠️ CRITICAL METHOD - PROPER BITMAP LIFECYCLE
+     * ⚠️ CRITICAL METHOD - PROPER BITMAP LIFECYCLE FOR ANDROID 16
      * 
      * This method ensures bitmap is NOT recycled before MLKit completes processing.
      * The bitmap must stay alive until .await() returns.
+     * 
+     * IMPORTANT: We recycle bitmap AFTER MLKit finishes, not before!
      */
     private suspend fun runOcr(uri: Uri, scriptMode: OcrScriptMode): Text = withContext(Dispatchers.IO) {
         coroutineContext.ensureActive()
         
-        // Load and prepare image - bitmap will be recycled inside loadImageSafe
-        val inputImage = loadImageSafe(uri)
+        // Load image and get BOTH InputImage and Bitmap
+        val (inputImage, bitmap) = loadImageSafe(uri)
         coroutineContext.ensureActive()
         
         // Get recognizer
         val recognizer = getRecognizer(scriptMode)
         coroutineContext.ensureActive()
         
-        // Process with MLKit - InputImage holds reference until completion
+        // Process with MLKit
         try {
-            recognizer.process(inputImage).await()
+            val result = recognizer.process(inputImage).await()
+            
+            // ✅ NOW it's safe to recycle - MLKit has finished processing
+            bitmap.recycle()
+            
+            result
         } catch (e: Exception) {
+            // Always recycle on error
+            bitmap.recycle()
             Timber.e(e, "❌ MLKit processing failed")
             throw e
         }
     }
 
     /**
-     * ✅ FIXED: Memory-safe image loading
+     * ⚠️ CRITICAL FIX for Android 16 + MLKit 19.1.0
      * 
-     * KEY CHANGES:
-     * 1. Bitmap is created from stream
-     * 2. InputImage.fromBitmap() creates INTERNAL COPY
-     * 3. We recycle original bitmap IMMEDIATELY after InputImage creation
-     * 4. MLKit works with its own copy - no lifecycle issues
+     * PROBLEM: InputImage.fromBitmap() does NOT create a copy on Android 16.
+     * It holds a REFERENCE to the original bitmap. If we recycle() immediately,
+     * MLKit crashes with "Called getConfig() on a recycle()'d bitmap!"
+     * 
+     * SOLUTION: Return both InputImage AND Bitmap, recycle AFTER processing.
      */
-    private suspend fun loadImageSafe(uri: Uri): InputImage = withContext(Dispatchers.IO) {
-        var bitmap: Bitmap? = null
-        
-        try {
-            // First pass - get dimensions
-            val options = BitmapFactory.Options().apply {
-                inJustDecodeBounds = true
-            }
-            
-            context.contentResolver.openInputStream(uri)?.use { stream ->
-                BitmapFactory.decodeStream(stream, null, options)
-            }
-            
-            // Calculate sample size
-            val sampleSize = calculateInSampleSize(
-                options.outWidth,
-                options.outHeight,
-                MAX_IMAGE_DIMENSION,
-                MAX_IMAGE_DIMENSION
-            )
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("📷 Image: ${options.outWidth}x${options.outHeight}, sample: $sampleSize")
-            }
-            
-            // Second pass - decode with sample size
-            options.inJustDecodeBounds = false
-            options.inSampleSize = sampleSize
-            options.inPreferredConfig = Bitmap.Config.ARGB_8888
-            
-            bitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
-                BitmapFactory.decodeStream(stream, null, options)
-            } ?: throw IOException("Failed to decode bitmap from URI")
-            
-            // Create InputImage - this creates INTERNAL COPY
-            val inputImage = InputImage.fromBitmap(bitmap, 0)
-            
-            // ✅ CRITICAL: Recycle original bitmap immediately
-            // MLKit has its own copy now, so this is safe
-            bitmap.recycle()
-            bitmap = null
-            
-            inputImage
-            
-        } catch (e: Exception) {
-            // Cleanup on error
-            bitmap?.recycle()
-            throw e
+    private suspend fun loadImageSafe(uri: Uri): Pair<InputImage, Bitmap> = withContext(Dispatchers.IO) {
+        // First pass - get dimensions
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
         }
+        
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, options)
+        }
+        
+        // Calculate sample size
+        val sampleSize = calculateInSampleSize(
+            options.outWidth,
+            options.outHeight,
+            MAX_IMAGE_DIMENSION,
+            MAX_IMAGE_DIMENSION
+        )
+        
+        if (BuildConfig.DEBUG) {
+            Timber.d("📷 Image: ${options.outWidth}x${options.outHeight}, sample: $sampleSize")
+        }
+        
+        // Second pass - decode with sample size
+        options.inJustDecodeBounds = false
+        options.inSampleSize = sampleSize
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888
+        
+        val bitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, options)
+        } ?: throw IOException("Failed to decode bitmap from URI")
+        
+        // Create InputImage - on Android 16, this DOES NOT COPY
+        val inputImage = InputImage.fromBitmap(bitmap, 0)
+        
+        // ⚠️ CRITICAL: Return BOTH so bitmap can be recycled AFTER processing
+        Pair(inputImage, bitmap)
     }
 
     /**
