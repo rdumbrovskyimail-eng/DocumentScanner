@@ -16,6 +16,7 @@
 
 package com.docs.scanner.presentation.screens.editor
 
+import androidx.compose.foundation.clickable
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
