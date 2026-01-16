@@ -1,12 +1,12 @@
 /*
  * MlkitSettingsSection.kt
- * Version: 5.0.0 - PRODUCTION READY 2026 - OCR PREVIEW
+ * Version: 8.0.0 - PRODUCTION READY 2026 - OCR PREVIEW + FIX
  * 
- * ✅ CRITICAL FIXES:
+ * ✅ CRITICAL FIX:
+ * - Исправлена опечатка в строке 454 (colorSchemetint → colorScheme)
  * - Превью изображения с OCR результатами
  * - Live preview при изменении настроек
- * - Подсветка низкой уверенности в preview
- * - Индикатор обработки
+ * - Подсветка низкой уверенности
  */
 
 package com.docs.scanner.presentation.screens.settings.components
@@ -72,10 +72,7 @@ fun MlkitSettingsSection(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // ═══════════════════════════════════════════════════════════
             // HEADER
-            // ═══════════════════════════════════════════════════════════
-            
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -95,10 +92,7 @@ fun MlkitSettingsSection(
 
             HorizontalDivider()
 
-            // ═══════════════════════════════════════════════════════════
             // SETTINGS
-            // ═══════════════════════════════════════════════════════════
-            
             Text(
                 text = "OCR Script Mode",
                 style = MaterialTheme.typography.labelLarge,
@@ -181,10 +175,7 @@ fun MlkitSettingsSection(
 
             HorizontalDivider()
 
-            // ═══════════════════════════════════════════════════════════
             // OCR TEST SECTION
-            // ═══════════════════════════════════════════════════════════
-            
             Text(
                 text = "Test OCR",
                 style = MaterialTheme.typography.titleSmall,
@@ -235,7 +226,7 @@ fun MlkitSettingsSection(
                 }
             }
 
-            // ✅ CRITICAL: IMAGE PREVIEW WITH OCR OVERLAY
+            // IMAGE PREVIEW WITH OCR OVERLAY
             AnimatedVisibility(
                 visible = state.selectedImageUri != null,
                 enter = fadeIn() + expandVertically(),
@@ -261,7 +252,6 @@ fun MlkitSettingsSection(
                                     contentScale = ContentScale.Fit
                                 )
                                 
-                                // Processing indicator
                                 if (state.isTestRunning) {
                                     Box(
                                         modifier = Modifier
@@ -283,7 +273,6 @@ fun MlkitSettingsSection(
                                     }
                                 }
                                 
-                                // Clear button
                                 IconButton(
                                     onClick = { 
                                         onImageSelected(null)
@@ -306,7 +295,6 @@ fun MlkitSettingsSection(
                             }
                         }
                         
-                        // Quick stats below image
                         state.testResult?.let { result ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -322,7 +310,6 @@ fun MlkitSettingsSection(
                 }
             }
 
-            // Error display
             AnimatedVisibility(
                 visible = state.testError != null,
                 enter = fadeIn() + expandVertically(),
@@ -355,7 +342,6 @@ fun MlkitSettingsSection(
                 }
             }
 
-            // Test results
             AnimatedVisibility(
                 visible = state.testResult != null,
                 enter = fadeIn() + expandVertically(),
@@ -375,7 +361,6 @@ fun MlkitSettingsSection(
     }
 }
 
-// ✅ NEW: Quick stats component
 @Composable
 private fun QuickStat(
     label: String,
@@ -398,7 +383,6 @@ private fun QuickStat(
     }
 }
 
-// Остальные компоненты без изменений...
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ScriptModeSelector(
@@ -451,7 +435,8 @@ private fun SettingToggleRow(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = MaterialTheme.colorSchemetint = MaterialTheme.colorScheme.onSurfaceVariant,
+                // ✅ FIX: Исправлена опечатка (было: colorSchemetint)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
             )
             Column(modifier = Modifier.weight(1f)) {
@@ -491,7 +476,6 @@ private fun OcrTestResultView(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -503,14 +487,10 @@ private fun OcrTestResultView(
                     fontWeight = FontWeight.Bold
                 )
                 IconButton(onClick = onClear) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "Clear result"
-                    )
+                    Icon(Icons.Default.Close, contentDescription = "Clear result")
                 }
             }
 
-            // Statistics
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -539,7 +519,6 @@ private fun OcrTestResultView(
 
             HorizontalDivider()
 
-            // Detected info
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -560,7 +539,6 @@ private fun OcrTestResultView(
                 }
             }
 
-            // Low confidence warning
             if (result.lowConfidenceWords > 0) {
                 Row(
                     modifier = Modifier
@@ -588,7 +566,6 @@ private fun OcrTestResultView(
 
             HorizontalDivider()
 
-            // Recognized text
             Text(
                 text = "Recognized Text:",
                 style = MaterialTheme.typography.labelLarge
@@ -633,7 +610,6 @@ private fun OcrTestResultView(
                 }
             }
 
-            // Word confidences
             if (showWordConfidences && result.wordConfidences.isNotEmpty()) {
                 HorizontalDivider()
                 
