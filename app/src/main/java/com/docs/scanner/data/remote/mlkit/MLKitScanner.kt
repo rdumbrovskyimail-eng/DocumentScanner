@@ -1,19 +1,18 @@
 /*
  * MLKitScanner.kt
- * Version: 10.0.0 - PRODUCTION READY 2026 - MEMORY-SAFE
+ * Version: 11.0.0 - PRODUCTION READY 2026 - MEMORY-SAFE + SYNCHRONIZED
  * 
- * ✅ CRITICAL FIXES APPLIED:
- * - Fixed bitmap recycling before MLKit completion (ROOT CAUSE)
- * - Memory-safe bitmap handling with proper lifecycle
- * - Thread-safe operations with proper synchronization
- * - Zero memory leaks with guaranteed cleanup
- * - Optimized performance with intelligent caching
- * 
- * ✅ STABILITY GUARANTEES:
- * - No premature bitmap recycling
+ * ✅ CRITICAL FIXES:
+ * - Fixed bitmap recycling AFTER MLKit completion (ROOT CAUSE)
  * - Proper async/await handling
- * - Exception-safe resource cleanup
- * - Cancellation-safe operations
+ * - Thread-safe recognizer cache with Mutex
+ * - Memory optimization for Android 16
+ * - DataStore integration for global settings
+ * 
+ * ✅ SYNCHRONIZATION:
+ * - Reads OCR mode from DataStore (single source of truth)
+ * - Applied to ALL new documents in Editor
+ * - Settings → DataStore → MLKitScanner → Editor
  */
 
 package com.docs.scanner.data.remote.mlkit
@@ -60,6 +59,11 @@ import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+/**
+ * Режимы распознавания текста MLKit.
+ * 
+ * Каждый режим оптимизирован для определённых скриптов.
+ */
 enum class OcrScriptMode(
     val displayName: String,
     val description: String,
@@ -73,6 +77,9 @@ enum class OcrScriptMode(
     DEVANAGARI("Devanagari", "Hindi, Marathi, Nepali", listOf("hi", "mr", "ne"))
 }
 
+/**
+ * Уровни уверенности для слов.
+ */
 enum class ConfidenceLevel(val minConfidence: Float, val color: Long) {
     HIGH(0.9f, 0xFF4CAF50),
     MEDIUM(0.7f, 0xFFFF9800),
@@ -80,6 +87,9 @@ enum class ConfidenceLevel(val minConfidence: Float, val color: Long) {
     VERY_LOW(0f, 0xFF9C27B0)
 }
 
+/**
+ * Слово с информацией о уверенности.
+ */
 data class WordWithConfidence(
     val text: String,
     val confidence: Float,
@@ -91,6 +101,9 @@ data class WordWithConfidence(
     val needsReview: Boolean get() = confidenceLevel in listOf(ConfidenceLevel.LOW, ConfidenceLevel.VERY_LOW)
 }
 
+/**
+ * Результат OCR с детальной статистикой.
+ */
 data class OcrResultWithConfidence(
     val text: String,
     val detectedLanguage: Language?,
@@ -107,6 +120,9 @@ data class OcrResultWithConfidence(
         else (words.count { it.confidenceLevel == ConfidenceLevel.HIGH } * 100f / words.size)
 }
 
+/**
+ * Результат теста OCR для Settings UI.
+ */
 data class OcrTestResult(
     val text: String,
     val detectedLanguage: Language?,
@@ -129,6 +145,15 @@ data class OcrTestResult(
     }
 }
 
+/**
+ * ✅ MAIN OCR ENGINE - Thread-safe, Memory-safe, DataStore-synchronized.
+ * 
+ * Этот класс отвечает за:
+ * 1. Чтение настроек из DataStore (global settings)
+ * 2. Управление MLKit recognizers (cache + thread-safety)
+ * 3. Обработку изображений с оптимизацией памяти
+ * 4. Возврат результатов с детальной статистикой
+ */
 @Singleton
 class MLKitScanner @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -140,24 +165,45 @@ class MLKitScanner @Inject constructor(
         private const val DEFAULT_CONFIDENCE_THRESHOLD = 0.7f
         private const val LANGUAGE_DETECTION_MIN_TEXT_LENGTH = 20
         
-        // Memory optimization settings
-        private const val BITMAP_QUALITY = 90 // JPEG quality for compression
+        // Memory optimization
+        private const val BITMAP_QUALITY = 90
         private const val MIN_SAMPLE_SIZE = 1
         private const val MAX_SAMPLE_SIZE = 8
     }
 
+    // Thread-safe recognizer cache
     private val recognizerLock = Mutex()
     private var cachedRecognizer: TextRecognizer? = null
     private var cachedScriptMode: OcrScriptMode? = null
 
-    // ══════════════════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════════════
     // PUBLIC API
-    // ══════════════════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════════════
 
+    /**
+     * ✅ MAIN METHOD: Распознаёт текст из изображения.
+     * 
+     * Используется в Editor при добавлении документов.
+     * Читает настройки из DataStore (global settings).
+     * 
+     * @param uri URI изображения
+     * @return OcrResult с текстом и метаданными
+     */
     suspend fun recognizeText(uri: Uri): DomainResult<OcrResult> {
         val start = System.currentTimeMillis()
+        
+        if (BuildConfig.DEBUG) {
+            Timber.d("🔍 Starting OCR recognition")
+            Timber.d("   └─ Reading settings from DataStore...")
+        }
+        
         return try {
             val result = runOcrWithAutoDetect(uri)
+            
+            if (BuildConfig.DEBUG) {
+                Timber.d("✅ OCR completed: ${result.text.length} chars, ${result.processingTimeMs}ms")
+            }
+            
             DomainResult.Success(
                 OcrResult(
                     text = result.text,
@@ -174,6 +220,9 @@ class MLKitScanner @Inject constructor(
         }
     }
 
+    /**
+     * Распознаёт текст с детальной информацией (blocks, lines, confidence).
+     */
     suspend fun recognizeTextDetailed(uri: Uri): DomainResult<DetailedOcrResult> {
         val start = System.currentTimeMillis()
         return try {
@@ -197,6 +246,9 @@ class MLKitScanner @Inject constructor(
         }
     }
 
+    /**
+     * Распознаёт текст с информацией о уверенности для каждого слова.
+     */
     suspend fun recognizeTextWithConfidence(uri: Uri): DomainResult<OcrResultWithConfidence> {
         val start = System.currentTimeMillis()
         return try {
@@ -210,6 +262,9 @@ class MLKitScanner @Inject constructor(
         }
     }
 
+    /**
+     * Распознаёт текст с явно указанным режимом скрипта.
+     */
     suspend fun recognizeTextWithScript(
         uri: Uri,
         scriptMode: OcrScriptMode
@@ -227,6 +282,9 @@ class MLKitScanner @Inject constructor(
         }
     }
 
+    /**
+     * Определяет язык изображения.
+     */
     suspend fun detectLanguage(uri: Uri): DomainResult<Language> = withContext(Dispatchers.IO) {
         try {
             val textResult = runOcr(uri, OcrScriptMode.LATIN)
@@ -246,6 +304,12 @@ class MLKitScanner @Inject constructor(
         }
     }
 
+    /**
+     * ✅ TEST METHOD: Запускает OCR тест с кастомными параметрами.
+     * 
+     * Используется в Settings для диагностики.
+     * НЕ сохраняет настройки - только для preview.
+     */
     suspend fun testOcr(
         uri: Uri,
         scriptMode: OcrScriptMode,
@@ -253,15 +317,19 @@ class MLKitScanner @Inject constructor(
         confidenceThreshold: Float
     ): DomainResult<OcrTestResult> {
         val start = System.currentTimeMillis()
+        
+        if (BuildConfig.DEBUG) {
+            Timber.d("🧪 Starting OCR test")
+            Timber.d("   ├─ Mode: $scriptMode")
+            Timber.d("   ├─ Auto-detect: $autoDetectLanguage")
+            Timber.d("   └─ Threshold: ${(confidenceThreshold * 100).toInt()}%")
+        }
+        
         return try {
             val effectiveMode = if (autoDetectLanguage && scriptMode == OcrScriptMode.AUTO) {
                 detectScriptFromImage(uri) ?: OcrScriptMode.LATIN
             } else {
                 scriptMode
-            }
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("🔍 Testing OCR: mode=$effectiveMode, threshold=$confidenceThreshold")
             }
             
             val textResult = runOcr(uri, effectiveMode)
@@ -293,71 +361,110 @@ class MLKitScanner @Inject constructor(
         }
     }
 
+    /**
+     * Возвращает список доступных режимов OCR.
+     */
     fun getAvailableScriptModes(): List<OcrScriptMode> = OcrScriptMode.entries
 
+    /**
+     * Очищает cache recognizers (освобождает память).
+     */
     suspend fun clearCache() {
         recognizerLock.withLock {
             cachedRecognizer?.close()
             cachedRecognizer = null
             cachedScriptMode = null
+            
             if (BuildConfig.DEBUG) {
-                Timber.d("🧹 Cache cleared")
+                Timber.d("🧹 Recognizer cache cleared")
             }
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════
-    // CORE OCR ENGINE - MEMORY-SAFE IMPLEMENTATION
-    // ══════════════════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════════════
+    // ✅ CORE OCR ENGINE - SYNCHRONIZED WITH DATASTORE
+    // ══════════════════════════════════════════════════════════════════════════
 
+    /**
+     * ✅ CRITICAL: Запускает OCR с настройками из DataStore.
+     * 
+     * Это главный метод, который читает глобальные настройки
+     * и применяет их к распознаванию.
+     */
     private suspend fun runOcrWithAutoDetect(uri: Uri): OcrResultWithConfidence = withContext(Dispatchers.IO) {
         coroutineContext.ensureActive()
         
+        // ✅ CRITICAL: Читаем настройки из DataStore (global settings)
         val scriptMode = getPreferredScriptMode()
         coroutineContext.ensureActive()
         
+        if (BuildConfig.DEBUG) {
+            Timber.d("📝 OCR mode from DataStore: $scriptMode")
+        }
+        
+        // Определяем effective mode (с учётом auto-detect)
         val effectiveMode = if (scriptMode == OcrScriptMode.AUTO) {
-            detectScriptFromImage(uri) ?: OcrScriptMode.LATIN
+            val detected = detectScriptFromImage(uri)
+            if (BuildConfig.DEBUG && detected != null) {
+                Timber.d("   └─ Auto-detected: $detected")
+            }
+            detected ?: OcrScriptMode.LATIN
         } else {
             scriptMode
         }
         
         coroutineContext.ensureActive()
+        
         if (BuildConfig.DEBUG) {
-            Timber.d("🔍 Using script mode: $effectiveMode")
+            Timber.d("🔍 Using OCR mode: $effectiveMode")
         }
         
+        // Запускаем OCR
         val textResult = runOcr(uri, effectiveMode)
         coroutineContext.ensureActive()
         
+        // Обрабатываем результат
         processTextResult(textResult, effectiveMode)
     }
 
     /**
      * ⚠️ CRITICAL METHOD - PROPER BITMAP LIFECYCLE FOR ANDROID 16
      * 
-     * This method ensures bitmap is NOT recycled before MLKit completes processing.
-     * The bitmap must stay alive until .await() returns.
+     * ВАЖНО: Bitmap НЕ recycled до завершения MLKit обработки!
      * 
-     * IMPORTANT: We recycle bitmap AFTER MLKit finishes, not before!
+     * На Android 16 + MLKit 19.1.0:
+     * - InputImage.fromBitmap() НЕ создаёт копию
+     * - Держит REFERENCE на original bitmap
+     * - Если recycle() раньше времени → crash "bitmap recycled"
+     * 
+     * РЕШЕНИЕ: Recycle ПОСЛЕ .await()
      */
     private suspend fun runOcr(uri: Uri, scriptMode: OcrScriptMode): Text = withContext(Dispatchers.IO) {
         coroutineContext.ensureActive()
         
-        // Load image and get BOTH InputImage and Bitmap
+        // ✅ STEP 1: Load image (returns BOTH InputImage AND Bitmap)
         val (inputImage, bitmap) = loadImageSafe(uri)
         coroutineContext.ensureActive()
         
-        // Get recognizer
+        // ✅ STEP 2: Get recognizer
         val recognizer = getRecognizer(scriptMode)
         coroutineContext.ensureActive()
         
-        // Process with MLKit
+        // ✅ STEP 3: Process with MLKit
         try {
+            if (BuildConfig.DEBUG) {
+                Timber.d("⚙️ Processing with ${scriptMode.displayName} recognizer...")
+            }
+            
+            // Wait for MLKit to finish
             val result = recognizer.process(inputImage).await()
             
-            // ✅ NOW it's safe to recycle - MLKit has finished processing
+            // ✅ NOW it's safe to recycle - MLKit has finished
             bitmap.recycle()
+            
+            if (BuildConfig.DEBUG) {
+                Timber.d("✅ MLKit processing complete")
+            }
             
             result
         } catch (e: Exception) {
@@ -369,13 +476,13 @@ class MLKitScanner @Inject constructor(
     }
 
     /**
-     * ⚠️ CRITICAL FIX for Android 16 + MLKit 19.1.0
+     * ✅ CRITICAL FIX for Android 16 + MLKit 19.1.0
      * 
-     * PROBLEM: InputImage.fromBitmap() does NOT create a copy on Android 16.
-     * It holds a REFERENCE to the original bitmap. If we recycle() immediately,
-     * MLKit crashes with "Called getConfig() on a recycle()'d bitmap!"
+     * PROBLEM: InputImage.fromBitmap() does NOT create a copy.
+     * If we recycle() immediately, MLKit crashes.
      * 
-     * SOLUTION: Return both InputImage AND Bitmap, recycle AFTER processing.
+     * SOLUTION: Return BOTH InputImage AND Bitmap.
+     * Recycle AFTER processing completes.
      */
     private suspend fun loadImageSafe(uri: Uri): Pair<InputImage, Bitmap> = withContext(Dispatchers.IO) {
         // First pass - get dimensions
@@ -396,7 +503,8 @@ class MLKitScanner @Inject constructor(
         )
         
         if (BuildConfig.DEBUG) {
-            Timber.d("📷 Image: ${options.outWidth}x${options.outHeight}, sample: $sampleSize")
+            Timber.d("📷 Image: ${options.outWidth}x${options.outHeight}")
+            Timber.d("   └─ Sample size: $sampleSize")
         }
         
         // Second pass - decode with sample size
@@ -416,8 +524,7 @@ class MLKitScanner @Inject constructor(
     }
 
     /**
-     * Calculate optimal sample size for downscaling.
-     * Uses power-of-2 for optimal BitmapFactory performance.
+     * Calculate optimal sample size (power-of-2).
      */
     private fun calculateInSampleSize(
         width: Int,
@@ -442,7 +549,37 @@ class MLKitScanner @Inject constructor(
     }
 
     /**
-     * Thread-safe recognizer cache.
+     * ✅ CRITICAL: Читает предпочитаемый режим OCR из DataStore.
+     * 
+     * Это единственный источник истины для настроек OCR.
+     * Settings → DataStore → MLKitScanner → Editor
+     */
+    private suspend fun getPreferredScriptMode(): OcrScriptMode = withContext(Dispatchers.IO) {
+        try {
+            val mode = settingsDataStore.ocrLanguage.first().trim().uppercase()
+            
+            val scriptMode = when (mode) {
+                "LATIN" -> OcrScriptMode.LATIN
+                "CHINESE" -> OcrScriptMode.CHINESE
+                "JAPANESE" -> OcrScriptMode.JAPANESE
+                "KOREAN" -> OcrScriptMode.KOREAN
+                "DEVANAGARI" -> OcrScriptMode.DEVANAGARI
+                else -> OcrScriptMode.AUTO
+            }
+            
+            if (BuildConfig.DEBUG) {
+                Timber.d("📖 Read OCR mode from DataStore: $mode → $scriptMode")
+            }
+            
+            scriptMode
+        } catch (e: Exception) {
+            Timber.w(e, "⚠️ Failed to read OCR mode from DataStore, using AUTO")
+            OcrScriptMode.AUTO
+        }
+    }
+
+    /**
+     * Thread-safe recognizer cache with Mutex.
      */
     private suspend fun getRecognizer(scriptMode: OcrScriptMode): TextRecognizer = recognizerLock.withLock {
         if (cachedScriptMode == scriptMode && cachedRecognizer != null) {
@@ -452,8 +589,10 @@ class MLKitScanner @Inject constructor(
             return@withLock cachedRecognizer!!
         }
         
+        // Close old recognizer
         cachedRecognizer?.close()
         
+        // Create new recognizer
         val recognizer = when (scriptMode) {
             OcrScriptMode.AUTO, OcrScriptMode.LATIN -> 
                 TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -471,32 +610,19 @@ class MLKitScanner @Inject constructor(
         cachedScriptMode = scriptMode
         
         if (BuildConfig.DEBUG) {
-            Timber.d("✨ Created recognizer: $scriptMode")
+            Timber.d("✨ Created new recognizer: $scriptMode")
         }
         
         recognizer
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════════════
     // HELPER METHODS
-    // ══════════════════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════════════
 
-    private suspend fun getPreferredScriptMode(): OcrScriptMode = withContext(Dispatchers.IO) {
-        try {
-            when (settingsDataStore.ocrLanguage.first().trim().uppercase()) {
-                "LATIN" -> OcrScriptMode.LATIN
-                "CHINESE" -> OcrScriptMode.CHINESE
-                "JAPANESE" -> OcrScriptMode.JAPANESE
-                "KOREAN" -> OcrScriptMode.KOREAN
-                "DEVANAGARI" -> OcrScriptMode.DEVANAGARI
-                else -> OcrScriptMode.AUTO
-            }
-        } catch (e: Exception) {
-            Timber.w(e, "Failed to read OCR preference")
-            OcrScriptMode.AUTO
-        }
-    }
-
+    /**
+     * Определяет скрипт из содержимого изображения.
+     */
     private suspend fun detectScriptFromImage(uri: Uri): OcrScriptMode? = withContext(Dispatchers.IO) {
         try {
             coroutineContext.ensureActive()
@@ -540,6 +666,9 @@ class MLKitScanner @Inject constructor(
         }
     }
 
+    /**
+     * Определяет язык из текста с помощью ML Kit Language ID.
+     */
     private suspend fun detectLanguageFromText(text: String): Language? = withContext(Dispatchers.IO) {
         val trimmed = text.trim()
         if (trimmed.length < LANGUAGE_DETECTION_MIN_TEXT_LENGTH) {
@@ -575,6 +704,9 @@ class MLKitScanner @Inject constructor(
         }
     }
 
+    /**
+     * Обрабатывает результат MLKit Text в OcrResultWithConfidence.
+     */
     private fun processTextResult(textResult: Text, scriptMode: OcrScriptMode): OcrResultWithConfidence {
         val words = mutableListOf<WordWithConfidence>()
         var currentIndex = 0
@@ -639,6 +771,9 @@ class MLKitScanner @Inject constructor(
         )
     }
 
+    /**
+     * Классифицирует уровень уверенности.
+     */
     private fun classifyConfidence(confidence: Float): ConfidenceLevel = when {
         confidence >= ConfidenceLevel.HIGH.minConfidence -> ConfidenceLevel.HIGH
         confidence >= ConfidenceLevel.MEDIUM.minConfidence -> ConfidenceLevel.MEDIUM
@@ -646,6 +781,9 @@ class MLKitScanner @Inject constructor(
         else -> ConfidenceLevel.VERY_LOW
     }
 
+    /**
+     * Вычисляет общую уверенность из всех элементов.
+     */
     private fun calculateOverallConfidence(textResult: Text): Float {
         val confidences = textResult.textBlocks
             .flatMap { it.lines }
@@ -680,6 +818,9 @@ private fun android.graphics.Rect.toDomain(): BoundingBox = BoundingBox(
     bottom = bottom
 )
 
+/**
+ * Suspend extension для Google Tasks API.
+ */
 private suspend fun <T> com.google.android.gms.tasks.Task<T>.await(): T =
     suspendCancellableCoroutine { cont ->
         addOnSuccessListener { 
