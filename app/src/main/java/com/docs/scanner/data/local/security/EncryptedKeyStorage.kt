@@ -10,6 +10,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+// ✅ NEW IMPORTS (added for multi-key system)
+import com.docs.scanner.data.local.security.ApiKeyEntry
+import com.docs.scanner.data.local.security.ApiKeyEntrySerializer
 
 /**
  * Encrypted storage for Gemini API keys using EncryptedSharedPreferences.
@@ -23,6 +26,9 @@ import javax.inject.Singleton
  * - 🟠 Серьёзная #3: Improved API key validation
  * - 🔒 SEC-1: Removed exception messages that could leak key data
  * - 🟡 #1: Replaced println() with Timber
+ * 
+ * 2026 Enhancement:
+ * - Added multi-key failover system (ApiKeyEntry)
  */
 @Singleton
 class EncryptedKeyStorage @Inject constructor(
@@ -43,6 +49,9 @@ class EncryptedKeyStorage @Inject constructor(
     companion object {
         private const val KEY_ACTIVE_API_KEY = "active_api_key"
         private const val KEY_API_KEYS_JSON = "api_keys_json"
+        
+        // ✅ NEW: Multi-key storage constant
+        private const val KEY_API_KEYS_LIST = "gemini_api_keys_list"
         
         // Validation constants
         private const val MIN_KEY_LENGTH = 35 // Gemini keys are typically 39 chars
@@ -253,6 +262,197 @@ class EncryptedKeyStorage @Inject constructor(
             Timber.e(e, "❌ Failed to serialize API keys")
             "[]"
         }
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // MULTI-KEY MANAGEMENT (2026)
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Gets all stored API keys with their metadata.
+     */
+    fun getAllApiKeys(): List<ApiKeyEntry> {
+        return try {
+            val data = encryptedPrefs.getString(KEY_API_KEYS_LIST, null)
+            if (data.isNullOrBlank()) {
+                // Migration: check for single legacy key
+                val legacyKey = getActiveApiKey()
+                if (!legacyKey.isNullOrBlank()) {
+                    val entry = ApiKeyEntry(key = legacyKey, label = "Primary")
+                    saveAllApiKeys(listOf(entry))
+                    return listOf(entry)
+                }
+                emptyList()
+            } else {
+                ApiKeyEntrySerializer.deserialize(data)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to get API keys list")
+            emptyList()
+        }
+    }
+    
+    /**
+     * Saves all API keys (replaces existing list).
+     */
+    private fun saveAllApiKeys(entries: List<ApiKeyEntry>) {
+        try {
+            val data = ApiKeyEntrySerializer.serialize(entries)
+            encryptedPrefs.edit().putString(KEY_API_KEYS_LIST, data).apply()
+            
+            // Also update legacy single key for backward compatibility
+            if (entries.isNotEmpty()) {
+                val primary = entries.firstOrNull { it.isActive } ?: entries.first()
+                setActiveApiKey(primary.key)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to save API keys list")
+        }
+    }
+    
+    /**
+     * Adds a new API key to the list.
+     * 
+     * @param key The API key string
+     * @param label User-friendly label
+     * @return true if added successfully
+     */
+    fun addApiKey(key: String, label: String = ""): Boolean {
+        if (key.isBlank()) return false
+        
+        val existing = getAllApiKeys()
+        
+        // Check for duplicates
+        if (existing.any { it.key == key }) {
+            Timber.w("API key already exists")
+            return false
+        }
+        
+        // Max 5 keys
+        if (existing.size >= 5) {
+            Timber.w("Maximum 5 API keys allowed")
+            return false
+        }
+        
+        val newEntry = ApiKeyEntry(
+            key = key,
+            label = label.ifBlank { "Key ${existing.size + 1}" }
+        )
+        
+        saveAllApiKeys(existing + newEntry)
+        Timber.i("✅ API key added: ${newEntry.maskedKey}")
+        return true
+    }
+    
+    /**
+     * Removes an API key from the list.
+     */
+    fun removeApiKey(key: String): Boolean {
+        val existing = getAllApiKeys()
+        val updated = existing.filter { it.key != key }
+        
+        if (updated.size == existing.size) {
+            return false // Key not found
+        }
+        
+        saveAllApiKeys(updated)
+        Timber.i("🗑️ API key removed")
+        return true
+    }
+    
+    /**
+     * Updates key statistics after successful use.
+     */
+    fun updateKeySuccess(key: String) {
+        val existing = getAllApiKeys()
+        val updated = existing.map { entry ->
+            if (entry.key == key) {
+                entry.copy(
+                    lastUsedAt = System.currentTimeMillis(),
+                    errorCount = 0 // Reset errors on success
+                )
+            } else entry
+        }
+        saveAllApiKeys(updated)
+    }
+    
+    /**
+     * Updates key statistics after error.
+     */
+    fun updateKeyError(key: String) {
+        val existing = getAllApiKeys()
+        val updated = existing.map { entry ->
+            if (entry.key == key) {
+                entry.copy(
+                    lastErrorAt = System.currentTimeMillis(),
+                    errorCount = entry.errorCount + 1
+                )
+            } else entry
+        }
+        saveAllApiKeys(updated)
+    }
+    
+    /**
+     * Deactivates a key (won't be used until reactivated).
+     */
+    fun deactivateKey(key: String) {
+        val existing = getAllApiKeys()
+        val updated = existing.map { entry ->
+            if (entry.key == key) {
+                entry.copy(isActive = false)
+            } else entry
+        }
+        saveAllApiKeys(updated)
+        Timber.w("⚠️ API key deactivated: ${key.takeLast(8)}")
+    }
+    
+    /**
+     * Reactivates a previously deactivated key.
+     */
+    fun reactivateKey(key: String) {
+        val existing = getAllApiKeys()
+        val updated = existing.map { entry ->
+            if (entry.key == key) {
+                entry.copy(isActive = true, errorCount = 0)
+            } else entry
+        }
+        saveAllApiKeys(updated)
+    }
+    
+    /**
+     * Resets error counts for all keys.
+     */
+    fun resetAllKeyErrors() {
+        val existing = getAllApiKeys()
+        val updated = existing.map { entry ->
+            entry.copy(errorCount = 0, lastErrorAt = null, isActive = true)
+        }
+        saveAllApiKeys(updated)
+        Timber.i("🔄 All API key errors reset")
+    }
+    
+    /**
+     * Sets a key as primary (moves to first position).
+     */
+    fun setKeyAsPrimary(key: String) {
+        val existing = getAllApiKeys()
+        val target = existing.find { it.key == key } ?: return
+        val others = existing.filter { it.key != key }
+        saveAllApiKeys(listOf(target) + others)
+        
+        // Update legacy single key
+        setActiveApiKey(key)
+    }
+    
+    /**
+     * Updates label for a key.
+     */
+    fun updateKeyLabel(key: String, newLabel: String) {
+        val existing = getAllApiKeys()
+        val updated = existing.map { entry ->
+            if (entry.key == key) entry.copy(label = newLabel) else entry
+        }
+        saveAllApiKeys(updated)
     }
 }
 
