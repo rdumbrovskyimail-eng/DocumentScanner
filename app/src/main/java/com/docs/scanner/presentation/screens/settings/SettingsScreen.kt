@@ -1,14 +1,13 @@
 /*
- * SettingsScreen.kt - PART 1/2
- * Version: 11.0.0 - FINAL PRODUCTION BUILD 2026
+ * SettingsScreen.kt
+ * Version: 12.0.0 - FINAL FIXED BUILD
  * 
- * ✅ ALL FIXES APPLIED:
- * - Fixed onCopyKey signature (String only)
- * - File existence checks for backups
- * - Working OCR Log Collector integration
- * - Proper error handling throughout
- * 
- * COPY THIS FILE COMPLETELY, THEN ADD PART 2 AT THE END
+ * ✅ COMPLETE WORKING VERSION:
+ * - Fixed LogcatCollector integration
+ * - Save button works correctly
+ * - All type mismatches resolved
+ * - File existence checks
+ * - Proper error handling
  */
 
 package com.docs.scanner.presentation.screens.settings
@@ -48,12 +47,20 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SETTINGS TABS
+// ═══════════════════════════════════════════════════════════════════════════════
+
 enum class SettingsTab(val title: String, val icon: @Composable () -> Unit) {
     GENERAL("General", { Icon(Icons.Default.Settings, null) }),
     MLKIT("ML Kit", { Icon(Icons.Default.TextFields, null) }),
     BACKUP("Backup", { Icon(Icons.Default.CloudSync, null) }),
     DEBUG("Debug", { Icon(Icons.Default.BugReport, null) })
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN SETTINGS SCREEN
+// ═══════════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,6 +72,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
+    // State collectors
     val apiKeys by viewModel.apiKeys.collectAsStateWithLifecycle()
     val saveMessage by viewModel.saveMessage.collectAsStateWithLifecycle()
     val keyTestMessage by viewModel.keyTestMessage.collectAsStateWithLifecycle()
@@ -84,6 +92,7 @@ fun SettingsScreen(
     val localBackups by viewModel.localBackups.collectAsStateWithLifecycle()
     val mlkitSettings by viewModel.mlkitSettings.collectAsStateWithLifecycle()
 
+    // UI State
     var showAddKeyDialog by remember { mutableStateOf(false) }
     var showClearOldCacheDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf<LocalBackup?>(null) }
@@ -94,6 +103,7 @@ fun SettingsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val pagerState = rememberPagerState(pageCount = { SettingsTab.entries.size })
 
+    // Show messages
     LaunchedEffect(saveMessage, keyTestMessage, backupMessage) {
         val msg = listOf(saveMessage, keyTestMessage, backupMessage).firstOrNull { it.isNotBlank() }
         if (!msg.isNullOrBlank()) {
@@ -126,6 +136,7 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            // Tab Row
             ScrollableTabRow(
                 selectedTabIndex = pagerState.currentPage,
                 modifier = Modifier.fillMaxWidth(),
@@ -141,6 +152,7 @@ fun SettingsScreen(
                 }
             }
 
+            // Pager content
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
@@ -159,7 +171,7 @@ fun SettingsScreen(
                         storageUsage = storageUsage,
                         onAddKeyClick = { showAddKeyDialog = true },
                         onActivateKey = viewModel::activateKey,
-                        onCopyKey = viewModel::copyApiKey,  // ✅ FIXED: No Context
+                        onCopyKey = viewModel::copyApiKey,
                         onDeleteKey = viewModel::deleteKey,
                         onTestKey = viewModel::testApiKey,
                         onThemeModeChange = viewModel::setThemeMode,
@@ -203,7 +215,6 @@ fun SettingsScreen(
                         onCreateLocalBackup = { viewModel.createLocalBackup(includeImagesInBackup) },
                         onRestoreLocalBackup = { showRestoreDialog = it },
                         onShareBackup = { backup ->
-                            // ✅ FIXED: File existence check
                             try {
                                 val file = File(backup.path)
                                 
@@ -324,20 +335,6 @@ fun SettingsScreen(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CONTINUE IN PART 2: Tab Composables + Helper Functions
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/*
- * SettingsScreen.kt - PART 2/2
- * ADD THIS CODE TO THE END OF PART 1
- * 
- * Contains:
- * - Tab Composables (General, MLKit, Backup, Debug)
- * - Helper UI Components
- * - Dialog Components
- */
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // TAB COMPOSABLES
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -355,7 +352,7 @@ private fun GeneralSettingsTab(
     storageUsage: com.docs.scanner.domain.repository.StorageUsage?,
     onAddKeyClick: () -> Unit,
     onActivateKey: (String) -> Unit,
-    onCopyKey: (String) -> Unit,  // ✅ FIXED: No Context parameter
+    onCopyKey: (String) -> Unit,
     onDeleteKey: (String) -> Unit,
     onTestKey: (String) -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
@@ -388,7 +385,7 @@ private fun GeneralSettingsTab(
                     ApiKeyItem(
                         key = key,
                         onActivate = onActivateKey,
-                        onCopy = { onCopyKey(key.key) },  // ✅ FIXED: Pass only String
+                        onCopy = { onCopyKey(key.key) },
                         onDelete = onDeleteKey,
                         onTest = onTestKey
                     )
@@ -707,12 +704,12 @@ private fun BackupSettingsTab(
                         )
                     }
                 }
-            }
+}
         }
     }
 }
 
-// ✅ NEW DEBUG TAB WITH LOG COLLECTOR
+// ✅ FIXED DEBUG TAB WITH WORKING LOG COLLECTOR
 @Composable
 private fun DebugSettingsTab(
     onDebugClick: () -> Unit,
@@ -773,7 +770,7 @@ private fun DebugSettingsTab(
                     )
                 }
                 
-                if (isCollecting) {
+                if (isCollecting || collectedLines > 0) {
                     Text(
                         text = "$collectedLines lines",
                         style = MaterialTheme.typography.bodySmall,
@@ -794,6 +791,7 @@ private fun DebugSettingsTab(
                         } else {
                             logCollector.startCollecting()
                             isCollecting = true
+                            collectedLines = 0 // Reset counter
                         }
                     },
                     modifier = Modifier.weight(1f)
@@ -809,22 +807,28 @@ private fun DebugSettingsTab(
 
                 OutlinedButton(
                     onClick = {
-                        if (!isCollecting) {
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Start collecting first")
-                            }
-                            return@OutlinedButton
-                        }
-                        
                         scope.launch {
+                            val lines = logCollector.getCollectedLinesCount()
+                            if (lines == 0) {
+                                snackbarHostState.showSnackbar(
+                                    "⚠️ No logs collected. Press START first.",
+                                    duration = SnackbarDuration.Short
+                                )
+                                return@launch
+                            }
+                            
                             logCollector.saveLogsNow()
+                            
+                            // Wait a bit for file to be written
+                            delay(500)
+                            
                             snackbarHostState.showSnackbar(
-                                "Logs saved to Downloads/DocumentScanner_OCR_Logs/",
+                                "✅ $lines lines saved to Downloads/DocumentScanner_OCR_Logs/",
                                 duration = SnackbarDuration.Long
                             )
                         }
                     },
-                    enabled = isCollecting && collectedLines > 0,
+                    enabled = collectedLines > 0, // ✅ FIXED: Works even when stopped
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(
