@@ -2,7 +2,6 @@ package com.docs.scanner.data.remote.gemini
 
 import com.docs.scanner.data.cache.TranslationCacheManager
 import com.docs.scanner.data.local.preferences.SettingsDataStore
-import com.docs.scanner.data.local.security.EncryptedKeyStorage
 import com.docs.scanner.domain.core.DomainError
 import com.docs.scanner.domain.core.DomainResult
 import com.docs.scanner.domain.core.Language
@@ -17,7 +16,7 @@ import kotlinx.coroutines.flow.first
 class GeminiTranslator @Inject constructor(
     private val geminiApi: GeminiApi,
     private val translationCacheManager: TranslationCacheManager,
-    private val encryptedKeyStorage: EncryptedKeyStorage,
+    private val keyManager: GeminiKeyManager,
     private val settingsDataStore: SettingsDataStore
 ) {
     /**
@@ -77,8 +76,8 @@ class GeminiTranslator @Inject constructor(
             }
         }
 
-        val apiKey = encryptedKeyStorage.getActiveApiKey().orEmpty()
-        if (apiKey.isBlank()) return DomainResult.failure(DomainError.MissingApiKey)
+        val apiKey = keyManager.getActiveKey()
+        if (apiKey.isNullOrBlank()) return DomainResult.failure(DomainError.MissingApiKey)
 
         val prompt = buildString {
             appendLine("Translate the following text.")
@@ -131,8 +130,8 @@ class GeminiTranslator @Inject constructor(
         val trimmed = text.trim()
         if (trimmed.isBlank()) return DomainResult.Success("")
 
-        val apiKey = encryptedKeyStorage.getActiveApiKey().orEmpty()
-        if (apiKey.isBlank()) return DomainResult.failure(DomainError.MissingApiKey)
+        val apiKey = keyManager.getActiveKey()
+        if (apiKey.isNullOrBlank()) return DomainResult.failure(DomainError.MissingApiKey)
 
         val prompt = buildString {
             appendLine("You are given OCR text. Fix obvious OCR errors, spacing, and punctuation.")
@@ -168,4 +167,3 @@ class GeminiTranslator @Inject constructor(
         )
     }
 }
-
