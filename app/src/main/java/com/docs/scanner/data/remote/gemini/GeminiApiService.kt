@@ -1,5 +1,7 @@
 package com.docs.scanner.data.remote.gemini
 
+import com.docs.scanner.data.remote.gemini.GeminiVisionRequest
+import com.docs.scanner.data.remote.gemini.GeminiVisionResponse
 import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.Path
@@ -17,6 +19,17 @@ interface GeminiApiService {
         @Query("key") apiKey: String,
         @Body body: GenerateContentRequest
     ): GenerateContentResponse
+    
+    /**
+     * Generate content with vision (image) support.
+     * Used for OCR of handwritten/difficult text.
+     */
+    @POST("v1beta/models/{model}:generateContent")
+    suspend fun generateContentVision(
+        @Path("model") model: String,
+        @Query("key") apiKey: String,
+        @Body body: GeminiVisionRequest
+    ): GeminiVisionResponse
 }
 
 data class GenerateContentRequest(
@@ -46,4 +59,3 @@ data class GenerateContentResponse(
         val text: String?
     )
 }
-
