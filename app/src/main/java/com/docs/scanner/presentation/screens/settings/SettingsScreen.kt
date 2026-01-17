@@ -10,7 +10,7 @@
 
 package com.docs.scanner.presentation.screens.settings
 
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.*
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
