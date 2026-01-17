@@ -1,5 +1,6 @@
 package com.docs.scanner.data.remote.gemini
 
+import com.docs.scanner.BuildConfig
 import com.docs.scanner.data.local.security.ApiKeyEntry
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
 import kotlinx.coroutines.delay
@@ -233,9 +234,4 @@ class GeminiKeyManager @Inject constructor(
         currentKeyIndex.set(0)
         Timber.i("$TAG: All key errors reset")
     }
-}
-
-// BuildConfig stub for compilation - will use actual BuildConfig
-private object BuildConfig {
-    const val DEBUG = true
 }
