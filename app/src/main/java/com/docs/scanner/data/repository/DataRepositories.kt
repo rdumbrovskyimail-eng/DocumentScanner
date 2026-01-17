@@ -736,7 +736,7 @@ class DocumentRepositoryImpl @Inject constructor(
             }
             .flowOn(Dispatchers.IO)
 
-    override fun observeoverride fun observeSearchHistory(limit: Int): Flow<List<com.docs.scanner.domain.core.SearchHistoryItem>> =
+    override fun observeSearchHistory(limit: Int): Flow<List<com.docs.scanner.domain.core.SearchHistoryItem>> =
         searchHistoryDao.observeRecent(limit)
             .map { list ->
                 list.map {
