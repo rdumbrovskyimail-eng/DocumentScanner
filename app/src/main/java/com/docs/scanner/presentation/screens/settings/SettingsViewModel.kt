@@ -1,23 +1,20 @@
 /*
  * SettingsViewModel.kt
- * Version: 13.0.0 - UNIFIED API KEY MODEL (2026 Standards)
+ * Version: 14.0.0 - STABLE IMAGE HANDLING (2026 Standards)
  * 
- * ✅ NEW in 13.0.0:
+ * ✅ NEW in 14.0.0:
+ * - Fixed Photo Picker URI access issues (Android 10-16+)
+ * - ImageUtils integration for stable image copying
+ * - Proper cache management for OCR test images
+ * 
+ * ✅ PREVIOUS in 13.0.0:
  * - Unified ApiKeyEntry model (replaced ApiKeyData)
  * - Simplified API key management through EncryptedKeyStorage
- * - Better separation: StoredApiKey (internal) vs ApiKeyEntry (public)
  * 
  * ✅ PREVIOUS in 12.0.0:
  * - Gemini OCR Fallback управление (enabled, threshold, always)
  * - Test Gemini fallback checkbox в OCR тесте
  * - API key error reset функционал
- * 
- * ✅ КРИТИЧЕСКИЕ ИСПРАВЛЕНИЯ:
- * - Единая система настроек OCR через DataStore
- * - Автосинхронизация между Settings и Editor
- * - Применение настроек ко всем новым документам
- * - Memory-safe операции
- * - Thread-safe доступ к MLKit
  * 
  * АРХИТЕКТУРА:
  * Settings UI → ViewModel → DataStore → MLKitScanner → Editor
@@ -50,6 +47,7 @@ import com.docs.scanner.domain.repository.SettingsRepository
 import com.docs.scanner.domain.repository.StorageUsage
 import com.docs.scanner.domain.usecase.AllUseCases
 import com.docs.scanner.presentation.screens.settings.components.MlkitSettingsState
+import com.docs.scanner.util.ImageUtils
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -57,6 +55,7 @@ import com.google.android.gms.common.api.Scope
 import com.google.api.services.drive.DriveScopes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -183,19 +182,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ MLKIT SETTINGS LOADER - КЛЮЧЕВОЙ МЕТОД (UPDATED)
+    // ✅ MLKIT SETTINGS LOADER - КЛЮЧЕВОЙ МЕТОД
     // ═══════════════════════════════════════════════════════════════════════════
 
     /**
-     * ✅ CRITICAL: Загружает настройки OCR из DataStore при старте.
-     * 
-     * UPDATED in 12.0.0: Теперь также загружает настройки Gemini OCR fallback.
-     * 
-     * Это обеспечивает синхронизацию между:
-     * - Settings UI (где пользователь меняет настройки)
-     * - Editor (где применяются настройки к новым документам)
-     * 
-     * DataStore - единственный источник истины для OCR настроек.
+     * Загружает настройки OCR из DataStore при старте.
+     * Включает настройки Gemini OCR fallback.
      */
     private fun loadMlkitSettings() {
         viewModelScope.launch {
@@ -378,15 +370,8 @@ class SettingsViewModel @Inject constructor(
         testApiKeyRaw(keyId)
     }
 
-    // ════════════════════════════════════════════════════════════════════════════════
-    // API KEY TESTING - ✅ UPDATED to use generateTextWithKey
-    // ════════════════════════════════════════════════════════════════════════════════
-
     /**
      * Tests a specific API key (no failover).
-     * 
-     * ✅ UPDATED in FIX #1: Now uses geminiApi.generateTextWithKey()
-     * instead of geminiApi.generateText() to avoid apiKey conflict.
      */
     fun testApiKeyRaw(key: String) {
         viewModelScope.launch {
@@ -396,8 +381,6 @@ class SettingsViewModel @Inject constructor(
                 Timber.d("🧪 Testing API key...")
             }
             
-            // ✅ CHANGED: generateText() → generateTextWithKey()
-            // This ensures the specific key is tested, not failover
             when (
                 val result = geminiApi.generateTextWithKey(
                     apiKey = key.trim(),
@@ -750,7 +733,8 @@ class SettingsViewModel @Inject constructor(
                 if (BuildConfig.DEBUG) {
                     Timber.d("📦 Found ${_localBackups.value.size} local backups")
                 }
-            } catch (e: Exception) {Timber.e(e, "Failed to refresh local backups")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to refresh local backups")
             }
         }
     }
@@ -896,15 +880,7 @@ class SettingsViewModel @Inject constructor(
     // ═══════════════════════════════════════════════════════════════════════════
 
     /**
-     * ✅ CRITICAL METHOD: Устанавливает режим OCR.
-     * 
-     * ВАЖНО: Этот метод делает ДВЕ вещи:
-     * 1. Обновляет UI state (_mlkitSettings) для мгновенного отклика
-     * 2. Сохраняет в DataStore для применения ко ВСЕМ новым документам
-     * 
-     * DataStore → MLKitScanner → EditorViewModel → Новые документы
-     * 
-     * @param mode Режим распознавания (AUTO, LATIN, CHINESE, etc.)
+     * Устанавливает режим OCR.
      */
     fun setMlkitScriptMode(mode: OcrScriptMode) {
         viewModelScope.launch {
@@ -924,7 +900,6 @@ class SettingsViewModel @Inject constructor(
                 
                 if (BuildConfig.DEBUG) {
                     Timber.d("📝 MLKit script mode set: $mode → saved to DataStore")
-                    Timber.d("   └─ Will apply to all new documents in Editor")
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to save MLKit script mode to DataStore")
@@ -965,11 +940,90 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ✅ IMAGE SELECTION - FIXED FOR ANDROID 10-16+ (PHOTO PICKER SUPPORT)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Устанавливает изображение для OCR теста.
+     * 
+     * КРИТИЧНО: Photo Picker (Android 13+) возвращает URI с временным доступом.
+     * ContentResolver.takePersistableUriPermission() НЕ работает для Photo Picker.
+     * 
+     * Решение: копируем файл во внутреннее хранилище для стабильного доступа.
+     * 
+     * Поддерживает:
+     * - Android 10-16+
+     * - Photo Picker (Android 13+)
+     * - Обычный выбор из галереи
+     * - Любые content:// URI
+     * 
+     * @param uri URI выбранного изображения (или null для очистки)
+     */
     fun setMlkitSelectedImage(uri: Uri?) {
-        _mlkitSettings.update { it.copy(selectedImageUri = uri) }
+        // Очистка
+        if (uri == null) {
+            _mlkitSettings.update { 
+                it.copy(
+                    selectedImageUri = null,
+                    testResult = null,
+                    testError = null
+                ) 
+            }
+            
+            // Очищаем кэш в фоне
+            viewModelScope.launch(Dispatchers.IO) {
+                ImageUtils.clearOcrTestCache(appContext)
+            }
+            
+            if (BuildConfig.DEBUG) {
+                Timber.d("🖼️ OCR test image cleared")
+            }
+            return
+        }
         
-        if (BuildConfig.DEBUG) {
-            Timber.d("🖼️ MLKit selected image: ${uri != null}")
+        // Копируем изображение во внутреннее хранилище
+        viewModelScope.launch {
+            try {
+                // Показываем индикатор загрузки
+                _mlkitSettings.update { 
+                    it.copy(
+                        isTestRunning = true,
+                        testResult = null,
+                        testError = null
+                    ) 
+                }
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("🖼️ Copying image for OCR test: $uri")
+                }
+                
+                // Копируем во внутреннее хранилище через ImageUtils
+                val stableUri = ImageUtils.copyForOcrTest(appContext, uri)
+                
+                _mlkitSettings.update { 
+                    it.copy(
+                        selectedImageUri = stableUri,
+                        isTestRunning = false,
+                        testError = null
+                    ) 
+                }
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("✅ Image ready for OCR test: $stableUri")
+                }
+                
+            } catch (e: Exception) {
+                Timber.e(e, "❌ Failed to prepare image for OCR test")
+                
+                _mlkitSettings.update { 
+                    it.copy(
+                        selectedImageUri = null,
+                        isTestRunning = false,
+                        testError = "Failed to load image: ${e.localizedMessage ?: e.message}"
+                    ) 
+                }
+            }
         }
     }
 
@@ -998,16 +1052,11 @@ class SettingsViewModel @Inject constructor(
         mlKitScanner.getAvailableScriptModes()
 
     // ════════════════════════════════════════════════════════════════════════════════
-    // NEW: GEMINI OCR FALLBACK SETTINGS
+    // GEMINI OCR FALLBACK SETTINGS
     // ════════════════════════════════════════════════════════════════════════════════
     
     /**
      * Enables or disables Gemini OCR fallback.
-     * 
-     * When enabled, ML Kit results with low confidence will trigger
-     * automatic fallback to Gemini Vision API for better accuracy.
-     * 
-     * @param enabled true to enable fallback, false to disable
      */
     fun setGeminiOcrEnabled(enabled: Boolean) {
         _mlkitSettings.update { it.copy(geminiOcrEnabled = enabled) }
@@ -1026,14 +1075,6 @@ class SettingsViewModel @Inject constructor(
     
     /**
      * Sets Gemini OCR confidence threshold (0-100).
-     * OCR results below this threshold trigger Gemini fallback.
-     * 
-     * Examples:
-     * - 70: Strict (fallback more often, higher API costs)
-     * - 50: Balanced (default)
-     * - 30: Lenient (fallback only for very poor results)
-     * 
-     * @param threshold Confidence percentage (0-100)
      */
     fun setGeminiOcrThreshold(threshold: Int) {
         _mlkitSettings.update { it.copy(geminiOcrThreshold = threshold) }
@@ -1052,15 +1093,6 @@ class SettingsViewModel @Inject constructor(
     
     /**
      * Sets whether to always use Gemini for OCR (skip ML Kit).
-     * 
-     * Useful for:
-     * - Documents known to be handwritten
-     * - Complex layouts that ML Kit struggles with
-     * - When quality is more important than speed/cost
-     * 
-     * ⚠️ Warning: This is slower and more expensive than ML Kit.
-     * 
-     * @param always true to always use Gemini, false to use ML Kit first
      */
     fun setGeminiOcrAlways(always: Boolean) {
         _mlkitSettings.update { it.copy(geminiOcrAlways = always) }
@@ -1079,14 +1111,6 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * Включает/выключает тестирование Gemini fallback в OCR тесте.
-     * 
-     * Это управляет UI чекбоксом "Also test Gemini fallback", который
-     * появляется только когда Gemini OCR включен И выбрано изображение.
-     * 
-     * ВАЖНО: Это только UI state, не сохраняется в DataStore.
-     * 
-     * @param enabled true - включить принудительный тест Gemini,
-     *                false - обычный тест с ML Kit
      */
     fun setMlkitTestGeminiFallback(enabled: Boolean) {
         _mlkitSettings.update { it.copy(testGeminiFallback = enabled) }
@@ -1098,12 +1122,6 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * Запускает тест OCR с текущими настройками.
-     * 
-     * UPDATED в 12.0.0: Добавлен параметр testGeminiFallback для тестирования
-     * Gemini OCR fallback вручную.
-     * 
-     * Это НЕ влияет на настройки в Editor - только для диагностики.
-     * Использует временные параметры из _mlkitSettings.
      */
     fun runMlkitOcrTest() {
         val currentState = _mlkitSettings.value
@@ -1153,11 +1171,7 @@ class SettingsViewModel @Inject constructor(
                             Timber.d("   ├─ Words: ${data.totalWords}")
                             Timber.d("   ├─ Confidence: ${data.confidencePercent}")
                             Timber.d("   ├─ Quality: ${data.qualityRating}")
-                            Timber.d("   ├─ Time: ${data.processingTimeMs}ms")
-                            
-                            if (currentState.testGeminiFallback) {
-                                Timber.d("   └─ ⚠️ Gemini fallback test executed")
-                            }
+                            Timber.d("   └─ Time: ${data.processingTimeMs}ms")
                         }
                     }
                     is DomainResult.Failure -> {
@@ -1184,13 +1198,6 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * Сбрасывает счетчики ошибок для всех API ключей.
-     * 
-     * Полезно когда:
-     * - Временные проблемы с сетью решены
-     * - API quota была превышена, но теперь сброшена
-     * - Хотите дать всем ключам второй шанс
-     * 
-     * Все ключи помечаются как активные с errorCount = 0.
      */
     fun resetApiKeyErrors() {
         viewModelScope.launch {
@@ -1216,8 +1223,12 @@ class SettingsViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Очищаем кэш MLKit
             mlKitScanner.clearCache()
+            
+            // Очищаем тестовые изображения
+            ImageUtils.clearOcrTestCache(appContext)
         }
         
         if (BuildConfig.DEBUG) {
