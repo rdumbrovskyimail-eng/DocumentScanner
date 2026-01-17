@@ -1,12 +1,17 @@
 /*
  * MlkitSettingsSection.kt
- * Version: 8.0.0 - PRODUCTION READY 2026 - OCR PREVIEW + FIX
+ * Version: 9.0.0 - GEMINI OCR + API KEYS INTEGRATED (2026)
  * 
- * ✅ CRITICAL FIX:
- * - Исправлена опечатка в строке 454 (colorSchemetint → colorScheme)
- * - Превью изображения с OCR результатами
- * - Live preview при изменении настроек
- * - Подсветка низкой уверенности
+ * ✅ PHASE 2 INTEGRATION COMPLETE:
+ * - GeminiOcrSettingsSection added
+ * - ApiKeysSettingsSection added
+ * - Full settings flow: ML Kit → Gemini → API Keys
+ * 
+ * CHANGES FROM 8.0.0:
+ * - Added Gemini OCR fallback settings section
+ * - Added API Keys management section
+ * - Added dividers between sections
+ * - Connected to ViewModel methods
  */
 
 package com.docs.scanner.presentation.screens.settings.components
@@ -41,10 +46,13 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.docs.scanner.data.remote.mlkit.OcrScriptMode
 import com.docs.scanner.data.remote.mlkit.OcrTestResult
+import com.docs.scanner.data.local.security.ApiKeyEntry
 
 @Composable
 fun MlkitSettingsSection(
     state: MlkitSettingsState,
+    apiKeys: List<ApiKeyEntry>,
+    isLoadingKeys: Boolean,
     onScriptModeChange: (OcrScriptMode) -> Unit,
     onAutoDetectChange: (Boolean) -> Unit,
     onConfidenceThresholdChange: (Float) -> Unit,
@@ -53,6 +61,17 @@ fun MlkitSettingsSection(
     onImageSelected: (Uri?) -> Unit,
     onTestOcr: () -> Unit,
     onClearTestResult: () -> Unit,
+    // ✅ NEW: Gemini OCR callbacks
+    onGeminiOcrEnabledChange: (Boolean) -> Unit,
+    onGeminiOcrThresholdChange: (Int) -> Unit,
+    onGeminiOcrAlwaysChange: (Boolean) -> Unit,
+    // ✅ NEW: Test Gemini fallback
+    onTestGeminiFallbackChange: (Boolean) -> Unit,
+    // ✅ NEW: API Keys callbacks
+    onAddApiKey: (key: String, label: String) -> Unit,
+    onRemoveApiKey: (key: String) -> Unit,
+    onSetPrimaryApiKey: (key: String) -> Unit,
+    onResetApiKeyErrors: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -357,9 +376,92 @@ fun MlkitSettingsSection(
                     )
                 }
             }
+
+            // ════════════════════════════════════════════════════════════════
+            // ✅ NEW SECTION: GEMINI OCR FALLBACK
+            // ════════════════════════════════════════════════════════════════
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+
+            GeminiOcrSettingsSection(
+                enabled = state.geminiOcrEnabled,
+                threshold = state.geminiOcrThreshold,
+                alwaysUseGemini = state.geminiOcrAlways,
+                onEnabledChange = onGeminiOcrEnabledChange,
+                onThresholdChange = onGeminiOcrThresholdChange,
+                onAlwaysUseGeminiChange = onGeminiOcrAlwaysChange
+            )
+
+            // ════════════════════════════════════════════════════════════════
+            // ✅ NEW SECTION: API KEYS MANAGEMENT
+            // ════════════════════════════════════════════════════════════════
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+
+            ApiKeysSettingsSection(
+                keys = apiKeys,
+                isLoading = isLoadingKeys,
+                onAddKey = onAddApiKey,
+                onRemoveKey = onRemoveApiKey,
+                onSetPrimary = onSetPrimaryApiKey,
+                onResetErrors = onResetApiKeyErrors
+            )
+
+            // ════════════════════════════════════════════════════════════════
+            // ✅ TEST GEMINI FALLBACK (OPTIONAL)
+            // ════════════════════════════════════════════════════════════════
+            
+            AnimatedVisibility(
+                visible = state.geminiOcrEnabled && state.selectedImageUri != null,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = state.testGeminiFallback,
+                                onCheckedChange = onTestGeminiFallbackChange
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Test Gemini fallback",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Simulate low ML Kit confidence to test Gemini OCR",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
+
+// ════════════════════════════════════════════════════════════════════════════════
+// HELPER COMPOSABLES (unchanged from 8.0.0)
+// ════════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun QuickStat(
@@ -435,7 +537,6 @@ private fun SettingToggleRow(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                // ✅ FIX: Исправлена опечатка (было: colorSchemetint)
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
             )
