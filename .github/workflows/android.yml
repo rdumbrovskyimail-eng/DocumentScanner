@@ -1,4 +1,4 @@
-Name: Android CI
+name: Android CI
 
 on:
   push:
@@ -9,7 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
     - name: Checkout code
@@ -20,213 +19,22 @@ jobs:
       with:
         java-version: '21'
         distribution: 'temurin'
-        cache: gradle
 
-    - name: Cache Gradle wrapper & dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-
-
-    - name: Cache Android SDK
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.android/build-cache
-          ~/.android/cache
-        key: ${{ runner.os }}-android-${{ hashFiles('**/*.gradle*') }}
-        restore-keys: |
-          ${{ runner.os }}-android-
-
-    - name: Cache Kotlin compiler
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.konan
-          ~/.kotlin
-        key: ${{ runner.os }}-kotlin-${{ hashFiles('**/*.gradle*') }}
-        restore-keys: |
-          ${{ runner.os }}-kotlin-
-
-    - name: Setup Gradle (с оптимизацией)
+    - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
       with:
         gradle-home-cache-cleanup: true
-        cache-read-only: false
-        cache-write-only: false
-        add-job-summary: always
-        build-scan-publish: true
-        build-scan-terms-of-use-url: "https://gradle.com/terms-of-service"
-        build-scan-terms-of-use-agree: "yes"
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Build with Gradle (Safe Mode)
-      id: build
-      run: |
-        FULL_LOG="build_full.log"
-        ERRORS_FILE="build_errors.txt"
-        
-        echo "🚀 Starting optimized build..."
-        
-        # 1. Запуск сборки. Используем set +e, чтобы скрипт не падал сразу при ошибке компиляции
-        set +e
-        ./gradlew assembleDebug \
-          --stacktrace \
-          --no-daemon \
-          --max-workers=4 \
-          --build-cache \
-          --configuration-cache \
-          --no-watch-fs 2>&1 | tee "$FULL_LOG"
-        
-        BUILD_EXIT_CODE=${PIPESTATUS[0]}
-        # НЕ включаем set -e обратно, чтобы анализ логов не убил скрипт из-за Broken Pipe
-        
-        echo ""
-        echo "🔍 Build exit code: $BUILD_EXIT_CODE"
-        
-        # 2. Анализ логов (Безопасный блок)
-        # Используем || true везде, чтобы grep не возвращал ошибку если ничего не нашел
-        {
-          echo "==============================================================="
-          echo "  BUILD REPORT - $(date '+%Y-%m-%d %H:%M:%S')"
-          echo "  Exit code: $BUILD_EXIT_CODE"
-          echo "==============================================================="
-          
-          echo ""
-          echo ">>> KOTLIN COMPILATION ERRORS:"
-          # Используем head -n 50 и игнорируем ошибки пайпа
-          grep -E "^e: " "$FULL_LOG" 2>/dev/null | head -n 50 || true
-          
-          echo ""
-          echo ">>> JAVA COMPILATION ERRORS:"
-          grep -E "^.*\.java:[0-9]+: error:" "$FULL_LOG" 2>/dev/null | head -n 50 || true
-          
-          echo ""
-          echo ">>> TASK FAILURES:"
-          grep -E "> Task .* FAILED" "$FULL_LOG" 2>/dev/null || true
-          
-          echo ""
-          echo ">>> EXCEPTIONS:"
-          grep -E "Exception|at [a-z]+\.[a-z]+\." "$FULL_LOG" 2>/dev/null | grep -v "HeapDumpOnOutOfMemoryError" | head -n 50 || true
-          
-        } > "$ERRORS_FILE"
-        
-        # 3. Подсчет ошибок (с защитой от пустоты)
-        KOTLIN_ERRORS=$(grep -cE "^e: " "$FULL_LOG" || echo "0")
-        JAVA_ERRORS=$(grep -cE "^.*\.java:[0-9]+: error:" "$FULL_LOG" || echo "0")
-        TASK_FAILURES=$(grep -cE "> Task .* FAILED" "$FULL_LOG" || echo "0")
-        
-        # Принудительно приводим к 0 если пусто
-        [[ -z "$KOTLIN_ERRORS" ]] && KOTLIN_ERRORS=0
-        [[ -z "$JAVA_ERRORS" ]] && JAVA_ERRORS=0
-        [[ -z "$TASK_FAILURES" ]] && TASK_FAILURES=0
-        
-        TOTAL_ERRORS=$((KOTLIN_ERRORS + JAVA_ERRORS + TASK_FAILURES))
-        
-        echo "Kotlin errors: $KOTLIN_ERRORS"
-        echo "Java errors: $JAVA_ERRORS"
-        echo "Total errors: $TOTAL_ERRORS"
-        
-        # 4. Сохранение outputs
-        echo "error_count=$TOTAL_ERRORS" >> $GITHUB_OUTPUT
-        echo "kotlin_errors=$KOTLIN_ERRORS" >> $GITHUB_OUTPUT
-        echo "java_errors=$JAVA_ERRORS" >> $GITHUB_OUTPUT
-        echo "task_failures=$TASK_FAILURES" >> $GITHUB_OUTPUT
-        
-        # 5. Финальное решение о статусе
-        if [ $BUILD_EXIT_CODE -eq 0 ]; then
-          echo "build_status=success" >> $GITHUB_OUTPUT
-          echo "✅ BUILD SUCCESSFUL"
-        else
-          echo "build_status=failure" >> $GITHUB_OUTPUT
-          echo "❌ BUILD FAILED"
-          # Вот теперь можно выйти с ошибкой, если сборка провалилась
-          exit 1 
-        fi
+    - name: Build with Gradle
+      run: ./gradlew assembleDebug --stacktrace --no-daemon
 
-    - name: Diagnose APK location
-      if: always()
-      run: |
-        echo "🔍 Searching for APKs..."
-        find . -name "*.apk" -type f -exec ls -lh {} \;
-
-    - name: Upload debug APK artifact
-      if: steps.build.outputs.build_status == 'success'
+    - name: Upload APK
+      if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug-${{ github.sha }}
-        path: |
-          app/build/outputs/apk/debug/*.apk
-          **/build/outputs/apk/debug/*.apk
-        if-no-files-found: warn
-        retention-days: 14
-
-    - name: Upload logs
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-logs
-        path: |
-          build_full.log
-          build_errors.txt
-
-    - name: Get commit info
-      if: always()
-      id: commit
-      run: |
-        COMMIT_MSG=$(git log -1 --pretty=format:"%s" | head -c 200)
-        COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an")
-        echo "message=$COMMIT_MSG" >> $GITHUB_OUTPUT
-        echo "author=$COMMIT_AUTHOR" >> $GITHUB_OUTPUT
-
-    - name: Send Success Notification to Telegram
-      if: steps.build.outputs.build_status == 'success' && github.event_name == 'push'
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: |
-        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" -type f | head -1)
-        
-        if [ -n "$APK_PATH" ]; then
-          APK_NAME=$(basename "$APK_PATH")
-          APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-          
-          MESSAGE="✅ <b>Build Successful!</b>%0A%0A"
-          MESSAGE+="📱 <b>APK:</b> ${APK_NAME}%0A"
-          MESSAGE+="📦 <b>Size:</b> ${APK_SIZE}%0A"
-          MESSAGE+="👤 <b>Author:</b> ${{ steps.commit.outputs.author }}%0A"
-          MESSAGE+="💬 <b>Commit:</b> ${{ steps.commit.outputs.message }}%0A"
-          MESSAGE+="📥 <a href=\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\">Download APK</a>"
-          
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d text="${MESSAGE}" \
-            -d parse_mode="HTML" \
-            -d disable_web_page_preview=true
-        else
-          echo "⚠️ APK file not found despite successful build!"
-        fi
-
-    - name: Send Build Failure to Telegram
-      if: steps.build.outputs.build_status == 'failure' && github.event_name == 'push'
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: |
-        MESSAGE="❌ <b>Build Failed!</b>%0A%0A"
-        MESSAGE+="👤 <b>Author:</b> ${{ steps.commit.outputs.author }}%0A"
-        MESSAGE+="💬 <b>Commit:</b> ${{ steps.commit.outputs.message }}%0A"
-        MESSAGE+="🐛 <b>Errors:</b> K:${{ steps.build.outputs.kotlin_errors }} J:${{ steps.build.outputs.java_errors }}%0A"
-        MESSAGE+="📋 <a href=\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\">View Logs</a>"
-        
-        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-          -d chat_id="${TELEGRAM_CHAT_ID}" \
-          -d text="${MESSAGE}" \
-          -d parse_mode="HTML" \
-          -d disable_web_page_preview=true
+        name: app-debug
+        path: app/build/outputs/apk/debug/*.apk
+        retention-days: 7
