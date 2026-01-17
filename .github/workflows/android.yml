@@ -1,6 +1,6 @@
 # ================================================================================
 # Android CI/CD Pipeline
-# Version: 10.1.0 - FIXED ERROR HANDLING (2026)
+# Version: 10.2.0 - FIXED APK & ERROR LOGGING (2026)
 # ================================================================================
 
 name: Android CI
@@ -203,9 +203,11 @@ jobs:
         ERRORS_FILE="build_errors.txt"
         
         echo "🚀 Starting optimized build..."
+        echo "📊 Memory before build:"
         free -h
+        echo ""
         
-        # ✅ ИЗМЕНЕНО: Убрали continue-on-error, используем set +e
+        # ✅ Запускаем сборку и сохраняем ВЕСЬ вывод
         set +e
         ./gradlew assembleDebug \
           --stacktrace \
@@ -217,82 +219,190 @@ jobs:
           --info \
           2>&1 | tee "$FULL_LOG"
         
-        BUILD_EXIT_CODE=$?
+        BUILD_EXIT_CODE=${PIPESTATUS[0]}
         set -e
         
         echo ""
         echo "📊 Memory after build:"
         free -h
+        echo ""
+        echo "🔍 Build exit code: $BUILD_EXIT_CODE"
         
         # ═══════════════════════════════════════════════════════════════════════
-        # ERROR EXTRACTION
+        # COMPREHENSIVE ERROR EXTRACTION
         # ═══════════════════════════════════════════════════════════════════════
         
         {
           echo "==============================================================="
-          echo "  BUILD ERRORS - $(date '+%Y-%m-%d %H:%M:%S')"
+          echo "  BUILD REPORT - $(date '+%Y-%m-%d %H:%M:%S')"
           echo "  Commit: $(git rev-parse --short HEAD)"
           echo "  Exit code: $BUILD_EXIT_CODE"
           echo "==============================================================="
           echo ""
-          echo ">>> KOTLIN COMPILATION ERRORS:"
-          grep -E "^e: " "$FULL_LOG" 2>/dev/null || echo "  (none)"
+          
+          # Проверяем SUCCESS/FAILURE в логе
+          if grep -q "BUILD SUCCESSFUL" "$FULL_LOG"; then
+            echo "✅ BUILD SUCCESSFUL"
+          elif grep -q "BUILD FAILED" "$FULL_LOG"; then
+            echo "❌ BUILD FAILED"
+          else
+            echo "⚠️  BUILD STATUS UNKNOWN (exit code: $BUILD_EXIT_CODE)"
+          fi
+          
           echo ""
-          echo ">>> JAVA ERRORS:"
-          grep -E "error: |Error: " "$FULL_LOG" 2>/dev/null | grep -v "^e: " || echo "  (none)"
+          echo ">>> KOTLIN COMPILATION ERRORS:"
+          if grep -E "^e: " "$FULL_LOG" 2>/dev/null | head -50; then
+            :
+          else
+            echo "  (none)"
+          fi
+          
+          echo ""
+          echo ">>> JAVA COMPILATION ERRORS:"
+          if grep -E "^.*\.java:[0-9]+: error:" "$FULL_LOG" 2>/dev/null | head -50; then
+            :
+          else
+            echo "  (none)"
+          fi
+          
           echo ""
           echo ">>> UNRESOLVED REFERENCES:"
-          grep -i "unresolved reference" "$FULL_LOG" 2>/dev/null || echo "  (none)"
+          if grep -i "unresolved reference" "$FULL_LOG" 2>/dev/null | head -30; then
+            :
+          else
+            echo "  (none)"
+          fi
+          
           echo ""
-          echo ">>> GRADLE FAILURE:"
-          grep -A 20 "^FAILURE:" "$FULL_LOG" 2>/dev/null || echo "  (none)"
+          echo ">>> GRADLE FAILURE DETAILS:"
+          if grep -A 30 "^FAILURE:" "$FULL_LOG" 2>/dev/null; then
+            :
+          else
+            echo "  (none)"
+          fi
+          
           echo ""
-          echo ">>> EXCEPTIONS:"
-          grep -E "Exception|Error:" "$FULL_LOG" 2>/dev/null | grep -v "HeapDumpOnOutOfMemoryError" | head -30 || echo "  (none)"
+          echo ">>> TASK FAILURES:"
+          if grep -E "> Task .* FAILED" "$FULL_LOG" 2>/dev/null; then
+            :
+          else
+            echo "  (none)"
+          fi
+          
           echo ""
-          echo ">>> DEPENDENCY ISSUES:"
-          grep -iE "could not (resolve|find|determine)" "$FULL_LOG" 2>/dev/null || echo "  (none)"
+          echo ">>> EXCEPTIONS & STACK TRACES:"
+          if grep -B 2 -A 10 -E "Exception|at [a-z]+\.[a-z]+\." "$FULL_LOG" 2>/dev/null | grep -v "HeapDumpOnOutOfMemoryError" | head -100; then
+            :
+          else
+            echo "  (none)"
+          fi
+          
           echo ""
-          echo ">>> FAILED TASKS:"
-          grep -E "Task .* FAILED|BUILD FAILED" "$FULL_LOG" 2>/dev/null || echo "  (none)"
+          echo ">>> DEPENDENCY RESOLUTION ERRORS:"
+          if grep -iE "could not (resolve|find|determine)|dependency.*failed" "$FULL_LOG" 2>/dev/null | head -30; then
+            :
+          else
+            echo "  (none)"
+          fi
+          
           echo ""
-          echo ">>> OTHER ERRORS:"
-          grep -i "error" "$FULL_LOG" 2>/dev/null | grep -v -E "^e: |HeapDump|errorprone|error: $" | head -20 || echo "  (none)"
+          echo ">>> MANIFEST ERRORS:"
+          if grep -iE "manifest|androidmanifest" "$FULL_LOG" 2>/dev/null | grep -i error | head -20; then
+            :
+          else
+            echo "  (none)"
+          fi
+          
+          echo ""
+          echo ">>> RESOURCE ERRORS:"
+          if grep -E "AAPT.*error|resource.*error" "$FULL_LOG" 2>/dev/null | head -30; then
+            :
+          else
+            echo "  (none)"
+          fi
+          
           echo ""
           echo "==============================================================="
-          echo "  LAST 50 LINES OF BUILD LOG:"
+          echo "  LAST 100 LINES OF BUILD LOG:"
           echo "==============================================================="
-          tail -50 "$FULL_LOG"
+          tail -100 "$FULL_LOG"
+          
         } > "$ERRORS_FILE"
         
-        ERROR_COUNT=$(grep -cE "^e: |error:|FAILURE:|Exception" "$FULL_LOG" 2>/dev/null || echo "0")
-        echo "error_count=$ERROR_COUNT" >> $GITHUB_OUTPUT
+        # Подсчёт ошибок (более точный)
+        KOTLIN_ERRORS=$(grep -cE "^e: " "$FULL_LOG" 2>/dev/null || echo "0")
+        JAVA_ERRORS=$(grep -cE "^.*\.java:[0-9]+: error:" "$FULL_LOG" 2>/dev/null || echo "0")
+        TASK_FAILURES=$(grep -cE "> Task .* FAILED" "$FULL_LOG" 2>/dev/null || echo "0")
         
-        # ✅ ИСПРАВЛЕНО: Корректная установка статуса
-        if [ $BUILD_EXIT_CODE -eq 0 ]; then
+        TOTAL_ERRORS=$((KOTLIN_ERRORS + JAVA_ERRORS + TASK_FAILURES))
+        
+        echo "error_count=$TOTAL_ERRORS" >> $GITHUB_OUTPUT
+        echo "kotlin_errors=$KOTLIN_ERRORS" >> $GITHUB_OUTPUT
+        echo "java_errors=$JAVA_ERRORS" >> $GITHUB_OUTPUT
+        echo "task_failures=$TASK_FAILURES" >> $GITHUB_OUTPUT
+        
+        # ✅ Определяем статус сборки
+        if [ $BUILD_EXIT_CODE -eq 0 ] && grep -q "BUILD SUCCESSFUL" "$FULL_LOG"; then
           echo "build_status=success" >> $GITHUB_OUTPUT
-          echo "✅ Build succeeded!"
+          echo ""
+          echo "✅ BUILD SUCCESSFUL!"
         else
           echo "build_status=failure" >> $GITHUB_OUTPUT
-          echo "❌ Build failed with exit code $BUILD_EXIT_CODE and $ERROR_COUNT errors"
-          # ✅ НЕ выходим здесь, чтобы артефакты загрузились
+          echo ""
+          echo "❌ BUILD FAILED!"
+          echo "   Exit code: $BUILD_EXIT_CODE"
+          echo "   Kotlin errors: $KOTLIN_ERRORS"
+          echo "   Java errors: $JAVA_ERRORS"
+          echo "   Failed tasks: $TASK_FAILURES"
         fi
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # APK DIAGNOSTICS - ✅ НОВОЕ
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    - name: Diagnose APK location
+      if: always()
+      run: |
+        echo "🔍 Searching for APK files in entire workspace..."
+        find . -name "*.apk" -type f -exec ls -lh {} \; 2>/dev/null || echo "❌ No APK files found!"
+        
+        echo ""
+        echo "📂 Checking expected APK directory structure..."
+        
+        if [ -d "app/build/outputs/apk" ]; then
+          echo "✅ app/build/outputs/apk exists"
+          ls -lah app/build/outputs/apk/ || true
+          
+          if [ -d "app/build/outputs/apk/debug" ]; then
+            echo "✅ app/build/outputs/apk/debug exists"
+            ls -lah app/build/outputs/apk/debug/ || true
+          else
+            echo "❌ app/build/outputs/apk/debug does NOT exist"
+          fi
+        else
+          echo "❌ app/build/outputs/apk does NOT exist"
+        fi
+        
+        echo ""
+        echo "📂 All build/outputs directories:"
+        find . -type d -name "outputs" -exec echo {} \; -exec ls -la {} \; 2>/dev/null || echo "None found"
 
     # ═══════════════════════════════════════════════════════════════════════════
     # ARTIFACTS & NOTIFICATIONS
     # ═══════════════════════════════════════════════════════════════════════════
 
-    # ✅ ИСПРАВЛЕНО: Проверяем существование APK перед загрузкой
     - name: Upload debug APK artifact
       if: steps.build.outputs.build_status == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: debug-apk-${{ github.sha }}
-        path: app/build/outputs/apk/debug/*.apk
-        if-no-files-found: warn  # ✅ ИЗМЕНЕНО: warn вместо error
+        path: |
+          app/build/outputs/apk/debug/*.apk
+          **/build/outputs/apk/debug/*.apk
+        if-no-files-found: warn
         retention-days: 7
 
-    - name: Upload error logs artifact
+    - name: Upload ALL logs (full + errors)
       if: always()
       uses: actions/upload-artifact@v4
       with:
@@ -300,7 +410,7 @@ jobs:
         path: |
           build_errors.txt
           build_full.log
-        if-no-files-found: ignore
+        if-no-files-found: warn
         retention-days: 7
 
     - name: Get commit info
@@ -324,9 +434,16 @@ jobs:
           exit 0
         fi
         
-        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" 2>/dev/null | head -n 1)
-        APK_NAME=$(basename "$APK_PATH" 2>/dev/null || echo "app-debug.apk")
-        APK_SIZE=$(du -h "$APK_PATH" 2>/dev/null | cut -f1 || echo "?")
+        APK_PATH=$(find . -name "*.apk" -path "*/debug/*" 2>/dev/null | head -n 1)
+        
+        if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+          APK_NAME=$(basename "$APK_PATH")
+          APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+        else
+          APK_NAME="app-debug.apk"
+          APK_SIZE="unknown"
+        fi
+        
         ARTIFACTS_URL="${RUN_URL}#artifacts"
         
         cat > /tmp/tg_message.txt << EOF
@@ -360,24 +477,33 @@ jobs:
         fi
         
         ERRORS_FILE="build_errors.txt"
-        ERROR_COUNT="${{ steps.build.outputs.error_count }}"
+        KOTLIN_ERRORS="${{ steps.build.outputs.kotlin_errors }}"
+        JAVA_ERRORS="${{ steps.build.outputs.java_errors }}"
+        TASK_FAILURES="${{ steps.build.outputs.task_failures }}"
         
-        CAPTION="❌ Build Failed! Errors: ${ERROR_COUNT:-?} | 👤 ${{ github.actor }} | 🕐 ${{ steps.commit.outputs.date }} | 🔗 ${RUN_URL}"
+        CAPTION="❌ Build Failed! K:${KOTLIN_ERRORS:-0} J:${JAVA_ERRORS:-0} T:${TASK_FAILURES:-0} | 👤 ${{ github.actor }} | 🕐 ${{ steps.commit.outputs.date }} | 🔗 ${RUN_URL}"
         
         if [ -f "$ERRORS_FILE" ] && [ -s "$ERRORS_FILE" ]; then
+          # Отправляем файл с ошибками
           curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
             -F chat_id="${TELEGRAM_CHAT_ID}" \
             -F document=@"${ERRORS_FILE}" \
             -F caption="${CAPTION}"
         else
+          # Если файла нет, отправляем просто сообщение
           curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "text=${CAPTION} (Error log not found)"
+            --data-urlencode "text=${CAPTION} (Error log file not found or empty)"
         fi
 
-    # ✅ ИСПРАВЛЕНО: Проверка в самом конце
-    - name: Check build result
+    # ✅ ИСПРАВЛЕНО: Fail job только если сборка действительно провалилась
+    - name: Fail job if build failed
       if: steps.build.outputs.build_status == 'failure'
       run: |
-        echo "❌ Build failed - check error logs above"
+        echo "❌ Build failed!"
+        echo "   Kotlin errors: ${{ steps.build.outputs.kotlin_errors }}"
+        echo "   Java errors: ${{ steps.build.outputs.java_errors }}"
+        echo "   Task failures: ${{ steps.build.outputs.task_failures }}"
+        echo ""
+        echo "📄 Check build_errors.txt artifact for details"
         exit 1
