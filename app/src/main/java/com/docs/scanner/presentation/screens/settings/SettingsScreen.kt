@@ -1273,23 +1273,25 @@ private fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
  * 
  * Конструктор ApiKeyEntry требует:
  * - key: String
- * - label: String (НЕ String?)
- * - isActive: Boolean
- * - lastUsed: Long?
+ * - label: String (с default = "")
+ * - addedAt: Long
+ * - lastUsedAt: Long?
+ * - lastErrorAt: Long?
  * - errorCount: Int
- * - lastError: Long?
+ * - isActive: Boolean
  * 
- * ApiKeyData имеет только: id, key, label?, isActive, createdAt
- * Поэтому мы используем значения по умолчанию для отсутствующих полей.
+ * ApiKeyData имеет: id, key, label?, isActive, createdAt
+ * Маппинг: createdAt → addedAt, остальные поля заполняем значениями по умолчанию.
  */
 private fun com.docs.scanner.data.local.security.ApiKeyData.toApiKeyEntry(): 
     com.docs.scanner.data.local.security.ApiKeyEntry {
     return com.docs.scanner.data.local.security.ApiKeyEntry(
         key = this.key,
-        label = this.label ?: "Unlabeled Key", // ✅ Гарантируем non-null String
-        isActive = this.isActive,
-        lastUsed = null,  // ✅ ApiKeyData не содержит lastUsedAt
-        errorCount = 0,   // ✅ ApiKeyData не содержит errorCount
-        lastError = null  // ✅ ApiKeyData не содержит lastErrorAt
+        label = this.label ?: "Unlabeled Key",
+        addedAt = this.createdAt,        // ✅ Map createdAt → addedAt
+        lastUsedAt = null,               // ✅ Correct parameter name
+        lastErrorAt = null,              // ✅ Correct parameter name
+        errorCount = 0,
+        isActive = this.isActive
     )
 }
