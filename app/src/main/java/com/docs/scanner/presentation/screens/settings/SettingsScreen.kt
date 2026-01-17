@@ -1,16 +1,23 @@
 /*
  * SettingsScreen.kt
- * Version: 15.0.0 - ПОЛНОСТЬЮ ИСПРАВЛЕНО (2026)
+ * Version: 16.0.0 - UNIFIED API KEY MODEL (2026)
  * 
- * ✅ ИСПРАВЛЕНО: Line 667 - Added Spacer import
- * ✅ ИСПРАВЛЕНО: Lines 1288-1292 - Fixed ApiKeyEntry constructor
- * ✅ ИСПРАВЛЕНО: Все unresolved references
- * ✅ ДОБАВЛЕНО: Полная поддержка multi-key failover
+ * ✅ FIXED in 16.0.0:
+ * - Unified ApiKeyEntry model throughout
+ * - Removed ApiKeyData references
+ * - Fixed .id → .key for API key identification
+ * - Removed unnecessary .map { it.toApiKeyEntry() }
+ * - All type mismatches resolved
+ * 
+ * ✅ PREVIOUS FIXES:
+ * - Line 667 - Added Spacer import
+ * - Lines 1288-1292 - Fixed ApiKeyEntry constructor
+ * - All unresolved references
+ * - Full multi-key failover support
  */
 
 package com.docs.scanner.presentation.screens.settings
 
-import androidx.compose.foundation.layout.*
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,6 +42,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.App
 import com.docs.scanner.BuildConfig
+import com.docs.scanner.data.local.security.ApiKeyEntry
 import com.docs.scanner.domain.core.BackupInfo
 import com.docs.scanner.domain.core.ImageQuality
 import com.docs.scanner.domain.core.Language
@@ -194,7 +202,7 @@ fun SettingsScreen(
 
                     SettingsTab.MLKIT -> MlkitSettingsTab(
                         mlkitSettings = mlkitSettings,
-                        apiKeys = apiKeys.map { it.toApiKeyEntry() },
+                        apiKeys = apiKeys,
                         isLoadingKeys = isLoadingKeys,
                         onScriptModeChange = viewModel::setMlkitScriptMode,
                         onAutoDetectChange = viewModel::setMlkitAutoDetect,
@@ -350,7 +358,7 @@ fun SettingsScreen(
 
 @Composable
 private fun GeneralSettingsTab(
-    apiKeys: List<com.docs.scanner.data.local.security.ApiKeyData>,
+    apiKeys: List<ApiKeyEntry>,
     themeMode: ThemeMode,
     appLanguage: String,
     ocrMode: String,
@@ -491,7 +499,8 @@ private fun GeneralSettingsTab(
                     Spacer(Modifier.width(4.dp))
                     Text("Clear")
                 }
-            }Spacer(Modifier.height(8.dp))
+            }
+            Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = onClearOldCache, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.AutoDelete, null)
                 Spacer(Modifier.width(8.dp))
@@ -536,7 +545,7 @@ private fun GeneralSettingsTab(
 @Composable
 private fun MlkitSettingsTab(
     mlkitSettings: com.docs.scanner.presentation.screens.settings.components.MlkitSettingsState,
-    apiKeys: List<com.docs.scanner.data.local.security.ApiKeyEntry>,
+    apiKeys: List<ApiKeyEntry>,
     isLoadingKeys: Boolean,
     onScriptModeChange: (com.docs.scanner.data.remote.mlkit.OcrScriptMode) -> Unit,
     onAutoDetectChange: (Boolean) -> Unit,
@@ -972,7 +981,7 @@ private fun SettingDropdown(
 
 @Composable
 private fun ApiKeyItem(
-    key: com.docs.scanner.data.local.security.ApiKeyData,
+    key: ApiKeyEntry,
     onActivate: (String) -> Unit,
     onCopy: () -> Unit,
     onDelete: (String) -> Unit,
@@ -997,12 +1006,12 @@ private fun ApiKeyItem(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = key.label ?: "API Key",
+                        text = key.label.ifBlank { "API Key" },
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = key.key.take(20) + "...",
+                        text = key.maskedKey,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
@@ -1020,17 +1029,17 @@ private fun ApiKeyItem(
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (!key.isActive) {
                     FilledTonalButton(
-                        onClick = { onActivate(key.id) },
+                        onClick = { onActivate(key.key) },
                         modifier = Modifier.weight(1f)
                     ) { Text("Activate") }
                 }
                 OutlinedButton(onClick = onCopy, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
                 }
-                OutlinedButton(onClick = { onTest(key.id) }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { onTest(key.key) }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.Verified, null, modifier = Modifier.size(16.dp))
                 }
-                OutlinedButton(onClick = { onDelete(key.id) }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { onDelete(key.key) }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp))
                 }
             }
@@ -1263,7 +1272,7 @@ private fun RestoreBackupDialog(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// EXTENSION FUNCTIONS - ✅ ИСПРАВЛЕНО
+// EXTENSION FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
 private fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
