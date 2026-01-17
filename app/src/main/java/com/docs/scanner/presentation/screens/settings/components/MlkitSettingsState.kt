@@ -1,14 +1,13 @@
 /*
  * MlkitSettingsState.kt
- * Version: 8.0.0 - GEMINI OCR FALLBACK READY (2026 Standards)
+ * Version: 9.0.0 - GEMINI OCR FALLBACK + TEST CHECKBOX (2026 Standards)
  * 
- * ✅ NEW IN 8.0.0 (PHASE 2):
- * - geminiOcrEnabled: Boolean = true
- * - geminiOcrThreshold: Int = 50  (0-100 range)
- * - geminiOcrAlways: Boolean = false
+ * ✅ NEW IN 9.0.0:
+ * - testGeminiFallback: Boolean = false (для UI чекбокса)
+ * - showGeminiFallbackTest computed property
  * 
  * ✅ ПОЛНАЯ СПЕЦИФИКАЦИЯ:
- * - 12 полей для UI и логики (9 старых + 3 новых)
+ * - 13 полей для UI и логики (12 старых + 1 новый)
  * - Синхронизация с DataStore
  * - Поддержка test режима
  * - Thread-safe копирование
@@ -40,9 +39,10 @@ import com.docs.scanner.data.remote.mlkit.OcrTestResult
  * @property isTestRunning Флаг выполнения теста
  * @property testResult Результат последнего теста
  * @property testError Ошибка теста (если была)
- * @property geminiOcrEnabled Включен ли Gemini OCR fallback (NEW)
- * @property geminiOcrThreshold Порог confidence для fallback 0-100 (NEW)
- * @property geminiOcrAlways Всегда использовать Gemini (пропустить ML Kit) (NEW)
+ * @property geminiOcrEnabled Включен ли Gemini OCR fallback
+ * @property geminiOcrThreshold Порог confidence для fallback 0-100
+ * @property geminiOcrAlways Всегда использовать Gemini (пропустить ML Kit)
+ * @property testGeminiFallback Флаг для принудительного теста Gemini fallback (NEW)
  */
 data class MlkitSettingsState(
     // ═══════════════════════════════════════════════════════════════════════════
@@ -152,7 +152,7 @@ data class MlkitSettingsState(
     // ═══════════════════════════════════════════════════════════════════════════
     
     /**
-     * ✅ NEW: Включен ли Gemini OCR fallback.
+     * ✅ Включен ли Gemini OCR fallback.
      * 
      * Когда true:
      * - Если ML Kit результаты плохие (низкий confidence, много ошибок)
@@ -166,7 +166,7 @@ data class MlkitSettingsState(
     val geminiOcrEnabled: Boolean = true,
     
     /**
-     * ✅ NEW: Порог confidence (0-100) для triggering Gemini fallback.
+     * ✅ Порог confidence (0-100) для triggering Gemini fallback.
      * 
      * Если overall confidence ML Kit < этого порога:
      * - Запускается Gemini OCR как fallback
@@ -181,7 +181,7 @@ data class MlkitSettingsState(
     val geminiOcrThreshold: Int = 50,
     
     /**
-     * ✅ NEW: Всегда использовать Gemini OCR (пропустить ML Kit).
+     * ✅ Всегда использовать Gemini OCR (пропустить ML Kit).
      * 
      * Когда true:
      * - ML Kit полностью пропускается
@@ -195,7 +195,21 @@ data class MlkitSettingsState(
      * 
      * ⚠️ ВНИМАНИЕ: Расходует API quota быстрее!
      */
-    val geminiOcrAlways: Boolean = false
+    val geminiOcrAlways: Boolean = false,
+    
+    /**
+     * ✅ NEW: Флаг для принудительного тестирования Gemini OCR fallback.
+     * 
+     * Когда true (чекбокс в UI включен):
+     * - OCR тест симулирует низкую уверенность ML Kit
+     * - Принудительно запускает Gemini OCR
+     * - Позволяет протестировать Gemini fallback вручную
+     * 
+     * Default: false (обычный режим теста)
+     * 
+     * ВАЖНО: Это только для диагностики, не сохраняется в DataStore.
+     */
+    val testGeminiFallback: Boolean = false
 ) {
     /**
      * Проверка готовности к тесту.
@@ -210,14 +224,24 @@ data class MlkitSettingsState(
         get() = testResult != null || testError != null
     
     /**
-     * ✅ NEW: Gemini fallback активен и настроен корректно.
+     * ✅ Gemini fallback активен и настроен корректно.
      */
     val isGeminiFallbackActive: Boolean
         get() = geminiOcrEnabled && !geminiOcrAlways && geminiOcrThreshold in 0..100
     
     /**
-     * ✅ NEW: Режим "только Gemini" активен.
+     * ✅ Режим "только Gemini" активен.
      */
     val isGeminiOnlyMode: Boolean
         get() = geminiOcrEnabled && geminiOcrAlways
+    
+    /**
+     * ✅ NEW: Показывать ли чекбокс "Test Gemini fallback" в UI.
+     * 
+     * Показываем только если:
+     * - Gemini OCR включен
+     * - Изображение выбрано для теста
+     */
+    val showGeminiFallbackTest: Boolean
+        get() = geminiOcrEnabled && selectedImageUri != null
 }
