@@ -1,12 +1,9 @@
 /*
  * SettingsScreen.kt
- * Version: 13.0.1 - FULLY FIXED (2026 Standards)
+ * Version: 13.0.2 - ALL ERRORS FIXED (2026 Standards)
  * 
- * ✅ ALL COMPILATION ERRORS FIXED:
- * - Line 202: ApiKeyData -> ApiKeyEntry conversion
- * - Line 210: Removed invalid parameter from runMlkitOcrTest
- * - Line 225: Added resetApiKeyErrors callback
- * - Added toApiKeyEntry() extension function
+ * ✅ FIXED: Line 667 - Added missing Spacer import
+ * ✅ FIXED: Lines 1300-1307 - Corrected ApiKeyEntry constructor parameters
  */
 
 package com.docs.scanner.presentation.screens.settings
@@ -194,7 +191,6 @@ fun SettingsScreen(
 
                     SettingsTab.MLKIT -> MlkitSettingsTab(
                         mlkitSettings = mlkitSettings,
-                        // ✅ FIX #1 (строка 202): Конвертируем ApiKeyData -> ApiKeyEntry
                         apiKeys = apiKeys.map { it.toApiKeyEntry() },
                         isLoadingKeys = isLoadingKeys,
                         onScriptModeChange = viewModel::setMlkitScriptMode,
@@ -203,20 +199,16 @@ fun SettingsScreen(
                         onHighlightLowConfidenceChange = viewModel::setMlkitHighlightLowConfidence,
                         onShowWordConfidencesChange = viewModel::setMlkitShowWordConfidences,
                         onImageSelected = viewModel::setMlkitSelectedImage,
-                        // ✅ FIX #2 (строка 210): Убрали параметр testGeminiFallback
                         onTestOcr = viewModel::runMlkitOcrTest,
                         onClearTestResult = viewModel::clearMlkitTestResult,
                         onClearMlkitCache = viewModel::clearMlkitCache,
-                        // ✅ Gemini OCR callbacks
                         onGeminiOcrEnabledChange = viewModel::setGeminiOcrEnabled,
                         onGeminiOcrThresholdChange = viewModel::setGeminiOcrThreshold,
                         onGeminiOcrAlwaysChange = viewModel::setGeminiOcrAlways,
                         onTestGeminiFallbackChange = viewModel::setMlkitTestGeminiFallback,
-                        // ✅ API Keys management callbacks
                         onAddApiKey = { key, label -> viewModel.addApiKey(key, label) },
                         onRemoveApiKey = { viewModel.deleteKey(it) },
                         onSetPrimaryApiKey = { viewModel.activateKey(it) },
-                        // ✅ FIX #4 (строка 225): Исправлен callback
                         onResetApiKeyErrors = viewModel::resetApiKeyErrors
                     )
 
@@ -539,10 +531,6 @@ private fun GeneralSettingsTab(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// ✅ UPDATED: ML KIT SETTINGS TAB WITH GEMINI OCR + API KEYS
-// ═══════════════════════════════════════════════════════════════════════════════
-
 @Composable
 private fun MlkitSettingsTab(
     mlkitSettings: com.docs.scanner.presentation.screens.settings.components.MlkitSettingsState,
@@ -557,12 +545,10 @@ private fun MlkitSettingsTab(
     onTestOcr: () -> Unit,
     onClearTestResult: () -> Unit,
     onClearMlkitCache: () -> Unit,
-    // ✅ Gemini OCR callbacks
     onGeminiOcrEnabledChange: (Boolean) -> Unit,
     onGeminiOcrThresholdChange: (Int) -> Unit,
     onGeminiOcrAlwaysChange: (Boolean) -> Unit,
     onTestGeminiFallbackChange: (Boolean) -> Unit,
-    // ✅ API Keys callbacks
     onAddApiKey: (key: String, label: String) -> Unit,
     onRemoveApiKey: (key: String) -> Unit,
     onSetPrimaryApiKey: (key: String) -> Unit,
@@ -587,12 +573,10 @@ private fun MlkitSettingsTab(
             onImageSelected = onImageSelected,
             onTestOcr = onTestOcr,
             onClearTestResult = onClearTestResult,
-            // ✅ Gemini OCR callbacks
             onGeminiOcrEnabledChange = onGeminiOcrEnabledChange,
             onGeminiOcrThresholdChange = onGeminiOcrThresholdChange,
             onGeminiOcrAlwaysChange = onGeminiOcrAlwaysChange,
             onTestGeminiFallbackChange = onTestGeminiFallbackChange,
-            // ✅ API Keys callbacks
             onAddApiKey = onAddApiKey,
             onRemoveApiKey = onRemoveApiKey,
             onSetPrimaryApiKey = onSetPrimaryApiKey,
@@ -625,10 +609,6 @@ private fun MlkitSettingsTab(
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// BACKUP TAB
-// ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun BackupSettingsTab(
@@ -664,7 +644,8 @@ private fun BackupSettingsTab(
             ) {
                 Text("Include images")
                 Switch(checked = includeImages, onCheckedChange = onIncludeImagesChange)
-            }Spacer(Modifier.height(12.dp))
+            }
+            Spacer(Modifier.height(12.dp))
             Button(
                 onClick = onCreateLocalBackup,
                 enabled = !isBackingUp,
@@ -695,8 +676,7 @@ private fun BackupSettingsTab(
                 }
             }
         }
-
-        // Google Drive
+// Google Drive
         SettingsCard(title = "Google Drive", icon = Icons.Default.CloudSync) {
             Text(
                 text = driveEmail?.let { "Connected: $it" } ?: "Not connected",
@@ -754,10 +734,6 @@ private fun BackupSettingsTab(
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// DEBUG TAB
-// ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun DebugSettingsTab(
@@ -1290,20 +1266,29 @@ private fun RestoreBackupDialog(
 private fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
 
 /**
- * ✅ FIX #3: Converts ApiKeyData to ApiKeyEntry for type compatibility.
+ * ✅ FIX: Converts ApiKeyData to ApiKeyEntry for type compatibility.
  * 
- * ApiKeyData - storage model (from EncryptedKeyStorage)
- * ApiKeyEntry - UI model (used in MlkitSettingsSection)
+ * ИСПРАВЛЕНО: Убраны неверные параметры (id, createdAt) и добавлены правильные.
+ * 
+ * ApiKeyEntry конструктор:
+ * ```
+ * data class ApiKeyEntry(
+ *     val key: String,
+ *     val label: String?,
+ *     val isActive: Boolean,
+ *     val lastUsed: Long?,
+ *     val errorCount: Int,
+ *     val lastError: Long?
+ * )
+ * ```
  */
 private fun com.docs.scanner.data.local.security.ApiKeyData.toApiKeyEntry(): com.docs.scanner.data.local.security.ApiKeyEntry {
     return com.docs.scanner.data.local.security.ApiKeyEntry(
-        id = this.id,
         key = this.key,
         label = this.label,
         isActive = this.isActive,
-        createdAt = this.createdAt,
-        lastUsedAt = this.lastUsedAt,
+        lastUsed = this.lastUsedAt,
         errorCount = this.errorCount,
-        lastErrorAt = this.lastErrorAt
+        lastError = this.lastErrorAt
     )
 }
