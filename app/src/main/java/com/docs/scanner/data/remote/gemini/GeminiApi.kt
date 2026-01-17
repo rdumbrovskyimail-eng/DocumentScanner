@@ -2,7 +2,6 @@ package com.docs.scanner.data.remote.gemini
 
 import com.docs.scanner.domain.core.DomainError
 import com.docs.scanner.domain.core.DomainResult
-import com.docs.scanner.domain.core.DomainResult.Companion.failure
 import com.docs.scanner.domain.core.Language
 import timber.log.Timber
 import javax.inject.Inject
@@ -11,9 +10,10 @@ import javax.inject.Singleton
 /**
  * Gemini API Facade with dual-mode operation.
  * 
- * Version: 2.0.0 - FIXED (2026)
+ * Version: 2.0.1 - FIXED (2026)
  * 
  * ✅ FIXES:
+ * - Fixed DomainResult.Failure wrapping in generateTextWithKey
  * - Split into two methods: generateText() with failover and generateTextWithKey() for testing
  * - Fixed conflict between manual apiKey parameter and keyManager.executeWithFailover
  * - Added proper error handling for empty responses
@@ -63,7 +63,7 @@ class GeminiApi @Inject constructor(
         fallbackModels: List<String> = listOf(FALLBACK_MODEL)
     ): DomainResult<String> {
         if (prompt.isBlank()) {
-            return failure(
+            return DomainResult.failure(
                 DomainError.TranslationFailed(
                     from = Language.AUTO,
                     to = Language.AUTO,
@@ -120,17 +120,15 @@ class GeminiApi @Inject constructor(
         fallbackModels: List<String> = listOf(FALLBACK_MODEL)
     ): DomainResult<String> {
         if (apiKey.isBlank()) {
-            return failure(DomainError.MissingApiKey)
+            return DomainResult.failure(DomainError.MissingApiKey)
         }
         
         if (prompt.isBlank()) {
-            return failure(
-                DomainResult.Failure(
-                    DomainError.TranslationFailed(
-                        from = Language.AUTO,
-                        to = Language.AUTO,
-                        cause = "Prompt cannot be blank"
-                    )
+            return DomainResult.failure(
+                DomainError.TranslationFailed(
+                    from = Language.AUTO,
+                    to = Language.AUTO,
+                    cause = "Prompt cannot be blank"
                 )
             )
         }
