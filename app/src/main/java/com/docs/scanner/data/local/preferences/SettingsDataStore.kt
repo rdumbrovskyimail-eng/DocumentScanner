@@ -1,11 +1,14 @@
 /**
  * SettingsDataStore.kt
- * Version: 7.0.1 - FIXED (2026 Standards)
+ * Version: 8.0.0 - GEMINI OCR FALLBACK READY (2026 Standards)
+ *
+ * ✅ NEW IN 8.0.0 (PHASE 2 & 3):
+ * - KEY_GEMINI_OCR_ENABLED, KEY_GEMINI_OCR_THRESHOLD, KEY_GEMINI_OCR_ALWAYS
+ * - geminiOcrEnabled, geminiOcrThreshold, geminiOcrAlways Flow properties
+ * - setGeminiOcrEnabled(), setGeminiOcrThreshold(), setGeminiOcrAlways() methods
+ * - getOcrQualityThresholds() helper for OcrQualityAnalyzer integration
  *
  * ✅ FIX SERIOUS-2: Убран собственный delegate, DataStore инжектится из Hilt
- *    БЫЛО: private val Context.dataStore by preferencesDataStore(...)
- *          private val dataStore = context.dataStore
- *    СТАЛО: DataStore<Preferences> инжектится через конструктор из DataStoreModule
  *
  * DataStore for app settings.
  * 
@@ -20,6 +23,7 @@
  * - UI settings (theme, language)
  * - OCR settings (language, auto-translate)
  * - Cache settings (enabled, TTL)
+ * - Gemini OCR Fallback settings (NEW IN 8.0.0)
  */
 
 package com.docs.scanner.data.local.preferences
@@ -32,6 +36,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
+import com.docs.scanner.data.remote.mlkit.OcrQualityThresholds
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -39,12 +44,6 @@ import kotlinx.coroutines.flow.map
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
-
-// ✅ FIX SERIOUS-2: УДАЛЁН собственный delegate!
-// БЫЛО:
-// private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "app_settings")
-//
-// Теперь DataStore инжектится из DataStoreModule, что гарантирует единственный экземпляр.
 
 /**
  * DataStore for app settings.
@@ -90,6 +89,11 @@ class SettingsDataStore @Inject constructor(
 
         // Image settings
         private val KEY_IMAGE_QUALITY = stringPreferencesKey("image_quality")
+        
+        // ✅ NEW: Gemini OCR Fallback Settings (PHASE 2)
+        private val KEY_GEMINI_OCR_ENABLED = booleanPreferencesKey("gemini_ocr_enabled")
+        private val KEY_GEMINI_OCR_THRESHOLD = intPreferencesKey("gemini_ocr_threshold")
+        private val KEY_GEMINI_OCR_ALWAYS = booleanPreferencesKey("gemini_ocr_always")
         
         // Legacy key for migration
         private val KEY_LEGACY_API_KEY = stringPreferencesKey("gemini_api_key")
@@ -459,6 +463,86 @@ class SettingsDataStore @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "Error setting image quality")
         }
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ GEMINI OCR FALLBACK SETTINGS (PHASE 2)
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Whether Gemini OCR fallback is enabled.
+     * When true, poor ML Kit results will trigger Gemini Vision OCR.
+     */
+    val geminiOcrEnabled: Flow<Boolean> = dataStore.data
+        .catch { e ->
+            Timber.e(e, "Error reading geminiOcrEnabled")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_GEMINI_OCR_ENABLED] ?: true }
+    
+    /**
+     * Confidence threshold (0-100) below which Gemini fallback triggers.
+     * Default: 50 (50%)
+     */
+    val geminiOcrThreshold: Flow<Int> = dataStore.data
+        .catch { e ->
+            Timber.e(e, "Error reading geminiOcrThreshold")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_GEMINI_OCR_THRESHOLD] ?: 50 }
+    
+    /**
+     * Whether to always use Gemini for OCR (skip ML Kit).
+     * Useful for documents known to be handwritten.
+     */
+    val geminiOcrAlways: Flow<Boolean> = dataStore.data
+        .catch { e ->
+            Timber.e(e, "Error reading geminiOcrAlways")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_GEMINI_OCR_ALWAYS] ?: false }
+    
+    /**
+     * Sets Gemini OCR fallback enabled state.
+     */
+    suspend fun setGeminiOcrEnabled(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[KEY_GEMINI_OCR_ENABLED] = enabled
+        }
+    }
+    
+    /**
+     * Sets Gemini OCR confidence threshold (0-100).
+     */
+    suspend fun setGeminiOcrThreshold(threshold: Int) {
+        dataStore.edit { prefs ->
+            prefs[KEY_GEMINI_OCR_THRESHOLD] = threshold.coerceIn(0, 100)
+        }
+    }
+    
+    /**
+     * Sets whether to always use Gemini OCR.
+     */
+    suspend fun setGeminiOcrAlways(always: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[KEY_GEMINI_OCR_ALWAYS] = always
+        }
+    }
+    
+    /**
+     * ✅ PHASE 3: Gets current OCR quality thresholds as a data object.
+     * Used by OcrQualityAnalyzer to determine if Gemini fallback is needed.
+     */
+    suspend fun getOcrQualityThresholds(): OcrQualityThresholds {
+        val enabled = geminiOcrEnabled.first()
+        val threshold = geminiOcrThreshold.first()
+        val always = geminiOcrAlways.first()
+        
+        return OcrQualityThresholds(
+            minConfidenceForSuccess = threshold / 100f,
+            geminiOcrEnabled = enabled,
+            alwaysUseGemini = always
+        )
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
