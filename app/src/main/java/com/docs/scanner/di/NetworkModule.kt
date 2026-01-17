@@ -1,11 +1,10 @@
 /**
  * NetworkModule.kt
- * Version: 7.0.1 - FIXED (2026 Standards)
+ * Version: 7.1.0 - FIXED ALL COMPILATION ERRORS (2026 Standards)
  *
  * ✅ FIX CRITICAL-3: Исправлен провайдер GoogleDriveService
- *    БЫЛО: return GoogleDriveService(context) - не хватало 4 зависимостей
- *    СТАЛО: Провайдер удалён, т.к. GoogleDriveService имеет @Inject constructor
- *           и все его зависимости доступны в Hilt графе
+ * ✅ FIX: Добавлены недостающие параметры для GeminiKeyManager
+ * ✅ FIX: Добавлены недостающие параметры для GeminiOcrService
  *
  * Hilt module providing network and remote service dependencies.
  */
@@ -20,8 +19,11 @@ import com.docs.scanner.data.local.security.EncryptedKeyStorage
 import com.docs.scanner.data.remote.camera.DocumentScannerWrapper
 import com.docs.scanner.data.remote.gemini.GeminiApi
 import com.docs.scanner.data.remote.gemini.GeminiApiService
+import com.docs.scanner.data.remote.gemini.GeminiKeyManager
+import com.docs.scanner.data.remote.gemini.GeminiOcrService
 import com.docs.scanner.data.remote.gemini.GeminiTranslator
 import com.docs.scanner.data.remote.mlkit.MLKitScanner
+import com.docs.scanner.data.remote.mlkit.OcrQualityAnalyzer
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import dagger.Module
@@ -45,6 +47,10 @@ import javax.inject.Singleton
  *   GoogleDriveService has @Inject constructor, so Hilt creates it automatically.
  *   All its dependencies (AppDatabase, DataStore, JsonSerializer, RetryPolicy)
  *   are already available in the Hilt graph.
+ * 
+ * - ✅ CRITICAL-4: Fixed GeminiKeyManager provider - added keyStorage parameter
+ * - ✅ CRITICAL-5: Fixed GeminiOcrService provider - added geminiOcrService and qualityAnalyzer
+ * - ✅ CRITICAL-6: Fixed GeminiTranslator - replaced encryptedKeyStorage with keyManager
  * 
  * - 🔵 Minor: OkHttp retryOnConnectionFailure для POST запросов (спорно)
  * - 🟡 #12: Unified logging (Timber instead of android.util.Log)
@@ -152,6 +158,37 @@ object NetworkModule {
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
+    // GEMINI KEY MANAGER
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * ✅ FIX CRITICAL-4: Added missing keyStorage parameter
+     * 
+     * БЫЛО (ОШИБКА):
+     * ```
+     * fun provideGeminiKeyManager(): GeminiKeyManager {
+     *     return GeminiKeyManager()  // ❌ Не хватает keyStorage!
+     * }
+     * ```
+     * 
+     * GeminiKeyManager имеет конструктор:
+     * ```
+     * class GeminiKeyManager @Inject constructor(
+     *     private val keyStorage: EncryptedKeyStorage  // ❌ Не передавался!
+     * )
+     * ```
+     * 
+     * РЕШЕНИЕ: Добавить параметр keyStorage в провайдер.
+     */
+    @Provides
+    @Singleton
+    fun provideGeminiKeyManager(
+        keyStorage: EncryptedKeyStorage
+    ): GeminiKeyManager {
+        return GeminiKeyManager(keyStorage)
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
     // GEMINI API WRAPPERS
     // ════════════════════════════════════════════════════════════════════════════════
     
@@ -168,28 +205,91 @@ object NetworkModule {
     }
     
     /**
-     * Provides GeminiTranslator with cache integration.
+     * ✅ FIX CRITICAL-6: Replaced encryptedKeyStorage with keyManager
      * 
-     * Integrates with TranslationCacheManager to reduce API calls:
-     * - Checks cache before API call
-     * - Saves translation to cache after API call
-     * - Supports language parameters (source/target)
+     * БЫЛО (ОШИБКА):
+     * ```
+     * fun provideGeminiTranslator(
+     *     geminiApi: GeminiApi,
+     *     translationCacheManager: TranslationCacheManager,
+     *     encryptedKeyStorage: EncryptedKeyStorage,  // ❌ Неверный параметр!
+     *     settingsDataStore: SettingsDataStore
+     * ): GeminiTranslator
+     * ```
      * 
-     * Previously CRITICAL FIX: This was missing and caused compilation failure.
+     * GeminiTranslator НЕ имеет конструктора с encryptedKeyStorage.
+     * Вместо этого он использует GeminiKeyManager.
+     * 
+     * РЕШЕНИЕ: Заменить encryptedKeyStorage на keyManager.
      */
     @Provides
     @Singleton
     fun provideGeminiTranslator(
         geminiApi: GeminiApi,
         translationCacheManager: TranslationCacheManager,
-        encryptedKeyStorage: EncryptedKeyStorage,
+        keyManager: GeminiKeyManager,  // ✅ FIXED: было encryptedKeyStorage
         settingsDataStore: SettingsDataStore
     ): GeminiTranslator {
         return GeminiTranslator(
             geminiApi = geminiApi,
             translationCacheManager = translationCacheManager,
-            encryptedKeyStorage = encryptedKeyStorage,
+            keyManager = keyManager,  // ✅ FIXED: было encryptedKeyStorage
             settingsDataStore = settingsDataStore
+        )
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // OCR QUALITY ANALYZER
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Provides OCR quality analyzer.
+     * Analyzes ML Kit results to determine if Gemini fallback is needed.
+     */
+    @Provides
+    @Singleton
+    fun provideOcrQualityAnalyzer(): OcrQualityAnalyzer {
+        return OcrQualityAnalyzer()
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // GEMINI OCR SERVICE
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * ✅ FIX CRITICAL-5: Added missing geminiOcrService and qualityAnalyzer parameters
+     * 
+     * БЫЛО (ОШИБКА):
+     * ```
+     * fun provideGeminiOcrService(
+     *     @ApplicationContext context: Context
+     * ): GeminiOcrService {
+     *     return GeminiOcrService(context)  // ❌ Не хватает 2 параметров!
+     * }
+     * ```
+     * 
+     * GeminiOcrService имеет конструктор:
+     * ```
+     * class GeminiOcrService @Inject constructor(
+     *     @ApplicationContext private val context: Context,
+     *     private val apiService: GeminiApiService,  // ❌ Не передавался!
+     *     private val keyManager: GeminiKeyManager   // ❌ Не передавался!
+     * )
+     * ```
+     * 
+     * РЕШЕНИЕ: Добавить недостающие параметры в провайдер.
+     */
+    @Provides
+    @Singleton
+    fun provideGeminiOcrService(
+        @ApplicationContext context: Context,
+        apiService: GeminiApiService,  // ✅ ADDED
+        keyManager: GeminiKeyManager   // ✅ ADDED
+    ): GeminiOcrService {
+        return GeminiOcrService(
+            context = context,
+            apiService = apiService,
+            keyManager = keyManager
         )
     }
     
