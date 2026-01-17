@@ -1,8 +1,12 @@
 /*
  * SettingsViewModel.kt
- * Version: 11.1.0 - GEMINI OCR FALLBACK ADDED (2026 Standards)
+ * Version: 12.0.0 - GEMINI OCR FALLBACK + TEST CONTROLS (2026 Standards)
  * 
- * ✅ NEW: Gemini OCR Fallback управление
+ * ✅ NEW in 12.0.0:
+ * - Gemini OCR Fallback управление (enabled, threshold, always)
+ * - Test Gemini fallback checkbox в OCR тесте
+ * - API key error reset функционал
+ * 
  * ✅ КРИТИЧЕСКИЕ ИСПРАВЛЕНИЯ:
  * - Единая система настроек OCR через DataStore
  * - Автосинхронизация между Settings и Editor
@@ -180,7 +184,7 @@ class SettingsViewModel @Inject constructor(
     /**
      * ✅ CRITICAL: Загружает настройки OCR из DataStore при старте.
      * 
-     * UPDATED: Теперь также загружает настройки Gemini OCR fallback.
+     * UPDATED in 12.0.0: Теперь также загружает настройки Gemini OCR fallback.
      * 
      * Это обеспечивает синхронизацию между:
      * - Settings UI (где пользователь меняет настройки)
@@ -999,83 +1003,6 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * ✅ CRITICAL: Запускает тест OCR с текущими настройками.
-     * 
-     * Это НЕ влияет на настройки в Editor - только для диагностики.
-     * Использует временные параметры из _mlkitSettings.
-     */
-    fun runMlkitOcrTest() {
-        val currentState = _mlkitSettings.value
-        val imageUri = currentState.selectedImageUri
-        
-        if (imageUri == null) {
-            _mlkitSettings.update { it.copy(testError = "No image selected") }
-            return
-        }
-        
-        viewModelScope.launch {
-            _mlkitSettings.update { 
-                it.copy(
-                    isTestRunning = true, 
-                    testResult = null, 
-                    testError = null
-                ) 
-            }
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("🧪 Running MLKit OCR test")
-                Timber.d("   ├─ Mode: ${currentState.scriptMode}")
-                Timber.d("   ├─ Auto-detect: ${currentState.autoDetectLanguage}")
-                Timber.d("   └─ Threshold: ${(currentState.confidenceThreshold * 100).toInt()}%")
-            }
-            
-            try {
-                when (val result = mlKitScanner.testOcr(
-                    uri = imageUri,
-                    scriptMode = currentState.scriptMode,
-                    autoDetectLanguage = currentState.autoDetectLanguage,
-                    confidenceThreshold = currentState.confidenceThreshold
-                )) {
-                    is DomainResult.Success -> {
-                        _mlkitSettings.update { 
-                            it.copy(
-                                testResult = result.data, 
-                                isTestRunning = false
-                            ) 
-                        }
-                        
-                        if (BuildConfig.DEBUG) {
-                            val data = result.data
-                            Timber.d("✅ MLKit OCR test success")
-                            Timber.d("   ├─ Words: ${data.totalWords}")
-                            Timber.d("   ├─ Confidence: ${data.confidencePercent}")
-                            Timber.d("   ├─ Quality: ${data.qualityRating}")
-                            Timber.d("   └─ Time: ${data.processingTimeMs}ms")
-                        }
-                    }
-                    is DomainResult.Failure -> {
-                        _mlkitSettings.update { 
-                            it.copy(
-                                testError = result.error.message, 
-                                isTestRunning = false
-                            ) 
-                        }
-                        Timber.e("❌ MLKit OCR test failed: ${result.error.message}")
-                    }
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "❌ MLKit OCR test exception")
-                _mlkitSettings.update { 
-                    it.copy(
-                        testError = "OCR failed: ${e.message}", 
-                        isTestRunning = false
-                    ) 
-                }
-            }
-        }
-    }
-
-    /**
      * Очищает cache MLKit recognizers (освобождает память).
      */
     fun clearMlkitCache() {
@@ -1171,6 +1098,146 @@ class SettingsViewModel @Inject constructor(
             } catch (e: Exception) {
                 Timber.e(e, "Failed to save Gemini OCR always setting")
                 _saveMessage.value = "✗ Failed to save Gemini OCR always setting"
+            }
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ ДОПОЛНИТЕЛЬНЫЕ МЕТОДЫ ДЛЯ ML KIT OCR (NEW IN 12.0.0)
+    // ════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Включает/выключает тестирование Gemini fallback в OCR тесте.
+     * 
+     * Это управляет UI чекбоксом "Also test Gemini fallback", который
+     * появляется только когда Gemini OCR включен И выбрано изображение.
+     * 
+     * ВАЖНО: Это только UI state, не сохраняется в DataStore.
+     * 
+     * @param enabled true - включить принудительный тест Gemini,
+     *                false - обычный тест с ML Kit
+     */
+    fun setMlkitTestGeminiFallback(enabled: Boolean) {
+        _mlkitSettings.update { it.copy(testGeminiFallback = enabled) }
+        
+        if (BuildConfig.DEBUG) {
+            Timber.d("🧪 Test Gemini fallback checkbox: $enabled")
+        }
+    }
+
+    /**
+     * ⚠️ ЗАМЕНИТЕ СУЩЕСТВУЮЩИЙ МЕТОД runMlkitOcrTest() НА ЭТОТ:
+     * 
+     * Запускает тест OCR с текущими настройками.
+     * 
+     * UPDATED в 12.0.0: Добавлен параметр testGeminiFallback для тестирования
+     * Gemini OCR fallback вручную.
+     * 
+     * Это НЕ влияет на настройки в Editor - только для диагностики.
+     * Использует временные параметры из _mlkitSettings.
+     */
+    fun runMlkitOcrTest() {
+        val currentState = _mlkitSettings.value
+        val imageUri = currentState.selectedImageUri
+        
+        if (imageUri == null) {
+            _mlkitSettings.update { it.copy(testError = "No image selected") }
+            return
+        }
+        
+        viewModelScope.launch {
+            _mlkitSettings.update { 
+                it.copy(
+                    isTestRunning = true, 
+                    testResult = null, 
+                    testError = null
+                ) 
+            }
+            
+            if (BuildConfig.DEBUG) {
+                Timber.d("🧪 Running MLKit OCR test")
+                Timber.d("   ├─ Mode: ${currentState.scriptMode}")
+                Timber.d("   ├─ Auto-detect: ${currentState.autoDetectLanguage}")
+                Timber.d("   ├─ Threshold: ${(currentState.confidenceThreshold * 100).toInt()}%")
+                Timber.d("   └─ Test Gemini fallback: ${currentState.testGeminiFallback}")
+            }
+            
+            try {
+                // ✅ ВАЖНО: Передаем параметр testGeminiFallback в MLKitScanner
+                when (val result = mlKitScanner.testOcr(
+                    uri = imageUri,
+                    scriptMode = currentState.scriptMode,
+                    autoDetectLanguage = currentState.autoDetectLanguage,
+                    confidenceThreshold = currentState.confidenceThreshold,
+                    testGeminiFallback = currentState.testGeminiFallback // ✅ NEW PARAMETER
+                )) {
+                    is DomainResult.Success -> {
+                        _mlkitSettings.update { 
+                            it.copy(
+                                testResult = result.data, 
+                                isTestRunning = false
+                            ) 
+                        }
+                        
+                        if (BuildConfig.DEBUG) {
+                            val data = result.data
+                            Timber.d("✅ MLKit OCR test success")
+                            Timber.d("   ├─ Words: ${data.totalWords}")
+                            Timber.d("   ├─ Confidence: ${data.confidencePercent}")
+                            Timber.d("   ├─ Quality: ${data.qualityRating}")
+                            Timber.d("   ├─ Time: ${data.processingTimeMs}ms")
+                            
+                            // ✅ Если тестировали fallback, показываем результат
+                            if (currentState.testGeminiFallback) {
+                                Timber.d("   └─ ⚠️ Gemini fallback test executed")
+                            }
+                        }
+                    }
+                    is DomainResult.Failure -> {
+                        _mlkitSettings.update { 
+                            it.copy(
+                                testError = result.error.message, 
+                                isTestRunning = false
+                            ) 
+                        }
+                        Timber.e("❌ MLKit OCR test failed: ${result.error.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "❌ MLKit OCR test exception")
+                _mlkitSettings.update { 
+                    it.copy(
+                        testError = "OCR failed: ${e.message}", 
+                        isTestRunning = false
+                    ) 
+                }
+            }
+        }
+    }
+
+    /**
+     * Сбрасывает счетчики ошибок для всех API ключей.
+     * 
+     * Полезно когда:
+     * - Временные проблемы с сетью решены
+     * - API quota была превышена, но теперь сброшена
+     * - Хотите дать всем ключам второй шанс
+     * 
+     * Все ключи помечаются как активные с errorCount = 0.
+     */
+    fun resetApiKeyErrors() {
+        viewModelScope.launch {
+            try {
+                encryptedKeyStorage.resetAllKeyErrors()
+                loadApiKeys()
+                _saveMessage.value = "✓ All key errors reset"
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("🔄 All API key errors reset")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to reset API key errors")
+                _saveMessage.value = "✗ Failed to reset errors: ${e.message}"
             }
         }
     }
