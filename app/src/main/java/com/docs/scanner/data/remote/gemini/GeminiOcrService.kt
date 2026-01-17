@@ -5,15 +5,18 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
+import com.docs.scanner.BuildConfig
 import com.docs.scanner.domain.core.DomainError
 import com.docs.scanner.domain.core.DomainResult
 import com.docs.scanner.domain.core.OcrResult
 import com.docs.scanner.domain.core.OcrSource
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -35,6 +38,13 @@ import javax.inject.Singleton
  * - Batch processing with concurrency control
  * - Image optimization for API limits
  * - Universal prompt for printed + handwritten text
+ * 
+ * ✅ OPTIMIZED in FIX #3:
+ * - Rate limit protection with reduced concurrency (5 → 2)
+ * - 500ms delay between batch requests
+ * - Explicit IO dispatcher for network operations
+ * - Improved error handling without batch interruption
+ * - Better progress tracking with ETA
  */
 @Singleton
 class GeminiOcrService @Inject constructor(
@@ -55,7 +65,8 @@ class GeminiOcrService @Inject constructor(
         private const val MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024 // 4MB
         
         // Batch processing
-        private const val DEFAULT_BATCH_CONCURRENCY = 5
+        private const val DEFAULT_BATCH_CONCURRENCY = 2 // ✅ REDUCED: 5 → 2 to avoid rate limits
+        private const val BATCH_REQUEST_DELAY_MS = 500L // ✅ NEW: 500ms delay between requests
         
         // Response markers
         private const val NO_TEXT_MARKER = "[NO_TEXT_FOUND]"
@@ -159,10 +170,17 @@ If the image contains absolutely no readable text, return exactly: [NO_TEXT_FOUN
     }
     
     /**
-     * Batch OCR processing with concurrency control.
+     * Batch OCR processing with concurrency control and rate limit protection.
+     * 
+     * ✅ OPTIMIZED in FIX #3:
+     * - Reduced maxConcurrency from 5 to 2 (avoid 429 rate limits)
+     * - Added 500ms delay between requests
+     * - Explicit IO dispatcher
+     * - Better progress tracking
+     * - Improved error handling
      * 
      * @param uris List of image URIs
-     * @param maxConcurrency Maximum parallel requests
+     * @param maxConcurrency Maximum parallel requests (default: 2, recommended max: 3)
      * @param onProgress Progress callback (completed, total)
      * @return List of results in same order as input
      */
@@ -173,22 +191,54 @@ If the image contains absolutely no readable text, return exactly: [NO_TEXT_FOUN
     ): List<DomainResult<OcrResult>> = coroutineScope {
         if (uris.isEmpty()) return@coroutineScope emptyList()
         
-        Timber.d("$TAG: 📦 Starting batch OCR for ${uris.size} images")
+        Timber.d("$TAG: 📦 Starting batch OCR for ${uris.size} images (concurrency: $maxConcurrency)")
         
         val semaphore = Semaphore(maxConcurrency)
         val completed = AtomicInteger(0)
+        val startTime = System.currentTimeMillis()
         
-        uris.map { uri ->
-            async {
+        uris.mapIndexed { index, uri ->
+            async(Dispatchers.IO) { // ✅ EXPLICIT: IO dispatcher for network
                 semaphore.withPermit {
-                    val result = recognizeText(uri)
-                    val done = completed.incrementAndGet()
-                    onProgress?.invoke(done, uris.size)
-                    Timber.d("$TAG: Batch progress: $done/${uris.size}")
-                    result
+                    try {
+                        // ✅ NEW: Rate limit protection - delay between requests
+                        if (index > 0) {
+                            delay(BATCH_REQUEST_DELAY_MS)
+                        }
+                        
+                        val result = recognizeText(uri)
+                        val done = completed.incrementAndGet()
+                        
+                        // Progress callback
+                        onProgress?.invoke(done, uris.size)
+                        
+                        if (BuildConfig.DEBUG) {
+                            val elapsed = System.currentTimeMillis() - startTime
+                            val avgTime = elapsed / done
+                            val remaining = (uris.size - done) * avgTime / 1000
+                            Timber.d("$TAG: Batch progress: $done/${uris.size} (ETA: ${remaining}s)")
+                        }
+                        
+                        result
+                        
+                    } catch (e: CancellationException) {
+                        throw e // ✅ Rethrow cancellation
+                    } catch (e: Exception) {
+                        Timber.e(e, "$TAG: Batch item $index failed")
+                        val done = completed.incrementAndGet()
+                        onProgress?.invoke(done, uris.size)
+                        
+                        // ✅ Return Failure instead of crashing entire batch
+                        DomainResult.failure<OcrResult>(
+                            DomainError.OcrFailed(id = null, cause = e)
+                        )
+                    }
                 }
             }
-        }.awaitAll()
+        }.awaitAll().also {
+            val totalTime = System.currentTimeMillis() - startTime
+            Timber.d("$TAG: ✅ Batch OCR complete: ${uris.size} images in ${totalTime / 1000}s")
+        }
     }
     
     /**
