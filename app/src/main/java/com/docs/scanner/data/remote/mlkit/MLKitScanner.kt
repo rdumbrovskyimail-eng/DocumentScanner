@@ -7,7 +7,7 @@ import android.net.Uri
 import com.docs.scanner.BuildConfig
 import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.data.remote.gemini.GeminiOcrService
-import com.docs.scanner.domain.core.BoundingBox
+import com.docs.scanner.domain.repository.BoundingBox
 import com.docs.scanner.domain.core.DomainError
 import com.docs.scanner.domain.core.DomainResult
 import com.docs.scanner.domain.core.Language
