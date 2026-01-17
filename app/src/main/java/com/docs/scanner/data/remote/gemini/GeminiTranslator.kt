@@ -76,9 +76,6 @@ class GeminiTranslator @Inject constructor(
             }
         }
 
-        val apiKey = keyManager.getActiveKey()
-        if (apiKey.isNullOrBlank()) return DomainResult.failure(DomainError.MissingApiKey)
-
         val prompt = buildString {
             appendLine("Translate the following text.")
             appendLine("Source language: ${sourceLanguage.displayName} (${sourceLanguage.code})")
@@ -88,7 +85,11 @@ class GeminiTranslator @Inject constructor(
             append(trimmed)
         }
 
-        return when (val api = geminiApi.generateText(apiKey, prompt, model = preferredModel, fallbackModels = fallbackModels)) {
+        return when (val api = geminiApi.generateText(
+            prompt = prompt,
+            model = preferredModel,
+            fallbackModels = fallbackModels
+        )) {
             is DomainResult.Success -> {
                 val translated = api.data.trim()
                 if (translated.isBlank()) {
@@ -130,9 +131,6 @@ class GeminiTranslator @Inject constructor(
         val trimmed = text.trim()
         if (trimmed.isBlank()) return DomainResult.Success("")
 
-        val apiKey = keyManager.getActiveKey()
-        if (apiKey.isNullOrBlank()) return DomainResult.failure(DomainError.MissingApiKey)
-
         val prompt = buildString {
             appendLine("You are given OCR text. Fix obvious OCR errors, spacing, and punctuation.")
             appendLine("Do NOT translate. Keep original language. Return ONLY corrected text.")
@@ -140,7 +138,11 @@ class GeminiTranslator @Inject constructor(
             append(trimmed)
         }
 
-        return geminiApi.generateText(apiKey, prompt, model = preferredModel, fallbackModels = fallbackModels)
+        return geminiApi.generateText(
+            prompt = prompt,
+            model = preferredModel,
+            fallbackModels = fallbackModels
+        )
     }
 
     suspend fun clearCache() {
