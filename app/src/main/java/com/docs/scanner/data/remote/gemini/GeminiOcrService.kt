@@ -65,8 +65,10 @@ class GeminiOcrService @Inject constructor(
         private const val MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024 // 4MB
         
         // Batch processing
-        private const val DEFAULT_BATCH_CONCURRENCY = 2 // ✅ REDUCED: 5 → 2 to avoid rate limits
-        private const val BATCH_REQUEST_DELAY_MS = 500L // ✅ NEW: 500ms delay between requests
+        // ✅ OPTIMIZED: Reduced from 5 to 2 to avoid Gemini API rate limits (429)
+        // Free tier: ~15 requests/minute → 2 concurrent = safe
+        private const val DEFAULT_BATCH_CONCURRENCY = 2
+        private const val BATCH_REQUEST_DELAY_MS = 500L // ✅ 500ms delay between requests
         
         // Response markers
         private const val NO_TEXT_MARKER = "[NO_TEXT_FOUND]"
