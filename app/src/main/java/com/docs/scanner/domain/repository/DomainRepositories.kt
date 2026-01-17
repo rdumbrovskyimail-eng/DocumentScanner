@@ -155,12 +155,19 @@ interface TermRepository {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// OCR REPOSITORY
+// OCR REPOSITORY - ✅ UPDATED: Added explicit engine selection methods
 // ══════════════════════════════════════════════════════════════════════════════
 
 interface OcrRepository {
+    // Hybrid OCR (default - automatically chooses best engine)
     suspend fun recognizeText(imagePath: String, lang: Language = Language.AUTO): DomainResult<OcrResult>
     suspend fun recognizeTextDetailed(imagePath: String, lang: Language = Language.AUTO): DomainResult<DetailedOcrResult>
+    
+    // ✅ NEW: Explicit engine selection
+    suspend fun recognizeTextMlKitOnly(imagePath: String): DomainResult<OcrResult>
+    suspend fun recognizeTextGeminiOnly(imagePath: String): DomainResult<OcrResult>
+    
+    // Language & text improvement
     suspend fun detectLanguage(imagePath: String): DomainResult<Language>
     suspend fun improveOcrText(text: String, lang: Language = Language.AUTO): DomainResult<String>
     suspend fun isLanguageSupported(lang: Language): Boolean
