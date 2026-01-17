@@ -1,9 +1,14 @@
 /*
  * MlkitSettingsState.kt
- * Version: 7.0.0 - PRODUCTION READY 2026 - COMPLETE STATE
+ * Version: 8.0.0 - GEMINI OCR FALLBACK READY (2026 Standards)
+ * 
+ * ✅ NEW IN 8.0.0 (PHASE 2):
+ * - geminiOcrEnabled: Boolean = true
+ * - geminiOcrThreshold: Int = 50  (0-100 range)
+ * - geminiOcrAlways: Boolean = false
  * 
  * ✅ ПОЛНАЯ СПЕЦИФИКАЦИЯ:
- * - 9 полей для UI и логики
+ * - 12 полей для UI и логики (9 старых + 3 новых)
  * - Синхронизация с DataStore
  * - Поддержка test режима
  * - Thread-safe копирование
@@ -35,6 +40,9 @@ import com.docs.scanner.data.remote.mlkit.OcrTestResult
  * @property isTestRunning Флаг выполнения теста
  * @property testResult Результат последнего теста
  * @property testError Ошибка теста (если была)
+ * @property geminiOcrEnabled Включен ли Gemini OCR fallback (NEW)
+ * @property geminiOcrThreshold Порог confidence для fallback 0-100 (NEW)
+ * @property geminiOcrAlways Всегда использовать Gemini (пропустить ML Kit) (NEW)
  */
 data class MlkitSettingsState(
     // ═══════════════════════════════════════════════════════════════════════════
@@ -137,7 +145,57 @@ data class MlkitSettingsState(
      * Null = ошибок не было.
      * Показываем в ErrorCard для пользователя.
      */
-    val testError: String? = null
+    val testError: String? = null,
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ✅ GEMINI OCR FALLBACK SETTINGS (PHASE 2)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * ✅ NEW: Включен ли Gemini OCR fallback.
+     * 
+     * Когда true:
+     * - Если ML Kit результаты плохие (низкий confidence, много ошибок)
+     * - Автоматически запускается Gemini Vision OCR как fallback
+     * 
+     * Когда false:
+     * - Используется только ML Kit (экономия API вызовов)
+     * 
+     * Default: true (рекомендуется для production)
+     */
+    val geminiOcrEnabled: Boolean = true,
+    
+    /**
+     * ✅ NEW: Порог confidence (0-100) для triggering Gemini fallback.
+     * 
+     * Если overall confidence ML Kit < этого порога:
+     * - Запускается Gemini OCR как fallback
+     * 
+     * Рекомендуемые значения:
+     * - 70-80: Строгий (используем Gemini часто)
+     * - 50: Сбалансированный (default)
+     * - 30-40: Мягкий (ML Kit first, Gemini редко)
+     * 
+     * Default: 50 (50% confidence)
+     */
+    val geminiOcrThreshold: Int = 50,
+    
+    /**
+     * ✅ NEW: Всегда использовать Gemini OCR (пропустить ML Kit).
+     * 
+     * Когда true:
+     * - ML Kit полностью пропускается
+     * - OCR делается сразу через Gemini Vision
+     * - Полезно для рукописных документов
+     * 
+     * Когда false:
+     * - Сначала ML Kit, затем Gemini только при необходимости
+     * 
+     * Default: false (рекомендуется для экономии API)
+     * 
+     * ⚠️ ВНИМАНИЕ: Расходует API quota быстрее!
+     */
+    val geminiOcrAlways: Boolean = false
 ) {
     /**
      * Проверка готовности к тесту.
@@ -150,4 +208,16 @@ data class MlkitSettingsState(
      */
     val hasResults: Boolean
         get() = testResult != null || testError != null
+    
+    /**
+     * ✅ NEW: Gemini fallback активен и настроен корректно.
+     */
+    val isGeminiFallbackActive: Boolean
+        get() = geminiOcrEnabled && !geminiOcrAlways && geminiOcrThreshold in 0..100
+    
+    /**
+     * ✅ NEW: Режим "только Gemini" активен.
+     */
+    val isGeminiOnlyMode: Boolean
+        get() = geminiOcrEnabled && geminiOcrAlways
 }
