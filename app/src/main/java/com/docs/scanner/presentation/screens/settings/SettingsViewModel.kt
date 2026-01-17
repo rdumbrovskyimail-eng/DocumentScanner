@@ -1,7 +1,8 @@
 /*
  * SettingsViewModel.kt
- * Version: 11.0.0 - PRODUCTION READY 2026 - SYNCHRONIZED OCR
+ * Version: 11.1.0 - GEMINI OCR FALLBACK ADDED (2026 Standards)
  * 
+ * ✅ NEW: Gemini OCR Fallback управление
  * ✅ КРИТИЧЕСКИЕ ИСПРАВЛЕНИЯ:
  * - Единая система настроек OCR через DataStore
  * - Автосинхронизация между Settings и Editor
@@ -173,11 +174,13 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ MLKIT SETTINGS LOADER - КЛЮЧЕВОЙ МЕТОД
+    // ✅ MLKIT SETTINGS LOADER - КЛЮЧЕВОЙ МЕТОД (UPDATED)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /**
      * ✅ CRITICAL: Загружает настройки OCR из DataStore при старте.
+     * 
+     * UPDATED: Теперь также загружает настройки Gemini OCR fallback.
      * 
      * Это обеспечивает синхронизацию между:
      * - Settings UI (где пользователь меняет настройки)
@@ -201,11 +204,29 @@ class SettingsViewModel @Inject constructor(
                     else -> OcrScriptMode.AUTO
                 }
                 
+                // ════════════════════════════════════════════════════════════════
+                // NEW: Загружаем настройки Gemini OCR Fallback
+                // ════════════════════════════════════════════════════════════════
+                val geminiEnabled = settingsDataStore.geminiOcrEnabled.first()
+                val geminiThreshold = settingsDataStore.geminiOcrThreshold.first()
+                val geminiAlways = settingsDataStore.geminiOcrAlways.first()
+                
                 // Обновляем UI state
-                _mlkitSettings.update { it.copy(scriptMode = scriptMode) }
+                _mlkitSettings.update { 
+                    it.copy(
+                        scriptMode = scriptMode,
+                        geminiOcrEnabled = geminiEnabled,
+                        geminiOcrThreshold = geminiThreshold,
+                        geminiOcrAlways = geminiAlways
+                    ) 
+                }
                 
                 if (BuildConfig.DEBUG) {
-                    Timber.d("📝 Loaded MLKit settings from DataStore: $scriptMode")
+                    Timber.d("📝 Loaded MLKit settings from DataStore:")
+                    Timber.d("   ├─ Script mode: $scriptMode")
+                    Timber.d("   ├─ Gemini fallback: $geminiEnabled")
+                    Timber.d("   ├─ Gemini threshold: $geminiThreshold%")
+                    Timber.d("   └─ Gemini always: $geminiAlways")
                 }
             } catch (e: IOException) {
                 Timber.w(e, "Failed to load MLKit settings from DataStore")
@@ -1073,6 +1094,86 @@ class SettingsViewModel @Inject constructor(
      */
     fun getAvailableScriptModes(): List<OcrScriptMode> = 
         mlKitScanner.getAvailableScriptModes()
+
+    // ════════════════════════════════════════════════════════════════════════════════
+    // NEW: GEMINI OCR FALLBACK SETTINGS
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Enables or disables Gemini OCR fallback.
+     * 
+     * When enabled, ML Kit results with low confidence will trigger
+     * automatic fallback to Gemini Vision API for better accuracy.
+     * 
+     * @param enabled true to enable fallback, false to disable
+     */
+    fun setGeminiOcrEnabled(enabled: Boolean) {
+        _mlkitSettings.update { it.copy(geminiOcrEnabled = enabled) }
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setGeminiOcrEnabled(enabled)
+                if (BuildConfig.DEBUG) {
+                    Timber.d("🤖 Gemini OCR fallback: $enabled")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save Gemini OCR enabled setting")
+                _saveMessage.value = "✗ Failed to save Gemini OCR setting"
+            }
+        }
+    }
+    
+    /**
+     * Sets Gemini OCR confidence threshold (0-100).
+     * OCR results below this threshold trigger Gemini fallback.
+     * 
+     * Examples:
+     * - 70: Strict (fallback more often, higher API costs)
+     * - 50: Balanced (default)
+     * - 30: Lenient (fallback only for very poor results)
+     * 
+     * @param threshold Confidence percentage (0-100)
+     */
+    fun setGeminiOcrThreshold(threshold: Int) {
+        _mlkitSettings.update { it.copy(geminiOcrThreshold = threshold) }
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setGeminiOcrThreshold(threshold)
+                if (BuildConfig.DEBUG) {
+                    Timber.d("🎚️ Gemini OCR threshold: $threshold%")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save Gemini OCR threshold")
+                _saveMessage.value = "✗ Failed to save Gemini OCR threshold"
+            }
+        }
+    }
+    
+    /**
+     * Sets whether to always use Gemini for OCR (skip ML Kit).
+     * 
+     * Useful for:
+     * - Documents known to be handwritten
+     * - Complex layouts that ML Kit struggles with
+     * - When quality is more important than speed/cost
+     * 
+     * ⚠️ Warning: This is slower and more expensive than ML Kit.
+     * 
+     * @param always true to always use Gemini, false to use ML Kit first
+     */
+    fun setGeminiOcrAlways(always: Boolean) {
+        _mlkitSettings.update { it.copy(geminiOcrAlways = always) }
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setGeminiOcrAlways(always)
+                if (BuildConfig.DEBUG) {
+                    Timber.d("🤖 Gemini OCR always: $always")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save Gemini OCR always setting")
+                _saveMessage.value = "✗ Failed to save Gemini OCR always setting"
+            }
+        }
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // CLEANUP
