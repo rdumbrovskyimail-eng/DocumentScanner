@@ -1,86 +1,26 @@
-# ================================================================================
-# Android CI/CD Pipeline
-# Version: 10.2.0 - FIXED APK & ERROR LOGGING (2026)
-# ================================================================================
-
 name: Android CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    permissions:
-      contents: read
+    timeout-minutes: 30
 
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      # ✅ ОПТИМИЗАЦИЯ: Агрессивное использование памяти для быстрой сборки
-      GRADLE_OPTS: >-
-        -Xmx5g
-        -Xms2g
-        -XX:+UseParallelGC
-        -XX:MaxMetaspaceSize=1024m
-        -XX:+HeapDumpOnOutOfMemoryError
-        -XX:HeapDumpPath=/tmp/heap-dump.hprof
-        -Dfile.encoding=UTF-8
-        -Dorg.gradle.daemon=true
-        -Dorg.gradle.parallel=true
-        -Dorg.gradle.caching=true
-        -Dorg.gradle.configureondemand=true
-        -Dorg.gradle.workers.max=4
-      # ✅ Kotlin Compiler оптимизация
-      JAVA_TOOL_OPTIONS: >-
-        -Xmx3g
-        -XX:+UseParallelGC
-        -XX:MaxMetaspaceSize=768m
-    
     steps:
-    # ═══════════════════════════════════════════════════════════════════════════
-    # CHECKOUT & SETUP (30 сек)
-    # ═══════════════════════════════════════════════════════════════════════════
-    
     - name: Checkout code
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
 
     - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
         java-version: '21'
         distribution: 'temurin'
-        cache: gradle  # ✅ Встроенный кеш Gradle
-
-    - name: Set up Android SDK
-      uses: android-actions/setup-android@v3
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # AGGRESSIVE CACHING (1-2 мин экономии)
-    # ═══════════════════════════════════════════════════════════════════════════
-    
-    - name: Cache Android SDK
-      uses: actions/cache@v4
-      with:
-        path: |
-          /usr/local/lib/android/sdk/platform-tools
-          /usr/local/lib/android/sdk/platforms
-          /usr/local/lib/android/sdk/build-tools
-          /usr/local/lib/android/sdk/licenses
-        key: android-sdk-36-${{ runner.os }}-v3
-        restore-keys: |
-          android-sdk-36-${{ runner.os }}-
+        cache: gradle
 
     - name: Cache Gradle wrapper & dependencies
       uses: actions/cache@v4
@@ -88,114 +28,44 @@ jobs:
         path: |
           ~/.gradle/caches
           ~/.gradle/wrapper
-        key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
         restore-keys: |
-          gradle-${{ runner.os }}-
+          ${{ runner.os }}-gradle-
+
+    - name: Cache Android SDK
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.android/build-cache
+          ~/.android/cache
+        key: ${{ runner.os }}-android-${{ hashFiles('**/*.gradle*') }}
+        restore-keys: |
+          ${{ runner.os }}-android-
 
     - name: Cache Kotlin compiler
       uses: actions/cache@v4
       with:
         path: |
-          ~/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin
           ~/.konan
-        key: kotlin-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          ~/.kotlin
+        key: ${{ runner.os }}-kotlin-${{ hashFiles('**/*.gradle*') }}
         restore-keys: |
-          kotlin-${{ runner.os }}-
+          ${{ runner.os }}-kotlin-
 
-    # ✅ КРИТИЧНО: Кеш build-cache для incremental compilation
-    - name: Cache Gradle build-cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          build-cache
-          .gradle/build-cache
-        key: build-cache-${{ runner.os }}-${{ github.sha }}
-        restore-keys: |
-          build-cache-${{ runner.os }}-
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # SDK INSTALLATION (только если не закешировано)
-    # ═══════════════════════════════════════════════════════════════════════════
-    
-    - name: Install Android SDK packages
-      run: |
-        if [ ! -d "/usr/local/lib/android/sdk/platforms/android-36" ]; then
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
-        else
-          echo "SDK already cached, skipping installation"
-        fi
-    
-    # ═══════════════════════════════════════════════════════════════════════════
-    # GRADLE SETUP
-    # ═══════════════════════════════════════════════════════════════════════════
-    
-    - name: Make gradlew executable
-      run: chmod +x gradlew
-    
     - name: Setup Gradle (с оптимизацией)
       uses: gradle/actions/setup-gradle@v4
       with:
-        cache-read-only: false  # ✅ Всегда записываем кеш
-        cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-        dependency-graph: disabled  # ✅ Отключаем для скорости
-        add-job-summary: on-failure
         gradle-home-cache-cleanup: true
+        cache-read-only: false
+        cache-write-only: false
+        add-job-summary: always
+        build-scan-publish: true
+        build-scan-terms-of-use-url: "https://gradle.com/terms-of-service"
+        build-scan-terms-of-use-agree: "yes"
 
-    # ✅ НОВОЕ: Создаём CI-оптимизированный gradle.properties
-    - name: Create optimized gradle.properties for CI
-      run: |
-        cat > gradle.properties << 'EOF'
-        # ═══════════════════════════════════════════════════════════════════════
-        # CI-OPTIMIZED GRADLE CONFIGURATION
-        # ═══════════════════════════════════════════════════════════════════════
-        
-        # JVM Settings (максимум для GitHub Actions: 7GB - 1.5GB система = 5.5GB)
-        org.gradle.jvmargs=-Xmx4500m -Xms2g -XX:MaxMetaspaceSize=1024m -XX:+UseParallelGC -Dfile.encoding=UTF-8
-        
-        # Kotlin Daemon (отдельный процесс)
-        kotlin.daemon.jvmargs=-Xmx2500m -XX:MaxMetaspaceSize=768m -XX:+UseParallelGC
-        
-        # Gradle Performance
-        org.gradle.daemon=true
-        org.gradle.parallel=true
-        org.gradle.caching=true
-        org.gradle.configuration-cache=true
-        org.gradle.configuration-cache.problems=warn
-        org.gradle.workers.max=4
-        org.gradle.vfs.watch=false
-        
-        # Kotlin Compiler
-        kotlin.incremental=true
-        kotlin.incremental.usePreciseJavaTracking=true
-        kotlin.compiler.execution.strategy=daemon
-        
-        # Android
-        android.useAndroidX=true
-        android.enableJetifier=false
-        android.nonTransitiveRClass=true
-        android.nonFinalResIds=true
-        android.enableR8.fullMode=true
-        
-        # Disable unused features
-        android.defaults.buildfeatures.aidl=false
-        android.defaults.buildfeatures.renderscript=false
-        android.defaults.buildfeatures.resvalues=false
-        android.defaults.buildfeatures.shaders=false
-        android.defaults.buildfeatures.viewbinding=false
-        android.defaults.buildfeatures.databinding=false
-        
-        # KSP
-        ksp.incremental=true
-        ksp.incremental.log=false
-        EOF
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # MAIN BUILD (SINGLE PASS) - ✅ ИСПРАВЛЕНО
-    # ═══════════════════════════════════════════════════════════════════════════
-    
     - name: Build with Gradle (Single Pass)
       id: build
       run: |
@@ -329,25 +199,28 @@ jobs:
           
         } > "$ERRORS_FILE"
         
-        # Подсчёт ошибок (более точный)
+        # Подсчёт ошибок (более точный) - ✅ ИСПРАВЛЕНО: используем || echo "0"
         KOTLIN_ERRORS=$(grep -cE "^e: " "$FULL_LOG" 2>/dev/null || echo "0")
         JAVA_ERRORS=$(grep -cE "^.*\.java:[0-9]+: error:" "$FULL_LOG" 2>/dev/null || echo "0")
         TASK_FAILURES=$(grep -cE "> Task .* FAILED" "$FULL_LOG" 2>/dev/null || echo "0")
         
         TOTAL_ERRORS=$((KOTLIN_ERRORS + JAVA_ERRORS + TASK_FAILURES))
         
-        echo "error_count=$TOTAL_ERRORS" >> $GITHUB_OUTPUT
-        echo "kotlin_errors=$KOTLIN_ERRORS" >> $GITHUB_OUTPUT
-        echo "java_errors=$JAVA_ERRORS" >> $GITHUB_OUTPUT
-        echo "task_failures=$TASK_FAILURES" >> $GITHUB_OUTPUT
+        # ✅ ИСПРАВЛЕНО: Безопасное сохранение переменных
+        {
+          echo "error_count=${TOTAL_ERRORS}"
+          echo "kotlin_errors=${KOTLIN_ERRORS}"
+          echo "java_errors=${JAVA_ERRORS}"
+          echo "task_failures=${TASK_FAILURES}"
+        } >> "$GITHUB_OUTPUT"
         
         # ✅ Определяем статус сборки
         if [ $BUILD_EXIT_CODE -eq 0 ] && grep -q "BUILD SUCCESSFUL" "$FULL_LOG"; then
-          echo "build_status=success" >> $GITHUB_OUTPUT
+          echo "build_status=success" >> "$GITHUB_OUTPUT"
           echo ""
           echo "✅ BUILD SUCCESSFUL!"
         else
-          echo "build_status=failure" >> $GITHUB_OUTPUT
+          echo "build_status=failure" >> "$GITHUB_OUTPUT"
           echo ""
           echo "❌ BUILD FAILED!"
           echo "   Exit code: $BUILD_EXIT_CODE"
@@ -356,51 +229,30 @@ jobs:
           echo "   Failed tasks: $TASK_FAILURES"
         fi
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # APK DIAGNOSTICS - ✅ НОВОЕ
-    # ═══════════════════════════════════════════════════════════════════════════
-    
     - name: Diagnose APK location
       if: always()
       run: |
-        echo "🔍 Searching for APK files in entire workspace..."
-        find . -name "*.apk" -type f -exec ls -lh {} \; 2>/dev/null || echo "❌ No APK files found!"
+        echo "🔍 Searching for all APK files..."
+        find . -name "*.apk" -type f -exec ls -lh {} \; || echo "No APK files found"
         
         echo ""
-        echo "📂 Checking expected APK directory structure..."
-        
-        if [ -d "app/build/outputs/apk" ]; then
-          echo "✅ app/build/outputs/apk exists"
-          ls -lah app/build/outputs/apk/ || true
-          
-          if [ -d "app/build/outputs/apk/debug" ]; then
-            echo "✅ app/build/outputs/apk/debug exists"
-            ls -lah app/build/outputs/apk/debug/ || true
-          else
-            echo "❌ app/build/outputs/apk/debug does NOT exist"
-          fi
-        else
-          echo "❌ app/build/outputs/apk does NOT exist"
-        fi
+        echo "📂 Checking standard debug APK directory..."
+        ls -lah app/build/outputs/apk/debug/ 2>/dev/null || echo "Directory app/build/outputs/apk/debug/ not found"
         
         echo ""
-        echo "📂 All build/outputs directories:"
-        find . -type d -name "outputs" -exec echo {} \; -exec ls -la {} \; 2>/dev/null || echo "None found"
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # ARTIFACTS & NOTIFICATIONS
-    # ═══════════════════════════════════════════════════════════════════════════
+        echo "📂 Searching for all 'outputs' directories..."
+        find . -type d -name "outputs" -exec ls -la {} \; 2>/dev/null || echo "No outputs directories found"
 
     - name: Upload debug APK artifact
       if: steps.build.outputs.build_status == 'success'
       uses: actions/upload-artifact@v4
       with:
-        name: debug-apk-${{ github.sha }}
+        name: app-debug-${{ github.sha }}
         path: |
           app/build/outputs/apk/debug/*.apk
           **/build/outputs/apk/debug/*.apk
         if-no-files-found: warn
-        retention-days: 7
+        retention-days: 14
 
     - name: Upload ALL logs (full + errors)
       if: always()
@@ -408,102 +260,76 @@ jobs:
       with:
         name: build-logs-${{ github.sha }}
         path: |
-          build_errors.txt
           build_full.log
-        if-no-files-found: warn
+          build_errors.txt
         retention-days: 7
 
     - name: Get commit info
       if: always()
       id: commit
       run: |
-        echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        echo "date=$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+        COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+        COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an")
+        echo "message=${COMMIT_MSG}" >> $GITHUB_OUTPUT
+        echo "author=${COMMIT_AUTHOR}" >> $GITHUB_OUTPUT
 
     - name: Send Success Notification to Telegram
-      if: steps.build.outputs.build_status == 'success'
-      continue-on-error: true
+      if: steps.build.outputs.build_status == 'success' && github.event_name == 'push'
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        COMMIT_MSG: ${{ github.event.pull_request.title || github.event.head_commit.message || github.sha }}
       run: |
-        if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-          echo "Telegram secrets not set; skipping notification."
-          exit 0
-        fi
+        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" -type f | head -1)
+        APK_NAME=$(basename "$APK_PATH")
+        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
         
-        APK_PATH=$(find . -name "*.apk" -path "*/debug/*" 2>/dev/null | head -n 1)
+        MESSAGE="✅ <b>Build Successful!</b>%0A%0A"
+        MESSAGE+="📱 <b>APK:</b> ${APK_NAME}%0A"
+        MESSAGE+="📦 <b>Size:</b> ${APK_SIZE}%0A"
+        MESSAGE+="👤 <b>Author:</b> ${{ steps.commit.outputs.author }}%0A"
+        MESSAGE+="💬 <b>Commit:</b> ${{ steps.commit.outputs.message }}%0A"
+        MESSAGE+="🔗 <b>SHA:</b> <code>${GITHUB_SHA:0:7}</code>%0A%0A"
+        MESSAGE+="📥 <a href=\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\">Download APK</a>"
         
-        if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-          APK_NAME=$(basename "$APK_PATH")
-          APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        else
-          APK_NAME="app-debug.apk"
-          APK_SIZE="unknown"
-        fi
-        
-        ARTIFACTS_URL="${RUN_URL}#artifacts"
-        
-        cat > /tmp/tg_message.txt << EOF
-        ✅ <b>APK собран!</b>
-        
-        📱 <code>${APK_NAME}</code>
-        📦 ${APK_SIZE}
-        📝 ${COMMIT_MSG:0:50}
-        👤 ${{ github.actor }}
-        🕐 ${{ steps.commit.outputs.date }}
-        
-        📥 <a href='${ARTIFACTS_URL}'>Скачать</a> | 🔗 <a href='${RUN_URL}'>Logs</a>
-        EOF
-        
-        curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
           -d chat_id="${TELEGRAM_CHAT_ID}" \
+          -d text="${MESSAGE}" \
           -d parse_mode="HTML" \
-          --data-urlencode "text=$(cat /tmp/tg_message.txt)"
+          -d disable_web_page_preview=true
 
     - name: Send Build Failure with Errors to Telegram
-      if: steps.build.outputs.build_status == 'failure'
-      continue-on-error: true
+      if: steps.build.outputs.build_status == 'failure' && github.event_name == 'push'
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
-        if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-          echo "Telegram secrets not set; skipping notification."
-          exit 0
-        fi
+        MESSAGE="❌ <b>Build Failed!</b>%0A%0A"
+        MESSAGE+="👤 <b>Author:</b> ${{ steps.commit.outputs.author }}%0A"
+        MESSAGE+="💬 <b>Commit:</b> ${{ steps.commit.outputs.message }}%0A"
+        MESSAGE+="🔗 <b>SHA:</b> <code>${GITHUB_SHA:0:7}</code>%0A%0A"
+        MESSAGE+="🐛 <b>Errors Found:</b>%0A"
+        MESSAGE+="   • Kotlin: ${{ steps.build.outputs.kotlin_errors }}%0A"
+        MESSAGE+="   • Java: ${{ steps.build.outputs.java_errors }}%0A"
+        MESSAGE+="   • Tasks: ${{ steps.build.outputs.task_failures }}%0A%0A"
+        MESSAGE+="📋 <a href=\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\">View Details</a>"
         
-        ERRORS_FILE="build_errors.txt"
-        KOTLIN_ERRORS="${{ steps.build.outputs.kotlin_errors }}"
-        JAVA_ERRORS="${{ steps.build.outputs.java_errors }}"
-        TASK_FAILURES="${{ steps.build.outputs.task_failures }}"
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          -d chat_id="${TELEGRAM_CHAT_ID}" \
+          -d text="${MESSAGE}" \
+          -d parse_mode="HTML" \
+          -d disable_web_page_preview=true
         
-        CAPTION="❌ Build Failed! K:${KOTLIN_ERRORS:-0} J:${JAVA_ERRORS:-0} T:${TASK_FAILURES:-0} | 👤 ${{ github.actor }} | 🕐 ${{ steps.commit.outputs.date }} | 🔗 ${RUN_URL}"
-        
-        if [ -f "$ERRORS_FILE" ] && [ -s "$ERRORS_FILE" ]; then
-          # Отправляем файл с ошибками
-          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
+        # Отправляем файл с ошибками как документ
+        if [ -f "build_errors.txt" ]; then
+          ERROR_SUMMARY="K:${{ steps.build.outputs.kotlin_errors }} J:${{ steps.build.outputs.java_errors }} T:${{ steps.build.outputs.task_failures }}"
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
             -F chat_id="${TELEGRAM_CHAT_ID}" \
-            -F document=@"${ERRORS_FILE}" \
-            -F caption="${CAPTION}"
-        else
-          # Если файла нет, отправляем просто сообщение
-          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d chat_id="${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "text=${CAPTION} (Error log file not found or empty)"
+            -F document=@build_errors.txt \
+            -F caption="📄 Build Error Report (${ERROR_SUMMARY})"
         fi
 
-    # ✅ ИСПРАВЛЕНО: Fail job только если сборка действительно провалилась
     - name: Fail job if build failed
       if: steps.build.outputs.build_status == 'failure'
       run: |
-        echo "❌ Build failed!"
-        echo "   Kotlin errors: ${{ steps.build.outputs.kotlin_errors }}"
-        echo "   Java errors: ${{ steps.build.outputs.java_errors }}"
-        echo "   Task failures: ${{ steps.build.outputs.task_failures }}"
-        echo ""
-        echo "📄 Check build_errors.txt artifact for details"
+        echo "::error::Build failed with ${{ steps.build.outputs.error_count }} errors"
         exit 1
