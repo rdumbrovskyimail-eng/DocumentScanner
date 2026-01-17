@@ -1,38 +1,34 @@
 package com.docs.scanner.data.remote.gemini
 
-import com.squareup.moshi.Json
-import com.squareup.moshi.JsonClass
-
 /**
  * Request/Response models for Gemini Vision API.
  * Supports both text-only and multimodal (text + image) requests.
+ * 
+ * Uses simple data classes - Retrofit/Gson handles serialization automatically.
  */
 
 // ════════════════════════════════════════════════════════════════════════════════
 // REQUEST MODELS
 // ════════════════════════════════════════════════════════════════════════════════
 
-@JsonClass(generateAdapter = true)
 data class GeminiVisionRequest(
-    @Json(name = "contents") val contents: List<VisionContent>,
-    @Json(name = "generationConfig") val generationConfig: GenerationConfig? = null,
-    @Json(name = "safetySettings") val safetySettings: List<SafetySetting>? = null
+    val contents: List<VisionContent>,
+    val generationConfig: GenerationConfig? = null,
+    val safetySettings: List<SafetySetting>? = null
 )
 
-@JsonClass(generateAdapter = true)
 data class VisionContent(
-    @Json(name = "parts") val parts: List<VisionPart>,
-    @Json(name = "role") val role: String = "user"
+    val parts: List<VisionPart>,
+    val role: String = "user"
 )
 
 /**
  * A part can be either text or inline image data.
- * For JSON serialization, we use a unified class with nullable fields.
+ * For JSON serialization, we use nullable fields.
  */
-@JsonClass(generateAdapter = true)
 data class VisionPart(
-    @Json(name = "text") val text: String? = null,
-    @Json(name = "inlineData") val inlineData: InlineData? = null
+    val text: String? = null,
+    val inlineData: InlineData? = null
 ) {
     companion object {
         fun text(value: String) = VisionPart(text = value)
@@ -42,18 +38,16 @@ data class VisionPart(
     }
 }
 
-@JsonClass(generateAdapter = true)
 data class InlineData(
-    @Json(name = "mimeType") val mimeType: String,
-    @Json(name = "data") val data: String
+    val mimeType: String,
+    val data: String
 )
 
-@JsonClass(generateAdapter = true)
 data class GenerationConfig(
-    @Json(name = "maxOutputTokens") val maxOutputTokens: Int = 4096,
-    @Json(name = "temperature") val temperature: Float = 0.1f,
-    @Json(name = "topP") val topP: Float = 0.95f,
-    @Json(name = "topK") val topK: Int = 40
+    val maxOutputTokens: Int = 4096,
+    val temperature: Float = 0.1f,
+    val topP: Float = 0.95f,
+    val topK: Int = 40
 ) {
     companion object {
         /** Optimized config for OCR - low temperature for accuracy */
@@ -63,7 +57,7 @@ data class GenerationConfig(
             topP = 0.95f,
             topK = 40
         )
-        
+
         /** Config for translation - slightly higher temperature */
         val TRANSLATION = GenerationConfig(
             maxOutputTokens = 4096,
@@ -74,10 +68,9 @@ data class GenerationConfig(
     }
 }
 
-@JsonClass(generateAdapter = true)
 data class SafetySetting(
-    @Json(name = "category") val category: String,
-    @Json(name = "threshold") val threshold: String
+    val category: String,
+    val threshold: String
 ) {
     companion object {
         /** Default safety settings - block only high probability harmful content */
@@ -94,48 +87,41 @@ data class SafetySetting(
 // RESPONSE MODELS
 // ════════════════════════════════════════════════════════════════════════════════
 
-@JsonClass(generateAdapter = true)
 data class GeminiVisionResponse(
-    @Json(name = "candidates") val candidates: List<VisionCandidate>?,
-    @Json(name = "promptFeedback") val promptFeedback: PromptFeedback?,
-    @Json(name = "usageMetadata") val usageMetadata: UsageMetadata?
+    val candidates: List<VisionCandidate>?,
+    val promptFeedback: PromptFeedback?,
+    val usageMetadata: UsageMetadata?
 )
 
-@JsonClass(generateAdapter = true)
 data class VisionCandidate(
-    @Json(name = "content") val content: VisionCandidateContent?,
-    @Json(name = "finishReason") val finishReason: String?,
-    @Json(name = "safetyRatings") val safetyRatings: List<SafetyRating>?
+    val content: VisionCandidateContent?,
+    val finishReason: String?,
+    val safetyRatings: List<SafetyRating>?
 )
 
-@JsonClass(generateAdapter = true)
 data class VisionCandidateContent(
-    @Json(name = "parts") val parts: List<VisionResponsePart>?,
-    @Json(name = "role") val role: String?
+    val parts: List<VisionResponsePart>?,
+    val role: String?
 )
 
-@JsonClass(generateAdapter = true)
 data class VisionResponsePart(
-    @Json(name = "text") val text: String?
+    val text: String?
 )
 
-@JsonClass(generateAdapter = true)
 data class PromptFeedback(
-    @Json(name = "blockReason") val blockReason: String?,
-    @Json(name = "safetyRatings") val safetyRatings: List<SafetyRating>?
+    val blockReason: String?,
+    val safetyRatings: List<SafetyRating>?
 )
 
-@JsonClass(generateAdapter = true)
 data class SafetyRating(
-    @Json(name = "category") val category: String?,
-    @Json(name = "probability") val probability: String?
+    val category: String?,
+    val probability: String?
 )
 
-@JsonClass(generateAdapter = true)
 data class UsageMetadata(
-    @Json(name = "promptTokenCount") val promptTokenCount: Int?,
-    @Json(name = "candidatesTokenCount") val candidatesTokenCount: Int?,
-    @Json(name = "totalTokenCount") val totalTokenCount: Int?
+    val promptTokenCount: Int?,
+    val candidatesTokenCount: Int?,
+    val totalTokenCount: Int?
 )
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -144,7 +130,7 @@ data class UsageMetadata(
 
 /**
  * Extracts text from Gemini response.
- * Joins all text parts from all candidates.
+ * Joins all text parts from first candidate.
  */
 fun GeminiVisionResponse.extractText(): String {
     return candidates
@@ -178,27 +164,27 @@ class GeminiVisionRequestBuilder {
     private val parts = mutableListOf<VisionPart>()
     private var config: GenerationConfig = GenerationConfig.OCR
     private var safety: List<SafetySetting> = SafetySetting.DEFAULT
-    
+
     fun addText(text: String): GeminiVisionRequestBuilder {
         parts.add(VisionPart.text(text))
         return this
     }
-    
+
     fun addImage(base64Data: String, mimeType: String = "image/jpeg"): GeminiVisionRequestBuilder {
         parts.add(VisionPart.image(mimeType, base64Data))
         return this
     }
-    
+
     fun config(config: GenerationConfig): GeminiVisionRequestBuilder {
         this.config = config
         return this
     }
-    
+
     fun safetySettings(settings: List<SafetySetting>): GeminiVisionRequestBuilder {
         this.safety = settings
         return this
     }
-    
+
     fun build(): GeminiVisionRequest {
         require(parts.isNotEmpty()) { "Request must have at least one part" }
         return GeminiVisionRequest(
