@@ -378,6 +378,16 @@ class SettingsViewModel @Inject constructor(
         testApiKeyRaw(keyId)
     }
 
+    // ════════════════════════════════════════════════════════════════════════════════
+    // API KEY TESTING - ✅ UPDATED to use generateTextWithKey
+    // ════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Tests a specific API key (no failover).
+     * 
+     * ✅ UPDATED in FIX #1: Now uses geminiApi.generateTextWithKey()
+     * instead of geminiApi.generateText() to avoid apiKey conflict.
+     */
     fun testApiKeyRaw(key: String) {
         viewModelScope.launch {
             _keyTestMessage.value = "Testing key..."
@@ -386,11 +396,13 @@ class SettingsViewModel @Inject constructor(
                 Timber.d("🧪 Testing API key...")
             }
             
+            // ✅ CHANGED: generateText() → generateTextWithKey()
+            // This ensures the specific key is tested, not failover
             when (
-                val result = geminiApi.generateText(
+                val result = geminiApi.generateTextWithKey(
                     apiKey = key.trim(),
                     prompt = "Reply with: OK",
-                    model = "gemini-2.5-flash-lite",
+                    model = "gemini-2.0-flash-lite",
                     fallbackModels = listOf("gemini-1.5-flash")
                 )
             ) {
@@ -738,8 +750,7 @@ class SettingsViewModel @Inject constructor(
                 if (BuildConfig.DEBUG) {
                     Timber.d("📦 Found ${_localBackups.value.size} local backups")
                 }
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to refresh local backups")
+            } catch (e: Exception) {Timber.e(e, "Failed to refresh local backups")
             }
         }
     }
@@ -759,7 +770,7 @@ class SettingsViewModel @Inject constructor(
                 }
             }
         }
-}
+    }
 
     fun signInGoogleDrive(context: Context, launcher: ActivityResultLauncher<Intent>) {
         try {
