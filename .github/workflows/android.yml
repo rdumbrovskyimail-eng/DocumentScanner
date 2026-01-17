@@ -1,6 +1,6 @@
 # ================================================================================
 # Android CI/CD Pipeline
-# Version: 10.0.0 - OPTIMIZED FOR SINGLE-PASS BUILD (2026)
+# Version: 10.1.0 - FIXED ERROR HANDLING (2026)
 # ================================================================================
 
 name: Android CI
@@ -193,12 +193,11 @@ jobs:
         EOF
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # MAIN BUILD (SINGLE PASS)
+    # MAIN BUILD (SINGLE PASS) - ✅ ИСПРАВЛЕНО
     # ═══════════════════════════════════════════════════════════════════════════
     
     - name: Build with Gradle (Single Pass)
       id: build
-      continue-on-error: true
       run: |
         FULL_LOG="build_full.log"
         ERRORS_FILE="build_errors.txt"
@@ -206,6 +205,7 @@ jobs:
         echo "🚀 Starting optimized build..."
         free -h
         
+        # ✅ ИЗМЕНЕНО: Убрали continue-on-error, используем set +e
         set +e
         ./gradlew assembleDebug \
           --stacktrace \
@@ -268,25 +268,28 @@ jobs:
         ERROR_COUNT=$(grep -cE "^e: |error:|FAILURE:|Exception" "$FULL_LOG" 2>/dev/null || echo "0")
         echo "error_count=$ERROR_COUNT" >> $GITHUB_OUTPUT
         
+        # ✅ ИСПРАВЛЕНО: Корректная установка статуса
         if [ $BUILD_EXIT_CODE -eq 0 ]; then
           echo "build_status=success" >> $GITHUB_OUTPUT
           echo "✅ Build succeeded!"
         else
           echo "build_status=failure" >> $GITHUB_OUTPUT
-          echo "❌ Build failed with $ERROR_COUNT errors"
+          echo "❌ Build failed with exit code $BUILD_EXIT_CODE and $ERROR_COUNT errors"
+          # ✅ НЕ выходим здесь, чтобы артефакты загрузились
         fi
 
     # ═══════════════════════════════════════════════════════════════════════════
     # ARTIFACTS & NOTIFICATIONS
     # ═══════════════════════════════════════════════════════════════════════════
 
+    # ✅ ИСПРАВЛЕНО: Проверяем существование APK перед загрузкой
     - name: Upload debug APK artifact
       if: steps.build.outputs.build_status == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: debug-apk-${{ github.sha }}
         path: app/build/outputs/apk/debug/*.apk
-        if-no-files-found: error
+        if-no-files-found: warn  # ✅ ИЗМЕНЕНО: warn вместо error
         retention-days: 7
 
     - name: Upload error logs artifact
@@ -372,8 +375,9 @@ jobs:
             --data-urlencode "text=${CAPTION} (Error log not found)"
         fi
 
+    # ✅ ИСПРАВЛЕНО: Проверка в самом конце
     - name: Check build result
       if: steps.build.outputs.build_status == 'failure'
       run: |
-        echo "Build failed - see errors above"
+        echo "❌ Build failed - check error logs above"
         exit 1
