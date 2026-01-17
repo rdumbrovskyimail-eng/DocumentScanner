@@ -1,6 +1,6 @@
 # ================================================================================
 # Android CI/CD Pipeline
-# Version: 9.2.0 - WITH ERROR CAPTURE & TELEGRAM FILE UPLOAD (YAML FIXED)
+# Version: 10.0.0 - OPTIMIZED FOR SINGLE-PASS BUILD (2026)
 # ================================================================================
 
 name: Android CI
@@ -19,26 +19,40 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: read
 
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      # ✅ ОПТИМИЗАЦИЯ: Агрессивное использование памяти для быстрой сборки
       GRADLE_OPTS: >-
+        -Xmx5g
+        -Xms2g
+        -XX:+UseParallelGC
+        -XX:MaxMetaspaceSize=1024m
+        -XX:+HeapDumpOnOutOfMemoryError
+        -XX:HeapDumpPath=/tmp/heap-dump.hprof
+        -Dfile.encoding=UTF-8
         -Dorg.gradle.daemon=true
         -Dorg.gradle.parallel=true
         -Dorg.gradle.caching=true
         -Dorg.gradle.configureondemand=true
+        -Dorg.gradle.workers.max=4
+      # ✅ Kotlin Compiler оптимизация
       JAVA_TOOL_OPTIONS: >-
-        -Xmx4g
-        -Xms512m
+        -Xmx3g
         -XX:+UseParallelGC
-        -XX:+HeapDumpOnOutOfMemoryError
-        -Dfile.encoding=UTF-8
+        -XX:MaxMetaspaceSize=768m
     
     steps:
-    - uses: actions/checkout@v4
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CHECKOUT & SETUP (30 сек)
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    - name: Checkout code
+      uses: actions/checkout@v4
       with:
         fetch-depth: 1
 
@@ -47,70 +61,172 @@ jobs:
       with:
         java-version: '21'
         distribution: 'temurin'
+        cache: gradle  # ✅ Встроенный кеш Gradle
 
     - name: Set up Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Cache Android SDK packages
+    # ═══════════════════════════════════════════════════════════════════════════
+    # AGGRESSIVE CACHING (1-2 мин экономии)
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    - name: Cache Android SDK
       uses: actions/cache@v4
       with:
         path: |
           /usr/local/lib/android/sdk/platform-tools
-          /usr/local/lib/android/sdk/platforms/android-36
-          /usr/local/lib/android/sdk/build-tools/36.0.0
+          /usr/local/lib/android/sdk/platforms
+          /usr/local/lib/android/sdk/build-tools
           /usr/local/lib/android/sdk/licenses
-          /usr/local/lib/android/sdk/cmdline-tools
-        key: ${{ runner.os }}-androidsdk-api36-bt3600-v2
+        key: android-sdk-36-${{ runner.os }}-v3
+        restore-keys: |
+          android-sdk-36-${{ runner.os }}-
 
-    - name: Install Android SDK packages
-      run: |
-        sdkmanager --install \
-          "platform-tools" \
-          "platforms;android-36" \
-          "build-tools;36.0.0"
-    
-    - name: Make gradlew executable
-      run: chmod +x gradlew
-    
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v4
+    - name: Cache Gradle wrapper & dependencies
+      uses: actions/cache@v4
       with:
-        cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-        cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-        dependency-graph: disabled
-        add-job-summary: on-failure
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+        restore-keys: |
+          gradle-${{ runner.os }}-
 
-    - name: Cache Gradle build-cache directory
+    - name: Cache Kotlin compiler
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin
+          ~/.konan
+        key: kotlin-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+        restore-keys: |
+          kotlin-${{ runner.os }}-
+
+    # ✅ КРИТИЧНО: Кеш build-cache для incremental compilation
+    - name: Cache Gradle build-cache
       uses: actions/cache@v4
       with:
         path: |
           build-cache
-          ~/.gradle/caches/build-cache-1
-        key: ${{ runner.os }}-build-cache-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          .gradle/build-cache
+        key: build-cache-${{ runner.os }}-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-build-cache-
+          build-cache-${{ runner.os }}-
 
-    - name: Build with Gradle
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SDK INSTALLATION (только если не закешировано)
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    - name: Install Android SDK packages
+      run: |
+        if [ ! -d "/usr/local/lib/android/sdk/platforms/android-36" ]; then
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+        else
+          echo "SDK already cached, skipping installation"
+        fi
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # GRADLE SETUP
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    - name: Make gradlew executable
+      run: chmod +x gradlew
+    
+    - name: Setup Gradle (с оптимизацией)
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-read-only: false  # ✅ Всегда записываем кеш
+        cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+        dependency-graph: disabled  # ✅ Отключаем для скорости
+        add-job-summary: on-failure
+        gradle-home-cache-cleanup: true
+
+    # ✅ НОВОЕ: Создаём CI-оптимизированный gradle.properties
+    - name: Create optimized gradle.properties for CI
+      run: |
+        cat > gradle.properties << 'EOF'
+        # ═══════════════════════════════════════════════════════════════════════
+        # CI-OPTIMIZED GRADLE CONFIGURATION
+        # ═══════════════════════════════════════════════════════════════════════
+        
+        # JVM Settings (максимум для GitHub Actions: 7GB - 1.5GB система = 5.5GB)
+        org.gradle.jvmargs=-Xmx4500m -Xms2g -XX:MaxMetaspaceSize=1024m -XX:+UseParallelGC -Dfile.encoding=UTF-8
+        
+        # Kotlin Daemon (отдельный процесс)
+        kotlin.daemon.jvmargs=-Xmx2500m -XX:MaxMetaspaceSize=768m -XX:+UseParallelGC
+        
+        # Gradle Performance
+        org.gradle.daemon=true
+        org.gradle.parallel=true
+        org.gradle.caching=true
+        org.gradle.configuration-cache=true
+        org.gradle.configuration-cache.problems=warn
+        org.gradle.workers.max=4
+        org.gradle.vfs.watch=false
+        
+        # Kotlin Compiler
+        kotlin.incremental=true
+        kotlin.incremental.usePreciseJavaTracking=true
+        kotlin.compiler.execution.strategy=daemon
+        
+        # Android
+        android.useAndroidX=true
+        android.enableJetifier=false
+        android.nonTransitiveRClass=true
+        android.nonFinalResIds=true
+        android.enableR8.fullMode=true
+        
+        # Disable unused features
+        android.defaults.buildfeatures.aidl=false
+        android.defaults.buildfeatures.renderscript=false
+        android.defaults.buildfeatures.resvalues=false
+        android.defaults.buildfeatures.shaders=false
+        android.defaults.buildfeatures.viewbinding=false
+        android.defaults.buildfeatures.databinding=false
+        
+        # KSP
+        ksp.incremental=true
+        ksp.incremental.log=false
+        EOF
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # MAIN BUILD (SINGLE PASS)
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    - name: Build with Gradle (Single Pass)
       id: build
       continue-on-error: true
       run: |
         FULL_LOG="build_full.log"
         ERRORS_FILE="build_errors.txt"
         
+        echo "🚀 Starting optimized build..."
+        free -h
+        
         set +e
         ./gradlew assembleDebug \
           --stacktrace \
-          --parallel \
+          --no-daemon \
+          --max-workers=4 \
           --build-cache \
           --configuration-cache \
           --no-watch-fs \
-          -Dorg.gradle.jvmargs="-Xmx4g -Xms512m -XX:+UseParallelGC -XX:MaxMetaspaceSize=512m" \
-          -Dkotlin.daemon.jvm.options="-Xmx2g -XX:+UseParallelGC" \
-          -Dkotlin.incremental=true \
-          -Dkotlin.compiler.execution.strategy=in-process \
+          --info \
           2>&1 | tee "$FULL_LOG"
+        
         BUILD_EXIT_CODE=$?
         set -e
+        
+        echo ""
+        echo "📊 Memory after build:"
+        free -h
+        
+        # ═══════════════════════════════════════════════════════════════════════
+        # ERROR EXTRACTION
+        # ═══════════════════════════════════════════════════════════════════════
         
         {
           echo "==============================================================="
@@ -154,15 +270,21 @@ jobs:
         
         if [ $BUILD_EXIT_CODE -eq 0 ]; then
           echo "build_status=success" >> $GITHUB_OUTPUT
+          echo "✅ Build succeeded!"
         else
           echo "build_status=failure" >> $GITHUB_OUTPUT
+          echo "❌ Build failed with $ERROR_COUNT errors"
         fi
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ARTIFACTS & NOTIFICATIONS
+    # ═══════════════════════════════════════════════════════════════════════════
 
     - name: Upload debug APK artifact
       if: steps.build.outputs.build_status == 'success'
       uses: actions/upload-artifact@v4
       with:
-        name: debug-apk
+        name: debug-apk-${{ github.sha }}
         path: app/build/outputs/apk/debug/*.apk
         if-no-files-found: error
         retention-days: 7
@@ -171,7 +293,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: build-errors
+        name: build-logs-${{ github.sha }}
         path: |
           build_errors.txt
           build_full.log
