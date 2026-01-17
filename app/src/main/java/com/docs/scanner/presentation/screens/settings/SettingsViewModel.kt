@@ -1,8 +1,13 @@
 /*
  * SettingsViewModel.kt
- * Version: 12.0.0 - GEMINI OCR FALLBACK + TEST CONTROLS (2026 Standards)
+ * Version: 13.0.0 - UNIFIED API KEY MODEL (2026 Standards)
  * 
- * ✅ NEW in 12.0.0:
+ * ✅ NEW in 13.0.0:
+ * - Unified ApiKeyEntry model (replaced ApiKeyData)
+ * - Simplified API key management through EncryptedKeyStorage
+ * - Better separation: StoredApiKey (internal) vs ApiKeyEntry (public)
+ * 
+ * ✅ PREVIOUS in 12.0.0:
  * - Gemini OCR Fallback управление (enabled, threshold, always)
  * - Test Gemini fallback checkbox в OCR тесте
  * - API key error reset функционал
@@ -33,7 +38,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.BuildConfig
 import com.docs.scanner.data.local.preferences.SettingsDataStore
-import com.docs.scanner.data.local.security.ApiKeyData
+import com.docs.scanner.data.local.security.ApiKeyEntry
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
 import com.docs.scanner.data.remote.drive.DriveRepository
 import com.docs.scanner.data.remote.gemini.GeminiApi
@@ -80,8 +85,8 @@ class SettingsViewModel @Inject constructor(
     // API KEYS STATE
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private val _apiKeys = MutableStateFlow<List<ApiKeyData>>(emptyList())
-    val apiKeys: StateFlow<List<ApiKeyData>> = _apiKeys.asStateFlow()
+    private val _apiKeys = MutableStateFlow<List<ApiKeyEntry>>(emptyList())
+    val apiKeys: StateFlow<List<ApiKeyEntry>> = _apiKeys.asStateFlow()
 
     private val _isSaving = MutableStateFlow(false)
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
@@ -174,7 +179,7 @@ class SettingsViewModel @Inject constructor(
         refreshCacheStats()
         refreshStorageUsage()
         refreshLocalBackups()
-        loadMlkitSettings() // ✅ КРИТИЧНО: Загружаем настройки OCR
+        loadMlkitSettings()
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -195,10 +200,8 @@ class SettingsViewModel @Inject constructor(
     private fun loadMlkitSettings() {
         viewModelScope.launch {
             try {
-                // Читаем текущий режим из DataStore
                 val mode = settingsDataStore.ocrLanguage.first().uppercase()
                 
-                // Конвертируем в OcrScriptMode
                 val scriptMode = when (mode) {
                     "LATIN" -> OcrScriptMode.LATIN
                     "CHINESE" -> OcrScriptMode.CHINESE
@@ -208,14 +211,10 @@ class SettingsViewModel @Inject constructor(
                     else -> OcrScriptMode.AUTO
                 }
                 
-                // ════════════════════════════════════════════════════════════════
-                // NEW: Загружаем настройки Gemini OCR Fallback
-                // ════════════════════════════════════════════════════════════════
                 val geminiEnabled = settingsDataStore.geminiOcrEnabled.first()
                 val geminiThreshold = settingsDataStore.geminiOcrThreshold.first()
                 val geminiAlways = settingsDataStore.geminiOcrAlways.first()
                 
-                // Обновляем UI state
                 _mlkitSettings.update { 
                     it.copy(
                         scriptMode = scriptMode,
@@ -245,7 +244,7 @@ class SettingsViewModel @Inject constructor(
     private fun loadApiKeys() {
         viewModelScope.launch {
             try {
-                _apiKeys.value = encryptedKeyStorage.getAllKeys()
+                _apiKeys.value = encryptedKeyStorage.getAllApiKeys()
                 
                 if (BuildConfig.DEBUG) {
                     Timber.d("🔑 Loaded ${_apiKeys.value.size} API keys")
@@ -297,22 +296,21 @@ class SettingsViewModel @Inject constructor(
                 }
                 
                 val trimmedKey = key.trim()
-                val newKey = ApiKeyData(
-                    id = System.currentTimeMillis().toString(),
+                
+                val success = encryptedKeyStorage.addApiKey(
                     key = trimmedKey,
-                    label = label?.ifBlank { null },
-                    isActive = true,
-                    createdAt = System.currentTimeMillis()
+                    label = label?.ifBlank { "" } ?: ""
                 )
                 
-                encryptedKeyStorage.addKey(newKey)
-                encryptedKeyStorage.setActiveApiKey(trimmedKey)
-                loadApiKeys()
-                
-                _saveMessage.value = "✓ API key added successfully"
-                
-                if (BuildConfig.DEBUG) {
-                    Timber.d("✅ Added new API key with label: ${label ?: "unlabeled"}")
+                if (success) {
+                    loadApiKeys()
+                    _saveMessage.value = "✓ API key added successfully"
+                    
+                    if (BuildConfig.DEBUG) {
+                        Timber.d("✅ Added new API key with label: ${label ?: "unlabeled"}")
+                    }
+                } else {
+                    _saveMessage.value = "✗ Failed to add key (duplicate or limit reached)"
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to add API key")
@@ -324,18 +322,12 @@ class SettingsViewModel @Inject constructor(
     fun activateKey(keyId: String) {
         viewModelScope.launch {
             try {
-                val key = _apiKeys.value.find { it.id == keyId }
-                if (key != null) {
-                    encryptedKeyStorage.setActiveApiKey(key.key)
-                    loadApiKeys()
-                    _saveMessage.value = "✓ API key activated"
-                    
-                    if (BuildConfig.DEBUG) {
-                        Timber.d("✅ Activated API key: ${key.label ?: keyId}")
-                    }
-                } else {
-                    _saveMessage.value = "✗ Key not found"
-                    Timber.w("Attempted to activate non-existent key: $keyId")
+                encryptedKeyStorage.setKeyAsPrimary(keyId)
+                loadApiKeys()
+                _saveMessage.value = "✓ API key activated"
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("✅ Activated API key")
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to activate key")
@@ -347,12 +339,17 @@ class SettingsViewModel @Inject constructor(
     fun deleteKey(keyId: String) {
         viewModelScope.launch {
             try {
-                encryptedKeyStorage.deleteKey(keyId)
-                loadApiKeys()
-                _saveMessage.value = "✓ API key deleted"
+                val success = encryptedKeyStorage.removeApiKey(keyId)
                 
-                if (BuildConfig.DEBUG) {
-                    Timber.d("🗑️ Deleted API key: $keyId")
+                if (success) {
+                    loadApiKeys()
+                    _saveMessage.value = "✓ API key deleted"
+                    
+                    if (BuildConfig.DEBUG) {
+                        Timber.d("🗑️ Deleted API key")
+                    }
+                } else {
+                    _saveMessage.value = "✗ Key not found"
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to delete key")
@@ -378,8 +375,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun testApiKey(keyId: String) {
-        val key = _apiKeys.value.find { it.id == keyId }?.key ?: return
-        testApiKeyRaw(key)
+        testApiKeyRaw(keyId)
     }
 
     fun testApiKeyRaw(key: String) {
@@ -458,10 +454,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * ⚠️ DEPRECATED: Используйте setMlkitScriptMode() вместо этого.
-     * Оставлено для обратной совместимости.
-     */
     @Deprecated(
         message = "Use setMlkitScriptMode() for better type safety",
         replaceWith = ReplaceWith("setMlkitScriptMode(OcrScriptMode.valueOf(mode))")
@@ -471,7 +463,6 @@ class SettingsViewModel @Inject constructor(
             try {
                 settingsDataStore.setOcrLanguage(mode)
                 
-                // Синхронизируем с MLKit state
                 val scriptMode = when (mode.uppercase()) {
                     "LATIN" -> OcrScriptMode.LATIN
                     "CHINESE" -> OcrScriptMode.CHINESE
@@ -754,7 +745,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // GOOGLE DRIVE (сокращено для экономии токенов)
+    // GOOGLE DRIVE
     // ═══════════════════════════════════════════════════════════════════════════
 
     fun refreshDriveBackups() {
@@ -768,7 +759,7 @@ class SettingsViewModel @Inject constructor(
                 }
             }
         }
-    }
+}
 
     fun signInGoogleDrive(context: Context, launcher: ActivityResultLauncher<Intent>) {
         try {
@@ -906,10 +897,8 @@ class SettingsViewModel @Inject constructor(
      */
     fun setMlkitScriptMode(mode: OcrScriptMode) {
         viewModelScope.launch {
-            // 1. Обновляем UI state (мгновенный отклик)
             _mlkitSettings.update { it.copy(scriptMode = mode) }
             
-            // 2. Конвертируем в string для DataStore
             val modeStr = when (mode) {
                 OcrScriptMode.AUTO -> "AUTO"
                 OcrScriptMode.LATIN -> "LATIN"
@@ -919,7 +908,6 @@ class SettingsViewModel @Inject constructor(
                 OcrScriptMode.DEVANAGARI -> "DEVANAGARI"
             }
             
-            // 3. Сохраняем в DataStore (применится ко всем новым документам)
             try {
                 settingsDataStore.setOcrLanguage(modeStr)
                 
@@ -934,9 +922,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Включает/выключает автоопределение языка.
-     */
     fun setMlkitAutoDetect(enabled: Boolean) {
         _mlkitSettings.update { it.copy(autoDetectLanguage = enabled) }
         
@@ -945,9 +930,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Устанавливает порог уверенности (0.0-1.0).
-     */
     fun setMlkitConfidenceThreshold(threshold: Float) {
         _mlkitSettings.update { it.copy(confidenceThreshold = threshold) }
         
@@ -956,9 +938,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Включает/выключает подсветку слов с низкой уверенностью.
-     */
     fun setMlkitHighlightLowConfidence(enabled: Boolean) {
         _mlkitSettings.update { it.copy(highlightLowConfidence = enabled) }
         
@@ -967,9 +946,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Показывать/скрывать проценты уверенности для каждого слова.
-     */
     fun setMlkitShowWordConfidences(enabled: Boolean) {
         _mlkitSettings.update { it.copy(showWordConfidences = enabled) }
         
@@ -978,9 +954,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Устанавливает URI изображения для теста OCR.
-     */
     fun setMlkitSelectedImage(uri: Uri?) {
         _mlkitSettings.update { it.copy(selectedImageUri = uri) }
         
@@ -989,9 +962,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Очищает результаты последнего теста.
-     */
     fun clearMlkitTestResult() {
         _mlkitSettings.update { 
             it.copy(
@@ -1002,9 +972,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Очищает cache MLKit recognizers (освобождает память).
-     */
     fun clearMlkitCache() {
         viewModelScope.launch {
             mlKitScanner.clearCache()
@@ -1016,9 +983,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Возвращает список доступных режимов OCR.
-     */
     fun getAvailableScriptModes(): List<OcrScriptMode> = 
         mlKitScanner.getAvailableScriptModes()
 
@@ -1102,10 +1066,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ ДОПОЛНИТЕЛЬНЫЕ МЕТОДЫ ДЛЯ ML KIT OCR (NEW IN 12.0.0)
-    // ════════════════════════════════════════════════════════════════════════════════
-
     /**
      * Включает/выключает тестирование Gemini fallback в OCR тесте.
      * 
@@ -1126,8 +1086,6 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * ⚠️ ЗАМЕНИТЕ СУЩЕСТВУЮЩИЙ МЕТОД runMlkitOcrTest() НА ЭТОТ:
-     * 
      * Запускает тест OCR с текущими настройками.
      * 
      * UPDATED в 12.0.0: Добавлен параметр testGeminiFallback для тестирования
@@ -1163,13 +1121,12 @@ class SettingsViewModel @Inject constructor(
             }
             
             try {
-                // ✅ ВАЖНО: Передаем параметр testGeminiFallback в MLKitScanner
                 when (val result = mlKitScanner.testOcr(
                     uri = imageUri,
                     scriptMode = currentState.scriptMode,
                     autoDetectLanguage = currentState.autoDetectLanguage,
                     confidenceThreshold = currentState.confidenceThreshold,
-                    testGeminiFallback = currentState.testGeminiFallback // ✅ NEW PARAMETER
+                    testGeminiFallback = currentState.testGeminiFallback
                 )) {
                     is DomainResult.Success -> {
                         _mlkitSettings.update { 
@@ -1187,7 +1144,6 @@ class SettingsViewModel @Inject constructor(
                             Timber.d("   ├─ Quality: ${data.qualityRating}")
                             Timber.d("   ├─ Time: ${data.processingTimeMs}ms")
                             
-                            // ✅ Если тестировали fallback, показываем результат
                             if (currentState.testGeminiFallback) {
                                 Timber.d("   └─ ⚠️ Gemini fallback test executed")
                             }
