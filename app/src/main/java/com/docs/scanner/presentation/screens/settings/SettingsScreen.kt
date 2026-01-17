@@ -1268,30 +1268,16 @@ private fun RestoreBackupDialog(
 
 private fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
 
-/**
- * ✅ ИСПРАВЛЕНО: Правильное преобразование ApiKeyData → ApiKeyEntry
- * 
- * Конструктор ApiKeyEntry требует:
- * - key: String
- * - label: String (с default = "")
- * - addedAt: Long
- * - lastUsedAt: Long?
- * - lastErrorAt: Long?
- * - errorCount: Int
- * - isActive: Boolean
- * 
- * ApiKeyData имеет: id, key, label?, isActive, createdAt
- * Маппинг: createdAt → addedAt, остальные поля заполняем значениями по умолчанию.
- */
-private fun com.docs.scanner.data.local.security.ApiKeyData.toApiKeyEntry(): 
-    com.docs.scanner.data.local.security.ApiKeyEntry {
-    return com.docs.scanner.data.local.security.ApiKeyEntry(
-        key = this.key,
-        label = this.label ?: "Unlabeled Key",
-        addedAt = this.createdAt,        // ✅ Map createdAt → addedAt
-        lastUsedAt = null,               // ✅ Correct parameter name
-        lastErrorAt = null,              // ✅ Correct parameter name
-        errorCount = 0,
-        isActive = this.isActive
-    )
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// NO CONVERSION NEEDED
+// ═══════════════════════════════════════════════════════════════════════════════
+// 
+// ApiKeyData больше не существует после рефакторинга.
+// 
+// Все конверсии теперь встроены в модели (ApiKeyModels.kt):
+// - StoredApiKey.toApiKeyEntry() — для чтения из storage
+// - ApiKeyEntry.toStoredApiKey() — для записи в storage
+// 
+// EncryptedKeyStorage возвращает List<ApiKeyEntry> напрямую через:
+//   getAllApiKeys() -> List<ApiKeyEntry>
+// ═══════════════════════════════════════════════════════════════════════════════
