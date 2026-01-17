@@ -1523,7 +1523,7 @@ class FileRepositoryImpl @Inject constructor(
      * ✅ FIXED (Serious #7): Full implementation instead of stub.
      * Creates memory-efficient thumbnails using inSampleSize.
      */
-    override suspend fun createThumbnail(imagePath: String, maxSize: Int): Domoverride suspend fun createThumbnail(imagePath: String, maxSize: Int): DomainResult<String> = 
+    override suspend fun createThumbnail(imagePath: String, maxSize: Int): DomainResult<String> = 
         withContext(Dispatchers.IO) {
             var bitmap: Bitmap? = null
             
