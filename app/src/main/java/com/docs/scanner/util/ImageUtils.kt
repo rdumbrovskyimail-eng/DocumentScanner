@@ -16,6 +16,7 @@ import java.io.InputStream
 
 /**
  * Universal Image Utilities for Android 10-16+
+ * Version: 1.0.0 (2026 Standards)
  * 
  * Handles:
  * - Photo Picker URIs (temporary access)
@@ -25,7 +26,7 @@ import java.io.InputStream
  * - EXIF rotation correction
  * - Memory-safe bitmap operations
  * 
- * @since 2026
+ * Compatibility: Android 8.0 (API 26) - Android 16 (API 36)
  */
 object ImageUtils {
 
@@ -74,34 +75,30 @@ object ImageUtils {
         // 3. Создаём выходной файл
         val outputFile = File(outputDir, "image_${System.currentTimeMillis()}.jpg")
         
-        // 4. Открываем входной поток
-        val inputStream = context.contentResolver.openInputStream(sourceUri)
-            ?: throw IOException("Cannot open input stream for URI: $sourceUri")
+        // 4. Открываем входной поток и читаем байты
+        val imageBytes = context.contentResolver.openInputStream(sourceUri)?.use { stream ->
+            stream.readBytes()
+        } ?: throw IOException("Cannot open input stream for URI: $sourceUri")
         
         try {
             // 5. Декодируем с оптимизацией памяти
-            val bitmap = decodeSampledBitmap(inputStream, maxDimension)
+            val bitmap = decodeSampledBitmap(imageBytes, maxDimension)
                 ?: throw IOException("Failed to decode bitmap from URI: $sourceUri")
             
-            // 6. Закрываем первый поток, открываем новый для EXIF
-            inputStream.close()
-            
-            // 7. Корректируем ориентацию по EXIF
+            // 6. Корректируем ориентацию по EXIF
             val rotatedBitmap = try {
-                context.contentResolver.openInputStream(sourceUri)?.use { exifStream ->
-                    correctBitmapOrientation(bitmap, exifStream)
-                } ?: bitmap
+                correctBitmapOrientation(bitmap, imageBytes)
             } catch (e: Exception) {
                 Timber.w(e, "$TAG: Failed to correct orientation, using original")
                 bitmap
             }
             
-            // 8. Сохраняем в файл
+            // 7. Сохраняем в файл
             FileOutputStream(outputFile).use { output ->
                 rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)
             }
             
-            // 9. Освобождаем память
+            // 8. Освобождаем память
             if (rotatedBitmap !== bitmap) {
                 bitmap.recycle()
             }
@@ -109,11 +106,10 @@ object ImageUtils {
             
             Timber.d("$TAG: Image saved to ${outputFile.absolutePath} (${outputFile.length()} bytes)")
             
-            // 10. Возвращаем стабильный URI
+            // 9. Возвращаем стабильный URI
             getStableUri(context, outputFile)
             
         } catch (e: Exception) {
-            inputStream.close()
             outputFile.delete()
             throw IOException("Failed to copy image: ${e.message}", e)
         }
@@ -137,27 +133,27 @@ object ImageUtils {
     /**
      * Возвращает стабильный URI для файла.
      * 
-     * Android 7+ требует FileProvider для file:// URI.
-     * Для внутренних файлов cache можно использовать file:// напрямую
-     * если файл читается только внутри приложения.
+     * Для файлов в cache директории используем file:// URI напрямую,
+     * так как они читаются только внутри приложения.
+     * FileProvider нужен только для sharing с другими приложениями.
      */
     fun getStableUri(context: Context, file: File): Uri {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            // Для Android 7+ пробуем FileProvider, fallback на file://
+        // Для внутренних файлов cache используем file:// напрямую
+        // Это безопасно и работает на всех версиях Android
+        return if (file.absolutePath.startsWith(context.cacheDir.absolutePath)) {
+            Uri.fromFile(file)
+        } else {
+            // Для внешних файлов пробуем FileProvider
             try {
                 FileProvider.getUriForFile(
                     context,
-                    "${context.packageName}.provider",
+                    "${context.packageName}.fileprovider",
                     file
                 )
             } catch (e: IllegalArgumentException) {
-                // FileProvider не настроен для этого пути - используем file://
-                // Это безопасно для внутренних файлов приложения
                 Timber.w("$TAG: FileProvider not configured, using file:// URI")
                 Uri.fromFile(file)
             }
-        } else {
-            Uri.fromFile(file)
         }
     }
 
@@ -166,7 +162,7 @@ object ImageUtils {
      * Использует inSampleSize для уменьшения потребления памяти.
      */
     private fun decodeSampledBitmap(
-        inputStream: InputStream,
+        imageBytes: ByteArray,
         maxDimension: Int
     ): Bitmap? {
         // Сначала читаем размеры
@@ -174,10 +170,7 @@ object ImageUtils {
             inJustDecodeBounds = true
         }
         
-        // Буферизуем поток для повторного чтения
-        val bufferedBytes = inputStream.readBytes()
-        
-        BitmapFactory.decodeByteArray(bufferedBytes, 0, bufferedBytes.size, options)
+        BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, options)
         
         // Вычисляем inSampleSize
         options.inSampleSize = calculateInSampleSize(
@@ -191,7 +184,7 @@ object ImageUtils {
         options.inJustDecodeBounds = false
         options.inPreferredConfig = Bitmap.Config.ARGB_8888
         
-        return BitmapFactory.decodeByteArray(bufferedBytes, 0, bufferedBytes.size, options)
+        return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, options)
     }
 
     /**
@@ -223,9 +216,9 @@ object ImageUtils {
      */
     private fun correctBitmapOrientation(
         bitmap: Bitmap,
-        inputStream: InputStream
+        imageBytes: ByteArray
     ): Bitmap {
-        val exif = ExifInterface(inputStream)
+        val exif = ExifInterface(imageBytes.inputStream())
         val orientation = exif.getAttributeInt(
             ExifInterface.TAG_ORIENTATION,
             ExifInterface.ORIENTATION_NORMAL
@@ -264,13 +257,12 @@ object ImageUtils {
     fun clearDirectory(directory: File, keepLast: Int = 0) {
         try {
             val files = directory.listFiles()
+                ?.filter { it.isFile }
                 ?.sortedByDescending { it.lastModified() }
                 ?: return
             
             files.drop(keepLast).forEach { file ->
-                if (file.isFile) {
-                    file.delete()
-                }
+                file.delete()
             }
             
             Timber.d("$TAG: Cleared directory ${directory.name}, kept $keepLast files")
@@ -284,7 +276,9 @@ object ImageUtils {
      */
     fun clearOcrTestCache(context: Context) {
         val testDir = File(context.cacheDir, OCR_TEST_DIR)
-        clearDirectory(testDir, keepLast = 0)
+        if (testDir.exists()) {
+            clearDirectory(testDir, keepLast = 0)
+        }
     }
 
     /**
@@ -293,7 +287,9 @@ object ImageUtils {
     fun clearAllImageCache(context: Context) {
         clearOcrTestCache(context)
         val tempDir = File(context.cacheDir, TEMP_IMAGES_DIR)
-        clearDirectory(tempDir, keepLast = 0)
+        if (tempDir.exists()) {
+            clearDirectory(tempDir, keepLast = 0)
+        }
     }
 
     /**
