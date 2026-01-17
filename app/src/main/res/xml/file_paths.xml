@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     FileProvider paths configuration
-    Version: 7.1.0 (Build 710)
+    Version: 8.0.0 (Build 800)
     
-    ✅ FIXED: Added external-path for Downloads directory (LogcatCollector)
+    ✅ UPDATED: Added OCR test cache paths
     ✅ Added cache paths for thumbnails and exports
+    ✅ Added temp_images for general image processing
 -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     
@@ -32,6 +33,16 @@
         name="thumbnails" 
         path="thumbnails/" />
     
+    <!-- ✅ NEW: OCR test images cache -->
+    <cache-path 
+        name="ocr_test" 
+        path="ocr_test/" />
+    
+    <!-- ✅ NEW: Temporary images for processing -->
+    <cache-path 
+        name="temp_images" 
+        path="temp_images/" />
+    
     <!-- ════════════════════════════════════════════════════════════════════
          EXTERNAL STORAGE - APP-SPECIFIC (ANDROID 10+ SCOPED STORAGE)
          ════════════════════════════════════════════════════════════════════ -->
@@ -41,7 +52,7 @@
         name="external_files" 
         path="." />
     
-    <!-- ✅ FIX: LogcatCollector logs (Android 10+)
+    <!-- LogcatCollector logs (Android 10+)
          Path: /storage/emulated/0/Android/data/com.docs.scanner/files/Download/Logs/ -->
     <external-files-path 
         name="logs" 
@@ -61,7 +72,7 @@
          PUBLIC DOWNLOADS (ANDROID 9 AND BELOW - LEGACY)
          ════════════════════════════════════════════════════════════════════ -->
     
-    <!-- ✅ FIX: Legacy Downloads path for Android 9-
+    <!-- Legacy Downloads path for Android 9-
          Path: /storage/emulated/0/Download/DocumentScanner_Logs/ -->
     <external-path 
         name="external_downloads" 
