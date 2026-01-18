@@ -1188,20 +1188,20 @@ class SettingsViewModel @Inject constructor(
                                 
                                 val translationStart = System.currentTimeMillis()
                                 
-                                when (val translateResult = useCases.translation.translate(
+                                when (val translateResult = useCases.translation.translateText(
                                     text = ocrData.text,
                                     sourceLanguage = ocrData.detectedLanguage ?: Language.AUTO,
                                     targetLanguage = translationTargetLang
                                 )) {
-                                    is DomainResult.Success -> {
-                                        translatedText = translateResult.data.translatedText
+                                    is DomainResult.Success<*> -> {
+                                        translatedText = translateResult.data.toString()
                                         translationTime = System.currentTimeMillis() - translationStart
                                         
                                         if (BuildConfig.DEBUG) {
                                             Timber.d("✅ Auto-translation successful in ${translationTime}ms")
                                         }
                                     }
-                                    is DomainResult.Failure -> {
+                                    is DomainResult.Failure<*> -> {
                                         Timber.w("⚠️ Auto-translation failed: ${translateResult.error.message}")
                                     }
                                 }
@@ -1303,30 +1303,29 @@ class SettingsViewModel @Inject constructor(
             
             val start = System.currentTimeMillis()
             
-            when (val result = useCases.translation.translate(
+            when (val result = useCases.translation.translateText(
                 text = state.translationTestText,
                 sourceLanguage = state.translationSourceLang,
                 targetLanguage = state.translationTargetLang
             )) {
-                is DomainResult.Success -> {
+                is DomainResult.Success<*> -> {
                     val time = System.currentTimeMillis() - start
                     _mlkitSettings.update {
                         it.copy(
-                            translationResult = result.data.translatedText,
+                            translationResult = result.data.toString(),
                             isTranslating = false,
                             translationError = null
                         )
                     }
                     
-                    _saveMessage.value = "✓ Translated in ${time}ms" +
-                        (if (result.data.fromCache) " (cached)" else "")
+                    _saveMessage.value = "✓ Translated in ${time}ms"
                     
                     if (BuildConfig.DEBUG) {
                         Timber.d("✅ Translation test successful in ${time}ms")
                     }
                 }
                 
-                is DomainResult.Failure -> {
+                is DomainResult.Failure<*> -> {
                     _mlkitSettings.update {
                         it.copy(
                             translationResult = null,
