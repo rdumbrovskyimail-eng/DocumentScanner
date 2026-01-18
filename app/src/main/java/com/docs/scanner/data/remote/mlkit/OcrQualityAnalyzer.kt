@@ -1,5 +1,6 @@
 package com.docs.scanner.data.remote.mlkit
 
+import com.docs.scanner.BuildConfig
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -8,11 +9,14 @@ import kotlin.math.sqrt
 /**
  * Analyzes OCR results quality to determine if Gemini fallback is needed.
  * 
+ * ✅ ОБНОВЛЕНО 2026: Адаптивные пороги для печатного vs рукописного текста
+ * 
  * Decision factors:
  * - Overall confidence score
  * - Ratio of low-confidence words
  * - Confidence variance (high variance = inconsistent recognition = likely handwritten)
  * - Text density and structure
+ * - Adaptive thresholds based on content type
  * 
  * Typical scenarios for Gemini fallback:
  * - Handwritten text (high variance, medium-low confidence)
@@ -262,6 +266,9 @@ class OcrQualityAnalyzer @Inject constructor() {
         return indicators.count { it } >= 2
     }
     
+    /**
+     * ✅ ОБНОВЛЕНО: Адаптивная оценка fallback с учетом типа контента
+     */
     private fun evaluateFallback(
         quality: OcrQuality,
         overallConfidence: Float,
@@ -282,7 +289,24 @@ class OcrQualityAnalyzer @Inject constructor() {
             reasons.add("Very low confidence: ${(overallConfidence * 100).toInt()}%")
         }
         
-        if (lowConfidenceRatio > MAX_LOW_CONFIDENCE_RATIO) {
+        // ✅ Адаптивные пороги на основе типа контента
+        val adaptiveGeminiThreshold = if (isLikelyHandwritten) {
+            0.45f  // 45% для рукописного
+        } else {
+            0.65f  // 65% для печатного
+        }
+        
+        val adaptiveMaxLowConfRatio = if (isLikelyHandwritten) {
+            0.50f  // 50% для рукописного
+        } else {
+            0.25f  // 25% для печатного
+        }
+        
+        if (overallConfidence < adaptiveGeminiThreshold) {
+            reasons.add("Confidence ${(overallConfidence * 100).toInt()}% < threshold ${(adaptiveGeminiThreshold * 100).toInt()}%")
+        }
+        
+        if (lowConfidenceRatio > adaptiveMaxLowConfRatio) {
             reasons.add("${(lowConfidenceRatio * 100).toInt()}% words with low confidence")
         }
         
@@ -307,9 +331,4 @@ class OcrQualityAnalyzer @Inject constructor() {
         val mean = values.average().toFloat()
         return values.map { (it - mean) * (it - mean) }.average().toFloat()
     }
-}
-
-// BuildConfig stub for compilation
-private object BuildConfig {
-    const val DEBUG = true
 }
