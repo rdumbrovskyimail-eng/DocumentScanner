@@ -1,6 +1,11 @@
 /*
  * SettingsViewModel.kt
- * Version: 14.0.0 - STABLE IMAGE HANDLING (2026 Standards)
+ * Version: 15.0.0 - TRANSLATION TEST + AUTO-TRANSLATION (2026)
+ * 
+ * ✅ NEW in 15.0.0:
+ * - Translation test methods (setTranslationTestText, testTranslation, etc.)
+ * - Auto-translation in OCR test results
+ * - Updated runMlkitOcrTest() with auto-translation logic
  * 
  * ✅ NEW in 14.0.0:
  * - Fixed Photo Picker URI access issues (Android 10-16+)
@@ -1121,7 +1126,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * Запускает тест OCR с текущими настройками.
+     * ✅ ОБНОВЛЕНО: Запускает тест OCR с автопереводом
      */
     fun runMlkitOcrTest() {
         val currentState = _mlkitSettings.value
@@ -1158,20 +1163,71 @@ class SettingsViewModel @Inject constructor(
                     testGeminiFallback = currentState.testGeminiFallback
                 )) {
                     is DomainResult.Success -> {
+                        val ocrData = result.data
+                        
+                        // ✅ НОВОЕ: Автоперевод если включен
+                        var translatedText: String? = null
+                        var translationTime: Long? = null
+                        var translationTargetLang: Language? = null
+                        
+                        if (ocrData.text.isNotBlank()) {
+                            val autoTranslateEnabled = try {
+                                settingsDataStore.autoTranslate.first()
+                            } catch (e: Exception) {
+                                false
+                            }
+                            
+                            if (autoTranslateEnabled) {
+                                translationTargetLang = try {
+                                    settingsDataStore.translationTarget.first().let { code ->
+                                        Language.fromCode(code) ?: Language.ENGLISH
+                                    }
+                                } catch (e: Exception) {
+                                    Language.ENGLISH
+                                }
+                                
+                                val translationStart = System.currentTimeMillis()
+                                
+                                when (val translateResult = useCases.translation.translate(
+                                    text = ocrData.text,
+                                    sourceLanguage = ocrData.detectedLanguage ?: Language.AUTO,
+                                    targetLanguage = translationTargetLang
+                                )) {
+                                    is DomainResult.Success -> {
+                                        translatedText = translateResult.data.translatedText
+                                        translationTime = System.currentTimeMillis() - translationStart
+                                        
+                                        if (BuildConfig.DEBUG) {
+                                            Timber.d("✅ Auto-translation successful in ${translationTime}ms")
+                                        }
+                                    }
+                                    is DomainResult.Failure -> {
+                                        Timber.w("⚠️ Auto-translation failed: ${translateResult.error.message}")
+                                    }
+                                }
+                            }
+                        }
+                        
                         _mlkitSettings.update { 
                             it.copy(
-                                testResult = result.data, 
+                                testResult = ocrData.copy(
+                                    translatedText = translatedText,
+                                    translationTargetLang = translationTargetLang,
+                                    translationTimeMs = translationTime
+                                ), 
                                 isTestRunning = false
                             ) 
                         }
                         
                         if (BuildConfig.DEBUG) {
-                            val data = result.data
                             Timber.d("✅ MLKit OCR test success")
-                            Timber.d("   ├─ Words: ${data.totalWords}")
-                            Timber.d("   ├─ Confidence: ${data.confidencePercent}")
-                            Timber.d("   ├─ Quality: ${data.qualityRating}")
-                            Timber.d("   └─ Time: ${data.processingTimeMs}ms")
+                            Timber.d("   ├─ Words: ${ocrData.totalWords}")
+                            Timber.d("   ├─ Confidence: ${ocrData.confidencePercent}")
+                            Timber.d("   ├─ Quality: ${ocrData.qualityRating}")
+                            Timber.d("   ├─ Time: ${ocrData.processingTimeMs}ms")
+                            if (translatedText != null) {
+                                Timber.d("   └─ Translation: ${translationTime}ms")
+                            }
                         }
                     }
                     is DomainResult.Failure -> {
@@ -1215,7 +1271,8 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
-// ═══════════════════════════════════════════════════════════════════════════
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // ✅ TRANSLATION TEST (NEW 2026)
     // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1293,6 +1350,7 @@ class SettingsViewModel @Inject constructor(
             )
         }
     }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // CLEANUP
     // ═══════════════════════════════════════════════════════════════════════════
