@@ -1,6 +1,11 @@
 /*
  * MlkitSettingsSection.kt
- * Version: 10.0.0 - SOURCE INDICATOR + GEMINI FALLBACK UI (2026)
+ * Version: 10.1.0 - AUTO-TRANSLATION UI SUPPORT (2026)
+ * 
+ * ✅ NEW IN 10.1.0:
+ * - Auto-translation display in OCR results
+ * - Translation target language badge
+ * - Translation timing display
  * 
  * ✅ NEW IN 10.0.0:
  * - Shows "Scanned by: ML Kit" or "Scanned by: Gemini AI" badge
@@ -559,7 +564,7 @@ private fun SettingToggleRow(
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// ✅ UPDATED: OcrTestResultView with Source Indicator
+// ✅ UPDATED: OcrTestResultView with Auto-Translation Support
 // ════════════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -749,6 +754,62 @@ private fun OcrTestResultView(
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
+                    }
+                }
+            }
+
+            // ════════════════════════════════════════════════════════════════
+            // ✅ NEW: AUTO-TRANSLATION (если есть)
+            // ════════════════════════════════════════════════════════════════
+            if (result.translatedText != null) {
+                HorizontalDivider()
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Translation:",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    
+                    result.translationTargetLang?.let { lang ->
+                        Badge(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                        ) {
+                            Text(
+                                text = lang.displayName,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(Modifier.height(4.dp))
+                
+                if (result.translationTimeMs != null) {
+                    Text(
+                        text = "Translated in ${result.translationTimeMs}ms",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                Spacer(Modifier.height(8.dp))
+                
+                SelectionContainer {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
+                        )
+                    ) {
+                        Text(
+                            text = result.translatedText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(12.dp)
+                        )
                     }
                 }
             }
