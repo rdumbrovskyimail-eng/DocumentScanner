@@ -1215,7 +1215,84 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
+// ═══════════════════════════════════════════════════════════════════════════
+    // ✅ TRANSLATION TEST (NEW 2026)
+    // ═══════════════════════════════════════════════════════════════════════════
 
+    fun setTranslationTestText(text: String) {
+        _mlkitSettings.update { it.copy(translationTestText = text) }
+    }
+
+    fun setTranslationSourceLang(lang: Language) {
+        _mlkitSettings.update { it.copy(translationSourceLang = lang) }
+    }
+
+    fun setTranslationTargetLang(lang: Language) {
+        _mlkitSettings.update { it.copy(translationTargetLang = lang) }
+    }
+
+    fun testTranslation() {
+        val state = _mlkitSettings.value
+        
+        if (state.translationTestText.isBlank()) {
+            _mlkitSettings.update {
+                it.copy(translationError = "Please enter text to translate")
+            }
+            return
+        }
+        
+        viewModelScope.launch {
+            _mlkitSettings.update { it.copy(isTranslating = true) }
+            
+            val start = System.currentTimeMillis()
+            
+            when (val result = useCases.translation.translate(
+                text = state.translationTestText,
+                sourceLanguage = state.translationSourceLang,
+                targetLanguage = state.translationTargetLang
+            )) {
+                is DomainResult.Success -> {
+                    val time = System.currentTimeMillis() - start
+                    _mlkitSettings.update {
+                        it.copy(
+                            translationResult = result.data.translatedText,
+                            isTranslating = false,
+                            translationError = null
+                        )
+                    }
+                    
+                    _saveMessage.value = "✓ Translated in ${time}ms" +
+                        (if (result.data.fromCache) " (cached)" else "")
+                    
+                    if (BuildConfig.DEBUG) {
+                        Timber.d("✅ Translation test successful in ${time}ms")
+                    }
+                }
+                
+                is DomainResult.Failure -> {
+                    _mlkitSettings.update {
+                        it.copy(
+                            translationResult = null,
+                            isTranslating = false,
+                            translationError = result.error.message
+                        )
+                    }
+                    
+                    Timber.e("❌ Translation test failed: ${result.error.message}")
+                }
+            }
+        }
+    }
+
+    fun clearTranslationTest() {
+        _mlkitSettings.update {
+            it.copy(
+                translationTestText = "",
+                translationResult = null,
+                translationError = null
+            )
+        }
+    }
     // ═══════════════════════════════════════════════════════════════════════════
     // CLEANUP
     // ═══════════════════════════════════════════════════════════════════════════
