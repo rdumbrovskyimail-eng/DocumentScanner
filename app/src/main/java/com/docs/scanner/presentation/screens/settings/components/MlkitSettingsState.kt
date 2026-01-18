@@ -6,8 +6,12 @@
  * - testGeminiFallback: Boolean = false (для UI чекбокса)
  * - showGeminiFallbackTest computed property
  * 
+ * ✅ UPDATED 2026:
+ * - Added translation test fields
+ * 
  * ✅ ПОЛНАЯ СПЕЦИФИКАЦИЯ:
  * - 13 полей для UI и логики (12 старых + 1 новый)
+ * - 6 новых полей для Translation Test
  * - Синхронизация с DataStore
  * - Поддержка test режима
  * - Thread-safe копирование
@@ -23,6 +27,7 @@ package com.docs.scanner.presentation.screens.settings.components
 import android.net.Uri
 import com.docs.scanner.data.remote.mlkit.OcrScriptMode
 import com.docs.scanner.data.remote.mlkit.OcrTestResult
+import com.docs.scanner.domain.core.Language
 
 /**
  * ПОЛНОЕ состояние MLKit OCR настроек.
@@ -43,6 +48,12 @@ import com.docs.scanner.data.remote.mlkit.OcrTestResult
  * @property geminiOcrThreshold Порог confidence для fallback 0-100
  * @property geminiOcrAlways Всегда использовать Gemini (пропустить ML Kit)
  * @property testGeminiFallback Флаг для принудительного теста Gemini fallback (NEW)
+ * @property translationTestText Текст для теста перевода (NEW 2026)
+ * @property translationSourceLang Язык-источник для теста перевода (NEW 2026)
+ * @property translationTargetLang Язык-цель для теста перевода (NEW 2026)
+ * @property translationResult Результат теста перевода (NEW 2026)
+ * @property isTranslating Флаг выполнения перевода (NEW 2026)
+ * @property translationError Ошибка перевода (NEW 2026)
  */
 data class MlkitSettingsState(
     // ═══════════════════════════════════════════════════════════════════════════
@@ -209,7 +220,41 @@ data class MlkitSettingsState(
      * 
      * ВАЖНО: Это только для диагностики, не сохраняется в DataStore.
      */
-    val testGeminiFallback: Boolean = false
+    val testGeminiFallback: Boolean = false,
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ✅ TRANSLATION TEST (NEW 2026)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * ✅ NEW: Текст для теста перевода.
+     */
+    val translationTestText: String = "",
+    
+    /**
+     * ✅ NEW: Язык-источник для теста перевода.
+     */
+    val translationSourceLang: Language = Language.AUTO,
+    
+    /**
+     * ✅ NEW: Язык-цель для теста перевода.
+     */
+    val translationTargetLang: Language = Language.ENGLISH,
+    
+    /**
+     * ✅ NEW: Результат теста перевода.
+     */
+    val translationResult: String? = null,
+    
+    /**
+     * ✅ NEW: Флаг выполнения перевода.
+     */
+    val isTranslating: Boolean = false,
+    
+    /**
+     * ✅ NEW: Ошибка теста перевода.
+     */
+    val translationError: String? = null
 ) {
     /**
      * Проверка готовности к тесту.
