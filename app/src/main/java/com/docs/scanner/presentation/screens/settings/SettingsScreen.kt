@@ -1,6 +1,11 @@
 /*
  * SettingsScreen.kt
- * Version: 16.0.0 - UNIFIED API KEY MODEL (2026)
+ * Version: 17.0.0 - OCR COMPONENTS + TRANSLATION TEST (2026)
+ * 
+ * ✅ NEW IN 17.0.0:
+ * - Renamed "ML Kit" tab to "OCR Components"
+ * - Added TranslationTestSection integration
+ * - Added translation test parameters
  * 
  * ✅ FIXED in 16.0.0:
  * - Unified ApiKeyEntry model throughout
@@ -48,6 +53,7 @@ import com.docs.scanner.domain.core.ImageQuality
 import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.core.ThemeMode
 import com.docs.scanner.presentation.screens.settings.components.MlkitSettingsSection
+import com.docs.scanner.presentation.screens.settings.components.TranslationTestSection
 import com.docs.scanner.util.LogcatCollector
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -60,7 +66,7 @@ import java.io.File
 
 enum class SettingsTab(val title: String, val icon: @Composable () -> Unit) {
     GENERAL("General", { Icon(Icons.Default.Settings, null) }),
-    MLKIT("ML Kit", { Icon(Icons.Default.TextFields, null) }),
+    OCR_COMPONENTS("OCR Components", { Icon(Icons.Default.TextFields, null) }),
     BACKUP("Backup", { Icon(Icons.Default.CloudSync, null) }),
     DEBUG("Debug", { Icon(Icons.Default.BugReport, null) })
 }
@@ -200,7 +206,7 @@ fun SettingsScreen(
                         onImageQualityChange = viewModel::setImageQuality
                     )
 
-                    SettingsTab.MLKIT -> MlkitSettingsTab(
+                    SettingsTab.OCR_COMPONENTS -> OcrComponentsTab(
                         mlkitSettings = mlkitSettings,
                         apiKeys = apiKeys,
                         isLoadingKeys = isLoadingKeys,
@@ -220,7 +226,12 @@ fun SettingsScreen(
                         onAddApiKey = { key, label -> viewModel.addApiKey(key, label) },
                         onRemoveApiKey = { viewModel.deleteKey(it) },
                         onSetPrimaryApiKey = { viewModel.activateKey(it) },
-                        onResetApiKeyErrors = viewModel::resetApiKeyErrors
+                        onResetApiKeyErrors = viewModel::resetApiKeyErrors,
+                        onTranslationTestTextChange = viewModel::setTranslationTestText,
+                        onTranslationSourceLangChange = viewModel::setTranslationSourceLang,
+                        onTranslationTargetLangChange = viewModel::setTranslationTargetLang,
+                        onTranslationTest = viewModel::testTranslation,
+                        onClearTranslationTest = viewModel::clearTranslationTest
                     )
 
                     SettingsTab.BACKUP -> BackupSettingsTab(
@@ -543,7 +554,7 @@ private fun GeneralSettingsTab(
 }
 
 @Composable
-private fun MlkitSettingsTab(
+private fun OcrComponentsTab(
     mlkitSettings: com.docs.scanner.presentation.screens.settings.components.MlkitSettingsState,
     apiKeys: List<ApiKeyEntry>,
     isLoadingKeys: Boolean,
@@ -563,7 +574,12 @@ private fun MlkitSettingsTab(
     onAddApiKey: (key: String, label: String) -> Unit,
     onRemoveApiKey: (key: String) -> Unit,
     onSetPrimaryApiKey: (key: String) -> Unit,
-    onResetApiKeyErrors: () -> Unit
+    onResetApiKeyErrors: () -> Unit,
+    onTranslationTestTextChange: (String) -> Unit,
+    onTranslationSourceLangChange: (Language) -> Unit,
+    onTranslationTargetLangChange: (Language) -> Unit,
+    onTranslationTest: () -> Unit,
+    onClearTranslationTest: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -593,6 +609,23 @@ private fun MlkitSettingsTab(
             onSetPrimaryApiKey = onSetPrimaryApiKey,
             onResetApiKeyErrors = onResetApiKeyErrors
         )
+
+        Spacer(modifier = Modifier.height(24.dp))
+        HorizontalDivider()
+        Spacer(modifier = Modifier.height(24.dp))
+
+        TranslationTestSection(
+            state = mlkitSettings,
+            onTextChange = onTranslationTestTextChange,
+            onSourceLangChange = onTranslationSourceLangChange,
+            onTargetLangChange = onTranslationTargetLangChange,
+            onTranslate = onTranslationTest,
+            onClear = onClearTranslationTest
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+        HorizontalDivider()
+        Spacer(modifier = Modifier.height(24.dp))
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -1276,17 +1309,3 @@ private fun RestoreBackupDialog(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 private fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// NO CONVERSION NEEDED
-// ═══════════════════════════════════════════════════════════════════════════════
-// 
-// ApiKeyData больше не существует после рефакторинга.
-// 
-// Все конверсии теперь встроены в модели (ApiKeyModels.kt):
-// - StoredApiKey.toApiKeyEntry() — для чтения из storage
-// - ApiKeyEntry.toStoredApiKey() — для записи в storage
-// 
-// EncryptedKeyStorage возвращает List<ApiKeyEntry> напрямую через:
-//   getAllApiKeys() -> List<ApiKeyEntry>
-// ═══════════════════════════════════════════════════════════════════════════════
