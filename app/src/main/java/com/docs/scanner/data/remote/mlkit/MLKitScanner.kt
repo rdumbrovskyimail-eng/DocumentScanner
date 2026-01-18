@@ -1,3 +1,19 @@
+/*
+ * MLKitScanner.kt
+ * Version: 12.0.0 - PRODUCTION READY 2026 - URI HANDLING FIX
+ * 
+ * ✅ CRITICAL FIX:
+ * - Fixed loadImageSafe() to handle BOTH content:// AND file:// URIs
+ * - ContentResolver ONLY works with content:// URIs
+ * - FileInputStream required for file:// URIs
+ * - Proper error messages for debugging
+ * 
+ * ✅ MEMORY SAFETY:
+ * - Bitmap recycling AFTER MLKit completion
+ * - Thread-safe recognizer cache with Mutex
+ * - Proper cancellation handling
+ */
+
 package com.docs.scanner.data.remote.mlkit
 
 import android.content.Context
@@ -37,7 +53,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileNotFoundException
 import java.io.IOException
+import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
@@ -542,33 +562,159 @@ class MLKitScanner @Inject constructor(
         }
     }
 
+    // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ CRITICAL FIX: Universal URI Loading (file:// + content://)
+    // ════════════════════════════════════════════════════════════════════════════════
+
     /**
-     * Loads image safely for ML Kit.
+     * ✅ FIXED: Loads image safely for ML Kit.
+     * 
+     * PROBLEM (Android 10+):
+     * - ContentResolver.openInputStream() ONLY works with content:// URIs
+     * - file:// URIs require FileInputStream
+     * - Old code used contentResolver for ALL URIs → crash on file://
+     * 
+     * SOLUTION:
+     * - Detect URI scheme
+     * - Use appropriate InputStream source
+     * - Proper error messages for debugging
+     * 
+     * Supports:
+     * - content:// (from photo picker, MediaStore, etc.)
+     * - file:// (from internal storage, cache, etc.)
+     * - /path/to/file (absolute path without scheme)
      */
     private suspend fun loadImageSafe(uri: Uri): Pair<InputImage, Bitmap> = withContext(Dispatchers.IO) {
+        val scheme = uri.scheme?.lowercase()
+        
+        if (BuildConfig.DEBUG) {
+            Timber.d("$TAG: 📷 Loading image: $uri")
+            Timber.d("$TAG:    ├─ Scheme: $scheme")
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // STEP 1: Get dimensions (first pass - decode bounds only)
+        // ═══════════════════════════════════════════════════════════════════════
+        
         val options = BitmapFactory.Options().apply {
             inJustDecodeBounds = true
         }
-
-        context.contentResolver.openInputStream(uri)?.use { stream ->
+        
+        openInputStreamForUri(uri).use { stream ->
             BitmapFactory.decodeStream(stream, null, options)
-        } ?: throw IOException("Cannot open image stream for bounds: $uri")
-
+        }
+        
+        if (options.outWidth <= 0 || options.outHeight <= 0) {
+            throw IOException("Failed to decode image dimensions from URI: $uri")
+        }
+        
+        if (BuildConfig.DEBUG) {
+            Timber.d("$TAG:    ├─ Dimensions: ${options.outWidth}x${options.outHeight}")
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // STEP 2: Calculate sample size for memory optimization
+        // ═══════════════════════════════════════════════════════════════════════
+        
         val sampleSize = calculateInSampleSize(
             options.outWidth, options.outHeight,
             MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION
         )
-
+        
+        if (BuildConfig.DEBUG) {
+            Timber.d("$TAG:    └─ Sample size: $sampleSize")
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // STEP 3: Decode bitmap (second pass - actual decode)
+        // ═══════════════════════════════════════════════════════════════════════
+        
         options.inJustDecodeBounds = false
         options.inSampleSize = sampleSize
         options.inPreferredConfig = Bitmap.Config.ARGB_8888
-
-        val bitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
+        
+        val bitmap = openInputStreamForUri(uri).use { stream ->
             BitmapFactory.decodeStream(stream, null, options)
         } ?: throw IOException("Failed to decode bitmap from URI: $uri")
-
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // STEP 4: Create InputImage for ML Kit
+        // ═══════════════════════════════════════════════════════════════════════
+        
         val inputImage = InputImage.fromBitmap(bitmap, 0)
+        
         Pair(inputImage, bitmap)
+    }
+    
+    /**
+     * ✅ Opens InputStream for ANY URI type.
+     * 
+     * Handles:
+     * - content:// → ContentResolver
+     * - file:// → FileInputStream  
+     * - /absolute/path → FileInputStream
+     * 
+     * @throws FileNotFoundException if file doesn't exist
+     * @throws IOException if stream cannot be opened
+     */
+    private fun openInputStreamForUri(uri: Uri): InputStream {
+        val scheme = uri.scheme?.lowercase()
+        
+        return when (scheme) {
+            // ════════════════════════════════════════════════════════════════════
+            // CONTENT URI (from photo picker, MediaStore, other apps)
+            // ════════════════════════════════════════════════════════════════════
+            "content" -> {
+                context.contentResolver.openInputStream(uri)
+                    ?: throw IOException("ContentResolver returned null for: $uri")
+            }
+            
+            // ════════════════════════════════════════════════════════════════════
+            // FILE URI (from internal storage, cache, downloads)
+            // ════════════════════════════════════════════════════════════════════
+            "file" -> {
+                val path = uri.path 
+                    ?: throw IOException("File URI has no path: $uri")
+                
+                val file = File(path)
+                
+                if (!file.exists()) {
+                    throw FileNotFoundException("File does not exist: $path")
+                }
+                
+                if (!file.canRead()) {
+                    throw IOException("Cannot read file (permission denied): $path")
+                }
+                
+                FileInputStream(file)
+            }
+            
+            // ════════════════════════════════════════════════════════════════════
+            // NO SCHEME (treat as absolute file path)
+            // ════════════════════════════════════════════════════════════════════
+            null, "" -> {
+                val path = uri.toString()
+                val file = File(path)
+                
+                if (!file.exists()) {
+                    throw FileNotFoundException("File does not exist: $path")
+                }
+                
+                if (!file.canRead()) {
+                    throw IOException("Cannot read file (permission denied): $path")
+                }
+                
+                FileInputStream(file)
+            }
+            
+            // ════════════════════════════════════════════════════════════════════
+            // UNSUPPORTED SCHEME
+            // ════════════════════════════════════════════════════════════════════
+            else -> {
+                throw IOException("Unsupported URI scheme '$scheme' for: $uri. " +
+                    "Supported schemes: content://, file://, or absolute path")
+            }
+        }
     }
 
     private fun calculateInSampleSize(width: Int, height: Int, reqWidth: Int, reqHeight: Int): Int {
