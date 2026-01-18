@@ -8,6 +8,7 @@
  * - Source indicator (ML Kit vs Gemini) in OcrTestResult
  * - Fixed file:// URI handling
  * - testGeminiFallback parameter in testOcr()
+ * - Added recognizeTextMlKitOnly() and recognizeTextGeminiOnly()
  * 
  * ✅ ARCHITECTURE:
  * Document → ML Kit (fast, offline) → Quality Analysis → Gemini fallback (if needed)
@@ -319,6 +320,37 @@ class MLKitScanner @Inject constructor(
     }
 
     /**
+     * ✅ NEW: ML Kit only recognition (no Gemini fallback).
+     */
+    suspend fun recognizeTextMlKitOnly(uri: Uri): DomainResult<OcrResult> {
+        val start = System.currentTimeMillis()
+        return try {
+            val result = runOcrWithAutoDetect(uri)
+            DomainResult.Success(
+                OcrResult(
+                    text = result.text,
+                    detectedLanguage = result.detectedLanguage,
+                    confidence = result.overallConfidence,
+                    processingTimeMs = System.currentTimeMillis() - start,
+                    source = OcrSource.ML_KIT
+                )
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: ❌ ML Kit only OCR failed")
+            DomainResult.failure(DomainError.OcrFailed(id = null, cause = e))
+        }
+    }
+
+    /**
+     * ✅ NEW: Gemini only recognition (skip ML Kit).
+     */
+    suspend fun recognizeTextGeminiOnly(uri: Uri): DomainResult<OcrResult> {
+        return geminiOcrService.recognizeText(uri)
+    }
+
+    /**
      * Распознаёт текст с детальной информацией (blocks, lines, confidence).
      */
     suspend fun recognizeTextDetailed(uri: Uri): DomainResult<DetailedOcrResult> {
@@ -575,8 +607,7 @@ class MLKitScanner @Inject constructor(
                 mlKitProcessed.words.size
             }
             
-            val lowConfidenceWords = mlKitProcessed.words.filter { 
-                it.confidence < confidenceThreshold 
+            val lowConfidenceWords = mlKitProcessed.words.filter {it.confidence < confidenceThreshold 
             }
 
             DomainResult.Success(
