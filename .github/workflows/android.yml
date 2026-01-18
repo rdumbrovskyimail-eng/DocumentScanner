@@ -29,12 +29,91 @@ jobs:
       run: chmod +x gradlew
 
     - name: Build with Gradle
-      run: ./gradlew assembleDebug --stacktrace --no-daemon
+      id: build
+      continue-on-error: true
+      run: |
+        ./gradlew assembleDebug --stacktrace --no-daemon 2>&1 | tee build_output.log
+        echo "BUILD_EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
+
+    - name: Extract errors
+      if: env.BUILD_EXIT_CODE != '0'
+      run: |
+        echo "=== BUILD ERRORS $(date '+%Y-%m-%d %H:%M:%S') ===" > errors.txt
+        echo "" >> errors.txt
+        
+        # Kotlin compilation errors
+        if grep -q "^e:" build_output.log; then
+          echo "--- KOTLIN ERRORS ---" >> errors.txt
+          grep "^e:" build_output.log >> errors.txt
+          echo "" >> errors.txt
+        fi
+        
+        # KAPT/KSP errors
+        if grep -qE "(kapt|ksp).*error" build_output.log; then
+          echo "--- KAPT/KSP ERRORS ---" >> errors.txt
+          grep -E "(kapt|ksp).*error" build_output.log >> errors.txt
+          echo "" >> errors.txt
+        fi
+        
+        # Unresolved references
+        if grep -q "Unresolved reference" build_output.log; then
+          echo "--- UNRESOLVED REFERENCES ---" >> errors.txt
+          grep "Unresolved reference" build_output.log | sort -u >> errors.txt
+          echo "" >> errors.txt
+        fi
+        
+        # Type mismatch errors
+        if grep -q "Type mismatch" build_output.log; then
+          echo "--- TYPE MISMATCHES ---" >> errors.txt
+          grep -A1 "Type mismatch" build_output.log >> errors.txt
+          echo "" >> errors.txt
+        fi
+        
+        # Missing dependencies
+        if grep -qE "Could not (find|resolve)" build_output.log; then
+          echo "--- MISSING DEPENDENCIES ---" >> errors.txt
+          grep -E "Could not (find|resolve)" build_output.log >> errors.txt
+          echo "" >> errors.txt
+        fi
+        
+        # Resource errors
+        if grep -qE "AAPT|resource.*not found" build_output.log; then
+          echo "--- RESOURCE ERRORS ---" >> errors.txt
+          grep -E "(AAPT|resource.*not found)" build_output.log >> errors.txt
+          echo "" >> errors.txt
+        fi
+        
+        # FAILURE summary
+        if grep -q "FAILURE:" build_output.log; then
+          echo "--- BUILD FAILURE SUMMARY ---" >> errors.txt
+          sed -n '/FAILURE:/,/BUILD FAILED/p' build_output.log >> errors.txt
+        fi
+        
+        # Exception stacktraces (compact)
+        if grep -q "Exception\|Error:" build_output.log; then
+          echo "--- EXCEPTIONS ---" >> errors.txt
+          grep -A20 "Exception:\|Error:" build_output.log | head -80 >> errors.txt
+        fi
+        
+        echo "" >> errors.txt
+        echo "=== TOTAL ERRORS: $(grep -c "^e:" build_output.log 2>/dev/null || echo 0) ===" >> errors.txt
+
+    - name: Upload errors
+      if: env.BUILD_EXIT_CODE != '0'
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-errors
+        path: errors.txt
+        retention-days: 14
 
     - name: Upload APK
-      if: success()
+      if: env.BUILD_EXIT_CODE == '0'
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/*.apk
         retention-days: 7
+
+    - name: Fail if build failed
+      if: env.BUILD_EXIT_CODE != '0'
+      run: exit 1
