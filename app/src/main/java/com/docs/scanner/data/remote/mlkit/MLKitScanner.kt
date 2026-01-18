@@ -1,6 +1,12 @@
 /*
  * MLKitScanner.kt
- * Version: 15.0.0 - HYBRID OCR ENGINE WITH GEMINI FALLBACK (2026)
+ * Version: 15.1.0 - AUTO-TRANSLATION SUPPORT IN OCR TEST (2026)
+ * 
+ * ✅ NEW IN 15.1.0:
+ * - Auto-translation fields in OcrTestResult
+ * - translatedText: String?
+ * - translationTargetLang: Language?
+ * - translationTimeMs: Long?
  * 
  * ✅ NEW IN 15.0.0:
  * - Gemini Vision API fallback for poor ML Kit results
@@ -142,7 +148,7 @@ data class OcrResultWithConfidence(
 
 /**
  * Результат теста OCR для Settings UI.
- * ✅ UPDATED: Added source indicator and Gemini fallback info.
+ * ✅ UPDATED: Added auto-translation fields.
  */
 data class OcrTestResult(
     val text: String,
@@ -164,7 +170,12 @@ data class OcrTestResult(
     val geminiFallbackTriggered: Boolean = false,
     val geminiFallbackReason: String? = null,
     val geminiProcessingTimeMs: Long? = null,
-    val geminiAvailable: Boolean = false
+    val geminiAvailable: Boolean = false,
+    
+    // ✅ NEW 2026: Auto-translation fields
+    val translatedText: String? = null,
+    val translationTargetLang: Language? = null,
+    val translationTimeMs: Long? = null
 ) {
     val confidencePercent: String get() = "${((overallConfidence ?: 0f) * 100).toInt()}%"
     
@@ -487,662 +498,662 @@ class MLKitScanner @Inject constructor(
         }
     }
 
-    // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ TEST METHOD WITH GEMINI FALLBACK
-    // ════════════════════════════════════════════════════════════════════════════════
+    // ═════════════
 
-    /**
-     * ✅ TEST METHOD for Settings UI with REAL Gemini fallback.
-     * 
-     * Flow:
-     * 1. Run ML Kit OCR
-     * 2. Analyze quality with OcrQualityAnalyzer
-     * 3. If quality is poor OR testGeminiFallback=true → call Gemini
-     * 4. Return result with source indicator
-     * 
-     * @param uri Image URI
-     * @param scriptMode OCR script mode
-     * @param autoDetectLanguage Auto-detect language from image
-     * @param confidenceThreshold Threshold for low-confidence words
-     * @param testGeminiFallback Force Gemini fallback for testing
-     */
-    suspend fun testOcr(
-        uri: Uri,
-        scriptMode: OcrScriptMode,
-        autoDetectLanguage: Boolean,
-        confidenceThreshold: Float,
-        testGeminiFallback: Boolean = false
-    ): DomainResult<OcrTestResult> {
-        val start = System.currentTimeMillis()
+════════════════════════════════════
+// ✅ TEST METHOD WITH GEMINI FALLBACK
+// ════════════════════════════════════════════════════════════════════════════════
+/**
+ * ✅ TEST METHOD for Settings UI with REAL Gemini fallback.
+ * 
+ * Flow:
+ * 1. Run ML Kit OCR
+ * 2. Analyze quality with OcrQualityAnalyzer
+ * 3. If quality is poor OR testGeminiFallback=true → call Gemini
+ * 4. Return result with source indicator
+ * 
+ * @param uri Image URI
+ * @param scriptMode OCR script mode
+ * @param autoDetectLanguage Auto-detect language from image
+ * @param confidenceThreshold Threshold for low-confidence words
+ * @param testGeminiFallback Force Gemini fallback for testing
+ */
+suspend fun testOcr(
+    uri: Uri,
+    scriptMode: OcrScriptMode,
+    autoDetectLanguage: Boolean,
+    confidenceThreshold: Float,
+    testGeminiFallback: Boolean = false
+): DomainResult<OcrTestResult> {
+    val start = System.currentTimeMillis()
 
-        if (BuildConfig.DEBUG) {
-            Timber.d("$TAG: 🧪 Starting OCR test")
-            Timber.d("$TAG:    ├─ Mode: $scriptMode")
-            Timber.d("$TAG:    ├─ Auto-detect: $autoDetectLanguage")
-            Timber.d("$TAG:    ├─ Threshold: ${(confidenceThreshold * 100).toInt()}%")
-            Timber.d("$TAG:    └─ Force Gemini: $testGeminiFallback")
-        }
-
-        return try {
-            // ═══════════════════════════════════════════════════════════════
-            // STEP 1: Determine effective script mode
-            // ═══════════════════════════════════════════════════════════════
-            val effectiveMode = if (autoDetectLanguage && scriptMode == OcrScriptMode.AUTO) {
-                detectScriptFromImage(uri) ?: OcrScriptMode.LATIN
-            } else {
-                scriptMode
-            }
-
-            // ═══════════════════════════════════════════════════════════════
-            // STEP 2: Run ML Kit OCR
-            // ═══════════════════════════════════════════════════════════════
-            val textResult = runOcr(uri, effectiveMode)
-            val mlKitProcessed = processTextResult(textResult, effectiveMode)
-            val mlKitTime = System.currentTimeMillis() - start
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("$TAG: 📊 ML Kit result:")
-                Timber.d("$TAG:    ├─ Text length: ${mlKitProcessed.text.length}")
-                Timber.d("$TAG:    ├─ Confidence: ${((mlKitProcessed.overallConfidence ?: 0f) * 100).toInt()}%")
-                Timber.d("$TAG:    └─ Time: ${mlKitTime}ms")
-            }
-
-            // ═══════════════════════════════════════════════════════════════
-            // STEP 3: Analyze quality
-            // ═══════════════════════════════════════════════════════════════
-            val metrics = qualityAnalyzer.analyze(mlKitProcessed)
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("$TAG: 📈 Quality analysis:")
-                Timber.d("$TAG:    ├─ Quality: ${metrics.quality}")
-                Timber.d("$TAG:    ├─ Handwritten: ${metrics.isLikelyHandwritten}")
-                Timber.d("$TAG:    └─ Recommend Gemini: ${metrics.recommendGeminiFallback}")
-            }
-
-            // ═══════════════════════════════════════════════════════════════
-            // STEP 4: Check Gemini availability & settings
-            // ═══════════════════════════════════════════════════════════════
-            val geminiAvailable = try {
-                geminiOcrService.isAvailable()
-            } catch (e: Exception) {
-                Timber.w(e, "$TAG: Gemini availability check failed")
-                false
-            }
-
-            val geminiEnabled = try {
-                settingsDataStore.geminiOcrEnabled.first()
-            } catch (e: Exception) {
-                true
-            }
-
-            val geminiThreshold = try {
-                settingsDataStore.geminiOcrThreshold.first() / 100f
-            } catch (e: Exception) {
-                0.5f
-            }
-
-            // ═══════════════════════════════════════════════════════════════
-            // STEP 5: Decide if Gemini should be used
-            // ═══════════════════════════════════════════════════════════════
-            val mlKitConfidence = mlKitProcessed.overallConfidence ?: 0f
-            
-            val shouldUseGemini = geminiAvailable && geminiEnabled && (
-                testGeminiFallback ||
-                metrics.recommendGeminiFallback ||
-                mlKitConfidence < geminiThreshold
-            )
-
-            val fallbackReason: String? = when {
-                !geminiAvailable -> null
-                !geminiEnabled -> null
-                testGeminiFallback -> "Manual test requested"
-                metrics.recommendGeminiFallback -> metrics.fallbackReasons.joinToString(", ")
-                mlKitConfidence < geminiThreshold -> 
-                    "Confidence ${(mlKitConfidence * 100).toInt()}% < threshold ${(geminiThreshold * 100).toInt()}%"
-                else -> null
-            }
-
-            if (BuildConfig.DEBUG) {
-                Timber.d("$TAG: 🎯 Gemini decision:")
-                Timber.d("$TAG:    ├─ Available: $geminiAvailable")
-                Timber.d("$TAG:    ├─ Enabled: $geminiEnabled")
-                Timber.d("$TAG:    ├─ Threshold: ${(geminiThreshold * 100).toInt()}%")
-                Timber.d("$TAG:    ├─ Should use: $shouldUseGemini")
-                Timber.d("$TAG:    └─ Reason: $fallbackReason")
-            }
-
-            // ═══════════════════════════════════════════════════════════════
-            // STEP 6: Execute Gemini fallback if needed
-            // ═══════════════════════════════════════════════════════════════
-            var finalText = mlKitProcessed.text
-            var finalConfidence = mlKitProcessed.overallConfidence
-            var finalSource = OcrSource.ML_KIT
-            var geminiTime: Long? = null
-            var geminiFallbackTriggered = false
-
-            if (shouldUseGemini) {
-                Timber.d("$TAG: 🤖 Calling Gemini OCR...")
-                val geminiStart = System.currentTimeMillis()
-                
-                when (val geminiResult = geminiOcrService.recognizeText(uri)) {
-                    is DomainResult.Success -> {
-                        geminiTime = System.currentTimeMillis() - geminiStart
-                        geminiFallbackTriggered = true
-                        
-                        // ✅ Use Gemini result
-                        finalText = geminiResult.data.text
-                        finalConfidence = geminiResult.data.confidence
-                        finalSource = OcrSource.GEMINI
-                        
-                        Timber.d("$TAG: ✅ Gemini success:")
-                        Timber.d("$TAG:    ├─ Text length: ${finalText.length}")
-                        Timber.d("$TAG:    └─ Time: ${geminiTime}ms")
-                    }
-                    
-                    is DomainResult.Failure -> {
-                        geminiTime = System.currentTimeMillis() - geminiStart
-                        geminiFallbackTriggered = true
-                        
-                        Timber.w("$TAG: ⚠️ Gemini failed: ${geminiResult.error.message}")
-                        // Keep ML Kit result
-                    }
-                }
-            }
-
-            // ═══════════════════════════════════════════════════════════════
-            // STEP 7: Build final result
-            // ═══════════════════════════════════════════════════════════════
-            val totalTime = System.currentTimeMillis() - start
-            
-            val finalWordCount = if (finalSource == OcrSource.GEMINI) {
-                finalText.split(Regex("\\s+")).filter { it.isNotBlank() }.size
-            } else {
-                mlKitProcessed.words.size
-            }
-            
-            val lowConfidenceWords = mlKitProcessed.words.filter { it.confidence < confidenceThreshold }
-
-            DomainResult.Success(
-                OcrTestResult(
-                    text = finalText,
-                    detectedLanguage = mlKitProcessed.detectedLanguage,
-                    detectedScript = effectiveMode,
-                    overallConfidence = finalConfidence,
-                    totalWords = finalWordCount,
-                    highConfidenceWords = mlKitProcessed.words.size - lowConfidenceWords.size,
-                    lowConfidenceWords = lowConfidenceWords.size,
-                    lowConfidenceRanges = mlKitProcessed.lowConfidenceRanges,
-                    wordConfidences = mlKitProcessed.words.map { it.text to it.confidence },
-                    processingTimeMs = totalTime,
-                    recognizerUsed = effectiveMode.displayName,
-                    source = finalSource,
-                    geminiFallbackTriggered = geminiFallbackTriggered,
-                    geminiFallbackReason = fallbackReason,
-                    geminiProcessingTimeMs = geminiTime,
-                    geminiAvailable = geminiAvailable
-                )
-            )
-            
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Timber.e(e, "$TAG: ❌ OCR test failed")
-            DomainResult.failure(DomainError.OcrFailed(id = null, cause = e))
-        }
+    if (BuildConfig.DEBUG) {
+        Timber.d("$TAG: 🧪 Starting OCR test")
+        Timber.d("$TAG:    ├─ Mode: $scriptMode")
+        Timber.d("$TAG:    ├─ Auto-detect: $autoDetectLanguage")
+        Timber.d("$TAG:    ├─ Threshold: ${(confidenceThreshold * 100).toInt()}%")
+        Timber.d("$TAG:    └─ Force Gemini: $testGeminiFallback")
     }
 
-    /**
-     * Возвращает список доступных режимов OCR.
-     */
-    fun getAvailableScriptModes(): List<OcrScriptMode> = OcrScriptMode.entries
-
-    /**
-     * Очищает cache recognizers (освобождает память).
-     */
-    suspend fun clearCache() {
-        recognizerLock.withLock {
-            cachedRecognizer?.close()
-            cachedRecognizer = null
-            cachedScriptMode = null
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("$TAG: 🧹 Recognizer cache cleared")
-            }
-        }
-    }
-
-    // ════════════════════════════════════════════════════════════════════════════════
-    // CORE OCR ENGINE
-    // ════════════════════════════════════════════════════════════════════════════════
-
-    private suspend fun runOcrWithAutoDetect(uri: Uri): OcrResultWithConfidence = withContext(Dispatchers.IO) {
-        coroutineContext.ensureActive()
-        
-        val scriptMode = getPreferredScriptMode()
-        coroutineContext.ensureActive()
-        
-        if (BuildConfig.DEBUG) {
-            Timber.d("$TAG: 📝 OCR mode from DataStore: $scriptMode")
-        }
-        
-        val effectiveMode = if (scriptMode == OcrScriptMode.AUTO) {
-            val detected = detectScriptFromImage(uri)
-            if (BuildConfig.DEBUG && detected != null) {
-                Timber.d("$TAG:    └─ Auto-detected: $detected")
-            }
-            detected ?: OcrScriptMode.LATIN
+    return try {
+        // ═══════════════════════════════════════════════════════════════
+        // STEP 1: Determine effective script mode
+        // ═══════════════════════════════════════════════════════════════
+        val effectiveMode = if (autoDetectLanguage && scriptMode == OcrScriptMode.AUTO) {
+            detectScriptFromImage(uri) ?: OcrScriptMode.LATIN
         } else {
             scriptMode
         }
-        
-        coroutineContext.ensureActive()
-        
+
+        // ═══════════════════════════════════════════════════════════════
+        // STEP 2: Run ML Kit OCR
+        // ═══════════════════════════════════════════════════════════════
         val textResult = runOcr(uri, effectiveMode)
-        coroutineContext.ensureActive()
-        
-        processTextResult(textResult, effectiveMode)
-    }
-
-    /**
-     * ✅ ИСПРАВЛЕНО: Правильный lifecycle Bitmap для Android 16
-     * Bitmap recycling ПОСЛЕ завершения ML Kit обработки
-     */
-    private suspend fun runOcr(uri: Uri, scriptMode: OcrScriptMode): Text {
-        var bitmap: Bitmap? = null
-        
-        return try {
-            val (inputImage, bmp) = loadImageSafe(uri)
-            bitmap = bmp
-            
-            coroutineContext.ensureActive()
-            
-            val recognizer = getRecognizer(scriptMode)
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("$TAG: ⚙️ Processing with ${scriptMode.displayName} recognizer...")
-            }
-            
-            // ✅ ML Kit завершит работу ДО recycling
-            val result = recognizer.process(inputImage).await()
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("$TAG: ✅ MLKit processing complete")
-            }
-            
-            result
-            
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Timber.e(e, "$TAG: ❌ MLKit processing failed")
-            throw e
-        } finally {
-            // ✅ Гарантированная очистка ПОСЛЕ завершения ML Kit
-            bitmap?.recycle()
-        }
-    }
-
-    // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ FIXED: Universal URI Loading (file:// + content://)
-    // ════════════════════════════════════════════════════════════════════════════════
-
-    private suspend fun loadImageSafe(uri: Uri): Pair<InputImage, Bitmap> = withContext(Dispatchers.IO) {
-        val scheme = uri.scheme?.lowercase()
+        val mlKitProcessed = processTextResult(textResult, effectiveMode)
+        val mlKitTime = System.currentTimeMillis() - start
         
         if (BuildConfig.DEBUG) {
-            Timber.d("$TAG: 📷 Loading image: $uri (scheme: $scheme)")
+            Timber.d("$TAG: 📊 ML Kit result:")
+            Timber.d("$TAG:    ├─ Text length: ${mlKitProcessed.text.length}")
+            Timber.d("$TAG:    ├─ Confidence: ${((mlKitProcessed.overallConfidence ?: 0f) * 100).toInt()}%")
+            Timber.d("$TAG:    └─ Time: ${mlKitTime}ms")
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // STEP 3: Analyze quality
+        // ═══════════════════════════════════════════════════════════════
+        val metrics = qualityAnalyzer.analyze(mlKitProcessed)
+        
+        if (BuildConfig.DEBUG) {
+            Timber.d("$TAG: 📈 Quality analysis:")
+            Timber.d("$TAG:    ├─ Quality: ${metrics.quality}")
+            Timber.d("$TAG:    ├─ Handwritten: ${metrics.isLikelyHandwritten}")
+            Timber.d("$TAG:    └─ Recommend Gemini: ${metrics.recommendGeminiFallback}")
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // STEP 4: Check Gemini availability & settings
+        // ═══════════════════════════════════════════════════════════════
+        val geminiAvailable = try {
+            geminiOcrService.isAvailable()
+        } catch (e: Exception) {
+            Timber.w(e, "$TAG: Gemini availability check failed")
+            false
+        }
+
+        val geminiEnabled = try {
+            settingsDataStore.geminiOcrEnabled.first()
+        } catch (e: Exception) {
+            true
+        }
+
+        val geminiThreshold = try {
+            settingsDataStore.geminiOcrThreshold.first() / 100f
+        } catch (e: Exception) {
+            0.5f
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // STEP 5: Decide if Gemini should be used
+        // ═══════════════════════════════════════════════════════════════
+        val mlKitConfidence = mlKitProcessed.overallConfidence ?: 0f
+        
+        val shouldUseGemini = geminiAvailable && geminiEnabled && (
+            testGeminiFallback ||
+            metrics.recommendGeminiFallback ||
+            mlKitConfidence < geminiThreshold
+        )
+
+        val fallbackReason: String? = when {
+            !geminiAvailable -> null
+            !geminiEnabled -> null
+            testGeminiFallback -> "Manual test requested"
+            metrics.recommendGeminiFallback -> metrics.fallbackReasons.joinToString(", ")
+            mlKitConfidence < geminiThreshold -> 
+                "Confidence ${(mlKitConfidence * 100).toInt()}% < threshold ${(geminiThreshold * 100).toInt()}%"
+            else -> null
+        }
+
+        if (BuildConfig.DEBUG) {
+            Timber.d("$TAG: 🎯 Gemini decision:")
+            Timber.d("$TAG:    ├─ Available: $geminiAvailable")
+            Timber.d("$TAG:    ├─ Enabled: $geminiEnabled")
+            Timber.d("$TAG:    ├─ Threshold: ${(geminiThreshold * 100).toInt()}%")
+            Timber.d("$TAG:    ├─ Should use: $shouldUseGemini")
+            Timber.d("$TAG:    └─ Reason: $fallbackReason")
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // STEP 6: Execute Gemini fallback if needed
+        // ═══════════════════════════════════════════════════════════════
+        var finalText = mlKitProcessed.text
+        var finalConfidence = mlKitProcessed.overallConfidence
+        var finalSource = OcrSource.ML_KIT
+        var geminiTime: Long? = null
+        var geminiFallbackTriggered = false
+
+        if (shouldUseGemini) {
+            Timber.d("$TAG: 🤖 Calling Gemini OCR...")
+            val geminiStart = System.currentTimeMillis()
+            
+            when (val geminiResult = geminiOcrService.recognizeText(uri)) {
+                is DomainResult.Success -> {
+                    geminiTime = System.currentTimeMillis() - geminiStart
+                    geminiFallbackTriggered = true
+                    
+                    // ✅ Use Gemini result
+                    finalText = geminiResult.data.text
+                    finalConfidence = geminiResult.data.confidence
+                    finalSource = OcrSource.GEMINI
+                    
+                    Timber.d("$TAG: ✅ Gemini success:")
+                    Timber.d("$TAG:    ├─ Text length: ${finalText.length}")
+                    Timber.d("$TAG:    └─ Time: ${geminiTime}ms")
+                }
+                
+                is DomainResult.Failure -> {
+                    geminiTime = System.currentTimeMillis() - geminiStart
+                    geminiFallbackTriggered = true
+                    
+                    Timber.w("$TAG: ⚠️ Gemini failed: ${geminiResult.error.message}")
+                    // Keep ML Kit result
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // STEP 7: Build final result
+        // ═══════════════════════════════════════════════════════════════
+        val totalTime = System.currentTimeMillis() - start
+        
+        val finalWordCount = if (finalSource == OcrSource.GEMINI) {
+            finalText.split(Regex("\\s+")).filter { it.isNotBlank() }.size
+        } else {
+            mlKitProcessed.words.size
         }
         
-        val options = BitmapFactory.Options().apply {
-            inJustDecodeBounds = true
-        }
-        
-        openInputStreamForUri(uri).use { stream ->
-            BitmapFactory.decodeStream(stream, null, options)
-        }
-        
-        if (options.outWidth <= 0 || options.outHeight <= 0) {
-            throw IOException("Failed to decode image dimensions from URI: $uri")
-        }
-        
-        val sampleSize = calculateInSampleSize(
-            options.outWidth,
-            options.outHeight,
-            MAX_IMAGE_DIMENSION,
-            MAX_IMAGE_DIMENSION
+        val lowConfidenceWords = mlKitProcessed.words.filter { it.confidence < confidenceThreshold }
+
+        DomainResult.Success(
+            OcrTestResult(
+                text = finalText,
+                detectedLanguage = mlKitProcessed.detectedLanguage,
+                detectedScript = effectiveMode,
+                overallConfidence = finalConfidence,
+                totalWords = finalWordCount,
+                highConfidenceWords = mlKitProcessed.words.size - lowConfidenceWords.size,
+                lowConfidenceWords = lowConfidenceWords.size,
+                lowConfidenceRanges = mlKitProcessed.lowConfidenceRanges,
+                wordConfidences = mlKitProcessed.words.map { it.text to it.confidence },
+                processingTimeMs = totalTime,
+                recognizerUsed = effectiveMode.displayName,
+                source = finalSource,
+                geminiFallbackTriggered = geminiFallbackTriggered,
+                geminiFallbackReason = fallbackReason,
+                geminiProcessingTimeMs = geminiTime,
+                geminiAvailable = geminiAvailable,
+                // ✅ NEW: Auto-translation fields (null for now, will be populated later)
+                translatedText = null,
+                translationTargetLang = null,
+                translationTimeMs = null
+            )
         )
         
-        if (BuildConfig.DEBUG) {
-            Timber.d("$TAG:    ├─ Dimensions: ${options.outWidth}x${options.outHeight}")
-            Timber.d("$TAG:    └─ Sample size: $sampleSize")
-        }
-        
-        options.inJustDecodeBounds = false
-        options.inSampleSize = sampleSize
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888
-        
-        val bitmap = openInputStreamForUri(uri).use { stream ->
-            BitmapFactory.decodeStream(stream, null, options)
-        } ?: throw IOException("Failed to decode bitmap from URI: $uri")
-        
-        val inputImage = InputImage.fromBitmap(bitmap, 0)
-        Pair(inputImage, bitmap)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Timber.e(e, "$TAG: ❌ OCR test failed")
+        DomainResult.failure(DomainError.OcrFailed(id = null, cause = e))
     }
-    
-    /**
-     * ✅ Opens InputStream for ANY URI type.
-     * Handles content://, file://, and absolute paths.
-     */
-    private fun openInputStreamForUri(uri: Uri): InputStream {
-        val scheme = uri.scheme?.lowercase()
-        
-        return when (scheme) {
-            "content" -> {
-                context.contentResolver.openInputStream(uri)
-                    ?: throw IOException("ContentResolver returned null for: $uri")
-            }
-            
-            "file" -> {
-                val path = uri.path 
-                    ?: throw IOException("File URI has no path: $uri")
-                
-                val file = File(path)
-                if (!file.exists()) {
-                    throw FileNotFoundException("File does not exist: $path")
-                }
-                if (!file.canRead()) {
-                    throw IOException("Cannot read file: $path")
-                }
-                FileInputStream(file)
-            }
-            
-            null, "" -> {
-                val path = uri.toString()
-                val file = File(path)
-                if (!file.exists()) {
-                    throw FileNotFoundException("File does not exist: $path")
-                }
-                FileInputStream(file)
-            }
-            
-            else -> {
-                throw IOException("Unsupported URI scheme '$scheme': $uri")
-            }
-        }
-    }
+}
 
-    private fun calculateInSampleSize(
-        width: Int,
-        height: Int,
-        reqWidth: Int,
-        reqHeight: Int
-    ): Int {
-        var inSampleSize = MIN_SAMPLE_SIZE
-        
-        if (height > reqHeight || width > reqWidth) {
-            val halfHeight = height / 2
-            val halfWidth = width / 2
-            
-            while ((halfHeight / inSampleSize) >= reqHeight && 
-                   (halfWidth / inSampleSize) >= reqWidth &&
-                   inSampleSize < MAX_SAMPLE_SIZE) {
-                inSampleSize *= 2
-            }
-        }
-        
-        return inSampleSize
-    }
+/**
+ * Возвращает список доступных режимов OCR.
+ */
+fun getAvailableScriptModes(): List<OcrScriptMode> = OcrScriptMode.entries
 
-    private suspend fun getPreferredScriptMode(): OcrScriptMode = withContext(Dispatchers.IO) {
-        try {
-            val mode = settingsDataStore.ocrLanguage.first().trim().uppercase()
-            
-            when (mode) {
-                "LATIN" -> OcrScriptMode.LATIN
-                "CHINESE" -> OcrScriptMode.CHINESE
-                "JAPANESE" -> OcrScriptMode.JAPANESE
-                "KOREAN" -> OcrScriptMode.KOREAN
-                "DEVANAGARI" -> OcrScriptMode.DEVANAGARI
-                else -> OcrScriptMode.AUTO
-            }
-        } catch (e: Exception) {
-            Timber.w(e, "$TAG: ⚠️ Failed to read OCR mode from DataStore, using AUTO")
-            OcrScriptMode.AUTO
-        }
-    }
-
-    private suspend fun getRecognizer(scriptMode: OcrScriptMode): TextRecognizer = recognizerLock.withLock {
-        if (cachedScriptMode == scriptMode && cachedRecognizer != null) {
-            return@withLock cachedRecognizer!!
-        }
-        
+/**
+ * Очищает cache recognizers (освобождает память).
+ */
+suspend fun clearCache() {
+    recognizerLock.withLock {
         cachedRecognizer?.close()
-        
-        val recognizer = when (scriptMode) {
-            OcrScriptMode.AUTO, OcrScriptMode.LATIN -> 
-                TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-            OcrScriptMode.CHINESE -> 
-                TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
-            OcrScriptMode.JAPANESE -> 
-                TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
-            OcrScriptMode.KOREAN -> 
-                TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
-            OcrScriptMode.DEVANAGARI -> 
-                TextRecognition.getClient(DevanagariTextRecognizerOptions.Builder().build())
-        }
-        
-        cachedRecognizer = recognizer
-        cachedScriptMode = scriptMode
+        cachedRecognizer = null
+        cachedScriptMode = null
         
         if (BuildConfig.DEBUG) {
-            Timber.d("$TAG: ✨ Created new recognizer: $scriptMode")
+            Timber.d("$TAG: 🧹 Recognizer cache cleared")
         }
-        
-        recognizer
-    }
-
-    // ════════════════════════════════════════════════════════════════════════════════
-    // HELPER METHODS
-    // ════════════════════════════════════════════════════════════════════════════════
-
-    private suspend fun detectScriptFromImage(uri: Uri): OcrScriptMode? = withContext(Dispatchers.IO) {
-        try {
-            coroutineContext.ensureActive()
-            
-            val latinResult = runOcr(uri, OcrScriptMode.LATIN)
-            val text = latinResult.text.trim()
-            
-            if (text.isBlank()) return@withContext null
-            
-            val scriptCounts = mutableMapOf<OcrScriptMode, Int>()
-            
-            for (char in text) {
-                when (Character.UnicodeBlock.of(char)) {
-                    Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS,
-                    Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A,
-                    Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B,
-                    Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS -> 
-                        scriptCounts[OcrScriptMode.CHINESE] = (scriptCounts[OcrScriptMode.CHINESE] ?: 0) + 1
-                    
-                    Character.UnicodeBlock.HIRAGANA,
-                    Character.UnicodeBlock.KATAKANA -> 
-                        scriptCounts[OcrScriptMode.JAPANESE] = (scriptCounts[OcrScriptMode.JAPANESE] ?: 0) + 1
-                    
-                    Character.UnicodeBlock.HANGUL_SYLLABLES,
-                    Character.UnicodeBlock.HANGUL_JAMO -> 
-                        scriptCounts[OcrScriptMode.KOREAN] = (scriptCounts[OcrScriptMode.KOREAN] ?: 0) + 1
-                    
-                    Character.UnicodeBlock.DEVANAGARI -> 
-                        scriptCounts[OcrScriptMode.DEVANAGARI] = (scriptCounts[OcrScriptMode.DEVANAGARI] ?: 0) + 1
-                    
-                    Character.UnicodeBlock.BASIC_LATIN,
-                    Character.UnicodeBlock.LATIN_1_SUPPLEMENT -> 
-                        scriptCounts[OcrScriptMode.LATIN] = (scriptCounts[OcrScriptMode.LATIN] ?: 0) + 1
-                    
-                    else -> { /* ignore */ }
-                }
-            }
-            
-            scriptCounts.maxByOrNull { it.value }?.key
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Timber.w(e, "$TAG: Script detection failed")
-            null
-        }
-    }
-
-    private suspend fun detectLanguageFromText(text: String): Language? = withContext(Dispatchers.IO) {
-        val trimmed = text.trim()
-        if (trimmed.length < LANGUAGE_DETECTION_MIN_TEXT_LENGTH) {
-            return@withContext null
-        }
-        
-        try {
-            val options = LanguageIdentificationOptions.Builder()
-                .setConfidenceThreshold(0.5f)
-                .build()
-            
-            val identifier = LanguageIdentification.getClient(options)
-            
-            val code = suspendCancellableCoroutine<String> { cont ->
-                identifier.identifyLanguage(trimmed)
-                    .addOnSuccessListener { result ->
-                        if (cont.isActive) {
-                            cont.resume(if (result == "und") "auto" else result)
-                        }
-                    }
-                    .addOnFailureListener { e ->
-                        if (cont.isActive) cont.resumeWithException(e)
-                    }
-                
-                cont.invokeOnCancellation { identifier.close() }
-            }
-            
-            identifier.close()
-            Language.fromCode(code)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Timber.w(e, "$TAG: Language detection failed")
-            null
-        }
-    }
-
-    private fun processTextResult(textResult: Text, scriptMode: OcrScriptMode): OcrResultWithConfidence {
-        val words = mutableListOf<WordWithConfidence>()
-        var currentIndex = 0
-        
-        val fullText = buildString {
-            for (block in textResult.textBlocks) {
-                for (line in block.lines) {
-                    for (element in line.elements) {
-                        val wordText = element.text
-                        val confidence = element.confidence ?: 0.9f
-                        val confidenceLevel = classifyConfidence(confidence)
-                        
-                        val startIdx = currentIndex
-                        val endIdx = currentIndex + wordText.length
-                        
-                        words.add(
-                            WordWithConfidence(
-                                text = wordText,
-                                confidence = confidence,
-                                confidenceLevel = confidenceLevel,
-                                boundingBox = element.boundingBox?.toDomain(),
-                                startIndex = startIdx,
-                                endIndex = endIdx
-                            )
-                        )
-                        
-                        append(wordText)
-                        currentIndex = endIdx
-                        
-                        if (element != line.elements.lastOrNull()) {
-                            append(" ")
-                            currentIndex++
-                        }
-                    }
-                    
-                    if (line != block.lines.lastOrNull()) {
-                        append("\n")
-                        currentIndex++
-                    }
-                }
-                
-                if (block != textResult.textBlocks.lastOrNull()) {
-                    append("\n\n")
-                    currentIndex += 2
-                }
-            }
-        }
-        
-        val lowConfidenceRanges = words
-            .filter { it.needsReview }
-            .map { it.startIndex..it.endIndex }
-        
-        return OcrResultWithConfidence(
-            text = fullText,
-            detectedLanguage = null,
-            detectedScript = scriptMode,
-            overallConfidence = calculateOverallConfidence(textResult),
-            words = words,
-            lowConfidenceRanges = lowConfidenceRanges,
-            processingTimeMs = 0L,
-            recognizerUsed = scriptMode
-        )
-    }
-
-    private fun classifyConfidence(confidence: Float): ConfidenceLevel = when {
-        confidence >= ConfidenceLevel.HIGH.minConfidence -> ConfidenceLevel.HIGH
-        confidence >= ConfidenceLevel.MEDIUM.minConfidence -> ConfidenceLevel.MEDIUM
-        confidence >= ConfidenceLevel.LOW.minConfidence -> ConfidenceLevel.LOW
-        else -> ConfidenceLevel.VERY_LOW
-    }
-
-    private fun calculateOverallConfidence(textResult: Text): Float {
-        val confidences = textResult.textBlocks
-            .flatMap { it.lines }
-            .flatMap { it.elements }
-            .mapNotNull { it.confidence }
-        
-        return if (confidences.isEmpty()) 0f else confidences.average().toFloat()
     }
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// EXTENSIONS
+// CORE OCR ENGINE
 // ════════════════════════════════════════════════════════════════════════════════
 
-private fun Text.TextBlock.toDomain(): TextBlock = TextBlock(
-    text = text,
-    lines = lines.map { it.toDomain() },
-    confidence = null,
-    boundingBox = boundingBox?.toDomain()
-)
-
-private fun Text.Line.toDomain(): TextLine = TextLine(
-    text = text,
-    confidence = null,
-    boundingBox = boundingBox?.toDomain()
-)
-
-private fun android.graphics.Rect.toDomain(): BoundingBox = BoundingBox(
-    left = left,
-    top = top,
-    right = right,
-    bottom = bottom
-)
-
-private suspend fun <T> com.google.android.gms.tasks.Task<T>.await(): T =
-    suspendCancellableCoroutine { cont ->
-        addOnSuccessListener { 
-            if (cont.isActive) cont.resume(it)
+private suspend fun runOcrWithAutoDetect(uri: Uri): OcrResultWithConfidence = withContext(Dispatchers.IO) {
+    coroutineContext.ensureActive()
+    
+    val scriptMode = getPreferredScriptMode()
+    coroutineContext.ensureActive()
+    
+    if (BuildConfig.DEBUG) {
+        Timber.d("$TAG: 📝 OCR mode from DataStore: $scriptMode")
+    }
+    
+    val effectiveMode = if (scriptMode == OcrScriptMode.AUTO) {
+        val detected = detectScriptFromImage(uri)
+        if (BuildConfig.DEBUG && detected != null) {
+            Timber.d("$TAG:    └─ Auto-detected: $detected")
         }
-        addOnFailureListener { 
-            if (cont.isActive) cont.resumeWithException(it)
+        detected ?: OcrScriptMode.LATIN
+    } else {
+        scriptMode
+    }
+    
+    coroutineContext.ensureActive()
+    
+    val textResult = runOcr(uri, effectiveMode)
+    coroutineContext.ensureActive()
+    
+    processTextResult(textResult, effectiveMode)
+}
+
+/**
+ * ✅ ИСПРАВЛЕНО: Правильный lifecycle Bitmap для Android 16
+ * Bitmap recycling ПОСЛЕ завершения ML Kit обработки
+ */
+private suspend fun runOcr(uri: Uri, scriptMode: OcrScriptMode): Text {
+    var bitmap: Bitmap? = null
+    
+    return try {
+        val (inputImage, bmp) = loadImageSafe(uri)
+        bitmap = bmp
+        
+        coroutineContext.ensureActive()
+        
+        val recognizer = getRecognizer(scriptMode)
+        
+        if (BuildConfig.DEBUG) {
+            Timber.d("$TAG: ⚙️ Processing with ${scriptMode.displayName} recognizer...")
         }
-        addOnCanceledListener {
-            cont.cancel()
+        
+        // ✅ ML Kit завершит работу ДО recycling
+        val result = recognizer.process(inputImage).await()
+        
+        if (BuildConfig.DEBUG) {
+            Timber.d("$TAG: ✅ MLKit processing complete")
+        }
+        
+        result
+        
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Timber.e(e, "$TAG: ❌ MLKit processing failed")
+        throw e
+    } finally {
+        // ✅ Гарантированная очистка ПОСЛЕ завершения ML Kit
+        bitmap?.recycle()
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// ✅ FIXED: Universal URI Loading (file:// + content://)
+// ════════════════════════════════════════════════════════════════════════════════
+
+private suspend fun loadImageSafe(uri: Uri): Pair<InputImage, Bitmap> = withContext(Dispatchers.IO) {
+    val scheme = uri.scheme?.lowercase()
+    
+    if (BuildConfig.DEBUG) {
+        Timber.d("$TAG: 📷 Loading image: $uri (scheme: $scheme)")
+    }
+    
+    val options = BitmapFactory.Options().apply {
+        inJustDecodeBounds = true
+    }
+    
+    openInputStreamForUri(uri).use { stream ->
+        BitmapFactory.decodeStream(stream, null, options)
+    }
+    
+    if (options.outWidth <= 0 || options.outHeight <= 0) {
+        throw IOException("Failed to decode image dimensions from URI: $uri")
+    }
+    
+    val sampleSize = calculateInSampleSize(
+        options.outWidth,
+        options.outHeight,
+        MAX_IMAGE_DIMENSION,
+        MAX_IMAGE_DIMENSION
+    )
+    
+    if (BuildConfig.DEBUG) {
+        Timber.d("$TAG:    ├─ Dimensions: ${options.outWidth}x${options.outHeight}")
+        Timber.d("$TAG:    └─ Sample size: $sampleSize")
+    }
+    
+    options.inJustDecodeBounds = false
+    options.inSampleSize = sampleSize
+    options.inPreferredConfig = Bitmap.Config.ARGB_8888
+    
+    val bitmap = openInputStreamForUri(uri).use { stream ->
+        BitmapFactory.decodeStream(stream, null, options)
+    } ?: throw IOException("Failed to decode bitmap from URI: $uri")
+    
+    val inputImage = InputImage.fromBitmap(bitmap, 0)
+    Pair(inputImage, bitmap)
+}
+
+/**
+ * ✅ Opens InputStream for ANY URI type.
+ * Handles content://, file://, and absolute paths.
+ */
+private fun openInputStreamForUri(uri: Uri): InputStream {
+    val scheme = uri.scheme?.lowercase()
+    
+    return when (scheme) {
+        "content" -> {
+            context.contentResolver.openInputStream(uri)
+                ?: throw IOException("ContentResolver returned null for: $uri")
+        }
+        
+        "file" -> {
+            val path = uri.path 
+                ?: throw IOException("File URI has no path: $uri")
+            
+            val file = File(path)
+            if (!file.exists()) {
+                throw FileNotFoundException("File does not exist: $path")
+            }
+            if (!file.canRead()) {
+                throw IOException("Cannot read file: $path")
+            }
+            FileInputStream(file)
+        }
+        
+        null, "" -> {
+            val path = uri.toString()
+            val file = File(path)
+            if (!file.exists()) {
+                throw FileNotFoundException("File does not exist: $path")
+            }
+            FileInputStream(file)
+        }
+        
+        else -> {
+            throw IOException("Unsupported URI scheme '$scheme': $uri")
         }
     }
+}
+
+private fun calculateInSampleSize(
+    width: Int,
+    height: Int,
+    reqWidth: Int,
+    reqHeight: Int
+): Int {
+    var inSampleSize = MIN_SAMPLE_SIZE
+    
+    if (height > reqHeight || width > reqWidth) {
+        val halfHeight = height / 2
+        val halfWidth = width / 2
+        
+        while ((halfHeight / inSampleSize) >= reqHeight && 
+               (halfWidth / inSampleSize) >= reqWidth &&
+               inSampleSize < MAX_SAMPLE_SIZE) {
+            inSampleSize *= 2
+        }
+    }
+    
+    return inSampleSize
+}
+
+private suspend fun getPreferredScriptMode(): OcrScriptMode = withContext(Dispatchers.IO) {
+    try {
+        val mode = settingsDataStore.ocrLanguage.first().trim().uppercase()
+        
+        when (mode) {
+            "LATIN" -> OcrScriptMode.LATIN
+            "CHINESE" -> OcrScriptMode.CHINESE
+            "JAPANESE" -> OcrScriptMode.JAPANESE
+            "KOREAN" -> OcrScriptMode.KOREAN
+            "DEVANAGARI" -> OcrScriptMode.DEVANAGARI
+            else -> OcrScriptMode.AUTO
+        }
+    } catch (e: Exception) {
+        Timber.w(e, "$TAG: ⚠️ Failed to read OCR mode from DataStore, using AUTO")
+        OcrScriptMode.AUTO
+    }
+}
+
+private suspend fun getRecognizer(scriptMode: OcrScriptMode): TextRecognizer = recognizerLock.withLock {
+    if (cachedScriptMode == scriptMode && cachedRecognizer != null) {
+        return@withLock cachedRecognizer!!
+    }
+    
+    cachedRecognizer?.close()
+    
+    val recognizer = when (scriptMode) {
+        OcrScriptMode.AUTO, OcrScriptMode.LATIN -> 
+            TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        OcrScriptMode.CHINESE -> 
+            TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+        OcrScriptMode.JAPANESE -> 
+            TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
+        OcrScriptMode.KOREAN -> 
+            TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
+        OcrScriptMode.DEVANAGARI -> 
+            TextRecognition.getClient(DevanagariTextRecognizerOptions.Builder().build())
+    }
+    
+    cachedRecognizer = recognizer
+    cachedScriptMode = scriptMode
+    
+    if (BuildConfig.DEBUG) {
+        Timber.d("$TAG: ✨ Created new recognizer: $scriptMode")
+    }
+    
+    recognizer
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// HELPER METHODS
+// ════════════════════════════════════════════════════════════════════════════════
+
+private suspend fun detectScriptFromImage(uri: Uri): OcrScriptMode? = withContext(Dispatchers.IO) {
+    try {
+        coroutineContext.ensureActive()
+        
+        val latinResult = runOcr(uri, OcrScriptMode.LATIN)
+        val text = latinResult.text.trim()
+        
+        if (text.isBlank()) return@withContext null
+        
+        val scriptCounts = mutableMapOf<OcrScriptMode, Int>()
+        
+        for (char in text) {
+            when (Character.UnicodeBlock.of(char)) {
+                Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS,
+                Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A,
+                Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B,
+                Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS -> 
+                    scriptCounts[OcrScriptMode.CHINESE] = (scriptCounts[OcrScriptMode.CHINESE] ?: 0) + 1
+                
+                Character.UnicodeBlock.HIRAGANA,
+                Character.UnicodeBlock.KATAKANA -> 
+                    scriptCounts[OcrScriptMode.JAPANESE] = (scriptCounts[OcrScriptMode.JAPANESE] ?: 0) + 1
+                
+                Character.UnicodeBlock.HANGUL_SYLLABLES,
+                Character.UnicodeBlock.HANGUL_JAMO -> 
+                    scriptCounts[OcrScriptMode.KOREAN] = (scriptCounts[OcrScriptMode.KOREAN] ?: 0) + 1
+                
+                Character.UnicodeBlock.DEVANAGARI -> 
+                    scriptCounts[OcrScriptMode.DEVANAGARI] = (scriptCounts[OcrScriptMode.DEVANAGARI] ?: 0) + 1
+                
+                Character.UnicodeBlock.BASIC_LATIN,
+                Character.UnicodeBlock.LATIN_1_SUPPLEMENT -> 
+                    scriptCounts[OcrScriptMode.LATIN] = (scriptCounts[OcrScriptMode.LATIN] ?: 0) + 1
+                
+                else -> { /* ignore */ }
+            }
+        }
+        
+        scriptCounts.maxByOrNull { it.value }?.key
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Timber.w(e, "$TAG: Script detection failed")
+        null
+    }
+}
+
+private suspend fun detectLanguageFromText(text: String): Language? = withContext(Dispatchers.IO) {
+    val trimmed = text.trim()
+    if (trimmed.length < LANGUAGE_DETECTION_MIN_TEXT_LENGTH) {
+        return@withContext null
+    }
+    
+    try {
+        val options = LanguageIdentificationOptions.Builder()
+            .setConfidenceThreshold(0.5f)
+            .build()
+        
+        val identifier = LanguageIdentification.getClient(options)
+        
+        val code = suspendCancellableCoroutine<String> { cont ->
+            identifier.identifyLanguage(trimmed)
+                .addOnSuccessListener { result ->
+                    if (cont.isActive) {
+                        cont.resume(if (result == "und") "auto" else result)
+                    }
+                }
+                .addOnFailureListener { e ->
+                    if (cont.isActive) cont.resumeWithException(e)
+                }
+            
+            cont.invokeOnCancellation { identifier.close() }
+        }
+        
+        identifier.close()
+        Language.fromCode(code)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Timber.w(e, "$TAG: Language detection failed")
+        null
+    }
+}
+
+private fun processTextResult(textResult: Text, scriptMode: OcrScriptMode): OcrResultWithConfidence {
+    val words = mutableListOf<WordWithConfidence>()
+    var currentIndex = 0
+    
+    val fullText = buildString {
+        for (block in textResult.textBlocks) {
+            for (line in block.lines) {
+                for (element in line.elements) {
+                    val wordText = element.text
+                    val confidence = element.confidence ?: 0.9f
+                    val confidenceLevel = classifyConfidence(confidence)
+                    
+                    val startIdx = currentIndex
+                    val endIdx = currentIndex + wordText.length
+                    
+                    words.add(
+                        WordWithConfidence(
+                            text = wordText,
+                            confidence = confidence,
+                            confidenceLevel = confidenceLevel,
+                            boundingBox = element.boundingBox?.toDomain(),
+                            startIndex = startIdx,
+                            endIndex = endIdx
+                        )
+                    )
+                    
+                    append(wordText)
+                    currentIndex = endIdx
+                    
+                    if (element != line.elements.lastOrNull()) {
+                        append(" ")
+                        currentIndex++
+                    }
+                }
+                
+                if (line != block.lines.lastOrNull()) {
+                    append("\n")
+                    currentIndex++
+                }
+            }
+            
+            if (block != textResult.textBlocks.lastOrNull()) {
+                append("\n\n")
+                currentIndex += 2
+            }
+        }
+    }
+    
+    val lowConfidenceRanges = words
+        .filter { it.needsReview }
+        .map { it.startIndex..it.endIndex }
+    
+    return OcrResultWithConfidence(
+        text = fullText,
+        detectedLanguage = null,
+        detectedScript = scriptMode,
+        overallConfidence = calculateOverallConfidence(textResult),
+        words = words,
+        lowConfidenceRanges = lowConfidenceRanges,
+        processingTimeMs = 0L,
+        recognizerUsed = scriptMode
+    )
+}
+
+private fun classifyConfidence(confidence: Float): ConfidenceLevel = when {
+    confidence >= ConfidenceLevel.HIGH.minConfidence -> ConfidenceLevel.HIGH
+    confidence >= ConfidenceLevel.MEDIUM.minConfidence -> ConfidenceLevel.MEDIUM
+    confidence >= ConfidenceLevel.LOW.minConfidence -> ConfidenceLevel.LOW
+    else -> ConfidenceLevel.VERY_LOW
+}
+
+private fun calculateOverallConfidence(textResult: Text): Float {
+    val confidences = textResult.textBlocks
+        .flatMap { it.lines }
+        .flatMap { it.elements }
+        .mapNotNull { it.confidence }
+    
+    return if (confidences.isEmpty()) 0f else confidences.average().toFloat()
+}
+}
+// ════════════════════════════════════════════════════════════════════════════════
+// EXTENSIONS
+// ════════════════════════════════════════════════════════════════════════════════
+private fun Text.TextBlock.toDomain(): TextBlock = TextBlock(
+text = text,
+lines = lines.map { it.toDomain() },
+confidence = null,
+boundingBox = boundingBox?.toDomain()
+)
+private fun Text.Line.toDomain(): TextLine = TextLine(
+text = text,
+confidence = null,
+boundingBox = boundingBox?.toDomain()
+)
+private fun android.graphics.Rect.toDomain(): BoundingBox = BoundingBox(
+left = left,
+top = top,
+right = right,
+bottom = bottom
+)
+private suspend fun  com.google.android.gms.tasks.Task.await(): T =
+suspendCancellableCoroutine { cont ->
+addOnSuccessListener {
+if (cont.isActive) cont.resume(it)
+}
+addOnFailureListener {
+if (cont.isActive) cont.resumeWithException(it)
+}
+addOnCanceledListener {
+cont.cancel()
+}
+}
