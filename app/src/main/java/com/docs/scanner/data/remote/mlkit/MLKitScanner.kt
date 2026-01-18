@@ -10,6 +10,11 @@
  * - testGeminiFallback parameter in testOcr()
  * - Added recognizeTextMlKitOnly() and recognizeTextGeminiOnly()
  * 
+ * ✅ FIXED in 2026:
+ * - Proper bitmap lifecycle management (Android 16)
+ * - Improved hybrid OCR error handling
+ * - Gemini fallback triggers on ML Kit failure
+ * 
  * ✅ ARCHITECTURE:
  * Document → ML Kit (fast, offline) → Quality Analysis → Gemini fallback (if needed)
  *                                                      ↓
@@ -221,10 +226,14 @@ class MLKitScanner @Inject constructor(
     // ════════════════════════════════════════════════════════════════════════════════
 
     /**
-     * ✅ MAIN METHOD: Hybrid OCR with automatic Gemini fallback.
+     * ✅ ИСПРАВЛЕНО: Hybrid OCR с правильным error handling
      * 
-     * Used throughout the app for document scanning.
-     * Automatically decides between ML Kit and Gemini based on quality.
+     * Flow:
+     * 1. Check "always Gemini" setting → if true, skip to Gemini
+     * 2. Try ML Kit first
+     * 3. If ML Kit FAILS → fallback to Gemini (if enabled)
+     * 4. If ML Kit succeeds but quality is POOR → fallback to Gemini (if enabled)
+     * 5. Return result with source indicator
      */
     suspend fun recognizeText(uri: Uri): DomainResult<OcrResult> {
         val start = System.currentTimeMillis()
@@ -234,10 +243,13 @@ class MLKitScanner @Inject constructor(
         }
         
         return try {
-            // Check if Gemini-only mode is enabled
+            // ═══════════════════════════════════════════════════════════════
+            // STEP 1: Check "always Gemini" mode
+            // ═══════════════════════════════════════════════════════════════
             val alwaysGemini = try {
                 settingsDataStore.geminiOcrAlways.first()
             } catch (e: Exception) {
+                Timber.w(e, "$TAG: Failed to read geminiOcrAlways, defaulting to false")
                 false
             }
 
@@ -246,46 +258,85 @@ class MLKitScanner @Inject constructor(
                 return geminiOcrService.recognizeText(uri)
             }
 
-            // Step 1: Run ML Kit
-            val mlKitResult = runOcrWithAutoDetect(uri)
-            
-            // Step 2: Analyze quality
-            val metrics = qualityAnalyzer.analyze(mlKitResult)
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("$TAG: 📊 ML Kit quality: ${metrics.quality}, confidence: ${metrics.qualityPercent}%")
-            }
-
-            // Step 3: Check Gemini settings
+            // ═══════════════════════════════════════════════════════════════
+            // STEP 2: Check Gemini settings BEFORE trying ML Kit
+            // ═══════════════════════════════════════════════════════════════
             val geminiEnabled = try {
                 settingsDataStore.geminiOcrEnabled.first()
             } catch (e: Exception) {
+                Timber.w(e, "$TAG: Failed to read geminiOcrEnabled, defaulting to true")
                 true
             }
 
             val threshold = try {
                 settingsDataStore.geminiOcrThreshold.first() / 100f
             } catch (e: Exception) {
+                Timber.w(e, "$TAG: Failed to read geminiOcrThreshold, defaulting to 0.5")
                 0.5f
             }
 
-            // Step 4: Decide on fallback
+            // ═══════════════════════════════════════════════════════════════
+            // STEP 3: Try ML Kit with fallback on failure
+            // ═══════════════════════════════════════════════════════════════
+            val mlKitResult = try {
+                runOcrWithAutoDetect(uri)
+            } catch (e: Exception) {
+                Timber.w(e, "$TAG: ML Kit failed")
+                
+                // ✅ FALLBACK: Если ML Kit упал И Gemini включен → пробуем Gemini
+                if (geminiEnabled) {
+                    Timber.d("$TAG: 🔄 ML Kit failed, falling back to Gemini")
+                    return when (val geminiResult = geminiOcrService.recognizeText(uri)) {
+                        is DomainResult.Success -> {
+                            Timber.d("$TAG: ✅ Gemini fallback successful")
+                            geminiResult
+                        }
+                        is DomainResult.Failure -> {
+                            // Both ML Kit and Gemini failed
+                            Timber.e("$TAG: ❌ Both ML Kit and Gemini failed")
+                            DomainResult.failure(
+                                DomainError.OcrFailed(
+                                    id = null,
+                                    cause = Exception("ML Kit failed: ${e.message}, Gemini failed: ${geminiResult.error.message}")
+                                )
+                            )
+                        }
+                    }
+                } else {
+                    // Gemini disabled, return ML Kit error
+                    throw e
+                }
+            }
+            
+            // ═══════════════════════════════════════════════════════════════
+            // STEP 4: Analyze ML Kit quality
+            // ═══════════════════════════════════════════════════════════════
+            val metrics = qualityAnalyzer.analyze(mlKitResult)
+            
+            if (BuildConfig.DEBUG) {
+                Timber.d("$TAG: 📊 ML Kit quality: ${metrics.quality}, confidence: ${metrics.qualityPercent}%")
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // STEP 5: Decide on quality-based fallback
+            // ═══════════════════════════════════════════════════════════════
             val shouldFallback = geminiEnabled && (
                 metrics.recommendGeminiFallback ||
                 metrics.overallConfidence < threshold
             )
 
             if (shouldFallback) {
-                Timber.d("$TAG: 🔄 Falling back to Gemini")
+                Timber.d("$TAG: 🔄 Low quality ML Kit result, falling back to Gemini")
                 
                 when (val geminiResult = geminiOcrService.recognizeText(uri)) {
                     is DomainResult.Success -> {
-                        Timber.d("$TAG: ✅ Gemini OCR successful")
-                        geminiResult
+                        Timber.d("$TAG: ✅ Gemini fallback successful")
+                        return geminiResult
                     }
                     is DomainResult.Failure -> {
-                        Timber.w("$TAG: ⚠️ Gemini failed, using ML Kit result")
-                        DomainResult.Success(
+                        // Gemini failed, but ML Kit succeeded → use ML Kit
+                        Timber.w("$TAG: ⚠️ Gemini fallback failed, using ML Kit result")
+                        return DomainResult.Success(
                             OcrResult(
                                 text = mlKitResult.text,
                                 detectedLanguage = mlKitResult.detectedLanguage,
@@ -297,11 +348,12 @@ class MLKitScanner @Inject constructor(
                     }
                 }
             } else {
+                // ML Kit quality is good
                 if (BuildConfig.DEBUG) {
                     Timber.d("$TAG: ✅ ML Kit quality acceptable")
                 }
                 
-                DomainResult.Success(
+                return DomainResult.Success(
                     OcrResult(
                         text = mlKitResult.text,
                         detectedLanguage = mlKitResult.detectedLanguage,
@@ -311,6 +363,7 @@ class MLKitScanner @Inject constructor(
                     )
                 )
             }
+            
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -607,8 +660,7 @@ class MLKitScanner @Inject constructor(
                 mlKitProcessed.words.size
             }
             
-            val lowConfidenceWords = mlKitProcessed.words.filter {it.confidence < confidenceThreshold 
-            }
+            val lowConfidenceWords = mlKitProcessed.words.filter { it.confidence < confidenceThreshold }
 
             DomainResult.Success(
                 OcrTestResult(
@@ -692,36 +744,41 @@ class MLKitScanner @Inject constructor(
     }
 
     /**
-     * ⚠️ CRITICAL METHOD - PROPER BITMAP LIFECYCLE FOR ANDROID 16
-     * 
-     * ВАЖНО: Bitmap НЕ recycled до завершения MLKit обработки!
+     * ✅ ИСПРАВЛЕНО: Правильный lifecycle Bitmap для Android 16
+     * Bitmap recycling ПОСЛЕ завершения ML Kit обработки
      */
-    private suspend fun runOcr(uri: Uri, scriptMode: OcrScriptMode): Text = withContext(Dispatchers.IO) {
-        coroutineContext.ensureActive()
+    private suspend fun runOcr(uri: Uri, scriptMode: OcrScriptMode): Text {
+        var bitmap: Bitmap? = null
         
-        val (inputImage, bitmap) = loadImageSafe(uri)
-        coroutineContext.ensureActive()
-        
-        val recognizer = getRecognizer(scriptMode)
-        coroutineContext.ensureActive()
-        
-        try {
+        return try {
+            val (inputImage, bmp) = loadImageSafe(uri)
+            bitmap = bmp
+            
+            coroutineContext.ensureActive()
+            
+            val recognizer = getRecognizer(scriptMode)
+            
             if (BuildConfig.DEBUG) {
                 Timber.d("$TAG: ⚙️ Processing with ${scriptMode.displayName} recognizer...")
             }
             
+            // ✅ ML Kit завершит работу ДО recycling
             val result = recognizer.process(inputImage).await()
-            bitmap.recycle()
             
             if (BuildConfig.DEBUG) {
                 Timber.d("$TAG: ✅ MLKit processing complete")
             }
             
             result
+            
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            bitmap.recycle()
             Timber.e(e, "$TAG: ❌ MLKit processing failed")
             throw e
+        } finally {
+            // ✅ Гарантированная очистка ПОСЛЕ завершения ML Kit
+            bitmap?.recycle()
         }
     }
 
