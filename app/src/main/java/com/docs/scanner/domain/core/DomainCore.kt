@@ -17,6 +17,7 @@
 
 package com.docs.scanner.domain.core
 
+import com.docs.scanner.domain.core.OcrSource
 import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.time.ZoneId
@@ -130,7 +131,7 @@ value class Tag private constructor(val value: String) {
 // DOMAIN RESULT - Functional Error Handling
 // ══════════════════════════════════════════════════════════════════════════════
 
-sealed class DomainResult<out T> {
+sealed class DomainResult<T> {
     data class Success<T>(val data: T) : DomainResult<T>()
     data class Failure<T>(val error: DomainError) : DomainResult<T>()
     
@@ -145,7 +146,7 @@ sealed class DomainResult<out T> {
         is Failure -> throw error.toException()
     }
     
-    fun getOrElse(block: (DomainError) -> T): T = when (this) {
+    inline fun getOrElse(block: (DomainError) -> T): T = when (this) {
         is Success -> data
         is Failure -> block(error)
     }
@@ -253,6 +254,10 @@ sealed class DomainError {
     }
     
     // Infrastructure
+    data object MissingApiKey : DomainError() {
+        override val message: String = "No API key configured"
+    }
+
     data class StorageFailed(val cause: Throwable?) : DomainError() {
         override val message: String = "Storage error: ${cause?.message ?: "Unknown"}"
     }
@@ -284,7 +289,7 @@ sealed class ValidationError(val message: String) {
     data class NameTooLong(val len: Int, val max: Int) : ValidationError("Name too long: $len > $max")
     data class TagTooLong(val len: Int, val max: Int) : ValidationError("Tag too long: $len > $max")
     data class TooManyTags(val count: Int, val max: Int) : ValidationError("Too many tags: $count > $max")
-    data object DueDate InPast : ValidationError("Due date must be in future")
+    data object DueDateInPast : ValidationError("Due date must be in future")
 }
 
 class DomainException(val error: DomainError) : Exception(error.message)
@@ -433,6 +438,7 @@ data class Folder(
     val color: Int? = null,
     val icon: String? = null,
     val recordCount: Int = 0,
+    val position: Int = 0,  // ✅ ADDED for drag & drop
     val isPinned: Boolean = false,
     val isArchived: Boolean = false,
     val createdAt: Long,
@@ -440,7 +446,7 @@ data class Folder(
 ) {
     val isQuickScans: Boolean get() = id.isQuickScans
     val isEmpty: Boolean get() = recordCount == 0
-    
+
     companion object {
         fun quickScans(name: String, timestamp: Long) = Folder(
             id = FolderId.QUICK_SCANS,
@@ -472,6 +478,7 @@ data class Record(
     val description: String? = null,
     val tags: List<String> = emptyList(),
     val documentCount: Int = 0,
+    val position: Int = 0,  // ✅ ADDED for drag & drop
     val sourceLanguage: Language = Language.AUTO,
     val targetLanguage: Language = Language.ENGLISH,
     val isPinned: Boolean = false,
@@ -632,7 +639,8 @@ data class OcrResult(
     val text: String,
     val detectedLanguage: Language?,
     val confidence: Float?,
-    val processingTimeMs: Long
+    val processingTimeMs: Long,
+    val source: OcrSource = OcrSource.UNKNOWN
 )
 
 data class TranslationResult(
@@ -665,6 +673,13 @@ data class DownloadProgress(
     fun formatProgress(): String = "${downloaded.formatBytes()} / ${total.formatBytes()} ($percent%)"
 }
 
+data class SearchHistoryItem(
+    val id: Long,
+    val query: String,
+    val resultCount: Int,
+    val timestamp: Long
+)
+
 data class BackupInfo(
     val id: String,
     val name: String,
@@ -689,22 +704,6 @@ data class TranslationCacheStats(
     val oldestEntryTimestamp: Long?,
     val newestEntryTimestamp: Long?
 )
-
-/**
- * Storage usage information.
- */
-data class StorageUsage(
-    val totalSizeBytes: Long,
-    val imageSizeBytes: Long,
-    val databaseSizeBytes: Long,
-    val cacheSizeBytes: Long,
-    val otherSizeBytes: Long
-) {
-    fun formatTotal(): String = totalSizeBytes.formatBytes()
-    fun formatImages(): String = imageSizeBytes.formatBytes()
-    fun formatDatabase(): String = databaseSizeBytes.formatBytes()
-    fun formatCache(): String = cacheSizeBytes.formatBytes()
-}
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class ImageQuality(val percent: Int) { LOW(60), MEDIUM(80), HIGH(95), ORIGINAL(100) }
@@ -748,7 +747,6 @@ class FakeTimeProvider(private var time: Long = 0L) : TimeProvider {
     }
     
     fun advanceMinutes(minutes: Int) {
-        advance(fun advanceMinutes(minutes: Int) {
         advance(minutes * 60 * 1000L)
     }
     

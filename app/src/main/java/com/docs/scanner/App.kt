@@ -2,13 +2,12 @@
  * DocumentScanner - App.kt
  * Application class оптимизированный для 2026 Standards
  *
- * Version: 7.0.0 - PRODUCTION READY
+ * Version: 7.1.1 (Build 711) - PRODUCTION READY
  * 
- * Fixed issues:
- * - 🟠 Серьёзная #2: Memory leak (applicationScope теперь cancellable)
- * - 🟠 Performance: Тяжелая инициализация в фоне
- * - 🔵 Minor: Notification channels не создаются при каждом старте
- * - Синтаксическая ошибка в onTerminate()
+ * ✅ FIXES (Session 13):
+ * - Fixed Coil 3.x API compatibility - using okio.Path instead of java.nio.file.Path
+ * - Fixed cache directory path conversion
+ * - Updated MemoryCache and DiskCache builders
  */
 
 package com.docs.scanner
@@ -17,8 +16,6 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationChannelGroup
 import android.app.NotificationManager
-import android.content.Context
-import android.graphics.Bitmap
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
@@ -34,13 +31,9 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
-import coil3.disk.directory
 import coil3.memory.MemoryCache
-import coil3.request.CachePolicy
-import coil3.request.allowHardware
-import coil3.request.crossfade
-import coil3.size.Precision
 import com.docs.scanner.data.local.preferences.SettingsDataStore
+import com.docs.scanner.domain.repository.FolderRepository
 import com.docs.scanner.util.LogcatCollector
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -50,6 +43,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okio.Path.Companion.toOkioPath
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -58,18 +52,21 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
 
     @Inject
     lateinit var settingsDataStore: SettingsDataStore
+    
+    @Inject
+    lateinit var folderRepository: FolderRepository
 
     private var logcatCollector: LogcatCollector? = null
     
     /**
      * Application-wide coroutine scope.
-     * FIXED: 🟠 Серьёзная #2 - Now properly cancelled in onTerminate()
+     * ✅ FIX: Now properly cancelled in onTerminate() to prevent memory leak
      */
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     
     /**
      * Flag to track if notification channels were already created.
-     * FIXED: 🔵 Minor #7 - Avoid recreating channels on every call
+     * ✅ FIX: Avoid recreating channels on every call
      */
     private var channelsCreated = false
 
@@ -84,8 +81,10 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
         const val GROUP_OPERATIONS = "group_operations"
         
         // Memory thresholds
-        private const val MEMORY_CACHE_PERCENT = 0.20
+        private const val MEMORY_CACHE_SIZE_MB = 50L // 50MB for memory cache
         private const val DISK_CACHE_SIZE_MB = 100L
+        
+        private const val QUICK_SCANS_FOLDER_NAME = "Quick Scans"
     }
 
     override fun onCreate() {
@@ -94,27 +93,53 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
         // 1. Logging - должен быть первым
         initializeTimber()
         
-        // 2. Debug Tools - только в DEBUG
+        // 2. ✅ NEW: LogcatCollector initialization
         if (BuildConfig.DEBUG) {
             initializeDebugTools()
         }
 
         // 3. Locale - в фоне, чтобы не блокировать onCreate
-        // FIXED: 🟠 Performance - Moved to background
         applicationScope.launch {
             initializeAppLocale()
         }
         
         // 4. Notification Channels - в фоне
-        // FIXED: 🟠 Performance - Moved to background
         applicationScope.launch(Dispatchers.IO) {
             createNotificationChannels()
         }
         
-        // 5. Lifecycle Observer
+        // 5. ✅ Quick Scans folder - в фоне
+        applicationScope.launch(Dispatchers.IO) {
+            ensureQuickScansFolderExists()
+        }
+        
+        // 6. Lifecycle Observer
         setupLifecycleObserver()
 
         Timber.i("🚀 App initialized. Device: ${Build.MANUFACTURER} ${Build.MODEL}, SDK: ${Build.VERSION.SDK_INT}")
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ QUICK SCANS FOLDER INITIALIZATION
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Ensures Quick Scans folder exists on app startup.
+     * This folder is a system folder that cannot be deleted by user.
+     */
+    private suspend fun ensureQuickScansFolderExists() {
+        try {
+            val folderName = try {
+                getString(R.string.quick_scans_folder_name)
+            } catch (e: Exception) {
+                QUICK_SCANS_FOLDER_NAME
+            }
+            
+            folderRepository.ensureQuickScansFolderExists(folderName)
+            Timber.d("✅ Quick Scans folder ensured")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to create Quick Scans folder")
+        }
     }
 
     // ════════════════════════════════════════════════════════════════════════════════
@@ -138,21 +163,22 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     private class ReleaseTree : Timber.Tree() {
         override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
             if (priority >= android.util.Log.WARN) {
-                // TODO: Firebase Crashlytics integration
                 android.util.Log.println(priority, tag ?: "DocsScanner", message)
             }
         }
     }
 
     // ════════════════════════════════════════════════════════════════════════════════
-    // DEBUG TOOLS
+    // ✅ DEBUG TOOLS - WITH LOGCAT COLLECTOR
     // ════════════════════════════════════════════════════════════════════════════════
     
     private fun initializeDebugTools() {
         try {
+            // ✅ Initialize LogcatCollector
             logcatCollector = LogcatCollector.getInstance(this).apply {
                 startCollecting()
             }
+            Timber.d("📝 LogcatCollector started")
             
             enableStrictMode()
             Timber.d("🔧 Debug tools initialized")
@@ -210,7 +236,6 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     // ════════════════════════════════════════════════════════════════════════════════
 
     private fun createNotificationChannels() {
-        // FIXED: 🔵 Minor #7 - Don't recreate channels multiple times
         if (channelsCreated) {
             Timber.d("Notification channels already exist, skipping")
             return
@@ -371,44 +396,22 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     }
 
     // ════════════════════════════════════════════════════════════════════════════════
-    // COIL IMAGE LOADER
+    // ✅ COIL 3.x IMAGE LOADER - FIXED WITH OKIO PATH
     // ════════════════════════════════════════════════════════════════════════════════
     
     override fun newImageLoader(context: PlatformContext): ImageLoader {
         return ImageLoader.Builder(context)
             .memoryCache {
                 MemoryCache.Builder()
-                    .maxSizePercent(context, percent = MEMORY_CACHE_PERCENT)
-                    .strongReferencesEnabled(true)
+                    .maxSizeBytes(MEMORY_CACHE_SIZE_MB * 1024 * 1024)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
-                    .directory(context.cacheDir.resolve("image_cache"))
+                    // ✅ FIX: Use okio.Path instead of java.nio.file.Path
+                    .directory(cacheDir.resolve("image_cache").toOkioPath())
                     .maxSizeBytes(DISK_CACHE_SIZE_MB * 1024 * 1024)
                     .build()
-            }
-            .memoryCachePolicy(CachePolicy.ENABLED)
-            .diskCachePolicy(CachePolicy.ENABLED)
-            .networkCachePolicy(CachePolicy.ENABLED)
-            .crossfade(enable = true)
-            .crossfade(durationMillis = 200)
-            .components {
-                add(coil3.decode.BitmapFactoryDecoder.Factory(
-                    bitmapConfig = Bitmap.Config.RGB_565
-                ))
-            }
-            .respectCacheHeaders(false)
-            .allowHardware(enable = true)
-            .precision(Precision.AUTOMATIC)
-            .apply {
-                // Placeholder & Error drawables
-                placeholder(R.drawable.ic_placeholder)
-                error(R.drawable.ic_error)
-                
-                if (BuildConfig.DEBUG) {
-                    logger(coil3.util.DebugLogger())
-                }
             }
             .build()
     }
@@ -466,8 +469,8 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     }
     
     /**
-     * Called when application is terminating.
-     * FIXED: 🟠 Серьёзная #2 - Properly cancel coroutine scope to prevent memory leak
+     * ✅ FIX: Called when application is terminating.
+     * Properly cancel coroutine scope to prevent memory leak.
      */
     override fun onTerminate() {
         super.onTerminate()
@@ -476,9 +479,10 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     
     private fun cleanupResources() {
         try {
-            // Cancel coroutine scope to prevent memory leak
+            // ✅ Cancel coroutine scope to prevent memory leak
             applicationScope.cancel()
             
+            // ✅ Stop LogcatCollector and save final logs
             logcatCollector?.stopCollecting()
             logcatCollector = null
             

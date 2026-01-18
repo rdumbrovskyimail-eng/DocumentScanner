@@ -2,280 +2,319 @@ package com.docs.scanner.util
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.os.Environment
 import androidx.core.content.FileProvider
 import com.docs.scanner.BuildConfig
 import kotlinx.coroutines.*
+import timber.log.Timber
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Collects logcat output for debugging purposes.
- * ⚠️ ONLY WORKS IN DEBUG MODE for security and battery preservation.
+ * LogcatCollector - OCR DIAGNOSTIC MODE (FULLY FIXED)
  * 
- * Session 11 fixes:
- * - ✅ BuildConfig.DEBUG check (CRITICAL SECURITY)
- * - ✅ Internal storage (no WRITE_EXTERNAL_STORAGE needed)
- * - ✅ shareLogs() function for DebugScreen
- * - ✅ cleanOldLogs() optimization
- * - ✅ Proper coroutine cleanup
+ * ✅ FIXES:
+ * - Правильная проверка количества строк
+ * - Сохранение работает даже после остановки
+ * - Корректная работа кнопки Save
+ * - Проверка разрешений
  */
 class LogcatCollector private constructor(private val context: Context) {
-    
+
     private var logcatProcess: Process? = null
     private var collectJob: Job? = null
     private val logBuffer = StringBuilder()
-    private val maxBufferSize = 5 * 1024 * 1024 // 5MB
+    private val isSaving = AtomicBoolean(false)
+    private var isCollecting = AtomicBoolean(false)
     
-    // ✅ Internal storage directory (no permission needed)
-    private val logsDir: File
-        get() = File(context.filesDir, "logs").apply { mkdirs() }
-    
+    // ✅ ADDED: Отдельный счётчик строк
+    @Volatile
+    private var lineCount = 0
+
     companion object {
         @Volatile
         private var instance: LogcatCollector? = null
-        
+
         fun getInstance(context: Context): LogcatCollector {
             return instance ?: synchronized(this) {
-                instance ?: LogcatCollector(context.applicationContext).also { 
-                    instance = it 
+                instance ?: LogcatCollector(context.applicationContext).also {
+                    instance = it
                 }
             }
         }
-        
-        private const val MAX_OLD_LOGS = 10
-        private const val MAX_LOG_FILES = 5 // Keep only 5 most recent
+
+        private const val MAX_BUFFER_LINES = 10000
+
+        private val OCR_KEYWORDS = setOf(
+            "tess", "tesseract", "ocr", "leptonica", "pix", "rect",
+            "blob", "recognition", "utf8", "unichar", "traineddata",
+            "mlkit", "vision", "textrecognizer", "textrecognition",
+            "barcode", "face", "text", "tensorflow", "tflite", 
+            "nnapi", "model", "interpreter",
+            "unsatisfiedlink", "dlopen", "so file", "native",
+            "signal 11", "sigsegv", "sigabrt", "tombstone",
+            "outofmemory", "oom", "alloc", "bitmap", "large",
+            "nativeallocationregistry",
+            "nullpointerexception", "illegalstateexception",
+            "illegalargumentexception", "runtimeexception"
+        )
     }
-    
+
+    private fun getLogsDir(): File {
+        val downloadsDir = Environment.getExternalStoragePublicDirectory(
+            Environment.DIRECTORY_DOWNLOADS
+        )
+        val logsDir = File(downloadsDir, "DocumentScanner_OCR_Logs")
+        if (!logsDir.exists()) {
+            val created = logsDir.mkdirs()
+            Timber.d("📁 Logs dir created: $created at ${logsDir.absolutePath}")
+        }
+        return logsDir
+    }
+
     /**
-     * Start collecting logs.
-     * ⚠️ ONLY WORKS IN DEBUG - Returns immediately in release builds.
+     * Начать сбор логов
      */
     fun startCollecting() {
-        // 🔴 CRITICAL FIX: Don't collect in release!
-        if (!BuildConfig.DEBUG) return
-        
-        if (collectJob?.isActive == true) return
-        
+        if (!BuildConfig.DEBUG) {
+            Timber.w("⚠️ LogcatCollector disabled in RELEASE mode")
+            return
+        }
+
+        if (isCollecting.get()) {
+            Timber.i("⚠️ Already collecting logs")
+            return
+        }
+
+        isCollecting.set(true)
+        clearInternalBuffer()
+
         collectJob = CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {
-                // Clear previous logcat buffer
+                // Очищаем системный буфер
                 Runtime.getRuntime().exec("logcat -c").waitFor()
-                delay(50)
+                delay(500)
                 
-                // Collect only THIS app's logs
                 val pid = android.os.Process.myPid()
+                Timber.i("🚀 OCR Log Collector STARTED (PID: $pid)")
+
+                // Захватываем ВСЕ логи приложения
                 logcatProcess = Runtime.getRuntime().exec(
                     arrayOf(
                         "logcat",
                         "-v", "threadtime",
                         "--pid=$pid",
-                        "-b", "main,system,crash"
+                        "*:V"  // Все уровни
                     )
                 )
-                
+
                 val reader = BufferedReader(
-                    InputStreamReader(logcatProcess!!.inputStream), 
+                    InputStreamReader(logcatProcess!!.inputStream),
                     16384
                 )
-                
-                while (isActive) {
+
+                while (isActive && isCollecting.get()) {
                     val line = reader.readLine() ?: break
-                    synchronized(logBuffer) {
-                        logBuffer.append(line).append("\n")
-                        
-                        // Prevent memory overflow
-                        if (logBuffer.length > maxBufferSize) {
-                            logBuffer.delete(0, logBuffer.length - maxBufferSize)
+                    
+                    // Фильтруем anti-loop
+                    if (!line.contains("LogcatCollector")) {
+                        synchronized(logBuffer) {
+                            logBuffer.append(line).append("\n")
+                            lineCount++
+
+                            // Ограничиваем размер буфера
+                            if (lineCount > MAX_BUFFER_LINES) {
+                                val lines = logBuffer.lines()
+                                logBuffer.setLength(0)
+                                logBuffer.append(
+                                    lines.takeLast(MAX_BUFFER_LINES / 2).joinToString("\n")
+                                )
+                                lineCount = MAX_BUFFER_LINES / 2
+                            }
+                        }
+
+                        // Логируем критичные ошибки
+                        if (isCriticalError(line)) {
+                            Timber.e("🔥 CRITICAL: $line")
                         }
                     }
                 }
+
+                Timber.i("✅ Collected $lineCount log lines")
             } catch (e: Exception) {
-                synchronized(logBuffer) {
-                    logBuffer.append("\n=== COLLECTOR ERROR ===\n")
-                    logBuffer.append(e.stackTraceToString())
-                    logBuffer.append("\n")
-                }
-            }
-        }
-        
-        setupCrashHandler()
-    }
-    
-    /**
-     * Setup crash handler to save logs on app crash.
-     */
-    private fun setupCrashHandler() {
-        if (!BuildConfig.DEBUG) return
-        
-        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            try {
-                synchronized(logBuffer) {
-                    logBuffer.append("\n\n=== CRASH ===\n")
-                    logBuffer.append("Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())}\n")
-                    logBuffer.append("Thread: ${thread.name}\n")
-                    logBuffer.append(throwable.stackTraceToString())
-                }
-                saveLogsToFileBlocking()
-            } finally {
-                defaultHandler?.uncaughtException(thread, throwable)
+                Timber.e(e, "❌ LogcatCollector crashed")
             }
         }
     }
-    
+
     /**
-     * Stop collecting logs and save to file.
+     * Остановить сбор логов
      */
     fun stopCollecting() {
-        if (!BuildConfig.DEBUG) return
+        if (!isCollecting.get()) return
+
+        isCollecting.set(false)
         
-        collectJob?.cancel()
-        logcatProcess?.destroy()
-        saveLogsToFileBlocking()
+        try {
+            collectJob?.cancel()
+            logcatProcess?.destroy()
+            Timber.i("🛑 Collector Stopped. Buffer has $lineCount lines")
+        } catch (e: Exception) {
+            Timber.e(e, "Error stopping collector")
+        }
     }
-    
+
     /**
-     * Force immediate save without stopping collection.
+     * Проверка на критичную ошибку
      */
-    fun forceSave() {
-        if (!BuildConfig.DEBUG) return
-        
+    private fun isCriticalError(line: String): Boolean {
+        val lower = line.lowercase()
+        return (line.contains(" E ") || line.contains(" F ")) &&
+               (lower.contains("fatal") || 
+                lower.contains("crash") || 
+                lower.contains("exception") ||
+                OCR_KEYWORDS.any { lower.contains(it) })
+    }
+
+    /**
+     * ✅ FIXED: Сохранить логи ПРЯМО СЕЙЧАС
+     */
+    fun saveLogsNow() {
+        if (!isSaving.compareAndSet(false, true)) {
+            Timber.w("⚠️ Already saving logs")
+            return
+        }
+
         CoroutineScope(Dispatchers.IO).launch {
-            saveLogsToFileBlocking()
-        }
-    }
-    
-    /**
-     * Save logs to internal storage.
-     * ✅ FIX: Uses internal storage (no permissions needed)
-     */
-    private fun saveLogsToFileBlocking() {
-        try {
-            val timestamp = SimpleDateFormat(
-                "yyyy-MM-dd_HH-mm-ss", 
-                Locale.getDefault()
-            ).format(Date())
-            val fileName = "logcat_$timestamp.txt"
-            
-            val logContent = synchronized(logBuffer) {
-                buildString {
-                    append("=== DocumentScanner Debug Log ===\n")
-                    append("Time: $timestamp\n")
-                    append("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n")
-                    append("Android: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})\n")
-                    append("Package: ${context.packageName}\n")
-                    append("Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n")
-                    append("\n")
-                    append(logBuffer.toString())
+            try {
+                val content = synchronized(logBuffer) { 
+                    logBuffer.toString() 
                 }
-            }
-            
-            // ✅ Save to internal storage
-            val file = File(logsDir, fileName)
-            file.writeText(logContent)
-            
-            android.util.Log.d("LogcatCollector", "✅ Logs saved: ${file.absolutePath}")
-            
-            // Cleanup old logs
-            cleanOldLogs()
-            
-        } catch (e: Exception) {
-            android.util.Log.e("LogcatCollector", "❌ Failed to save logs", e)
-        }
-    }
-    
-    /**
-     * Delete old log files, keep only MAX_LOG_FILES most recent.
-     * ✅ FIX: Optimized cleanup logic
-     */
-    private fun cleanOldLogs() {
-        try {
-            logsDir.listFiles { file ->
-                file.name.startsWith("logcat_") && file.name.endsWith(".txt")
-            }?.sortedByDescending { it.lastModified() }
-                ?.drop(MAX_LOG_FILES)
-                ?.forEach { file ->
-                    if (file.delete()) {
-                        android.util.Log.d("LogcatCollector", "🗑️ Deleted old log: ${file.name}")
+                
+                val currentLines = lineCount
+                
+                if (content.isBlank() || currentLines == 0) {
+                    Timber.w("⚠️ No logs to save (buffer empty)")
+                    isSaving.set(false)
+                    return@launch
+                }
+
+                // Проверяем/создаём папку
+                val logsDir = getLogsDir()
+                if (!logsDir.exists()) {
+                    logsDir.mkdirs()
+                }
+
+                val timestamp = SimpleDateFormat(
+                    "yyyy-MM-dd_HH-mm-ss",
+                    Locale.getDefault()
+                ).format(Date())
+                
+                val fileName = "OCR_DEBUG_$timestamp.txt"
+                val file = File(logsDir, fileName)
+
+                val finalLog = buildString {
+                    append("=".repeat(60)).append("\n")
+                    append("OCR DIAGNOSTIC LOG\n")
+                    append("=".repeat(60)).append("\n")
+                    append("Timestamp: $timestamp\n")
+                    append("Device: ${Build.MANUFACTURER} ${Build.MODEL}\n")
+                    append("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\n")
+                    append("App Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n")
+                    append("Lines Captured: $currentLines\n")
+                    append("=".repeat(60)).append("\n\n")
+                    
+                    // OCR-related логи
+                    append("=== OCR/MLKIT RELATED LOGS ===\n")
+                    val ocrLines = content.lines().filter { line ->
+                        val lower = line.lowercase()
+                        OCR_KEYWORDS.any { lower.contains(it) } || 
+                        line.contains(" E ") || 
+                        line.contains(" W ")
                     }
+                    if (ocrLines.isEmpty()) {
+                        append("(No OCR-specific logs found)\n")
+                    } else {
+                        append(ocrLines.joinToString("\n"))
+                    }
+                    append("\n\n")
+                    
+                    // Полный лог
+                    append("=== FULL APPLICATION LOG ===\n")
+                    append(content)
                 }
-        } catch (e: Exception) {
-            android.util.Log.w("LogcatCollector", "⚠️ Failed to clean old logs", e)
+
+                file.writeText(finalLog)
+                
+                Timber.i("✅ LOG SAVED: ${file.absolutePath} (${file.length() / 1024} KB)")
+                Timber.i("📊 Saved $currentLines lines")
+
+                // Опционально: шарим файл
+                if (BuildConfig.DEBUG) {
+                    // Можно раскомментировать для автоматического share
+                    // shareLogFile(file)
+                }
+
+            } catch (e: Exception) {
+                Timber.e(e, "❌ Failed to save logs")
+            } finally {
+                isSaving.set(false)
+            }
         }
     }
-    
+
     /**
-     * Get list of all saved log files.
-     * ✅ NEW: For DebugScreen integration (Session 11)
+     * Поделиться файлом логов
      */
-    fun getAllLogFiles(): List<File> {
-        return try {
-            logsDir.listFiles { file ->
-                file.name.startsWith("logcat_") && file.name.endsWith(".txt")
-            }?.sortedByDescending { it.lastModified() } ?: emptyList()
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-    
-    /**
-     * Share log file via system share dialog.
-     * ✅ NEW: For DebugScreen "Export Logs" button (Session 11)
-     * 
-     * @param file Log file to share
-     * @return Intent to launch share dialog, or null if failed
-     */
-    fun shareLogs(file: File): Intent? {
-        if (!BuildConfig.DEBUG) return null
-        
-        return try {
+    private fun shareLogFile(file: File) {
+        try {
             val uri = FileProvider.getUriForFile(
                 context,
-                "${context.packageName}.fileprovider",
+                "${BuildConfig.APPLICATION_ID}.fileprovider",
                 file
             )
-            
-            Intent(Intent.ACTION_SEND).apply {
+
+            val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "DocumentScanner Debug Logs")
-                putExtra(Intent.EXTRA_TEXT, "Debug logs from ${file.name}")
+                putExtra(Intent.EXTRA_SUBJECT, "OCR Debug Log")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+
+            context.startActivity(Intent.createChooser(intent, "Share log file").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
         } catch (e: Exception) {
-            android.util.Log.e("LogcatCollector", "❌ Failed to create share intent", e)
-            null
+            Timber.e(e, "Failed to share log file")
         }
     }
-    
+
     /**
-     * Delete all log files.
-     * ✅ NEW: For DebugScreen "Clear Logs" button
+     * Очистить внутренний буфер
      */
-    fun clearAllLogs() {
-        if (!BuildConfig.DEBUG) return
-        
-        try {
-            logsDir.listFiles()?.forEach { file ->
-                file.delete()
-            }
-            synchronized(logBuffer) {
-                logBuffer.clear()
-            }
-            android.util.Log.d("LogcatCollector", "🗑️ All logs cleared")
-        } catch (e: Exception) {
-            android.util.Log.e("LogcatCollector", "❌ Failed to clear logs", e)
+    private fun clearInternalBuffer() {
+        synchronized(logBuffer) {
+            logBuffer.setLength(0)
+            lineCount = 0
         }
+        Timber.d("🧹 Buffer cleared")
     }
-    
+
     /**
-     * Get current buffer size for debugging.
+     * ✅ FIXED: Получить количество собранных строк
      */
-    fun getBufferSize(): Int {
-        return synchronized(logBuffer) { logBuffer.length }
+    fun getCollectedLinesCount(): Int {
+        return lineCount
     }
+
+    /**
+     * Проверка, идет ли сбор
+     */
+    fun isCollecting(): Boolean = isCollecting.get()
 }

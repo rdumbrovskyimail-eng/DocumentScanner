@@ -109,6 +109,12 @@ class AlarmScheduler @Inject constructor(
         timeUntilTerm: Long
     ): List<ReminderTime> {
         val reminders = mutableListOf<ReminderTime>()
+        val now = System.currentTimeMillis()
+        val earliestReminderTime = if (term.reminderMinutesBefore > 0) {
+            termTime - (term.reminderMinutesBefore * 60_000L)
+        } else {
+            Long.MAX_VALUE // disable pre-deadline reminders
+        }
         
         // Прогрессивные напоминания ДО дедлайна
         when {
@@ -143,19 +149,30 @@ class AlarmScheduler @Inject constructor(
                 reminders.add(ReminderTime(termTime - MIN_15, formatMessage(MSG_MIN_15, term.title), 11))
             }
         }
+
+        // Respect user reminderMinutesBefore: keep only reminders within selected window.
+        val filteredPre = reminders
+            .filter { it.time >= earliestReminderTime }
+            .filter { it.time > now }
+            .toMutableList()
+        reminders.clear()
+        reminders.addAll(filteredPre)
         
         // Главное уведомление (в момент дедлайна)
         reminders.add(ReminderTime(termTime, formatMessage(MSG_NOW, term.title), MAIN_ALARM_OFFSET))
         
         // Повторяющиеся напоминания ПОСЛЕ дедлайна (каждые 5 минут в течение часа)
-        for (i in 1..POST_DEADLINE_REMINDERS) {
-            reminders.add(
-                ReminderTime(
-                    termTime + (i * MIN_5),
-                    formatMessage(MSG_REMINDER, term.title),
-                    MAIN_ALARM_OFFSET + i
+        // Only if user enabled reminders.
+        if (term.reminderMinutesBefore > 0) {
+            for (i in 1..POST_DEADLINE_REMINDERS) {
+                reminders.add(
+                    ReminderTime(
+                        termTime + (i * MIN_5),
+                        formatMessage(MSG_REMINDER, term.title),
+                        MAIN_ALARM_OFFSET + i
+                    )
                 )
-            )
+            }
         }
         
         return reminders

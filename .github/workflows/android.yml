@@ -1,160 +1,119 @@
-# ================================================================================
-# Android CI/CD Pipeline
-# Version: 7.0.1 - FIXED (2026 Standards)
-#
-# ✅ FIX SERIOUS-7: Java 17 → Java 21
-#    build.gradle.kts требует Java 21 (compileOptions, kotlinOptions.jvmTarget)
-# ================================================================================
-
 name: Android CI
 
 on:
   push:
-    branches: [ main, master ]
-  workflow_dispatch:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    
+
     steps:
-    - uses: actions/checkout@v4
-    
-    # ✅ FIX SERIOUS-7: Java 21 вместо 17
-    # build.gradle.kts:
-    #   compileOptions { sourceCompatibility = JavaVersion.VERSION_21 }
-    #   kotlinOptions { jvmTarget = "21" }
+    - name: Checkout code
+      uses: actions/checkout@v4
+
     - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
         java-version: '21'
         distribution: 'temurin'
-    
-    # ✅ Кэширование Gradle
-    - name: Cache Gradle packages
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-          ~/.gradle/build-cache
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-
-    
-    # ✅ Кэширование Kotlin
-    - name: Cache Kotlin Native
-      uses: actions/cache@v4
-      with:
-        path: ~/.konan
-        key: ${{ runner.os }}-konan-${{ hashFiles('**/*.gradle*') }}
-        restore-keys: |
-          ${{ runner.os }}-konan-
-    
-    # ✅ Права на gradlew
-    - name: Make gradlew executable
-      run: chmod +x gradlew
-    
-    # ✅ Setup Gradle
+
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
-        
-    # ✅ Сборка
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-home-cache-cleanup: true
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
     - name: Build with Gradle
       id: build
       continue-on-error: true
-      run: ./gradlew assembleDebug --stacktrace
-      
-    # ⚠️ ВАЖНО: always() чтобы выполнялось даже при ошибке!
-    - name: Get commit info
-      if: always()
-      id: commit
       run: |
-        echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        echo "date=$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+        ./gradlew assembleDebug --stacktrace --no-daemon 2>&1 | tee build_output.log
+        echo "BUILD_EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
+
+    - name: Extract errors
+      if: env.BUILD_EXIT_CODE != '0'
+      run: |
+        echo "=== BUILD ERRORS $(date '+%Y-%m-%d %H:%M:%S') ===" > errors.txt
+        echo "" >> errors.txt
         
-    # ✅ Создание Release (только при успехе)
-    - name: Create Release
-      if: steps.build.outcome == 'success'
-      id: create_release
-      uses: softprops/action-gh-release@v2
+        # Kotlin compilation errors
+        if grep -q "^e:" build_output.log; then
+          echo "--- KOTLIN ERRORS ---" >> errors.txt
+          grep "^e:" build_output.log >> errors.txt
+          echo "" >> errors.txt
+        fi
+        
+        # KAPT/KSP errors
+        if grep -qE "(kapt|ksp).*error" build_output.log; then
+          echo "--- KAPT/KSP ERRORS ---" >> errors.txt
+          grep -E "(kapt|ksp).*error" build_output.log >> errors.txt
+          echo "" >> errors.txt
+        fi
+        
+        # Unresolved references
+        if grep -q "Unresolved reference" build_output.log; then
+          echo "--- UNRESOLVED REFERENCES ---" >> errors.txt
+          grep "Unresolved reference" build_output.log | sort -u >> errors.txt
+          echo "" >> errors.txt
+        fi
+        
+        # Type mismatch errors
+        if grep -q "Type mismatch" build_output.log; then
+          echo "--- TYPE MISMATCHES ---" >> errors.txt
+          grep -A1 "Type mismatch" build_output.log >> errors.txt
+          echo "" >> errors.txt
+        fi
+        
+        # Missing dependencies
+        if grep -qE "Could not (find|resolve)" build_output.log; then
+          echo "--- MISSING DEPENDENCIES ---" >> errors.txt
+          grep -E "Could not (find|resolve)" build_output.log >> errors.txt
+          echo "" >> errors.txt
+        fi
+        
+        # Resource errors
+        if grep -qE "AAPT|resource.*not found" build_output.log; then
+          echo "--- RESOURCE ERRORS ---" >> errors.txt
+          grep -E "(AAPT|resource.*not found)" build_output.log >> errors.txt
+          echo "" >> errors.txt
+        fi
+        
+        # FAILURE summary
+        if grep -q "FAILURE:" build_output.log; then
+          echo "--- BUILD FAILURE SUMMARY ---" >> errors.txt
+          sed -n '/FAILURE:/,/BUILD FAILED/p' build_output.log >> errors.txt
+        fi
+        
+        # Exception stacktraces (compact)
+        if grep -q "Exception\|Error:" build_output.log; then
+          echo "--- EXCEPTIONS ---" >> errors.txt
+          grep -A20 "Exception:\|Error:" build_output.log | head -80 >> errors.txt
+        fi
+        
+        echo "" >> errors.txt
+        echo "=== TOTAL ERRORS: $(grep -c "^e:" build_output.log 2>/dev/null || echo 0) ===" >> errors.txt
+
+    - name: Upload errors
+      if: env.BUILD_EXIT_CODE != '0'
+      uses: actions/upload-artifact@v4
       with:
-        tag_name: build-${{ steps.commit.outputs.date }}
-        name: Build ${{ steps.commit.outputs.short_sha }}
-        body: |
-          🤖 Автоматическая сборка
-          📱 Commit: ${{ github.event.head_commit.message }}
-          👤 Автор: ${{ github.actor }}
-          🕐 Время: ${{ steps.commit.outputs.date }}
-        files: app/build/outputs/apk/debug/*.apk
-        draft: false
-        prerelease: true
-      continue-on-error: true
-    
-    # ✅ Отправка успешного уведомления (только если Release создан)
-    - name: Send Success Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome == 'success'
-      run: |
-        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-        APK_NAME=$(basename "$APK_PATH")
-        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/build-${{ steps.commit.outputs.date }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="✅ <b>APK собран успешно!</b>
-        
-        📱 Файл: <code>${APK_NAME}</code>
-        📦 Размер: ${APK_SIZE}
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        📥 <a href='${RELEASE_URL}'>Скачать APK</a>"
-    
-    # ⚠️ Уведомление если сборка прошла, но Release не создался
-    - name: Send Release Failure Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome != 'success'
-      run: |
-        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-        APK_NAME=$(basename "$APK_PATH")
-        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="⚠️ <b>APK собран, но Release не создан!</b>
-        
-        📱 Файл: <code>${APK_NAME}</code>
-        📦 Размер: ${APK_SIZE}
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        ⚠️ Проверьте права доступа к репозиторию
-        🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Посмотреть логи</a>"
-    
-    # ❌ Уведомление об ошибке сборки
-    - name: Send Build Failure Notification to Telegram
-      if: steps.build.outcome == 'failure'
-      run: |
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="❌ <b>Сборка упала!</b>
-        
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Посмотреть логи</a>"
+        name: build-errors
+        path: errors.txt
+        retention-days: 14
+
+    - name: Upload APK
+      if: env.BUILD_EXIT_CODE == '0'
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug
+        path: app/build/outputs/apk/debug/*.apk
+        retention-days: 7
+
+    - name: Fail if build failed
+      if: env.BUILD_EXIT_CODE != '0'
+      run: exit 1
