@@ -1,17 +1,14 @@
 /*
  * MlkitSettingsSection.kt
- * Version: 9.0.0 - GEMINI OCR + API KEYS INTEGRATED (2026)
+ * Version: 10.0.0 - SOURCE INDICATOR + GEMINI FALLBACK UI (2026)
  * 
- * ✅ PHASE 2 INTEGRATION COMPLETE:
- * - GeminiOcrSettingsSection added
- * - ApiKeysSettingsSection added
- * - Full settings flow: ML Kit → Gemini → API Keys
+ * ✅ NEW IN 10.0.0:
+ * - Shows "Scanned by: ML Kit" or "Scanned by: Gemini AI" badge
+ * - Color-coded source badge (blue for ML Kit, purple for Gemini)
+ * - Gemini fallback reason display with timing
+ * - Processing time breakdown
  * 
- * CHANGES FROM 8.0.0:
- * - Added Gemini OCR fallback settings section
- * - Added API Keys management section
- * - Added dividers between sections
- * - Connected to ViewModel methods
+ * LOCATION: com.docs.scanner.presentation.screens.settings.components
  */
 
 package com.docs.scanner.presentation.screens.settings.components
@@ -21,6 +18,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -47,6 +45,7 @@ import coil3.compose.AsyncImage
 import com.docs.scanner.data.remote.mlkit.OcrScriptMode
 import com.docs.scanner.data.remote.mlkit.OcrTestResult
 import com.docs.scanner.data.local.security.ApiKeyEntry
+import com.docs.scanner.domain.core.OcrSource
 
 @Composable
 fun MlkitSettingsSection(
@@ -61,13 +60,13 @@ fun MlkitSettingsSection(
     onImageSelected: (Uri?) -> Unit,
     onTestOcr: () -> Unit,
     onClearTestResult: () -> Unit,
-    // ✅ NEW: Gemini OCR callbacks
+    // Gemini OCR callbacks
     onGeminiOcrEnabledChange: (Boolean) -> Unit,
     onGeminiOcrThresholdChange: (Int) -> Unit,
     onGeminiOcrAlwaysChange: (Boolean) -> Unit,
-    // ✅ NEW: Test Gemini fallback
+    // Test Gemini fallback
     onTestGeminiFallbackChange: (Boolean) -> Unit,
-    // ✅ NEW: API Keys callbacks
+    // API Keys callbacks
     onAddApiKey: (key: String, label: String) -> Unit,
     onRemoveApiKey: (key: String) -> Unit,
     onSetPrimaryApiKey: (key: String) -> Unit,
@@ -378,7 +377,7 @@ fun MlkitSettingsSection(
             }
 
             // ════════════════════════════════════════════════════════════════
-            // ✅ NEW SECTION: GEMINI OCR FALLBACK
+            // GEMINI OCR FALLBACK SECTION
             // ════════════════════════════════════════════════════════════════
             
             Spacer(modifier = Modifier.height(24.dp))
@@ -395,7 +394,7 @@ fun MlkitSettingsSection(
             )
 
             // ════════════════════════════════════════════════════════════════
-            // ✅ NEW SECTION: API KEYS MANAGEMENT
+            // API KEYS SECTION
             // ════════════════════════════════════════════════════════════════
             
             Spacer(modifier = Modifier.height(24.dp))
@@ -412,7 +411,7 @@ fun MlkitSettingsSection(
             )
 
             // ════════════════════════════════════════════════════════════════
-            // ✅ TEST GEMINI FALLBACK (OPTIONAL)
+            // TEST GEMINI FALLBACK CHECKBOX
             // ════════════════════════════════════════════════════════════════
             
             AnimatedVisibility(
@@ -446,7 +445,7 @@ fun MlkitSettingsSection(
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = "Simulate low ML Kit confidence to test Gemini OCR",
+                                    text = "Force Gemini OCR to test handwriting recognition",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -460,7 +459,7 @@ fun MlkitSettingsSection(
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// HELPER COMPOSABLES (unchanged from 8.0.0)
+// HELPER COMPOSABLES
 // ════════════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -559,6 +558,10 @@ private fun SettingToggleRow(
     }
 }
 
+// ════════════════════════════════════════════════════════════════════════════════
+// ✅ UPDATED: OcrTestResultView with Source Indicator
+// ════════════════════════════════════════════════════════════════════════════════
+
 @Composable
 private fun OcrTestResultView(
     result: OcrTestResult,
@@ -577,21 +580,36 @@ private fun OcrTestResultView(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // ════════════════════════════════════════════════════════════════
+            // HEADER with Source Badge
+            // ════════════════════════════════════════════════════════════════
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "OCR Result",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "OCR Result",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    // ✅ NEW: Source Badge
+                    SourceBadge(source = result.source)
+                }
+                
                 IconButton(onClick = onClear) {
                     Icon(Icons.Default.Close, contentDescription = "Clear result")
                 }
             }
 
+            // ════════════════════════════════════════════════════════════════
+            // STATS ROW
+            // ════════════════════════════════════════════════════════════════
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -620,27 +638,48 @@ private fun OcrTestResultView(
 
             HorizontalDivider()
 
+            // ════════════════════════════════════════════════════════════════
+            // CHIPS ROW
+            // ════════════════════════════════════════════════════════════════
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 result.detectedLanguage?.let { lang ->
                     AssistChip(
                         onClick = {},
                         label = { Text("Language: ${lang.displayName}") },
-                        leadingIcon = { Icon(Icons.Default.Language, null, modifier = Modifier.size(18.dp)) }
+                        leadingIcon = { 
+                            Icon(Icons.Default.Language, null, modifier = Modifier.size(18.dp)) 
+                        }
                     )
                 }
                 result.detectedScript?.let { script ->
                     AssistChip(
                         onClick = {},
                         label = { Text("Script: ${script.displayName}") },
-                        leadingIcon = { Icon(Icons.Default.TextFields, null, modifier = Modifier.size(18.dp)) }
+                        leadingIcon = { 
+                            Icon(Icons.Default.TextFields, null, modifier = Modifier.size(18.dp)) 
+                        }
                     )
                 }
             }
 
-            if (result.lowConfidenceWords > 0) {
+            // ════════════════════════════════════════════════════════════════
+            // ✅ NEW: Gemini Fallback Info
+            // ════════════════════════════════════════════════════════════════
+            if (result.geminiFallbackTriggered) {
+                GeminiFallbackInfoCard(
+                    reason = result.geminiFallbackReason,
+                    geminiTime = result.geminiProcessingTimeMs,
+                    success = result.source == OcrSource.GEMINI
+                )
+            }
+
+            // ════════════════════════════════════════════════════════════════
+            // LOW CONFIDENCE WARNING
+            // ════════════════════════════════════════════════════════════════
+            if (result.lowConfidenceWords > 0 && result.source == OcrSource.ML_KIT) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -667,6 +706,9 @@ private fun OcrTestResultView(
 
             HorizontalDivider()
 
+            // ════════════════════════════════════════════════════════════════
+            // RECOGNIZED TEXT
+            // ════════════════════════════════════════════════════════════════
             Text(
                 text = "Recognized Text:",
                 style = MaterialTheme.typography.labelLarge
@@ -693,7 +735,7 @@ private fun OcrTestResultView(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        } else if (highlightLowConfidence && result.lowConfidenceRanges.isNotEmpty()) {
+                        } else if (highlightLowConfidence && result.lowConfidenceRanges.isNotEmpty() && result.source == OcrSource.ML_KIT) {
                             Text(
                                 text = buildHighlightedText(
                                     text = result.text,
@@ -711,7 +753,10 @@ private fun OcrTestResultView(
                 }
             }
 
-            if (showWordConfidences && result.wordConfidences.isNotEmpty()) {
+            // ════════════════════════════════════════════════════════════════
+            // WORD CONFIDENCES (optional)
+            // ════════════════════════════════════════════════════════════════
+            if (showWordConfidences && result.wordConfidences.isNotEmpty() && result.source == OcrSource.ML_KIT) {
                 HorizontalDivider()
                 
                 Text(
@@ -747,6 +792,115 @@ private fun OcrTestResultView(
         }
     }
 }
+
+// ════════════════════════════════════════════════════════════════════════════════
+// ✅ NEW: Source Badge Composable
+// ════════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun SourceBadge(source: OcrSource) {
+    val (text, color, icon) = when (source) {
+        OcrSource.ML_KIT -> Triple("ML Kit", Color(0xFF2196F3), Icons.Default.PhoneAndroid)
+        OcrSource.GEMINI -> Triple("Gemini AI", Color(0xFF9C27B0), Icons.Default.AutoAwesome)
+        OcrSource.UNKNOWN -> Triple("Unknown", Color(0xFF9E9E9E), Icons.Default.Help)
+    }
+    
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = color.copy(alpha = 0.15f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = color
+            )
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = color
+            )
+        }
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// ✅ NEW: Gemini Fallback Info Card
+// ════════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun GeminiFallbackInfoCard(
+    reason: String?,
+    geminiTime: Long?,
+    success: Boolean
+) {
+    val containerColor = if (success) {
+        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+    } else {
+        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+    }
+    
+    val iconColor = if (success) {
+        MaterialTheme.colorScheme.tertiary
+    } else {
+        MaterialTheme.colorScheme.error
+    }
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = containerColor)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Icon(
+                imageVector = if (success) Icons.Default.AutoAwesome else Icons.Default.Warning,
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(20.dp)
+            )
+            
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = if (success) "✨ Gemini AI used" else "⚠️ Gemini fallback failed",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                
+                reason?.let {
+                    Text(
+                        text = "Reason: $it",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                geminiTime?.let {
+                    Text(
+                        text = "Gemini processing: ${it}ms",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// OTHER HELPER COMPOSABLES
+// ════════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun StatItem(
