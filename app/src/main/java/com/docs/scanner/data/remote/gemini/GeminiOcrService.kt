@@ -22,7 +22,11 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileNotFoundException
 import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -45,6 +49,10 @@ import javax.inject.Singleton
  * - Explicit IO dispatcher for network operations
  * - Improved error handling without batch interruption
  * - Better progress tracking with ETA
+ * 
+ * ✅ FIXED in 2026:
+ * - Universal URI loading (file:// + content://)
+ * - Proper bitmap lifecycle management
  */
 @Singleton
 class GeminiOcrService @Inject constructor(
@@ -307,27 +315,80 @@ If the image contains absolutely no readable text, return exactly: [NO_TEXT_FOUN
         )
     }
     
+    /**
+     * ✅ НОВЫЙ МЕТОД: Универсальное открытие InputStream для любых URI
+     * Работает с content://, file://, и абсолютными путями
+     */
+    private fun openInputStreamForUri(uri: Uri): InputStream {
+        val scheme = uri.scheme?.lowercase()
+        
+        return when (scheme) {
+            "content" -> {
+                context.contentResolver.openInputStream(uri)
+                    ?: throw IOException("ContentResolver returned null for: $uri")
+            }
+            
+            "file" -> {
+                val path = uri.path 
+                    ?: throw IOException("File URI has no path: $uri")
+                
+                val file = File(path)
+                if (!file.exists()) {
+                    throw FileNotFoundException("File does not exist: $path")
+                }
+                if (!file.canRead()) {
+                    throw IOException("Cannot read file: $path")
+                }
+                FileInputStream(file)
+            }
+            
+            null, "" -> {
+                // Absolute path without scheme
+                val path = uri.toString()
+                val file = File(path)
+                if (!file.exists()) {
+                    throw FileNotFoundException("File does not exist: $path")
+                }
+                FileInputStream(file)
+            }
+            
+            else -> {
+                throw IOException("Unsupported URI scheme '$scheme': $uri")
+            }
+        }
+    }
+    
     private suspend fun loadAndEncodeImage(uri: Uri): String = withContext(Dispatchers.IO) {
         // First pass - get dimensions
         val options = BitmapFactory.Options().apply {
             inJustDecodeBounds = true
         }
         
-        context.contentResolver.openInputStream(uri)?.use { stream ->
+        openInputStreamForUri(uri).use { stream ->
             BitmapFactory.decodeStream(stream, null, options)
-        } ?: throw IOException("Cannot open image: $uri")
+        }
+        
+        if (options.outWidth <= 0 || options.outHeight <= 0) {
+            throw IOException("Failed to decode image dimensions from URI: $uri")
+        }
         
         // Calculate sample size for memory efficiency
         val sampleSize = calculateSampleSize(options.outWidth, options.outHeight)
+        
+        if (BuildConfig.DEBUG) {
+            Timber.d("$TAG: Image loading:")
+            Timber.d("$TAG:    ├─ Dimensions: ${options.outWidth}x${options.outHeight}")
+            Timber.d("$TAG:    └─ Sample size: $sampleSize")
+        }
         
         // Second pass - decode with sample size
         options.inJustDecodeBounds = false
         options.inSampleSize = sampleSize
         options.inPreferredConfig = Bitmap.Config.ARGB_8888
         
-        val bitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
+        val bitmap = openInputStreamForUri(uri).use { stream ->
             BitmapFactory.decodeStream(stream, null, options)
-        } ?: throw IOException("Cannot decode image: $uri")
+        } ?: throw IOException("Failed to decode bitmap from URI: $uri")
         
         try {
             // Scale down if still too large
