@@ -752,17 +752,17 @@ class SettingsViewModel @Inject constructor(
     // ═══════════════════════════════════════════════════════════════════════════
 
     fun refreshDriveBackups() {
-        viewModelScope.launch {
-            when (val r = useCases.backup.listGoogleDriveBackups()) {
-                is DomainResult.Success -> {
-                    _driveBackups.value = r.data.sortedByDescending { it.timestamp }
-                }
-                is DomainResult.Failure -> {
-                    Timber.e("Failed to list Drive backups: ${r.error.messageTimber.e("Failed to list Drive backups: ${r.error.message}")
-                }
+    viewModelScope.launch {
+        when (val r = useCases.backup.listGoogleDriveBackups()) {
+            is DomainResult.Success -> {
+                _driveBackups.value = r.data.sortedByDescending { it.timestamp }
+            }
+            is DomainResult.Failure -> {
+                Timber.e("Failed to list Drive backups: ${r.error.message}")
             }
         }
     }
+}
 
     fun signInGoogleDrive(context: Context, launcher: ActivityResultLauncher<Intent>) {
         try {
