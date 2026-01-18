@@ -8,6 +8,9 @@
  * - setGeminiOcrEnabled(), setGeminiOcrThreshold(), setGeminiOcrAlways() methods
  * - getOcrQualityThresholds() helper for OcrQualityAnalyzer integration
  *
+ * ✅ UPDATED 2026:
+ * - Default Gemini threshold changed from 50% to 65% for printed text
+ *
  * ✅ FIX SERIOUS-2: Убран собственный delegate, DataStore инжектится из Hilt
  *
  * DataStore for app settings.
@@ -481,15 +484,19 @@ class SettingsDataStore @Inject constructor(
         .map { prefs -> prefs[KEY_GEMINI_OCR_ENABLED] ?: true }
     
     /**
+     * ✅ ОБНОВЛЕНО 2026: Порог 65% для печатного текста
+     * 
      * Confidence threshold (0-100) below which Gemini fallback triggers.
-     * Default: 50 (50%)
+     * 
+     * Старое значение: 50% (слишком мягко)
+     * Новое значение: 65% (сбалансировано)
      */
     val geminiOcrThreshold: Flow<Int> = dataStore.data
         .catch { e ->
             Timber.e(e, "Error reading geminiOcrThreshold")
             emit(emptyPreferences())
         }
-        .map { prefs -> prefs[KEY_GEMINI_OCR_THRESHOLD] ?: 50 }
+        .map { prefs -> prefs[KEY_GEMINI_OCR_THRESHOLD] ?: 65 } // ✅ Изменено с 50 на 65
     
     /**
      * Whether to always use Gemini for OCR (skip ML Kit).
