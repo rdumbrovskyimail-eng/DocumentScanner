@@ -1,6 +1,9 @@
 /*
  * SettingsViewModel.kt
- * Version: 15.0.0 - TRANSLATION TEST + AUTO-TRANSLATION (2026)
+ * Version: 15.0.1 - TRANSLATION TEST + AUTO-TRANSLATION (2026)
+ * 
+ * ✅ FIXED in 15.0.1:
+ * - Fixed translateText() parameter names (sourceLanguage → source, targetLanguage → target)
  * 
  * ✅ NEW in 15.0.0:
  * - Translation test methods (setTranslationTestText, testTranslation, etc.)
@@ -755,7 +758,7 @@ class SettingsViewModel @Inject constructor(
                     _driveBackups.value = r.data.sortedByDescending { it.timestamp }
                 }
                 is DomainResult.Failure -> {
-                    Timber.e("Failed to list Drive backups: ${r.error.message}")
+                    Timber.e("Failed to list Drive backups: ${r.error.messageTimber.e("Failed to list Drive backups: ${r.error.message}")
                 }
             }
         }
@@ -1126,7 +1129,8 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * ✅ ОБНОВЛЕНО: Запускает тест OCR с автопереводом
+     * ✅ FIXED: Запускает тест OCR с автопереводом
+     * Fixed parameter names: sourceLanguage → source, targetLanguage → target
      */
     fun runMlkitOcrTest() {
         val currentState = _mlkitSettings.value
@@ -1188,20 +1192,21 @@ class SettingsViewModel @Inject constructor(
                                 
                                 val translationStart = System.currentTimeMillis()
                                 
+                                // ✅ FIXED: Changed parameter names
                                 when (val translateResult = useCases.translation.translateText(
                                     text = ocrData.text,
-                                    sourceLanguage = ocrData.detectedLanguage ?: Language.AUTO,
-                                    targetLanguage = translationTargetLang
+                                    source = ocrData.detectedLanguage ?: Language.AUTO,
+                                    target = translationTargetLang
                                 )) {
-                                    is DomainResult.Success<*> -> {
-                                        translatedText = translateResult.data.toString()
+                                    is DomainResult.Success -> {
+                                        translatedText = translateResult.data.translatedText
                                         translationTime = System.currentTimeMillis() - translationStart
                                         
                                         if (BuildConfig.DEBUG) {
                                             Timber.d("✅ Auto-translation successful in ${translationTime}ms")
                                         }
                                     }
-                                    is DomainResult.Failure<*> -> {
+                                    is DomainResult.Failure -> {
                                         Timber.w("⚠️ Auto-translation failed: ${translateResult.error.message}")
                                     }
                                 }
@@ -1288,6 +1293,10 @@ class SettingsViewModel @Inject constructor(
         _mlkitSettings.update { it.copy(translationTargetLang = lang) }
     }
 
+    /**
+     * ✅ FIXED: Tests translation with correct parameter names
+     * Fixed parameter names: sourceLanguage → source, targetLanguage → target
+     */
     fun testTranslation() {
         val state = _mlkitSettings.value
         
@@ -1303,16 +1312,17 @@ class SettingsViewModel @Inject constructor(
             
             val start = System.currentTimeMillis()
             
+            // ✅ FIXED: Changed parameter names
             when (val result = useCases.translation.translateText(
                 text = state.translationTestText,
-                sourceLanguage = state.translationSourceLang,
-                targetLanguage = state.translationTargetLang
+                source = state.translationSourceLang,
+                target = state.translationTargetLang
             )) {
-                is DomainResult.Success<*> -> {
+                is DomainResult.Success -> {
                     val time = System.currentTimeMillis() - start
                     _mlkitSettings.update {
                         it.copy(
-                            translationResult = result.data.toString(),
+                            translationResult = result.data.translatedText,
                             isTranslating = false,
                             translationError = null
                         )
@@ -1325,7 +1335,7 @@ class SettingsViewModel @Inject constructor(
                     }
                 }
                 
-                is DomainResult.Failure<*> -> {
+                is DomainResult.Failure -> {
                     _mlkitSettings.update {
                         it.copy(
                             translationResult = null,
