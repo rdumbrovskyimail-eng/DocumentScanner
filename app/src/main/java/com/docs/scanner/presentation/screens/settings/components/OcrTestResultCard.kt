@@ -9,9 +9,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Compare
-import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -23,9 +23,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.docs.scanner.data.remote.mlkit.OcrTestResult
+import com.docs.scanner.domain.core.OcrSource
 
 /**
- * Displays OCR test results including Gemini comparison if available.
+ * Displays OCR test results with Gemini fallback information.
+ * 
+ * ✅ FIXED: Uses only fields that actually exist in OcrTestResult.
  */
 @Composable
 fun OcrTestResultCard(
@@ -39,7 +42,7 @@ fun OcrTestResultCard(
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Header with quality
+            // Header with quality and source
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -49,15 +52,17 @@ fun OcrTestResultCard(
                     style = MaterialTheme.typography.titleMedium
                 )
                 Spacer(modifier = Modifier.weight(1f))
+                SourceBadge(source = result.source)
+                Spacer(modifier = Modifier.width(8.dp))
                 QualityBadge(quality = result.qualityRating)
             }
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            // ML Kit Stats
+            // Stats
             StatsRow(
-                icon = Icons.Default.Speed,
-                label = "ML Kit",
+                icon = if (result.source == OcrSource.GEMINI) Icons.Default.AutoAwesome else Icons.Default.Speed,
+                label = result.sourceDisplayName,
                 stats = listOf(
                     "Confidence: ${result.confidencePercent}",
                     "Words: ${result.totalWords}",
@@ -65,66 +70,50 @@ fun OcrTestResultCard(
                 )
             )
             
-            // Quality metrics
-            result.qualityMetrics?.let { metrics ->
+            // Gemini fallback info (if triggered)
+            if (result.geminiFallbackTriggered) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Quality: ${metrics.quality.name}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = when (metrics.quality.name) {
-                        "EXCELLENT", "GOOD" -> MaterialTheme.colorScheme.primary
-                        "FAIR" -> MaterialTheme.colorScheme.tertiary
-                        else -> MaterialTheme.colorScheme.error
+                
+                result.geminiFallbackReason?.let { reason ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Fallback reason: $reason",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
                     }
-                )
-                if (metrics.isLikelyHandwritten) {
-                    Text(
-                        text = "📝 Likely handwritten text detected",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
                 }
-                if (metrics.fallbackReasons.isNotEmpty()) {
+                
+                result.geminiProcessingTimeMs?.let { time ->
                     Text(
-                        text = "⚠️ ${metrics.fallbackReasons.first()}",
+                        text = "Gemini processing: ${time}ms",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
             
-            // Gemini comparison (if available)
-            AnimatedVisibility(visible = result.hasGeminiComparison) {
-                Column {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    StatsRow(
-                        icon = Icons.Default.Psychology,
-                        label = "Gemini",
-                        stats = listOf(
-                            "Characters: ${result.geminiText?.length ?: 0}",
-                            "Time: ${result.geminiProcessingTimeMs}ms"
-                        )
+            // Low confidence warning
+            if (result.lowConfidenceWords > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
                     )
-                    
-                    result.geminiImprovement?.let { improvement ->
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Compare,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.secondary
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = improvement,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                        }
-                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${result.lowConfidenceWords} low confidence words",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
             
@@ -134,7 +123,7 @@ fun OcrTestResultCard(
             Spacer(modifier = Modifier.height(12.dp))
             
             Text(
-                text = "ML Kit Text:",
+                text = "Recognized Text:",
                 style = MaterialTheme.typography.labelMedium
             )
             Text(
@@ -142,23 +131,39 @@ fun OcrTestResultCard(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 4.dp)
             )
-            
-            // Gemini text (if different)
-            if (result.geminiText != null && result.geminiText != result.text) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Gemini Text:",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-                Text(
-                    text = result.geminiText.take(500) + if (result.geminiText.length > 500) "..." else "",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
         }
+    }
+}
+
+@Composable
+private fun SourceBadge(source: OcrSource) {
+    val (text, color, bgColor) = when (source) {
+        OcrSource.ML_KIT -> Triple(
+            "ML Kit",
+            MaterialTheme.colorScheme.primary,
+            MaterialTheme.colorScheme.primaryContainer
+        )
+        OcrSource.GEMINI -> Triple(
+            "Gemini",
+            MaterialTheme.colorScheme.secondary,
+            MaterialTheme.colorScheme.secondaryContainer
+        )
+        OcrSource.UNKNOWN -> Triple(
+            "Unknown",
+            MaterialTheme.colorScheme.onSurface,
+            MaterialTheme.colorScheme.surfaceVariant
+        )
+    }
+    
+    Card(
+        colors = CardDefaults.cardColors(containerColor = bgColor)
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
     }
 }
 
