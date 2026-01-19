@@ -15,6 +15,13 @@ import javax.inject.Singleton
 /**
  * Manages multiple Gemini API keys with automatic failover.
  * 
+ * Version: 2.0.0 - SPEED OPTIMIZED (2026)
+ * 
+ * ✅ NEW IN 2.0.0:
+ * - Reduced maxRetries from 3 to 2 for faster failover
+ * - Reduced INITIAL_BACKOFF_MS from 1000 to 300
+ * - Reduced MAX_BACKOFF_MS from 30000 to 5000
+ * 
  * Features:
  * - Automatic switch to backup key on failure
  * - Rate limit handling (429)
@@ -37,8 +44,10 @@ class GeminiKeyManager @Inject constructor(
         private const val TAG = "GeminiKeyManager"
         private const val MAX_ERRORS_BEFORE_COOLDOWN = 3
         private const val ERROR_COOLDOWN_MS = 5 * 60 * 1000L // 5 minutes
-        private const val INITIAL_BACKOFF_MS = 1000L
-        private const val MAX_BACKOFF_MS = 30000L
+        
+        // ✅ OPTIMIZED: Faster backoff for better UX
+        private const val INITIAL_BACKOFF_MS = 300L    // Was 1000
+        private const val MAX_BACKOFF_MS = 5000L       // Was 30000
     }
     
     private val currentKeyIndex = AtomicInteger(0)
@@ -123,13 +132,15 @@ class GeminiKeyManager @Inject constructor(
     /**
      * Executes an operation with automatic failover between API keys.
      * 
-     * @param maxRetries Maximum number of keys to try
+     * ✅ OPTIMIZED: Reduced maxRetries from 3 to 2 for faster failover
+     * 
+     * @param maxRetries Maximum number of keys to try (default: 2)
      * @param operation The API operation to execute
      * @return Result of the operation
      * @throws Exception if all keys fail
      */
     suspend fun <T> executeWithFailover(
-        maxRetries: Int = 3,
+        maxRetries: Int = 2,  // ✅ Reduced from 3
         operation: suspend (apiKey: String) -> T
     ): T {
         val triedKeys = mutableSetOf<String>()
