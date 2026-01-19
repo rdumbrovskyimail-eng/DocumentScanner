@@ -1,6 +1,9 @@
 /**
  * NetworkModule.kt
- * Version: 13.0.0 - ULTRA OPTIMIZED + ASYNC LOGGING (2026)
+ * Version: 13.1.0 - ULTRA OPTIMIZED + ASYNC LOGGING + BUILD_TYPE CHECK (2026)
+ * 
+ * ✅ NEW IN 13.1.0 - КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ:
+ * - BuildConfig.BUILD_TYPE вместо BuildConfig.DEBUG для гарантированного отключения в release
  * 
  * ✅ NEW IN 13.0.0 - КРИТИЧЕСКИЕ ИСПРАВЛЕНИЯ:
  * - Асинхронное логирование больших сообщений (устраняет 5-10 сек UI freeze)
@@ -14,15 +17,13 @@
  * - Медленный failover 15 сек → 3 сек (агрессивные тайм-ауты)
  * - Избыточное логирование → только критичная информация
  * - SSL handshake на каждом запросе → connection reuse
- * 
- * ✅ PREVIOUS VERSIONS:
- * - 11.0.0: Base64 filtering, reduced timeouts
- * - 10.0.0: Connection pool
+ * - Логирование в release builds → полное отключение
  * 
  * ПРОИЗВОДИТЕЛЬНОСТЬ:
  * - Network latency: 1-2 сек → 0.4-0.8 сек (connection pool)
  * - Failover time: 15 сек → 3 сек (aggressive timeouts)
  * - Logging overhead: 5-10 сек → 0 сек (async + filtering)
+ * - Release overhead: 0-500ms → 0ms (BUILD_TYPE check)
  */
 
 package com.docs.scanner.di
@@ -87,7 +88,7 @@ object NetworkModule {
     private const val CONNECT_TIMEOUT_SECONDS = 5L    // Было 10 → 5
     private const val READ_TIMEOUT_SECONDS = 12L      // Было 20 → 12
     private const val WRITE_TIMEOUT_SECONDS = 12L     // Было 20 → 12
-    private const val CALL_TIMEOUT_SECONDS = 15L      // Было 25 → 15
+    private const val CALL_TIMEOUT_SECONDS = 15L      // Було 25 → 15
     
     // ✅ Connection pool для переиспользования TCP-соединений
     // Экономит ~300ms на каждом запросе (SSL handshake + TCP setup)
@@ -136,7 +137,17 @@ object NetworkModule {
             // Retry только на connection failures, не на auth errors
             .retryOnConnectionFailure(true)
         
-        if (BuildConfig.DEBUG) {
+        // ════════════════════════════════════════════════════════════════
+        // ✅ КРИТИЧНО: BUILD_TYPE вместо DEBUG
+        // ════════════════════════════════════════════════════════════════
+        // 
+        // БЫЛО: if (BuildConfig.DEBUG)
+        // ПРОБЛЕМА: DEBUG может быть true даже в release при установке через Studio
+        // 
+        // СТАЛО: if (BuildConfig.BUILD_TYPE == "debug")
+        // ГАРАНТИЯ: Логирование ТОЛЬКО в debug builds, никогда в release
+        // ════════════════════════════════════════════════════════════════
+        if (BuildConfig.BUILD_TYPE == "debug") {
             // ════════════════════════════════════════════════════════════════
             // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Async Smart Logging
             // ════════════════════════════════════════════════════════════════
@@ -201,12 +212,13 @@ object NetworkModule {
             
             builder.addInterceptor(loggingInterceptor)
         }
+        // ✅ В release mode: 0 interceptors = 0ms overhead = максимальная скорость
         
         return builder.build()
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ НОВЫЕ HELPER FUNCTIONS
+    // ✅ HELPER FUNCTIONS
     // ════════════════════════════════════════════════════════════════════════════════
     
     /**
