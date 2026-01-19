@@ -1,22 +1,29 @@
 /**
  * SettingsDataStore.kt
- * Version: 9.0.0 - GEMINI MODEL SELECTION + SPEED OPTIMIZATION (2026)
+ * Version: 10.0.0 - GEMINI 3.0 MODELS + OPTIMIZED SELECTION (2026)
  *
- * ✅ NEW IN 9.0.0:
+ * ✅ NEW IN 10.0.0:
+ * - Updated model list to Series 3.0 (latest Dec 2025)
+ * - gemini-3-flash as new recommended default (extreme speed)
+ * - gemini-2.5-flash-lite added (ultra-fast lightweight)
+ * - Removed legacy 2.0 and 1.5 models
+ * - Speed-optimized model descriptions
+ *
+ * Available Models (5 total):
+ * Series 3.0 (Latest):
+ * - gemini-3-flash      ⚡ EXTREME SPEED - Recommended for OCR
+ * - gemini-3-pro        🎯 Deep analysis - NOT for real-time OCR
+ * 
+ * Series 2.5 (Stable):
+ * - gemini-2.5-flash-lite  🚀 ULTRA FAST - Lightweight, instant response
+ * - gemini-2.5-flash       ⚡ Very Fast - Best balance
+ * - gemini-2.5-pro         🐌 Slow - NOT recommended for OCR
+ *
+ * ✅ PREVIOUS IN 9.0.0:
  * - KEY_GEMINI_OCR_MODEL for model selection
  * - geminiOcrModel Flow property
  * - setGeminiOcrModel() method
  * - getAvailableGeminiModels() helper
- * - GeminiModelOption data class
- *
- * ✅ PREVIOUS IN 8.0.0 (PHASE 2 & 3):
- * - KEY_GEMINI_OCR_ENABLED, KEY_GEMINI_OCR_THRESHOLD, KEY_GEMINI_OCR_ALWAYS
- * - geminiOcrEnabled, geminiOcrThreshold, geminiOcrAlways Flow properties
- * - setGeminiOcrEnabled(), setGeminiOcrThreshold(), setGeminiOcrAlways() methods
- * - getOcrQualityThresholds() helper for OcrQualityAnalyzer integration
- *
- * ✅ UPDATED 2026:
- * - Default Gemini threshold changed from 50% to 65% for printed text
  *
  * ✅ FIX SERIOUS-2: Убран собственный delegate, DataStore инжектится из Hilt
  *
@@ -34,7 +41,7 @@
  * - OCR settings (language, auto-translate)
  * - Cache settings (enabled, TTL)
  * - Gemini OCR Fallback settings
- * - Gemini Model Selection (NEW IN 9.0.0)
+ * - Gemini Model Selection with Series 3.0 support
  */
 
 package com.docs.scanner.data.local.preferences
@@ -106,19 +113,22 @@ class SettingsDataStore @Inject constructor(
         private val KEY_GEMINI_OCR_THRESHOLD = intPreferencesKey("gemini_ocr_threshold")
         private val KEY_GEMINI_OCR_ALWAYS = booleanPreferencesKey("gemini_ocr_always")
         
-        // ✅ NEW: Gemini Model Selection
+        // ✅ Gemini Model Selection
         private val KEY_GEMINI_OCR_MODEL = stringPreferencesKey("gemini_ocr_model")
         
         // Legacy key for migration
         private val KEY_LEGACY_API_KEY = stringPreferencesKey("gemini_api_key")
         
-        // ✅ NEW: Available Gemini models
+        // ✅ UPDATED: Valid Gemini models (Series 3.0 + Series 2.5)
         private val VALID_GEMINI_MODELS = listOf(
-            "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-pro",
-            "gemini-3-flash",
-            "gemini-3-pro"
+            // Series 3.0 (Latest - Dec 2025)
+            "gemini-3-flash",        // ⚡ Extreme speed - NEW DEFAULT
+            "gemini-3-pro",          // 🎯 Deep analysis
+            
+            // Series 2.5 (Stable - 2025)
+            "gemini-2.5-flash-lite", // 🚀 Ultra-fast lightweight
+            "gemini-2.5-flash",      // ⚡ Very fast balanced
+            "gemini-2.5-pro"         // 🐌 Slow but accurate
         )
     }
     
@@ -569,25 +579,31 @@ class SettingsDataStore @Inject constructor(
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ NEW: GEMINI MODEL SELECTION (9.0.0)
+    // ✅ GEMINI MODEL SELECTION (10.0.0) - SERIES 3.0 SUPPORT
     // ════════════════════════════════════════════════════════════════════════════════
     
     /**
      * Selected Gemini model for OCR.
      * 
+     * DEFAULT: gemini-3-flash (extreme speed, Dec 2025 release)
+     * 
      * Available models:
-     * - gemini-2.5-flash (default, recommended)
-     * - gemini-2.5-flash-lite (fastest, basic quality)
-     * - gemini-2.5-pro (highest quality, slower)
-     * - gemini-3-flash (newest fast model)
-     * - gemini-3-pro (newest high quality model)
+     * 
+     * Series 3.0 (Latest):
+     * - gemini-3-flash       ⚡ EXTREME SPEED - Best for real-time OCR
+     * - gemini-3-pro         🎯 Deep analysis - NOT for real-time use
+     * 
+     * Series 2.5 (Stable):
+     * - gemini-2.5-flash-lite 🚀 Ultra-fast - Lightweight instant response
+     * - gemini-2.5-flash      ⚡ Very fast - Best balance
+     * - gemini-2.5-pro        🐌 Slow - High accuracy but NOT for OCR
      */
     val geminiOcrModel: Flow<String> = dataStore.data
         .catch { e ->
             Timber.e(e, "Error reading geminiOcrModel")
             emit(emptyPreferences())
         }
-        .map { prefs -> prefs[KEY_GEMINI_OCR_MODEL] ?: "gemini-2.5-flash" }
+        .map { prefs -> prefs[KEY_GEMINI_OCR_MODEL] ?: "gemini-3-flash" }  // ✅ NEW DEFAULT
     
     /**
      * Sets the Gemini model for OCR.
@@ -613,32 +629,45 @@ class SettingsDataStore @Inject constructor(
     
     /**
      * Returns list of available Gemini models for UI display.
+     * Models are ordered by recommendation: fastest OCR models first.
      */
     fun getAvailableGeminiModels(): List<GeminiModelOption> = listOf(
-        GeminiModelOption(
-            id = "gemini-2.5-flash",
-            displayName = "Gemini 2.5 Flash",
-            description = "Быстрый и качественный (рекомендуется)"
-        ),
-        GeminiModelOption(
-            id = "gemini-2.5-flash-lite",
-            displayName = "Gemini 2.5 Flash Lite",
-            description = "Самый быстрый, базовое качество"
-        ),
-        GeminiModelOption(
-            id = "gemini-2.5-pro",
-            displayName = "Gemini 2.5 Pro",
-            description = "Максимальное качество, медленнее"
-        ),
+        // ═══════════════════════════════════════════════════════════════
+        // SERIES 3.0 - LATEST (Dec 2025)
+        // ═══════════════════════════════════════════════════════════════
         GeminiModelOption(
             id = "gemini-3-flash",
-            displayName = "Gemini 3 Flash",
-            description = "Новейший быстрый"
+            displayName = "Gemini 3 Flash ⚡",
+            description = "Extreme speed • Real-time OCR • Latest model",
+            isRecommended = true  // ✅ NEW RECOMMENDED DEFAULT
         ),
         GeminiModelOption(
             id = "gemini-3-pro",
-            displayName = "Gemini 3 Pro",
-            description = "Новейший, максимальное качество"
+            displayName = "Gemini 3 Pro 🎯",
+            description = "Deep analysis • Slower • NOT for real-time",
+            isRecommended = false
+        ),
+        
+        // ═══════════════════════════════════════════════════════════════
+        // SERIES 2.5 - STABLE WORKHORSES
+        // ═══════════════════════════════════════════════════════════════
+        GeminiModelOption(
+            id = "gemini-2.5-flash-lite",
+            displayName = "Gemini 2.5 Flash Lite 🚀",
+            description = "Ultra-fast • Lightweight • Instant response",
+            isRecommended = false
+        ),
+        GeminiModelOption(
+            id = "gemini-2.5-flash",
+            displayName = "Gemini 2.5 Flash",
+            description = "Very fast • Best balance • Production ready",
+            isRecommended = false
+        ),
+        GeminiModelOption(
+            id = "gemini-2.5-pro",
+            displayName = "Gemini 2.5 Pro 🐌",
+            description = "Slow • High accuracy • NOT for OCR",
+            isRecommended = false
         )
     )
     
@@ -659,12 +688,3 @@ class SettingsDataStore @Inject constructor(
         }
     }
 }
-
-/**
- * Model option for UI display in settings.
- */
-data class GeminiModelOption(
-    val id: String,
-    val displayName: String,
-    val description: String
-)
