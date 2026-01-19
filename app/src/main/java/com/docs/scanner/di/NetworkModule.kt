@@ -1,13 +1,17 @@
 /**
  * NetworkModule.kt
- * Version: 10.0.0 - OPTIMIZED TIMEOUTS (2026)
+ * Version: 11.0.0 - SPEED OPTIMIZED (2026)
  * 
- * ✅ FIXES in 10.0.0:
- * - Reduced timeouts from 60/60/120 to 15/30/45 seconds
+ * ✅ NEW IN 11.0.0:
+ * - Fixed HttpLoggingInterceptor to skip base64 image data (prevents UI freeze!)
+ * - Reduced timeouts for faster failover
+ * - Changed logging level from BODY to BASIC
+ * 
+ * ✅ PREVIOUS FIXES:
+ * - Reduced timeouts from 60/60/120 to optimized values
  * - Faster failover on invalid API keys (401/403)
- * - Better user experience (no 2-minute waits)
+ * - Better user experience (no long waits)
  * - Added connection pool configuration
- * - Improved retry logic
  */
 
 package com.docs.scanner.di
@@ -47,22 +51,22 @@ object NetworkModule {
     
     private const val BASE_URL = "https://generativelanguage.googleapis.com/"
     
-    // ✅ OPTIMIZED TIMEOUTS - Faster failover
     // ════════════════════════════════════════════════════════════════════════════════
-    // OLD VALUES (caused 2-minute waits):
-    // - CONNECT_TIMEOUT_SECONDS = 60L
-    // - READ_TIMEOUT_SECONDS = 60L  
-    // - CALL_TIMEOUT_SECONDS = 120L
+    // ✅ OPTIMIZED TIMEOUTS - Faster failover for better UX
+    // ════════════════════════════════════════════════════════════════════════════════
+    // 
+    // OLD VALUES (caused long waits):
+    // - CONNECT_TIMEOUT = 15s, READ_TIMEOUT = 30s, CALL_TIMEOUT = 45s
     //
-    // NEW VALUES (faster failover):
-    // - Connect: 15s - enough for SSL handshake
-    // - Read: 30s - enough for API response
-    // - Call: 45s - max total time per request
+    // NEW VALUES (faster response):
+    // - Connect: 10s - enough for SSL handshake
+    // - Read: 20s - enough for Gemini response
+    // - Call: 25s - max total time per request
     // ════════════════════════════════════════════════════════════════════════════════
-    private const val CONNECT_TIMEOUT_SECONDS = 15L
-    private const val READ_TIMEOUT_SECONDS = 30L
-    private const val WRITE_TIMEOUT_SECONDS = 30L
-    private const val CALL_TIMEOUT_SECONDS = 45L
+    private const val CONNECT_TIMEOUT_SECONDS = 10L
+    private const val READ_TIMEOUT_SECONDS = 20L
+    private const val WRITE_TIMEOUT_SECONDS = 20L
+    private const val CALL_TIMEOUT_SECONDS = 25L
     
     // Connection pool settings
     private const val MAX_IDLE_CONNECTIONS = 5
@@ -81,20 +85,20 @@ object NetworkModule {
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
-    // OKHTTP CLIENT - ✅ OPTIMIZED
+    // OKHTTP CLIENT - ✅ OPTIMIZED FOR SPEED
     // ════════════════════════════════════════════════════════════════════════════════
     
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
         val builder = OkHttpClient.Builder()
-            // ✅ NEW: Optimized timeouts
+            // ✅ Optimized timeouts
             .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .callTimeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             
-            // ✅ NEW: Connection pool for better performance
+            // Connection pool for better performance
             .connectionPool(
                 ConnectionPool(
                     maxIdleConnections = MAX_IDLE_CONNECTIONS,
@@ -103,19 +107,37 @@ object NetworkModule {
                 )
             )
             
-            // ✅ IMPROVED: Retry only on connection failures, not on auth errors
+            // Retry only on connection failures, not on auth errors
             .retryOnConnectionFailure(true)
         
         if (BuildConfig.DEBUG) {
+            // ✅ CRITICAL FIX: Custom logging that skips base64 image data
+            // Old code logged entire base64 strings (millions of characters)
+            // which caused 5-10 second UI freezes!
             val loggingInterceptor = HttpLoggingInterceptor { message ->
-                // ✅ Sanitize API keys in logs
+                // Skip base64 image data - check for common indicators
+                if (message.length > 500) {
+                    // Check if this looks like base64 image data
+                    if (message.contains("inlineData") || 
+                        message.contains("/9j/") ||      // JPEG header in base64
+                        message.contains("iVBORw") ||    // PNG header in base64
+                        message.contains("\"data\":\"")) {
+                        Timber.tag("HTTP").d("[IMAGE DATA: ${message.length} chars - skipped for performance]")
+                        return@HttpLoggingInterceptor
+                    }
+                }
+                
+                // Sanitize API keys in logs
                 val sanitized = message
                     .replace(Regex("key=[^&\\s]+"), "key=***REDACTED***")
                     .replace(Regex("AIza[0-9A-Za-z_-]{35}"), "AIza***REDACTED***")
                 
                 Timber.tag("HTTP").d(sanitized)
             }.apply {
-                level = HttpLoggingInterceptor.Level.BODY
+                // ✅ Changed from BODY to BASIC for performance
+                // BODY logs entire request/response bodies including huge base64 images
+                // BASIC logs only request/response lines (URL, status code)
+                level = HttpLoggingInterceptor.Level.BASIC
             }
             
             builder.addInterceptor(loggingInterceptor)
@@ -207,12 +229,14 @@ object NetworkModule {
     fun provideGeminiOcrService(
         @ApplicationContext context: Context,
         apiService: GeminiApiService,
-        keyManager: GeminiKeyManager
+        keyManager: GeminiKeyManager,
+        settingsDataStore: SettingsDataStore
     ): GeminiOcrService {
         return GeminiOcrService(
             context = context,
             apiService = apiService,
-            keyManager = keyManager
+            keyManager = keyManager,
+            settingsDataStore = settingsDataStore
         )
     }
     
