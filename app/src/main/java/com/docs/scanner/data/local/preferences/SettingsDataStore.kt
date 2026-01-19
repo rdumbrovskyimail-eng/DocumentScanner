@@ -1,8 +1,15 @@
 /**
  * SettingsDataStore.kt
- * Version: 8.0.0 - GEMINI OCR FALLBACK READY (2026 Standards)
+ * Version: 9.0.0 - GEMINI MODEL SELECTION + SPEED OPTIMIZATION (2026)
  *
- * ✅ NEW IN 8.0.0 (PHASE 2 & 3):
+ * ✅ NEW IN 9.0.0:
+ * - KEY_GEMINI_OCR_MODEL for model selection
+ * - geminiOcrModel Flow property
+ * - setGeminiOcrModel() method
+ * - getAvailableGeminiModels() helper
+ * - GeminiModelOption data class
+ *
+ * ✅ PREVIOUS IN 8.0.0 (PHASE 2 & 3):
  * - KEY_GEMINI_OCR_ENABLED, KEY_GEMINI_OCR_THRESHOLD, KEY_GEMINI_OCR_ALWAYS
  * - geminiOcrEnabled, geminiOcrThreshold, geminiOcrAlways Flow properties
  * - setGeminiOcrEnabled(), setGeminiOcrThreshold(), setGeminiOcrAlways() methods
@@ -26,7 +33,8 @@
  * - UI settings (theme, language)
  * - OCR settings (language, auto-translate)
  * - Cache settings (enabled, TTL)
- * - Gemini OCR Fallback settings (NEW IN 8.0.0)
+ * - Gemini OCR Fallback settings
+ * - Gemini Model Selection (NEW IN 9.0.0)
  */
 
 package com.docs.scanner.data.local.preferences
@@ -93,13 +101,25 @@ class SettingsDataStore @Inject constructor(
         // Image settings
         private val KEY_IMAGE_QUALITY = stringPreferencesKey("image_quality")
         
-        // ✅ NEW: Gemini OCR Fallback Settings (PHASE 2)
+        // Gemini OCR Fallback Settings
         private val KEY_GEMINI_OCR_ENABLED = booleanPreferencesKey("gemini_ocr_enabled")
         private val KEY_GEMINI_OCR_THRESHOLD = intPreferencesKey("gemini_ocr_threshold")
         private val KEY_GEMINI_OCR_ALWAYS = booleanPreferencesKey("gemini_ocr_always")
         
+        // ✅ NEW: Gemini Model Selection
+        private val KEY_GEMINI_OCR_MODEL = stringPreferencesKey("gemini_ocr_model")
+        
         // Legacy key for migration
         private val KEY_LEGACY_API_KEY = stringPreferencesKey("gemini_api_key")
+        
+        // ✅ NEW: Available Gemini models
+        private val VALID_GEMINI_MODELS = listOf(
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-pro",
+            "gemini-3-flash",
+            "gemini-3-pro"
+        )
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
@@ -469,7 +489,7 @@ class SettingsDataStore @Inject constructor(
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ GEMINI OCR FALLBACK SETTINGS (PHASE 2)
+    // GEMINI OCR FALLBACK SETTINGS
     // ════════════════════════════════════════════════════════════════════════════════
     
     /**
@@ -484,19 +504,15 @@ class SettingsDataStore @Inject constructor(
         .map { prefs -> prefs[KEY_GEMINI_OCR_ENABLED] ?: true }
     
     /**
-     * ✅ ОБНОВЛЕНО 2026: Порог 65% для печатного текста
-     * 
      * Confidence threshold (0-100) below which Gemini fallback triggers.
-     * 
-     * Старое значение: 50% (слишком мягко)
-     * Новое значение: 65% (сбалансировано)
+     * Default: 65% (balanced for printed text)
      */
     val geminiOcrThreshold: Flow<Int> = dataStore.data
         .catch { e ->
             Timber.e(e, "Error reading geminiOcrThreshold")
             emit(emptyPreferences())
         }
-        .map { prefs -> prefs[KEY_GEMINI_OCR_THRESHOLD] ?: 65 } // ✅ Изменено с 50 на 65
+        .map { prefs -> prefs[KEY_GEMINI_OCR_THRESHOLD] ?: 65 }
     
     /**
      * Whether to always use Gemini for OCR (skip ML Kit).
@@ -537,7 +553,7 @@ class SettingsDataStore @Inject constructor(
     }
     
     /**
-     * ✅ PHASE 3: Gets current OCR quality thresholds as a data object.
+     * Gets current OCR quality thresholds as a data object.
      * Used by OcrQualityAnalyzer to determine if Gemini fallback is needed.
      */
     suspend fun getOcrQualityThresholds(): OcrQualityThresholds {
@@ -551,6 +567,80 @@ class SettingsDataStore @Inject constructor(
             alwaysUseGemini = always
         )
     }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ NEW: GEMINI MODEL SELECTION (9.0.0)
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Selected Gemini model for OCR.
+     * 
+     * Available models:
+     * - gemini-2.5-flash (default, recommended)
+     * - gemini-2.5-flash-lite (fastest, basic quality)
+     * - gemini-2.5-pro (highest quality, slower)
+     * - gemini-3-flash (newest fast model)
+     * - gemini-3-pro (newest high quality model)
+     */
+    val geminiOcrModel: Flow<String> = dataStore.data
+        .catch { e ->
+            Timber.e(e, "Error reading geminiOcrModel")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_GEMINI_OCR_MODEL] ?: "gemini-2.5-flash" }
+    
+    /**
+     * Sets the Gemini model for OCR.
+     * 
+     * @param model Model identifier (must be one of VALID_GEMINI_MODELS)
+     * @throws IllegalArgumentException if model is not valid
+     */
+    suspend fun setGeminiOcrModel(model: String) {
+        require(model in VALID_GEMINI_MODELS) { 
+            "Invalid Gemini model: $model. Valid models: $VALID_GEMINI_MODELS" 
+        }
+        
+        try {
+            dataStore.edit { prefs ->
+                prefs[KEY_GEMINI_OCR_MODEL] = model
+            }
+            Timber.d("✅ Gemini OCR model set to: $model")
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting Gemini OCR model")
+            throw e
+        }
+    }
+    
+    /**
+     * Returns list of available Gemini models for UI display.
+     */
+    fun getAvailableGeminiModels(): List<GeminiModelOption> = listOf(
+        GeminiModelOption(
+            id = "gemini-2.5-flash",
+            displayName = "Gemini 2.5 Flash",
+            description = "Быстрый и качественный (рекомендуется)"
+        ),
+        GeminiModelOption(
+            id = "gemini-2.5-flash-lite",
+            displayName = "Gemini 2.5 Flash Lite",
+            description = "Самый быстрый, базовое качество"
+        ),
+        GeminiModelOption(
+            id = "gemini-2.5-pro",
+            displayName = "Gemini 2.5 Pro",
+            description = "Максимальное качество, медленнее"
+        ),
+        GeminiModelOption(
+            id = "gemini-3-flash",
+            displayName = "Gemini 3 Flash",
+            description = "Новейший быстрый"
+        ),
+        GeminiModelOption(
+            id = "gemini-3-pro",
+            displayName = "Gemini 3 Pro",
+            description = "Новейший, максимальное качество"
+        )
+    )
     
     // ════════════════════════════════════════════════════════════════════════════════
     // UTILITY
@@ -569,3 +659,12 @@ class SettingsDataStore @Inject constructor(
         }
     }
 }
+
+/**
+ * Model option for UI display in settings.
+ */
+data class GeminiModelOption(
+    val id: String,
+    val displayName: String,
+    val description: String
+)
