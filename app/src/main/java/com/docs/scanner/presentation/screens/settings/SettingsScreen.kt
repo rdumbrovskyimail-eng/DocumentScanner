@@ -6,6 +6,7 @@
  * - Renamed "ML Kit" tab to "OCR Components"
  * - Added TranslationTestSection integration
  * - Added translation test parameters
+ * - Added Gemini model selection callback
  * 
  * ✅ FIXED in 16.0.0:
  * - Unified ApiKeyEntry model throughout
@@ -222,6 +223,7 @@ fun SettingsScreen(
                         onGeminiOcrEnabledChange = viewModel::setGeminiOcrEnabled,
                         onGeminiOcrThresholdChange = viewModel::setGeminiOcrThreshold,
                         onGeminiOcrAlwaysChange = viewModel::setGeminiOcrAlways,
+                        onGeminiOcrModelChange = viewModel::setGeminiOcrModel,  // ✅ ДОБАВЛЕНО
                         onTestGeminiFallbackChange = viewModel::setMlkitTestGeminiFallback,
                         onAddApiKey = { key, label -> viewModel.addApiKey(key, label) },
                         onRemoveApiKey = { viewModel.deleteKey(it) },
@@ -570,6 +572,7 @@ private fun OcrComponentsTab(
     onGeminiOcrEnabledChange: (Boolean) -> Unit,
     onGeminiOcrThresholdChange: (Int) -> Unit,
     onGeminiOcrAlwaysChange: (Boolean) -> Unit,
+    onGeminiOcrModelChange: (String) -> Unit,  // ✅ ДОБАВЛЕНО
     onTestGeminiFallbackChange: (Boolean) -> Unit,
     onAddApiKey: (key: String, label: String) -> Unit,
     onRemoveApiKey: (key: String) -> Unit,
@@ -603,6 +606,7 @@ private fun OcrComponentsTab(
             onGeminiOcrEnabledChange = onGeminiOcrEnabledChange,
             onGeminiOcrThresholdChange = onGeminiOcrThresholdChange,
             onGeminiOcrAlwaysChange = onGeminiOcrAlwaysChange,
+            onGeminiOcrModelChange = onGeminiOcrModelChange,  // ✅ ПЕРЕДАЕМ
             onTestGeminiFallbackChange = onTestGeminiFallbackChange,
             onAddApiKey = onAddApiKey,
             onRemoveApiKey = onRemoveApiKey,
