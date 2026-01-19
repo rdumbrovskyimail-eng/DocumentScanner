@@ -1,28 +1,22 @@
 /*
  * SettingsViewModel.kt
- * Version: 15.0.1 - TRANSLATION TEST + AUTO-TRANSLATION (2026)
+ * Version: 16.0.0 - GEMINI MODEL SELECTION + SPEED OPTIMIZATION (2026)
+ * 
+ * ✅ NEW in 16.0.0:
+ * - Gemini model selection (5 models)
+ * - setGeminiOcrModel() method
+ * - Load/save selected model from SettingsDataStore
  * 
  * ✅ FIXED in 15.0.1:
  * - Fixed translateText() parameter names (sourceLanguage → source, targetLanguage → target)
  * 
- * ✅ NEW in 15.0.0:
- * - Translation test methods (setTranslationTestText, testTranslation, etc.)
+ * ✅ PREVIOUS in 15.0.0:
+ * - Translation test methods
  * - Auto-translation in OCR test results
- * - Updated runMlkitOcrTest() with auto-translation logic
  * 
- * ✅ NEW in 14.0.0:
+ * ✅ PREVIOUS in 14.0.0:
  * - Fixed Photo Picker URI access issues (Android 10-16+)
  * - ImageUtils integration for stable image copying
- * - Proper cache management for OCR test images
- * 
- * ✅ PREVIOUS in 13.0.0:
- * - Unified ApiKeyEntry model (replaced ApiKeyData)
- * - Simplified API key management through EncryptedKeyStorage
- * 
- * ✅ PREVIOUS in 12.0.0:
- * - Gemini OCR Fallback управление (enabled, threshold, always)
- * - Test Gemini fallback checkbox в OCR тесте
- * - API key error reset функционал
  * 
  * АРХИТЕКТУРА:
  * Settings UI → ViewModel → DataStore → MLKitScanner → Editor
@@ -42,6 +36,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.BuildConfig
+import com.docs.scanner.data.local.preferences.GeminiModelOption
 import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.data.local.security.ApiKeyEntry
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
@@ -190,13 +185,9 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ MLKIT SETTINGS LOADER - КЛЮЧЕВОЙ МЕТОД
+    // ✅ MLKIT SETTINGS LOADER
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /**
-     * Загружает настройки OCR из DataStore при старте.
-     * Включает настройки Gemini OCR fallback.
-     */
     private fun loadMlkitSettings() {
         viewModelScope.launch {
             try {
@@ -214,29 +205,30 @@ class SettingsViewModel @Inject constructor(
                 val geminiEnabled = settingsDataStore.geminiOcrEnabled.first()
                 val geminiThreshold = settingsDataStore.geminiOcrThreshold.first()
                 val geminiAlways = settingsDataStore.geminiOcrAlways.first()
+                val geminiModel = settingsDataStore.geminiOcrModel.first()
+                val availableModels = settingsDataStore.getAvailableGeminiModels()
                 
                 _mlkitSettings.update { 
                     it.copy(
                         scriptMode = scriptMode,
                         geminiOcrEnabled = geminiEnabled,
                         geminiOcrThreshold = geminiThreshold,
-                        geminiOcrAlways = geminiAlways
+                        geminiOcrAlways = geminiAlways,
+                        selectedGeminiModel = geminiModel,
+                        availableGeminiModels = availableModels
                     ) 
                 }
                 
                 if (BuildConfig.DEBUG) {
-                    Timber.d("📝 Loaded MLKit settings from DataStore:")
+                    Timber.d("📝 Loaded MLKit settings:")
                     Timber.d("   ├─ Script mode: $scriptMode")
                     Timber.d("   ├─ Gemini fallback: $geminiEnabled")
                     Timber.d("   ├─ Gemini threshold: $geminiThreshold%")
-                    Timber.d("   └─ Gemini always: $geminiAlways")
+                    Timber.d("   ├─ Gemini always: $geminiAlways")
+                    Timber.d("   └─ Gemini model: $geminiModel")
                 }
-            } catch (e: IOException) {
-                Timber.w(e, "Failed to load MLKit settings from DataStore")
-            } catch (e: IllegalStateException) {
-                Timber.w(e, "DataStore not initialized")
             } catch (e: Exception) {
-                Timber.w(e, "Unexpected error loading MLKit settings")
+                Timber.w(e, "Failed to load MLKit settings")
             }
         }
     }
@@ -245,7 +237,6 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _apiKeys.value = encryptedKeyStorage.getAllApiKeys()
-                
                 if (BuildConfig.DEBUG) {
                     Timber.d("🔑 Loaded ${_apiKeys.value.size} API keys")
                 }
@@ -260,11 +251,9 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val isConnected = driveRepository.isSignedIn()
-                
                 if (BuildConfig.DEBUG) {
                     Timber.d("☁️ Drive connected: $isConnected")
                 }
-                
                 if (isConnected) {
                     when (val result = driveRepository.signIn()) {
                         is com.docs.scanner.domain.model.Result.Success -> {
@@ -296,7 +285,6 @@ class SettingsViewModel @Inject constructor(
                 }
                 
                 val trimmedKey = key.trim()
-                
                 val success = encryptedKeyStorage.addApiKey(
                     key = trimmedKey,
                     label = label?.ifBlank { "" } ?: ""
@@ -305,9 +293,8 @@ class SettingsViewModel @Inject constructor(
                 if (success) {
                     loadApiKeys()
                     _saveMessage.value = "✓ API key added successfully"
-                    
                     if (BuildConfig.DEBUG) {
-                        Timber.d("✅ Added new API key with label: ${label ?: "unlabeled"}")
+                        Timber.d("✅ Added new API key")
                     }
                 } else {
                     _saveMessage.value = "✗ Failed to add key (duplicate or limit reached)"
@@ -325,10 +312,6 @@ class SettingsViewModel @Inject constructor(
                 encryptedKeyStorage.setKeyAsPrimary(keyId)
                 loadApiKeys()
                 _saveMessage.value = "✓ API key activated"
-                
-                if (BuildConfig.DEBUG) {
-                    Timber.d("✅ Activated API key")
-                }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to activate key")
                 _saveMessage.value = "✗ Failed to activate key: ${e.message}"
@@ -340,14 +323,9 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val success = encryptedKeyStorage.removeApiKey(keyId)
-                
                 if (success) {
                     loadApiKeys()
                     _saveMessage.value = "✓ API key deleted"
-                    
-                    if (BuildConfig.DEBUG) {
-                        Timber.d("🗑️ Deleted API key")
-                    }
                 } else {
                     _saveMessage.value = "✗ Key not found"
                 }
@@ -364,10 +342,6 @@ class SettingsViewModel @Inject constructor(
             val clip = ClipData.newPlainText("API Key", key)
             clipboard.setPrimaryClip(clip)
             _saveMessage.value = "✓ API key copied to clipboard"
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("📋 Copied API key to clipboard")
-            }
         } catch (e: Exception) {
             Timber.e(e, "Failed to copy API key")
             _saveMessage.value = "✗ Failed to copy: ${e.message}"
@@ -378,16 +352,9 @@ class SettingsViewModel @Inject constructor(
         testApiKeyRaw(keyId)
     }
 
-    /**
-     * Tests a specific API key (no failover).
-     */
     fun testApiKeyRaw(key: String) {
         viewModelScope.launch {
             _keyTestMessage.value = "Testing key..."
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("🧪 Testing API key...")
-            }
             
             when (
                 val result = geminiApi.generateTextWithKey(
@@ -399,14 +366,9 @@ class SettingsViewModel @Inject constructor(
             ) {
                 is DomainResult.Success -> {
                     _keyTestMessage.value = "✓ OK: ${result.data.take(80)}"
-                    
-                    if (BuildConfig.DEBUG) {
-                        Timber.d("✅ API key test successful")
-                    }
                 }
                 is DomainResult.Failure -> {
                     _keyTestMessage.value = "✗ Failed: ${result.error.message}"
-                    Timber.w("❌ API key test failed: ${result.error.message}")
                 }
             }
         }
@@ -429,14 +391,9 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             when (val r = useCases.settings.setThemeMode(mode)) {
                 is DomainResult.Failure -> {
-                    Timber.e("Failed to set theme mode: ${r.error.message}")
                     _saveMessage.value = "✗ Theme: ${r.error.message}"
                 }
-                is DomainResult.Success -> {
-                    if (BuildConfig.DEBUG) {
-                        Timber.d("🎨 Theme mode set to: $mode")
-                    }
-                }
+                is DomainResult.Success -> {}
             }
         }
     }
@@ -445,14 +402,9 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             when (val r = useCases.settings.setAppLanguage(code)) {
                 is DomainResult.Failure -> {
-                    Timber.e("Failed to set app language: ${r.error.message}")
                     _saveMessage.value = "✗ Language: ${r.error.message}"
                 }
-                is DomainResult.Success -> {
-                    if (BuildConfig.DEBUG) {
-                        Timber.d("🌐 App language set to: ${code.ifBlank { "system" }}")
-                    }
-                }
+                is DomainResult.Success -> {}
             }
         }
     }
@@ -465,7 +417,6 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 settingsDataStore.setOcrLanguage(mode)
-                
                 val scriptMode = when (mode.uppercase()) {
                     "LATIN" -> OcrScriptMode.LATIN
                     "CHINESE" -> OcrScriptMode.CHINESE
@@ -474,17 +425,9 @@ class SettingsViewModel @Inject constructor(
                     "DEVANAGARI" -> OcrScriptMode.DEVANAGARI
                     else -> OcrScriptMode.AUTO
                 }
-                
                 _mlkitSettings.update { it.copy(scriptMode = scriptMode) }
-                
-                if (BuildConfig.DEBUG) {
-                    Timber.d("📝 OCR mode set to: $mode")
-                }
-            } catch (e: IOException) {
-                Timber.e(e, "Failed to set OCR mode")
-                _saveMessage.value = "✗ OCR: ${e.message}"
             } catch (e: Exception) {
-                Timber.e(e, "Unexpected error setting OCR mode")
+                Timber.e(e, "Failed to set OCR mode")
                 _saveMessage.value = "✗ OCR: ${e.message}"
             }
         }
@@ -494,14 +437,9 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             when (val r = useCases.settings.setTargetLanguage(lang)) {
                 is DomainResult.Failure -> {
-                    Timber.e("Failed to set target language: ${r.error.message}")
                     _saveMessage.value = "✗ Target: ${r.error.message}"
                 }
-                is DomainResult.Success -> {
-                    if (BuildConfig.DEBUG) {
-                        Timber.d("🌍 Target language set to: ${lang.displayName}")
-                    }
-                }
+                is DomainResult.Success -> {}
             }
         }
     }
@@ -510,14 +448,9 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             when (val r = useCases.settings.setAutoTranslate(enabled)) {
                 is DomainResult.Failure -> {
-                    Timber.e("Failed to set auto-translate: ${r.error.message}")
                     _saveMessage.value = "✗ Auto-translate: ${r.error.message}"
                 }
-                is DomainResult.Success -> {
-                    if (BuildConfig.DEBUG) {
-                        Timber.d("🔄 Auto-translate: $enabled")
-                    }
-                }
+                is DomainResult.Success -> {}
             }
         }
     }
@@ -526,12 +459,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 settingsDataStore.setCacheEnabled(enabled)
-                
-                if (BuildConfig.DEBUG) {
-                    Timber.d("💾 Cache enabled: $enabled")
-                }
             } catch (e: Exception) {
-                Timber.e(e, "Failed to set cache enabled")
                 _saveMessage.value = "✗ Cache: ${e.message}"
             }
         }
@@ -541,12 +469,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 settingsDataStore.setCacheTtl(days)
-                
-                if (BuildConfig.DEBUG) {
-                    Timber.d("⏰ Cache TTL set to: $days days")
-                }
             } catch (e: Exception) {
-                Timber.e(e, "Failed to set cache TTL")
                 _saveMessage.value = "✗ Cache TTL: ${e.message}"
             }
         }
@@ -557,13 +480,8 @@ class SettingsViewModel @Inject constructor(
             when (val r = useCases.settings.setImageQuality(quality)) {
                 is DomainResult.Success -> {
                     _saveMessage.value = "✓ Image quality: ${quality.name}"
-                    
-                    if (BuildConfig.DEBUG) {
-                        Timber.d("📸 Image quality set to: ${quality.name}")
-                    }
                 }
                 is DomainResult.Failure -> {
-                    Timber.e("Failed to set image quality: ${r.error.message}")
                     _saveMessage.value = "✗ Image quality: ${r.error.message}"
                 }
             }
@@ -578,11 +496,6 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _cacheStats.value = useCases.translation.getCacheStats()
-                
-                if (BuildConfig.DEBUG) {
-                    val stats = _cacheStats.value
-                    Timber.d("📊 Cache stats: ${stats?.totalEntries ?: 0} entries")
-                }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to refresh cache stats")
             }
@@ -595,13 +508,8 @@ class SettingsViewModel @Inject constructor(
                 is DomainResult.Success -> {
                     _saveMessage.value = "✓ Cache cleared"
                     refreshCacheStats()
-                    
-                    if (BuildConfig.DEBUG) {
-                        Timber.d("🗑️ Cache cleared successfully")
-                    }
                 }
                 is DomainResult.Failure -> {
-                    Timber.e("Failed to clear cache: ${r.error.message}")
                     _saveMessage.value = "✗ Cache: ${r.error.message}"
                 }
             }
@@ -614,13 +522,8 @@ class SettingsViewModel @Inject constructor(
                 is DomainResult.Success -> {
                     _saveMessage.value = "✓ Deleted ${r.data} expired entries"
                     refreshCacheStats()
-                    
-                    if (BuildConfig.DEBUG) {
-                        Timber.d("🧹 Cleared ${r.data} old cache entries")
-                    }
                 }
                 is DomainResult.Failure -> {
-                    Timber.e("Failed to clear old cache: ${r.error.message}")
                     _saveMessage.value = "✗ Cache: ${r.error.message}"
                 }
             }
@@ -631,11 +534,6 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _storageUsage.value = fileRepository.getStorageUsage()
-                
-                if (BuildConfig.DEBUG) {
-                    val usage = _storageUsage.value
-                    Timber.d("💾 Storage usage: ${usage?.formatTotal() ?: "unknown"}")
-                }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to refresh storage usage")
             }
@@ -648,12 +546,7 @@ class SettingsViewModel @Inject constructor(
                 val deleted = fileRepository.clearTempFiles()
                 _saveMessage.value = "✓ Cleared $deleted temp files"
                 refreshStorageUsage()
-                
-                if (BuildConfig.DEBUG) {
-                    Timber.d("🧹 Cleared $deleted temporary files")
-                }
             } catch (e: Exception) {
-                Timber.e(e, "Failed to clear temp files")
                 _saveMessage.value = "✗ Failed to clear temp files: ${e.message}"
             }
         }
@@ -668,22 +561,13 @@ class SettingsViewModel @Inject constructor(
             _isBackingUp.value = true
             _backupMessage.value = "Creating backup..."
             
-            if (BuildConfig.DEBUG) {
-                Timber.d("💾 Creating local backup (includeImages: $includeImages)")
-            }
-            
             try {
                 when (val r = useCases.backup.createLocal(includeImages)) {
                     is DomainResult.Success -> {
                         _backupMessage.value = "✓ Backup created"
                         refreshLocalBackups()
-                        
-                        if (BuildConfig.DEBUG) {
-                            Timber.d("✅ Local backup created successfully")
-                        }
                     }
                     is DomainResult.Failure -> {
-                        Timber.e("Backup creation failed: ${r.error.message}")
                         _backupMessage.value = "✗ Backup failed: ${r.error.message}"
                     }
                 }
@@ -698,10 +582,6 @@ class SettingsViewModel @Inject constructor(
             _isBackingUp.value = true
             _backupMessage.value = "Restoring..."
             
-            if (BuildConfig.DEBUG) {
-                Timber.d("📥 Restoring local backup from: $path (merge: $merge)")
-            }
-            
             try {
                 when (val r = useCases.backup.restoreFromLocal(path, merge)) {
                     is DomainResult.Success -> {
@@ -709,13 +589,8 @@ class SettingsViewModel @Inject constructor(
                         _backupMessage.value =
                             if (rr.isFullSuccess) "✓ Restored ${rr.totalRestored} items"
                             else "⚠️ Restored ${rr.totalRestored} items with ${rr.errors.size} warnings"
-                        
-                        if (BuildConfig.DEBUG) {
-                            Timber.d("✅ Backup restored: ${rr.totalRestored} items")
-                        }
                     }
                     is DomainResult.Failure -> {
-                        Timber.e("Restore failed: ${r.error.message}")
                         _backupMessage.value = "✗ Restore failed: ${r.error.message}"
                     }
                 }
@@ -737,10 +612,6 @@ class SettingsViewModel @Inject constructor(
                 _localBackups.value = files.map {
                     LocalBackup(it.name, it.absolutePath, it.length(), it.lastModified())
                 }
-                
-                if (BuildConfig.DEBUG) {
-                    Timber.d("📦 Found ${_localBackups.value.size} local backups")
-                }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to refresh local backups")
             }
@@ -752,17 +623,17 @@ class SettingsViewModel @Inject constructor(
     // ═══════════════════════════════════════════════════════════════════════════
 
     fun refreshDriveBackups() {
-    viewModelScope.launch {
-        when (val r = useCases.backup.listGoogleDriveBackups()) {
-            is DomainResult.Success -> {
-                _driveBackups.value = r.data.sortedByDescending { it.timestamp }
-            }
-            is DomainResult.Failure -> {
-                Timber.e("Failed to list Drive backups: ${r.error.message}")
+        viewModelScope.launch {
+            when (val r = useCases.backup.listGoogleDriveBackups()) {
+                is DomainResult.Success -> {
+                    _driveBackups.value = r.data.sortedByDescending { it.timestamp }
+                }
+                is DomainResult.Failure -> {
+                    Timber.e("Failed to list Drive backups: ${r.error.message}")
+                }
             }
         }
     }
-}
 
     fun signInGoogleDrive(context: Context, launcher: ActivityResultLauncher<Intent>) {
         try {
@@ -884,12 +755,9 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ ML KIT SETTINGS - SYNCHRONIZED OCR CONTROL (2026)
+    // ✅ ML KIT SETTINGS - SYNCHRONIZED OCR CONTROL
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /**
-     * Устанавливает режим OCR.
-     */
     fun setMlkitScriptMode(mode: OcrScriptMode) {
         viewModelScope.launch {
             _mlkitSettings.update { it.copy(scriptMode = mode) }
@@ -905,12 +773,8 @@ class SettingsViewModel @Inject constructor(
             
             try {
                 settingsDataStore.setOcrLanguage(modeStr)
-                
-                if (BuildConfig.DEBUG) {
-                    Timber.d("📝 MLKit script mode set: $mode → saved to DataStore")
-                }
             } catch (e: Exception) {
-                Timber.e(e, "Failed to save MLKit script mode to DataStore")
+                Timber.e(e, "Failed to save MLKit script mode")
                 _saveMessage.value = "✗ Failed to save OCR settings"
             }
         }
@@ -918,112 +782,48 @@ class SettingsViewModel @Inject constructor(
 
     fun setMlkitAutoDetect(enabled: Boolean) {
         _mlkitSettings.update { it.copy(autoDetectLanguage = enabled) }
-        
-        if (BuildConfig.DEBUG) {
-            Timber.d("🔍 MLKit auto-detect: $enabled")
-        }
     }
 
     fun setMlkitConfidenceThreshold(threshold: Float) {
         _mlkitSettings.update { it.copy(confidenceThreshold = threshold) }
-        
-        if (BuildConfig.DEBUG) {
-            Timber.d("📊 MLKit confidence threshold: ${(threshold * 100).toInt()}%")
-        }
     }
 
     fun setMlkitHighlightLowConfidence(enabled: Boolean) {
         _mlkitSettings.update { it.copy(highlightLowConfidence = enabled) }
-        
-        if (BuildConfig.DEBUG) {
-            Timber.d("🎨 MLKit highlight low confidence: $enabled")
-        }
     }
 
     fun setMlkitShowWordConfidences(enabled: Boolean) {
         _mlkitSettings.update { it.copy(showWordConfidences = enabled) }
-        
-        if (BuildConfig.DEBUG) {
-            Timber.d("📈 MLKit show word confidences: $enabled")
-        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ IMAGE SELECTION - FIXED FOR ANDROID 10-16+ (PHOTO PICKER SUPPORT)
+    // ✅ IMAGE SELECTION - FIXED FOR ANDROID 10-16+
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /**
-     * Устанавливает изображение для OCR теста.
-     * 
-     * КРИТИЧНО: Photo Picker (Android 13+) возвращает URI с временным доступом.
-     * ContentResolver.takePersistableUriPermission() НЕ работает для Photo Picker.
-     * 
-     * Решение: копируем файл во внутреннее хранилище для стабильного доступа.
-     * 
-     * Поддерживает:
-     * - Android 10-16+
-     * - Photo Picker (Android 13+)
-     * - Обычный выбор из галереи
-     * - Любые content:// URI
-     * 
-     * @param uri URI выбранного изображения (или null для очистки)
-     */
     fun setMlkitSelectedImage(uri: Uri?) {
-        // Очистка
         if (uri == null) {
             _mlkitSettings.update { 
-                it.copy(
-                    selectedImageUri = null,
-                    testResult = null,
-                    testError = null
-                ) 
+                it.copy(selectedImageUri = null, testResult = null, testError = null) 
             }
-            
-            // Очищаем кэш в фоне
             viewModelScope.launch(Dispatchers.IO) {
                 ImageUtils.clearOcrTestCache(appContext)
-            }
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("🖼️ OCR test image cleared")
             }
             return
         }
         
-        // Копируем изображение во внутреннее хранилище
         viewModelScope.launch {
             try {
-                // Показываем индикатор загрузки
                 _mlkitSettings.update { 
-                    it.copy(
-                        isTestRunning = true,
-                        testResult = null,
-                        testError = null
-                    ) 
+                    it.copy(isTestRunning = true, testResult = null, testError = null) 
                 }
                 
-                if (BuildConfig.DEBUG) {
-                    Timber.d("🖼️ Copying image for OCR test: $uri")
-                }
-                
-                // Копируем во внутреннее хранилище через ImageUtils
                 val stableUri = ImageUtils.copyForOcrTest(appContext, uri)
                 
                 _mlkitSettings.update { 
-                    it.copy(
-                        selectedImageUri = stableUri,
-                        isTestRunning = false,
-                        testError = null
-                    ) 
+                    it.copy(selectedImageUri = stableUri, isTestRunning = false, testError = null) 
                 }
-                
-                if (BuildConfig.DEBUG) {
-                    Timber.d("✅ Image ready for OCR test: $stableUri")
-                }
-                
             } catch (e: Exception) {
-                Timber.e(e, "❌ Failed to prepare image for OCR test")
-                
+                Timber.e(e, "Failed to prepare image for OCR test")
                 _mlkitSettings.update { 
                     it.copy(
                         selectedImageUri = null,
@@ -1037,11 +837,7 @@ class SettingsViewModel @Inject constructor(
 
     fun clearMlkitTestResult() {
         _mlkitSettings.update { 
-            it.copy(
-                testResult = null, 
-                testError = null,
-                isTestRunning = false
-            ) 
+            it.copy(testResult = null, testError = null, isTestRunning = false) 
         }
     }
 
@@ -1049,10 +845,6 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             mlKitScanner.clearCache()
             _saveMessage.value = "✓ MLKit cache cleared"
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("🧹 MLKit recognizer cache cleared")
-            }
         }
     }
 
@@ -1063,17 +855,11 @@ class SettingsViewModel @Inject constructor(
     // GEMINI OCR FALLBACK SETTINGS
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Enables or disables Gemini OCR fallback.
-     */
     fun setGeminiOcrEnabled(enabled: Boolean) {
         _mlkitSettings.update { it.copy(geminiOcrEnabled = enabled) }
         viewModelScope.launch {
             try {
                 settingsDataStore.setGeminiOcrEnabled(enabled)
-                if (BuildConfig.DEBUG) {
-                    Timber.d("🤖 Gemini OCR fallback: $enabled")
-                }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to save Gemini OCR enabled setting")
                 _saveMessage.value = "✗ Failed to save Gemini OCR setting"
@@ -1081,17 +867,11 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    /**
-     * Sets Gemini OCR confidence threshold (0-100).
-     */
     fun setGeminiOcrThreshold(threshold: Int) {
         _mlkitSettings.update { it.copy(geminiOcrThreshold = threshold) }
         viewModelScope.launch {
             try {
                 settingsDataStore.setGeminiOcrThreshold(threshold)
-                if (BuildConfig.DEBUG) {
-                    Timber.d("🎚️ Gemini OCR threshold: $threshold%")
-                }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to save Gemini OCR threshold")
                 _saveMessage.value = "✗ Failed to save Gemini OCR threshold"
@@ -1099,17 +879,11 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    /**
-     * Sets whether to always use Gemini for OCR (skip ML Kit).
-     */
     fun setGeminiOcrAlways(always: Boolean) {
         _mlkitSettings.update { it.copy(geminiOcrAlways = always) }
         viewModelScope.launch {
             try {
                 settingsDataStore.setGeminiOcrAlways(always)
-                if (BuildConfig.DEBUG) {
-                    Timber.d("🤖 Gemini OCR always: $always")
-                }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to save Gemini OCR always setting")
                 _saveMessage.value = "✗ Failed to save Gemini OCR always setting"
@@ -1117,21 +891,43 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ NEW: GEMINI MODEL SELECTION (16.0.0)
+    // ════════════════════════════════════════════════════════════════════════════════
+    
     /**
-     * Включает/выключает тестирование Gemini fallback в OCR тесте.
+     * Sets the Gemini model for OCR.
+     * 
+     * @param modelId Model identifier (e.g., "gemini-2.5-flash")
      */
-    fun setMlkitTestGeminiFallback(enabled: Boolean) {
-        _mlkitSettings.update { it.copy(testGeminiFallback = enabled) }
-        
-        if (BuildConfig.DEBUG) {
-            Timber.d("🧪 Test Gemini fallback checkbox: $enabled")
+    fun setGeminiOcrModel(modelId: String) {
+        _mlkitSettings.update { it.copy(selectedGeminiModel = modelId) }
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setGeminiOcrModel(modelId)
+                _saveMessage.value = "✓ Gemini model: $modelId"
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("🤖 Gemini OCR model set to: $modelId")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save Gemini OCR model")
+                _saveMessage.value = "✗ Failed to save Gemini model"
+            }
         }
     }
-
+    
     /**
-     * ✅ FIXED: Запускает тест OCR с автопереводом
-     * Fixed parameter names: sourceLanguage → source, targetLanguage → target
+     * Returns available Gemini models for UI display.
      */
+    fun getAvailableGeminiModels(): List<GeminiModelOption> {
+        return settingsDataStore.getAvailableGeminiModels()
+    }
+
+    fun setMlkitTestGeminiFallback(enabled: Boolean) {
+        _mlkitSettings.update { it.copy(testGeminiFallback = enabled) }
+    }
+
     fun runMlkitOcrTest() {
         val currentState = _mlkitSettings.value
         val imageUri = currentState.selectedImageUri
@@ -1143,19 +939,15 @@ class SettingsViewModel @Inject constructor(
         
         viewModelScope.launch {
             _mlkitSettings.update { 
-                it.copy(
-                    isTestRunning = true, 
-                    testResult = null, 
-                    testError = null
-                ) 
+                it.copy(isTestRunning = true, testResult = null, testError = null) 
             }
             
             if (BuildConfig.DEBUG) {
                 Timber.d("🧪 Running MLKit OCR test")
                 Timber.d("   ├─ Mode: ${currentState.scriptMode}")
-                Timber.d("   ├─ Auto-detect: ${currentState.autoDetectLanguage}")
                 Timber.d("   ├─ Threshold: ${(currentState.confidenceThreshold * 100).toInt()}%")
-                Timber.d("   └─ Test Gemini fallback: ${currentState.testGeminiFallback}")
+                Timber.d("   ├─ Test Gemini fallback: ${currentState.testGeminiFallback}")
+                Timber.d("   └─ Gemini model: ${currentState.selectedGeminiModel}")
             }
             
             try {
@@ -1169,7 +961,6 @@ class SettingsViewModel @Inject constructor(
                     is DomainResult.Success -> {
                         val ocrData = result.data
                         
-                        // ✅ НОВОЕ: Автоперевод если включен
                         var translatedText: String? = null
                         var translationTime: Long? = null
                         var translationTargetLang: Language? = null
@@ -1177,22 +968,17 @@ class SettingsViewModel @Inject constructor(
                         if (ocrData.text.isNotBlank()) {
                             val autoTranslateEnabled = try {
                                 settingsDataStore.autoTranslate.first()
-                            } catch (e: Exception) {
-                                false
-                            }
+                            } catch (e: Exception) { false }
                             
                             if (autoTranslateEnabled) {
                                 translationTargetLang = try {
                                     settingsDataStore.translationTarget.first().let { code ->
                                         Language.fromCode(code) ?: Language.ENGLISH
                                     }
-                                } catch (e: Exception) {
-                                    Language.ENGLISH
-                                }
+                                } catch (e: Exception) { Language.ENGLISH }
                                 
                                 val translationStart = System.currentTimeMillis()
                                 
-                                // ✅ FIXED: Changed parameter names
                                 when (val translateResult = useCases.translation.translateText(
                                     text = ocrData.text,
                                     source = ocrData.detectedLanguage ?: Language.AUTO,
@@ -1201,13 +987,9 @@ class SettingsViewModel @Inject constructor(
                                     is DomainResult.Success -> {
                                         translatedText = translateResult.data.translatedText
                                         translationTime = System.currentTimeMillis() - translationStart
-                                        
-                                        if (BuildConfig.DEBUG) {
-                                            Timber.d("✅ Auto-translation successful in ${translationTime}ms")
-                                        }
                                     }
                                     is DomainResult.Failure -> {
-                                        Timber.w("⚠️ Auto-translation failed: ${translateResult.error.message}")
+                                        Timber.w("Auto-translation failed: ${translateResult.error.message}")
                                     }
                                 }
                             }
@@ -1225,51 +1007,30 @@ class SettingsViewModel @Inject constructor(
                         }
                         
                         if (BuildConfig.DEBUG) {
-                            Timber.d("✅ MLKit OCR test success")
-                            Timber.d("   ├─ Words: ${ocrData.totalWords}")
-                            Timber.d("   ├─ Confidence: ${ocrData.confidencePercent}")
-                            Timber.d("   ├─ Quality: ${ocrData.qualityRating}")
-                            Timber.d("   ├─ Time: ${ocrData.processingTimeMs}ms")
-                            if (translatedText != null) {
-                                Timber.d("   └─ Translation: ${translationTime}ms")
-                            }
+                            Timber.d("✅ OCR test success: ${ocrData.totalWords} words, ${ocrData.processingTimeMs}ms")
                         }
                     }
                     is DomainResult.Failure -> {
                         _mlkitSettings.update { 
-                            it.copy(
-                                testError = result.error.message, 
-                                isTestRunning = false
-                            ) 
+                            it.copy(testError = result.error.message, isTestRunning = false) 
                         }
-                        Timber.e("❌ MLKit OCR test failed: ${result.error.message}")
                     }
                 }
             } catch (e: Exception) {
-                Timber.e(e, "❌ MLKit OCR test exception")
+                Timber.e(e, "MLKit OCR test exception")
                 _mlkitSettings.update { 
-                    it.copy(
-                        testError = "OCR failed: ${e.message}", 
-                        isTestRunning = false
-                    ) 
+                    it.copy(testError = "OCR failed: ${e.message}", isTestRunning = false) 
                 }
             }
         }
     }
 
-    /**
-     * Сбрасывает счетчики ошибок для всех API ключей.
-     */
     fun resetApiKeyErrors() {
         viewModelScope.launch {
             try {
                 encryptedKeyStorage.resetAllKeyErrors()
                 loadApiKeys()
                 _saveMessage.value = "✓ All key errors reset"
-                
-                if (BuildConfig.DEBUG) {
-                    Timber.d("🔄 All API key errors reset")
-                }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to reset API key errors")
                 _saveMessage.value = "✗ Failed to reset errors: ${e.message}"
@@ -1278,7 +1039,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ TRANSLATION TEST (NEW 2026)
+    // TRANSLATION TEST
     // ═══════════════════════════════════════════════════════════════════════════
 
     fun setTranslationTestText(text: String) {
@@ -1293,10 +1054,6 @@ class SettingsViewModel @Inject constructor(
         _mlkitSettings.update { it.copy(translationTargetLang = lang) }
     }
 
-    /**
-     * ✅ FIXED: Tests translation with correct parameter names
-     * Fixed parameter names: sourceLanguage → source, targetLanguage → target
-     */
     fun testTranslation() {
         val state = _mlkitSettings.value
         
@@ -1312,7 +1069,6 @@ class SettingsViewModel @Inject constructor(
             
             val start = System.currentTimeMillis()
             
-            // ✅ FIXED: Changed parameter names
             when (val result = useCases.translation.translateText(
                 text = state.translationTestText,
                 source = state.translationSourceLang,
@@ -1327,12 +1083,7 @@ class SettingsViewModel @Inject constructor(
                             translationError = null
                         )
                     }
-                    
                     _saveMessage.value = "✓ Translated in ${time}ms"
-                    
-                    if (BuildConfig.DEBUG) {
-                        Timber.d("✅ Translation test successful in ${time}ms")
-                    }
                 }
                 
                 is DomainResult.Failure -> {
@@ -1343,8 +1094,6 @@ class SettingsViewModel @Inject constructor(
                             translationError = result.error.message
                         )
                     }
-                    
-                    Timber.e("❌ Translation test failed: ${result.error.message}")
                 }
             }
         }
@@ -1366,24 +1115,13 @@ class SettingsViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        
         viewModelScope.launch(Dispatchers.IO) {
-            // Очищаем кэш MLKit
             mlKitScanner.clearCache()
-            
-            // Очищаем тестовые изображения
             ImageUtils.clearOcrTestCache(appContext)
-        }
-        
-        if (BuildConfig.DEBUG) {
-            Timber.d("🛑 SettingsViewModel cleared")
         }
     }
 }
 
-/**
- * Локальный бэкап.
- */
 data class LocalBackup(
     val name: String,
     val path: String,
