@@ -1,6 +1,12 @@
 /*
  * MlkitSettingsSection.kt
- * Version: 11.0.0 - GEMINI MODEL SELECTION UI (2026)
+ * Version: 12.0.0 - CANCEL BUTTON + SPEED INDICATORS (2026)
+ * 
+ * ✅ NEW IN 12.0.0:
+ * - Cancel button during OCR processing
+ * - Speed badges (⚡/⚖️/🐌) for each Gemini model
+ * - Warning card for slow models
+ * - ModelSpeedBadge() composable
  * 
  * ✅ NEW IN 11.0.0:
  * - Gemini model selection dropdown
@@ -71,11 +77,12 @@ fun MlkitSettingsSection(
     onImageSelected: (Uri?) -> Unit,
     onTestOcr: () -> Unit,
     onClearTestResult: () -> Unit,
+    onCancelOcr: () -> Unit,  // ✅ НОВЫЙ ПАРАМЕТР
     // Gemini OCR callbacks
     onGeminiOcrEnabledChange: (Boolean) -> Unit,
     onGeminiOcrThresholdChange: (Int) -> Unit,
     onGeminiOcrAlwaysChange: (Boolean) -> Unit,
-    onGeminiOcrModelChange: (String) -> Unit,  // ✅ НОВЫЙ ПАРАМЕТР
+    onGeminiOcrModelChange: (String) -> Unit,
     // Test Gemini fallback
     onTestGeminiFallbackChange: (Boolean) -> Unit,
     // API Keys callbacks
@@ -218,6 +225,7 @@ fun MlkitSettingsSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            // ✅ ОБНОВЛЕННЫЕ КНОПКИ С CANCEL
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -235,20 +243,27 @@ fun MlkitSettingsSection(
                     Text("Select Image")
                 }
                 
-                Button(
-                    onClick = onTestOcr,
-                    enabled = state.selectedImageUri != null && !state.isTestRunning,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    if (state.isTestRunning) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
+                // ✅ НОВОЕ: Условное отображение Run/Cancel
+                if (state.isTestRunning) {
+                    // Показываем Cancel button когда OCR идёт
+                    OutlinedButton(
+                        onClick = onCancelOcr,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
                         )
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Running...")
-                    } else {
+                        Text("Cancel")
+                    }
+                } else {
+                    // Показываем Run button когда OCR не идёт
+                    Button(
+                        onClick = onTestOcr,
+                        enabled = state.selectedImageUri != null,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text("Run OCR")
@@ -400,12 +415,12 @@ fun MlkitSettingsSection(
                 enabled = state.geminiOcrEnabled,
                 threshold = state.geminiOcrThreshold,
                 alwaysUseGemini = state.geminiOcrAlways,
-                selectedModel = state.selectedGeminiModel,  // ✅ ПЕРЕДАЕМ
-                availableModels = state.availableGeminiModels,  // ✅ ПЕРЕДАЕМ
+                selectedModel = state.selectedGeminiModel,
+                availableModels = state.availableGeminiModels,
                 onEnabledChange = onGeminiOcrEnabledChange,
                 onThresholdChange = onGeminiOcrThresholdChange,
                 onAlwaysUseGeminiChange = onGeminiOcrAlwaysChange,
-                onModelChange = onGeminiOcrModelChange  // ✅ ПЕРЕДАЕМ
+                onModelChange = onGeminiOcrModelChange
             )
 
             // ════════════════════════════════════════════════════════════════
@@ -474,7 +489,7 @@ fun MlkitSettingsSection(
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// ✅ ОБНОВЛЕННАЯ СЕКЦИЯ GEMINI OCR С ВЫБОРОМ МОДЕЛИ
+// ✅ ОБНОВЛЕННАЯ СЕКЦИЯ GEMINI OCR С SPEED BADGES И WARNING
 // ════════════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -482,12 +497,12 @@ private fun GeminiOcrSettingsSection(
     enabled: Boolean,
     threshold: Int,
     alwaysUseGemini: Boolean,
-    selectedModel: String,  // ✅ НОВЫЙ ПАРАМЕТР
-    availableModels: List<GeminiModelOption>,  // ✅ НОВЫЙ ПАРАМЕТР
+    selectedModel: String,
+    availableModels: List<GeminiModelOption>,
     onEnabledChange: (Boolean) -> Unit,
     onThresholdChange: (Int) -> Unit,
     onAlwaysUseGeminiChange: (Boolean) -> Unit,
-    onModelChange: (String) -> Unit  // ✅ НОВЫЙ CALLBACK
+    onModelChange: (String) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         // HEADER
@@ -537,7 +552,7 @@ private fun GeminiOcrSettingsSection(
             )
         }
 
-        // ✅ ВЫБОР МОДЕЛИ GEMINI (показываем только если enabled)
+        // ✅ ВЫБОР МОДЕЛИ GEMINI
         AnimatedVisibility(
             visible = enabled,
             enter = fadeIn() + expandVertically(),
@@ -590,6 +605,7 @@ private fun GeminiOcrSettingsSection(
                     modifier = Modifier.fillMaxWidth(0.9f)
                 ) {
                     availableModels.forEach { model ->
+                        // ✅ ОБНОВЛЕННЫЙ DROPDOWN ITEM СО SPEED BADGE
                         DropdownMenuItem(
                             text = {
                                 Column(modifier = Modifier.padding(vertical = 4.dp)) {
@@ -598,24 +614,35 @@ private fun GeminiOcrSettingsSection(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(
-                                            text = model.displayName,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = if (model.id == selectedModel) 
-                                                FontWeight.Bold else FontWeight.Normal
-                                        )
-                                        if (model.isRecommended) {
-                                            Badge(
-                                                containerColor = MaterialTheme.colorScheme.primaryContainer
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = model.displayName,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = if (model.id == selectedModel) 
+                                                    FontWeight.Bold else FontWeight.Normal
+                                            )
+                                            
+                                            // ✅ НОВОЕ: Speed badge под именем модели
+                                            Spacer(Modifier.height(2.dp))
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text(
-                                                    text = "Recommended",
-                                                    style = MaterialTheme.typography.labelSmall
-                                                )
+                                                ModelSpeedBadge(model.id)
+                                                if (model.isRecommended) {
+                                                    Badge(
+                                                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                                                    ) {
+                                                        Text(
+                                                            text = "Recommended",
+                                                            style = MaterialTheme.typography.labelSmall
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
-                                    Spacer(Modifier.height(2.dp))
+                                    Spacer(Modifier.height(4.dp))
                                     Text(
                                         text = model.description,
                                         style = MaterialTheme.typography.bodySmall,
@@ -639,6 +666,39 @@ private fun GeminiOcrSettingsSection(
                         )
                         if (model != availableModels.last()) {
                             HorizontalDivider()
+                        }
+                    }
+                }
+                
+                // ✅ НОВОЕ: Предупреждение для медленных моделей
+                AnimatedVisibility(
+                    visible = selectedModel in listOf("gemini-3-pro", "gemini-2.5-pro"),
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Spacer(Modifier.height(8.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "⚠️ This model is slow (4-7s per image). For real-time OCR, use Gemini 3 Flash or Flash Lite.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
                         }
                     }
                 }
@@ -674,7 +734,7 @@ private fun GeminiOcrSettingsSection(
             }
         }
 
-        // THRESHOLD SLIDER (только если не always)
+        // THRESHOLD SLIDER
         AnimatedVisibility(
             visible = enabled && !alwaysUseGemini,
             enter = fadeIn() + expandVertically(),
@@ -748,8 +808,7 @@ private fun GeminiOcrSettingsSection(
                         tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.size(20.dp)
                     )
-                    Text(
-                        text = if (alwaysUseGemini) {
+                    Text(text = if (alwaysUseGemini) {
                             "Gemini AI will process all images. This is slower but provides best accuracy for handwritten text."
                         } else {
                             "ML Kit processes images first. If confidence is below $threshold%, Gemini AI takes over for better accuracy."
@@ -760,6 +819,49 @@ private fun GeminiOcrSettingsSection(
                 }
             }
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ✅ НОВАЯ ФУНКЦИЯ: Speed Badge для моделей
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Badge показывающий скорость модели Gemini.
+ * 
+ * Категории:
+ * - ⚡ FAST: gemini-3-flash, gemini-2.5-flash-lite (1-2 сек)
+ * - ⚖️ BALANCED: gemini-2.5-flash (2-3 сек)
+ * - 🐌 SLOW: gemini-3-pro, gemini-2.5-pro (4-7 сек)
+ */
+@Composable
+private fun ModelSpeedBadge(modelId: String) {
+    val (text, color) = when (modelId) {
+        "gemini-3-flash", "gemini-2.5-flash-lite" -> 
+            "⚡ FAST" to Color(0xFF4CAF50)
+        
+        "gemini-2.5-flash" -> 
+            "⚖️ BALANCED" to Color(0xFF2196F3)
+        
+        "gemini-3-pro", "gemini-2.5-pro" -> 
+            "🐌 SLOW" to Color(0xFFFF9800)
+        
+        else -> 
+            "?" to Color(0xFF9E9E9E)
+    }
+    
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = color.copy(alpha = 0.15f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = color
+        )
     }
 }
 
