@@ -1,6 +1,11 @@
 /*
  * SettingsScreen.kt
- * Version: 17.0.0 - OCR COMPONENTS + TRANSLATION TEST (2026)
+ * Version: 18.0.0 - CANCEL BUTTON INTEGRATION (2026)
+ * 
+ * ✅ NEW IN 18.0.0:
+ * - Added onCancelOcr callback integration
+ * - Wired viewModel::cancelOcrTest to UI
+ * - Complete cancel button support
  * 
  * ✅ NEW IN 17.0.0:
  * - Renamed "ML Kit" tab to "OCR Components"
@@ -219,11 +224,12 @@ fun SettingsScreen(
                         onImageSelected = viewModel::setMlkitSelectedImage,
                         onTestOcr = viewModel::runMlkitOcrTest,
                         onClearTestResult = viewModel::clearMlkitTestResult,
+                        onCancelOcr = viewModel::cancelOcrTest,  // ✅ ДОБАВЛЕНО
                         onClearMlkitCache = viewModel::clearMlkitCache,
                         onGeminiOcrEnabledChange = viewModel::setGeminiOcrEnabled,
                         onGeminiOcrThresholdChange = viewModel::setGeminiOcrThreshold,
                         onGeminiOcrAlwaysChange = viewModel::setGeminiOcrAlways,
-                        onGeminiOcrModelChange = viewModel::setGeminiOcrModel,  // ✅ ДОБАВЛЕНО
+                        onGeminiOcrModelChange = viewModel::setGeminiOcrModel,
                         onTestGeminiFallbackChange = viewModel::setMlkitTestGeminiFallback,
                         onAddApiKey = { key, label -> viewModel.addApiKey(key, label) },
                         onRemoveApiKey = { viewModel.deleteKey(it) },
@@ -555,6 +561,7 @@ private fun GeneralSettingsTab(
     }
 }
 
+// ✅ ОБНОВЛЕННАЯ ФУНКЦИЯ С ПАРАМЕТРОМ onCancelOcr
 @Composable
 private fun OcrComponentsTab(
     mlkitSettings: com.docs.scanner.presentation.screens.settings.components.MlkitSettingsState,
@@ -568,11 +575,12 @@ private fun OcrComponentsTab(
     onImageSelected: (android.net.Uri?) -> Unit,
     onTestOcr: () -> Unit,
     onClearTestResult: () -> Unit,
+    onCancelOcr: () -> Unit,  // ✅ ДОБАВЛЕНО
     onClearMlkitCache: () -> Unit,
     onGeminiOcrEnabledChange: (Boolean) -> Unit,
     onGeminiOcrThresholdChange: (Int) -> Unit,
     onGeminiOcrAlwaysChange: (Boolean) -> Unit,
-    onGeminiOcrModelChange: (String) -> Unit,  // ✅ ДОБАВЛЕНО
+    onGeminiOcrModelChange: (String) -> Unit,
     onTestGeminiFallbackChange: (Boolean) -> Unit,
     onAddApiKey: (key: String, label: String) -> Unit,
     onRemoveApiKey: (key: String) -> Unit,
@@ -603,10 +611,11 @@ private fun OcrComponentsTab(
             onImageSelected = onImageSelected,
             onTestOcr = onTestOcr,
             onClearTestResult = onClearTestResult,
+            onCancelOcr = onCancelOcr,  // ✅ ПЕРЕДАЕМ
             onGeminiOcrEnabledChange = onGeminiOcrEnabledChange,
             onGeminiOcrThresholdChange = onGeminiOcrThresholdChange,
             onGeminiOcrAlwaysChange = onGeminiOcrAlwaysChange,
-            onGeminiOcrModelChange = onGeminiOcrModelChange,  // ✅ ПЕРЕДАЕМ
+            onGeminiOcrModelChange = onGeminiOcrModelChange,
             onTestGeminiFallbackChange = onTestGeminiFallbackChange,
             onAddApiKey = onAddApiKey,
             onRemoveApiKey = onRemoveApiKey,
@@ -648,8 +657,7 @@ private fun OcrComponentsTab(
                     Text("Clear MLKit Recognizer Cache")
                 }
                 Text(
-                    text = "Frees memory by releasing cached ML Kit recognizers",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "Frees memory by releasing cached ML Kit recognizers",style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)
                 )
