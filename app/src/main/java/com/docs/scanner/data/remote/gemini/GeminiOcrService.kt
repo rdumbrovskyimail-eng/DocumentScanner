@@ -273,11 +273,11 @@ class GeminiOcrService @Inject constructor(
                 Timber.d("$TAG: Image ready in ${imageLoadTime}ms")
             }
             
-            // Build request with ULTRA_FAST config
+            // ✅ ИСПРАВЛЕНО: Build request with OCR_FAST config
             val request = geminiVisionRequest {
                 addText(OCR_PROMPT)
                 addImage(base64Image, "image/jpeg")
-                config(GenerationConfig.OCR_ULTRA_FAST)
+                config(GenerationConfig.OCR_FAST)  // ✅ БЫЛО: OCR_ULTRA_FAST → СТАЛО: OCR_FAST
             }
             
             // Execute with automatic key failover
