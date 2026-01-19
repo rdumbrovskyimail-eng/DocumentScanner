@@ -751,7 +751,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun deleteDriveBackup(fileId: String) {
-        viewModelScopeviewModelScope.launch {
+        viewModelScope.launch {
             _isBackingUp.value = true
             try {
                 when (useCases.backup.deleteGoogleDriveBackup(fileId)) {
