@@ -2,8 +2,15 @@ package com.docs.scanner.data.remote.gemini
 
 /**
  * Request/Response models for Gemini Vision API.
- * Supports both text-only and multimodal (text + image) requests.
  * 
+ * Version: 2.0.0 - SPEED OPTIMIZED (2026)
+ * 
+ * ✅ NEW IN 2.0.0:
+ * - OCR_FAST GenerationConfig with temperature=0, topK=20
+ * - Reduced maxOutputTokens for faster processing
+ * - TEXT_FIX config for text correction
+ * 
+ * Supports both text-only and multimodal (text + image) requests.
  * Uses simple data classes - Retrofit/Gson handles serialization automatically.
  */
 
@@ -43,6 +50,14 @@ data class InlineData(
     val data: String
 )
 
+/**
+ * Generation configuration for Gemini API.
+ * 
+ * ✅ OPTIMIZED for speed in 2.0.0:
+ * - temperature = 0.0 for deterministic output (faster)
+ * - topK = 20 for faster sampling (was 40)
+ * - Reduced maxOutputTokens where appropriate
+ */
 data class GenerationConfig(
     val maxOutputTokens: Int = 4096,
     val temperature: Float = 0.1f,
@@ -50,20 +65,39 @@ data class GenerationConfig(
     val topK: Int = 40
 ) {
     companion object {
-        /** Optimized config for OCR - low temperature for accuracy */
-        val OCR = GenerationConfig(
-            maxOutputTokens = 8192,
-            temperature = 0.1f,
-            topP = 0.95f,
-            topK = 40
+        /**
+         * ✅ OPTIMIZED: Fast OCR config for maximum speed
+         * 
+         * Changes from original OCR config:
+         * - maxOutputTokens: 8192 → 4096 (OCR rarely needs more)
+         * - temperature: 0.1 → 0.0 (deterministic = faster)
+         * - topP: 0.95 → 0.9 (slightly narrower)
+         * - topK: 40 → 20 (faster sampling)
+         */
+        val OCR_FAST = GenerationConfig(
+            maxOutputTokens = 4096,
+            temperature = 0.0f,
+            topP = 0.9f,
+            topK = 20
         )
+        
+        /** Legacy OCR config for compatibility */
+        val OCR = OCR_FAST
 
-        /** Config for translation - slightly higher temperature */
+        /** Config for translation - slightly higher temperature for natural text */
         val TRANSLATION = GenerationConfig(
             maxOutputTokens = 4096,
-            temperature = 0.3f,
-            topP = 0.95f,
-            topK = 40
+            temperature = 0.2f,
+            topP = 0.9f,
+            topK = 30
+        )
+        
+        /** Config for text correction/fixing */
+        val TEXT_FIX = GenerationConfig(
+            maxOutputTokens = 4096,
+            temperature = 0.1f,
+            topP = 0.9f,
+            topK = 20
         )
     }
 }
@@ -162,7 +196,7 @@ fun GeminiVisionResponse.getBlockReason(): String? {
  */
 class GeminiVisionRequestBuilder {
     private val parts = mutableListOf<VisionPart>()
-    private var config: GenerationConfig = GenerationConfig.OCR
+    private var config: GenerationConfig = GenerationConfig.OCR_FAST
     private var safety: List<SafetySetting> = SafetySetting.DEFAULT
 
     fun addText(text: String): GeminiVisionRequestBuilder {
