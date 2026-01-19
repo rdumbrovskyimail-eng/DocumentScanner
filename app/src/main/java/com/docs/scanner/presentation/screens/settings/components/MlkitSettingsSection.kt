@@ -1,6 +1,11 @@
 /*
  * MlkitSettingsSection.kt
- * Version: 10.1.0 - AUTO-TRANSLATION UI SUPPORT (2026)
+ * Version: 11.0.0 - GEMINI MODEL SELECTION UI (2026)
+ * 
+ * ✅ NEW IN 11.0.0:
+ * - Gemini model selection dropdown
+ * - Model display names and descriptions
+ * - Visual model selection UI
  * 
  * ✅ NEW IN 10.1.0:
  * - Auto-translation display in OCR results
@@ -50,6 +55,7 @@ import coil3.compose.AsyncImage
 import com.docs.scanner.data.remote.mlkit.OcrScriptMode
 import com.docs.scanner.data.remote.mlkit.OcrTestResult
 import com.docs.scanner.data.local.security.ApiKeyEntry
+import com.docs.scanner.data.local.preferences.GeminiModelOption
 import com.docs.scanner.domain.core.OcrSource
 
 @Composable
@@ -69,6 +75,7 @@ fun MlkitSettingsSection(
     onGeminiOcrEnabledChange: (Boolean) -> Unit,
     onGeminiOcrThresholdChange: (Int) -> Unit,
     onGeminiOcrAlwaysChange: (Boolean) -> Unit,
+    onGeminiOcrModelChange: (String) -> Unit,  // ✅ НОВЫЙ ПАРАМЕТР
     // Test Gemini fallback
     onTestGeminiFallbackChange: (Boolean) -> Unit,
     // API Keys callbacks
@@ -393,9 +400,12 @@ fun MlkitSettingsSection(
                 enabled = state.geminiOcrEnabled,
                 threshold = state.geminiOcrThreshold,
                 alwaysUseGemini = state.geminiOcrAlways,
+                selectedModel = state.selectedGeminiModel,  // ✅ ПЕРЕДАЕМ
+                availableModels = state.availableGeminiModels,  // ✅ ПЕРЕДАЕМ
                 onEnabledChange = onGeminiOcrEnabledChange,
                 onThresholdChange = onGeminiOcrThresholdChange,
-                onAlwaysUseGeminiChange = onGeminiOcrAlwaysChange
+                onAlwaysUseGeminiChange = onGeminiOcrAlwaysChange,
+                onModelChange = onGeminiOcrModelChange  // ✅ ПЕРЕДАЕМ
             )
 
             // ════════════════════════════════════════════════════════════════
@@ -457,6 +467,296 @@ fun MlkitSettingsSection(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// ✅ ОБНОВЛЕННАЯ СЕКЦИЯ GEMINI OCR С ВЫБОРОМ МОДЕЛИ
+// ════════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun GeminiOcrSettingsSection(
+    enabled: Boolean,
+    threshold: Int,
+    alwaysUseGemini: Boolean,
+    selectedModel: String,  // ✅ НОВЫЙ ПАРАМЕТР
+    availableModels: List<GeminiModelOption>,  // ✅ НОВЫЙ ПАРАМЕТР
+    onEnabledChange: (Boolean) -> Unit,
+    onThresholdChange: (Int) -> Unit,
+    onAlwaysUseGeminiChange: (Boolean) -> Unit,
+    onModelChange: (String) -> Unit  // ✅ НОВЫЙ CALLBACK
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // HEADER
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.AutoAwesome,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.tertiary
+            )
+            Text(
+                text = "Gemini AI Fallback",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Text(
+            text = "Use Gemini AI when ML Kit confidence is low or for handwritten text",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        // ENABLE TOGGLE
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Enable Gemini fallback",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = "Automatically use Gemini for low-quality scans",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onEnabledChange
+            )
+        }
+
+        // ✅ ВЫБОР МОДЕЛИ GEMINI (показываем только если enabled)
+        AnimatedVisibility(
+            visible = enabled,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Gemini Model",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                var expanded by remember { mutableStateOf(false) }
+                
+                OutlinedButton(
+                    onClick = { expanded = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            val selectedModelOption = availableModels.find { it.id == selectedModel }
+                            Text(
+                                text = selectedModelOption?.displayName ?: selectedModel,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            selectedModelOption?.description?.let { desc ->
+                                Text(
+                                    text = desc,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Icon(
+                            Icons.Default.ArrowDropDown, 
+                            contentDescription = null,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
+                }
+                
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier.fillMaxWidth(0.9f)
+                ) {
+                    availableModels.forEach { model ->
+                        DropdownMenuItem(
+                            text = {
+                                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = model.displayName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = if (model.id == selectedModel) 
+                                                FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        if (model.isRecommended) {
+                                            Badge(
+                                                containerColor = MaterialTheme.colorScheme.primaryContainer
+                                            ) {
+                                                Text(
+                                                    text = "Recommended",
+                                                    style = MaterialTheme.typography.labelSmall
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        text = model.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            onClick = {
+                                onModelChange(model.id)
+                                expanded = false
+                            },
+                            leadingIcon = if (model.id == selectedModel) {
+                                {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            } else null
+                        )
+                        if (model != availableModels.last()) {
+                            HorizontalDivider()
+                        }
+                    }
+                }
+            }
+        }
+
+        // ALWAYS USE GEMINI TOGGLE
+        AnimatedVisibility(
+            visible = enabled,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Always use Gemini",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "Skip ML Kit entirely (slower but more accurate)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = alwaysUseGemini,
+                    onCheckedChange = onAlwaysUseGeminiChange
+                )
+            }
+        }
+
+        // THRESHOLD SLIDER (только если не always)
+        AnimatedVisibility(
+            visible = enabled && !alwaysUseGemini,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Confidence threshold",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Switch to Gemini when ML Kit confidence is below this",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = "$threshold%",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+                
+                Slider(
+                    value = threshold.toFloat(),
+                    onValueChange = { onThresholdChange(it.toInt()) },
+                    valueRange = 30f..90f,
+                    steps = 11,
+                    colors = SliderDefaults.colors(
+                        thumbColor = MaterialTheme.colorScheme.tertiary,
+                        activeTrackColor = MaterialTheme.colorScheme.tertiary
+                    )
+                )
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("30%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("90%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+
+        // INFO CARD
+        AnimatedVisibility(
+            visible = enabled,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = if (alwaysUseGemini) {
+                            "Gemini AI will process all images. This is slower but provides best accuracy for handwritten text."
+                        } else {
+                            "ML Kit processes images first. If confidence is below $threshold%, Gemini AI takes over for better accuracy."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -564,7 +864,7 @@ private fun SettingToggleRow(
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// ✅ UPDATED: OcrTestResultView with Auto-Translation Support
+// OCR TEST RESULT VIEW
 // ════════════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -585,9 +885,7 @@ private fun OcrTestResultView(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // ════════════════════════════════════════════════════════════════
             // HEADER with Source Badge
-            // ════════════════════════════════════════════════════════════════
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -603,7 +901,6 @@ private fun OcrTestResultView(
                         fontWeight = FontWeight.Bold
                     )
                     
-                    // ✅ NEW: Source Badge
                     SourceBadge(source = result.source)
                 }
                 
@@ -612,9 +909,7 @@ private fun OcrTestResultView(
                 }
             }
 
-            // ════════════════════════════════════════════════════════════════
             // STATS ROW
-            // ════════════════════════════════════════════════════════════════
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -643,9 +938,7 @@ private fun OcrTestResultView(
 
             HorizontalDivider()
 
-            // ════════════════════════════════════════════════════════════════
             // CHIPS ROW
-            // ════════════════════════════════════════════════════════════════
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -670,9 +963,7 @@ private fun OcrTestResultView(
                 }
             }
 
-            // ════════════════════════════════════════════════════════════════
-            // ✅ NEW: Gemini Fallback Info
-            // ════════════════════════════════════════════════════════════════
+            // Gemini Fallback Info
             if (result.geminiFallbackTriggered) {
                 GeminiFallbackInfoCard(
                     reason = result.geminiFallbackReason,
@@ -681,9 +972,7 @@ private fun OcrTestResultView(
                 )
             }
 
-            // ════════════════════════════════════════════════════════════════
             // LOW CONFIDENCE WARNING
-            // ════════════════════════════════════════════════════════════════
             if (result.lowConfidenceWords > 0 && result.source == OcrSource.ML_KIT) {
                 Row(
                     modifier = Modifier
@@ -711,9 +1000,7 @@ private fun OcrTestResultView(
 
             HorizontalDivider()
 
-            // ════════════════════════════════════════════════════════════════
             // RECOGNIZED TEXT
-            // ════════════════════════════════════════════════════════════════
             Text(
                 text = "Recognized Text:",
                 style = MaterialTheme.typography.labelLarge
@@ -758,9 +1045,7 @@ private fun OcrTestResultView(
                 }
             }
 
-            // ════════════════════════════════════════════════════════════════
-            // ✅ NEW: AUTO-TRANSLATION (если есть)
-            // ════════════════════════════════════════════════════════════════
+            // AUTO-TRANSLATION
             if (result.translatedText != null) {
                 HorizontalDivider()
                 
@@ -814,9 +1099,7 @@ private fun OcrTestResultView(
                 }
             }
 
-            // ════════════════════════════════════════════════════════════════
-            // WORD CONFIDENCES (optional)
-            // ════════════════════════════════════════════════════════════════
+            // WORD CONFIDENCES
             if (showWordConfidences && result.wordConfidences.isNotEmpty() && result.source == OcrSource.ML_KIT) {
                 HorizontalDivider()
                 
@@ -854,10 +1137,6 @@ private fun OcrTestResultView(
     }
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
-// ✅ NEW: Source Badge Composable
-// ════════════════════════════════════════════════════════════════════════════════
-
 @Composable
 private fun SourceBadge(source: OcrSource) {
     val (text, color, icon) = when (source) {
@@ -891,10 +1170,6 @@ private fun SourceBadge(source: OcrSource) {
         }
     }
 }
-
-// ════════════════════════════════════════════════════════════════════════════════
-// ✅ NEW: Gemini Fallback Info Card
-// ════════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun GeminiFallbackInfoCard(
@@ -958,10 +1233,6 @@ private fun GeminiFallbackInfoCard(
         }
     }
 }
-
-// ════════════════════════════════════════════════════════════════════════════════
-// OTHER HELPER COMPOSABLES
-// ════════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun StatItem(
