@@ -3,8 +3,8 @@ package com.docs.scanner.presentation.screens.settings.components
 import android.net.Uri
 import com.docs.scanner.data.local.preferences.GeminiModelOption
 import com.docs.scanner.data.remote.mlkit.OcrScriptMode
+import com.docs.scanner.data.remote.mlkit.OcrTestResult  // ✅ FIX: Правильный импорт
 import com.docs.scanner.domain.core.Language
-import com.docs.scanner.domain.core.OcrTestResult
 
 /**
  * UI State for MLKit and Gemini OCR settings.
