@@ -974,7 +974,6 @@ class AllUseCases @Inject constructor(
 // 4. LEGACY STATE
 // ══════════════════════════════════════════════════════════════════════════════
 
-/**
  * Legacy-ish progress state used by some presentation code when adding a document.
  *
  * TODO: Replace with a single shared processing/progress model across the app.
@@ -986,4 +985,3 @@ sealed interface AddDocumentState {
     data class Success(val documentId: Long) : AddDocumentState
     data class Error(val message: String) : AddDocumentState
 }
-*/
