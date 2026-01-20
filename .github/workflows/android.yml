@@ -120,12 +120,21 @@ jobs:
       run: |
         mkdir -p apk-output
         echo "Searching for APKs..."
-        find . -name "*.apk" -type f
+        find . -name "*.apk" -type f || true
         
-        DEBUG_APK=$(find . -path "*/debug/*.apk" -o -path "*/outputs/apk/debug/*.apk" | head -1)
-        RELEASE_APK=$(find . -path "*/release/*.apk" -o -path "*/outputs/apk/release/*.apk" | head -1)
+        DEBUG_APK=$(find . -name "*.apk" -path "*/debug/*" 2>/dev/null | head -1 || echo "")
+        RELEASE_APK=$(find . -name "*.apk" -path "*/release/*" 2>/dev/null | head -1 || echo "")
         
-        if [ -n "$DEBUG_APK" ]; then
+        # Альтернативный поиск
+        if [ -z "$DEBUG_APK" ]; then
+          DEBUG_APK=$(find . -name "*-debug.apk" 2>/dev/null | head -1 || echo "")
+        fi
+        
+        if [ -z "$RELEASE_APK" ]; then
+          RELEASE_APK=$(find . -name "*-release*.apk" 2>/dev/null | head -1 || echo "")
+        fi
+        
+        if [ -n "$DEBUG_APK" ] && [ -f "$DEBUG_APK" ]; then
           echo "Found debug APK: $DEBUG_APK"
           cp "$DEBUG_APK" "apk-output/DocumentScanner-debug.apk"
           echo "debug_found=true" >> $GITHUB_OUTPUT
@@ -133,7 +142,7 @@ jobs:
           echo "debug_found=false" >> $GITHUB_OUTPUT
         fi
         
-        if [ -n "$RELEASE_APK" ]; then
+        if [ -n "$RELEASE_APK" ] && [ -f "$RELEASE_APK" ]; then
           echo "Found release APK: $RELEASE_APK"
           cp "$RELEASE_APK" "apk-output/DocumentScanner-release.apk"
           echo "release_found=true" >> $GITHUB_OUTPUT
@@ -141,33 +150,38 @@ jobs:
           echo "release_found=false" >> $GITHUB_OUTPUT
         fi
         
-        if [ -n "$DEBUG_APK" ] || [ -n "$RELEASE_APK" ]; then
+        # Проверяем наличие хотя бы одного APK
+        if [ -f "apk-output/DocumentScanner-debug.apk" ] || [ -f "apk-output/DocumentScanner-release.apk" ]; then
           echo "any_apk=true" >> $GITHUB_OUTPUT
           echo "📦 APK files prepared:"
-          ls -lh apk-output/
+          ls -lh apk-output/ || true
         else
           echo "any_apk=false" >> $GITHUB_OUTPUT
           echo "⚠️ No APK files found"
+          echo "All APK files in project:"
+          find . -name "*.apk" -type f || echo "No APKs found anywhere"
         fi
         
     - name: Upload Debug APK
-      if: steps.find_apks.outputs.debug_found == 'true'
+      if: always() && steps.find_apks.outputs.debug_found == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: DocumentScanner-Debug-APK
         path: apk-output/DocumentScanner-debug.apk
         retention-days: 30
+        if-no-files-found: warn
         
     - name: Upload Release APK
-      if: steps.find_apks.outputs.release_found == 'true'
+      if: always() && steps.find_apks.outputs.release_found == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: DocumentScanner-Release-APK
         path: apk-output/DocumentScanner-release.apk
         retention-days: 90
+        if-no-files-found: warn
         
     - name: Create Release
-      if: steps.find_apks.outputs.any_apk == 'true' && github.event_name == 'push'
+      if: always() && steps.find_apks.outputs.any_apk == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v1.0.${{ github.run_number }}
@@ -239,4 +253,7 @@ jobs:
         if [ "${{ steps.find_apks.outputs.any_apk }}" = "true" ]; then
           echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "APK files are available in the workflow artifacts and release section." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### ⚠️ Warning" >> $GITHUB_STEP_SUMMARY
+          echo "No APK files were found. Check build logs for errors." >> $GITHUB_STEP_SUMMARY
         fi
