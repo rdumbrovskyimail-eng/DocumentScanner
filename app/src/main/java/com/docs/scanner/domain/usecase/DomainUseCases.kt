@@ -690,6 +690,7 @@ class TranslationUseCases @Inject constructor(
         if (source == target && source != Language.AUTO) return DomainResult.failure(DomainError.UnsupportedLanguagePair(source, target))
         return repo.translate(text, source, target)
     }
+}
     
     /**
      * ✅ NEW in 2.0.0: Translates text using specified Gemini model.
