@@ -1,259 +1,86 @@
-name: Android Build
+name: Android CI
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
+    branches: [ "main" ]
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
+    - uses: actions/checkout@v4
+    
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: gradle
-        
-    - name: Validate Gradle wrapper
-      uses: gradle/wrapper-validation-action@v2
-        
-    - name: Make gradlew executable
-      run: chmod +x gradlew
-      
-    - name: Build with Gradle Wrapper
-      run: ./gradlew tasks || echo "Gradle wrapper check failed"
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: 8.11.1
       
     - name: Build Debug APK
-      id: build_debug
-      run: |
-        ./gradlew assembleDebug --stacktrace > build-debug.log 2>&1 || true
-        BUILD_STATUS=$?
-        echo "status=$BUILD_STATUS" >> $GITHUB_OUTPUT
-      continue-on-error: true
+      run: gradle assembleDebug --stacktrace
       
     - name: Build Release APK
-      id: build_release
-      run: |
-        ./gradlew assembleRelease --stacktrace > build-release.log 2>&1 || true
-        BUILD_STATUS=$?
-        echo "status=$BUILD_STATUS" >> $GITHUB_OUTPUT
+      run: gradle assembleRelease --stacktrace
       continue-on-error: true
       
-    - name: Extract compilation errors
-      if: always()
+    - name: Prepare APKs
       run: |
-        cat > compilation-errors.md << 'EOF'
-        # Build Logs - Run #${{ github.run_number }}
+        mkdir -p apks
         
-        **Repository:** ${{ github.repository }}
-        **Branch:** ${{ github.ref_name }}
-        **Commit:** `${{ github.sha }}`
-        **Date:** $(date -u)
-        
-        ## 🐛 Debug Build
-        EOF
-        
-        if [ "${{ steps.build_debug.outputs.status }}" = "0" ]; then
-          echo "✅ **Status:** SUCCESS" >> compilation-errors.md
-        else
-          echo "❌ **Status:** FAILED" >> compilation-errors.md
-          echo "" >> compilation-errors.md
-          echo "### Errors:" >> compilation-errors.md
-          echo '```' >> compilation-errors.md
-          cat build-debug.log | head -100 >> compilation-errors.md
-          echo '```' >> compilation-errors.md
+        # Debug APK (всегда должен быть)
+        if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+          cp app/build/outputs/apk/debug/app-debug.apk apks/DocumentScanner-v${{ github.run_number }}-debug.apk
+          echo "✅ Debug APK готов"
         fi
         
-        cat >> compilation-errors.md << 'EOF'
-        
-        ## 🚀 Release Build
-        EOF
-        
-        if [ "${{ steps.build_release.outputs.status }}" = "0" ]; then
-          echo "✅ **Status:** SUCCESS" >> compilation-errors.md
+        # Release APK (может не собраться без ключа)
+        if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+          cp app/build/outputs/apk/release/app-release-unsigned.apk apks/DocumentScanner-v${{ github.run_number }}-release.apk
+          echo "✅ Release APK готов"
+        elif [ -f app/build/outputs/apk/release/app-release.apk ]; then
+          cp app/build/outputs/apk/release/app-release.apk apks/DocumentScanner-v${{ github.run_number }}-release.apk
+          echo "✅ Release APK готов"
         else
-          echo "❌ **Status:** FAILED" >> compilation-errors.md
-          echo "" >> compilation-errors.md
-          echo "### Errors:" >> compilation-errors.md
-          echo '```' >> compilation-errors.md
-          cat build-release.log | head -100 >> compilation-errors.md
-          echo '```' >> compilation-errors.md
+          echo "⚠️ Release APK не найден"
         fi
         
-    - name: Upload logs to Gist
-      if: always()
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const fs = require('fs');
-          const content = fs.readFileSync('compilation-errors.md', 'utf8');
-          
-          try {
-            const gist = await github.rest.gists.create({
-              description: `Build logs - Run #${context.runNumber}`,
-              public: false,
-              files: {
-                'build-log.md': { content: content }
-              }
-            });
-            
-            console.log(`📝 Logs: ${gist.data.html_url}`);
-            core.summary.addLink('View Build Logs', gist.data.html_url);
-            await core.summary.write();
-          } catch (error) {
-            console.log('Failed to create gist');
-            console.log(content);
-          }
+        echo ""
+        echo "📦 Готовые APK файлы:"
+        ls -lh apks/
       
-    - name: Find APKs
-      id: find_apks
-      if: always()
-      run: |
-        mkdir -p apk-output
-        echo "Searching for APKs..."
-        find . -name "*.apk" -type f || true
-        
-        DEBUG_APK=$(find . -name "*.apk" -path "*/debug/*" 2>/dev/null | head -1 || echo "")
-        RELEASE_APK=$(find . -name "*.apk" -path "*/release/*" 2>/dev/null | head -1 || echo "")
-        
-        # Альтернативный поиск
-        if [ -z "$DEBUG_APK" ]; then
-          DEBUG_APK=$(find . -name "*-debug.apk" 2>/dev/null | head -1 || echo "")
-        fi
-        
-        if [ -z "$RELEASE_APK" ]; then
-          RELEASE_APK=$(find . -name "*-release*.apk" 2>/dev/null | head -1 || echo "")
-        fi
-        
-        if [ -n "$DEBUG_APK" ] && [ -f "$DEBUG_APK" ]; then
-          echo "Found debug APK: $DEBUG_APK"
-          cp "$DEBUG_APK" "apk-output/DocumentScanner-debug.apk"
-          echo "debug_found=true" >> $GITHUB_OUTPUT
-        else
-          echo "debug_found=false" >> $GITHUB_OUTPUT
-        fi
-        
-        if [ -n "$RELEASE_APK" ] && [ -f "$RELEASE_APK" ]; then
-          echo "Found release APK: $RELEASE_APK"
-          cp "$RELEASE_APK" "apk-output/DocumentScanner-release.apk"
-          echo "release_found=true" >> $GITHUB_OUTPUT
-        else
-          echo "release_found=false" >> $GITHUB_OUTPUT
-        fi
-        
-        # Проверяем наличие хотя бы одного APK
-        if [ -f "apk-output/DocumentScanner-debug.apk" ] || [ -f "apk-output/DocumentScanner-release.apk" ]; then
-          echo "any_apk=true" >> $GITHUB_OUTPUT
-          echo "📦 APK files prepared:"
-          ls -lh apk-output/ || true
-        else
-          echo "any_apk=false" >> $GITHUB_OUTPUT
-          echo "⚠️ No APK files found"
-          echo "All APK files in project:"
-          find . -name "*.apk" -type f || echo "No APKs found anywhere"
-        fi
-        
-    - name: Upload Debug APK
-      if: always() && steps.find_apks.outputs.debug_found == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: DocumentScanner-Debug-APK
-        path: apk-output/DocumentScanner-debug.apk
-        retention-days: 30
-        if-no-files-found: warn
-        
-    - name: Upload Release APK
-      if: always() && steps.find_apks.outputs.release_found == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: DocumentScanner-Release-APK
-        path: apk-output/DocumentScanner-release.apk
-        retention-days: 90
-        if-no-files-found: warn
-        
     - name: Create Release
-      if: always() && steps.find_apks.outputs.any_apk == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v1.0.${{ github.run_number }}
         name: DocumentScanner v1.0.${{ github.run_number }}
         body: |
-          ## 📱 DocumentScanner Build #${{ github.run_number }}
+          ## 📱 DocumentScanner v1.0.${{ github.run_number }}
           
-          ### Build Information
+          ### 📥 Установка
+          1. Скачайте APK файл
+          2. **Удалите старую версию приложения** (если установлена)
+          3. Установите новую версию
+          4. При необходимости включите "Установка из неизвестных источников"
+          
+          ### 📦 Доступные версии
+          - **Debug APK** - для тестирования и отладки
+          - **Release APK** - оптимизированная версия (если доступна)
+          
+          ### 📝 Информация о сборке
           - **Commit:** `${{ github.sha }}`
           - **Branch:** `${{ github.ref_name }}`
-          - **Date:** ${{ github.event.head_commit.timestamp }}
-          - **Author:** @${{ github.actor }}
+          - **Build:** #${{ github.run_number }}
           
-          ### 📦 Available APKs
-          ${{ steps.find_apks.outputs.debug_found == 'true' && '- ✅ Debug APK' || '- ❌ Debug APK (build failed)' }}
-          ${{ steps.find_apks.outputs.release_found == 'true' && '- ✅ Release APK' || '- ❌ Release APK (build failed)' }}
-          
-          ### 📝 Changes
-          ${{ github.event.head_commit.message }}
-          
-          ### ⬇️ Download
-          - **Debug APK**: For testing and development
-          - **Release APK**: Optimized production build
-          
-          > 💡 **Note:** Release APK is unsigned. You may need to enable "Install from Unknown Sources" on your device.
-        files: apk-output/*.apk
+        files: apks/*.apk
         fail_on_unmatched_files: false
-        draft: false
-        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Build Summary
-      if: always()
-      run: |
-        echo "## 🏗️ Build Summary" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "| Build Type | Status | APK |" >> $GITHUB_STEP_SUMMARY
-        echo "|------------|--------|-----|" >> $GITHUB_STEP_SUMMARY
-        
-        if [ "${{ steps.build_debug.outputs.status }}" = "0" ]; then
-          DEBUG_STATUS="✅ Success"
-        else
-          DEBUG_STATUS="❌ Failed"
-        fi
-        
-        if [ "${{ steps.build_release.outputs.status }}" = "0" ]; then
-          RELEASE_STATUS="✅ Success"
-        else
-          RELEASE_STATUS="❌ Failed"
-        fi
-        
-        if [ "${{ steps.find_apks.outputs.debug_found }}" = "true" ]; then
-          DEBUG_APK="✅ Available"
-        else
-          DEBUG_APK="❌ Not found"
-        fi
-        
-        if [ "${{ steps.find_apks.outputs.release_found }}" = "true" ]; then
-          RELEASE_APK="✅ Available"
-        else
-          RELEASE_APK="❌ Not found"
-        fi
-        
-        echo "| Debug | $DEBUG_STATUS | $DEBUG_APK |" >> $GITHUB_STEP_SUMMARY
-        echo "| Release | $RELEASE_STATUS | $RELEASE_APK |" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        
-        if [ "${{ steps.find_apks.outputs.any_apk }}" = "true" ]; then
-          echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "APK files are available in the workflow artifacts and release section." >> $GITHUB_STEP_SUMMARY
-        else
-          echo "### ⚠️ Warning" >> $GITHUB_STEP_SUMMARY
-          echo "No APK files were found. Check build logs for errors." >> $GITHUB_STEP_SUMMARY
-        fi
