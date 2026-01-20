@@ -699,7 +699,7 @@ class TranslationUseCases @Inject constructor(
      * Used in Settings → Translation Test for testing different models.
      * 
      * @param text Text to translate
-     * @param source Source language (AUTO for auto-/**
+     * @param source Source language (AUTO for auto-detect)
      * ✅ NEW in 2.0.0: Translates text using specified Gemini model.
      * 
      * Allows selecting specific model for translation.
