@@ -12,6 +12,18 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
 
+/**
+ * GeminiTranslator.kt
+ * Version: 2.0.0 - MODEL SELECTION SUPPORT (2026)
+ * 
+ * ✅ NEW in 2.0.0:
+ * - translateWithModel() method for explicit model selection
+ * - Used in Settings → Translation Test
+ * 
+ * ✅ UPDATED:
+ * - preferredModel: gemini-2.5-flash-lite (fastest)
+ * - fallbackModels: 2.5-flash-lite → 2.5-flash → 3-flash → 2.5-pro → 3-pro
+ */
 @Singleton
 class GeminiTranslator @Inject constructor(
     private val geminiApi: GeminiApi,
@@ -22,11 +34,17 @@ class GeminiTranslator @Inject constructor(
     /**
      * 2026 default: fast/cheap model.
      *
-     * We keep a fallback to a widely-available model to avoid hard failures if the
-     * preferred model name is not enabled for the project/region.
+     * ✅ UPDATED: Complete fallback chain from fastest to slowest
+     * 2.5-flash-lite → 2.5-flash → 3-flash-preview → 2.5-pro → 3-pro-preview
      */
     private val preferredModel: String = "gemini-2.5-flash-lite"
-    private val fallbackModels: List<String> = listOf("gemini-1.5-flash")
+    private val fallbackModels: List<String> = listOf(
+        "gemini-2.5-flash-lite",      // ✅ Ultra-fast, cheapest (same as preferred for consistency)
+        "gemini-2.5-flash",           // ✅ Fast, stable
+        "gemini-3-flash-preview",     // ✅ Latest fast (may have rate limits)
+        "gemini-2.5-pro",             // ✅ Slow but accurate
+        "gemini-3-pro-preview"        // ✅ Best quality (PAID only)
+    )
 
     suspend fun translate(
         text: String,
@@ -118,6 +136,132 @@ class GeminiTranslator @Inject constructor(
                             targetLanguage = targetLanguage,
                             fromCache = false,
                             processingTimeMs = System.currentTimeMillis() - start
+                        )
+                    )
+                }
+            }
+
+            is DomainResult.Failure -> DomainResult.failure(api.error)
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ✅ NEW in 2.0.0: TRANSLATE WITH SPECIFIC MODEL
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Translates text using specified model.
+     * 
+     * ✅ NEW: Allows model override for testing different models in Settings UI.
+     * 
+     * Similar to translate() but allows model override.
+     * Used for testing different models in Settings UI.
+     * 
+     * @param text Text to translate
+     * @param sourceLanguage Source language
+     * @param targetLanguage Target language
+     * @param model Gemini model ID to use (e.g., "gemini-2.5-flash-lite")
+     * @param useCacheOverride Optional cache override (null = use settings)
+     * @return TranslationResult or error
+     */
+    suspend fun translateWithModel(
+        text: String,
+        sourceLanguage: Language,
+        targetLanguage: Language,
+        model: String,
+        useCacheOverride: Boolean? = null
+    ): DomainResult<TranslationResult> {
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) {
+            return DomainResult.Success(
+                TranslationResult(
+                    originalText = text,
+                    translatedText = "",
+                    sourceLanguage = sourceLanguage,
+                    targetLanguage = targetLanguage,
+                    fromCache = true,
+                    processingTimeMs = 0
+                )
+            )
+        }
+
+        val start = System.currentTimeMillis()
+        val srcCode = sourceLanguage.code
+        val tgtCode = targetLanguage.code
+
+        val cacheEnabled = useCacheOverride ?: (runCatching { settingsDataStore.cacheEnabled.first() }.getOrNull() ?: true)
+        val ttlDays = runCatching { settingsDataStore.cacheTtlDays.first() }.getOrNull() ?: 30
+
+        // Check cache first
+        if (cacheEnabled) {
+            val cached = translationCacheManager.getCachedTranslation(
+                text = trimmed,
+                sourceLang = srcCode,
+                targetLang = tgtCode,
+                maxAgeDays = ttlDays
+            )
+            if (cached != null) {
+                Timber.d("📦 Translation cache hit")
+                return DomainResult.Success(
+                    TranslationResult(
+                        originalText = trimmed,
+                        translatedText = cached,
+                        sourceLanguage = sourceLanguage,
+                        targetLanguage = targetLanguage,
+                        fromCache = true,
+                        processingTimeMs = 0
+                    )
+                )
+            }
+        }
+
+        val prompt = buildString {
+            appendLine("Translate the following text.")
+            appendLine("Source language: ${sourceLanguage.displayName} (${sourceLanguage.code})")
+            appendLine("Target language: ${targetLanguage.displayName} (${targetLanguage.code})")
+            appendLine("Return ONLY the translated text. Do not add quotes, markdown, or explanations.")
+            appendLine()
+            append(trimmed)
+        }
+
+        // ✅ Use specified model with proper fallback chain
+        return when (val api = geminiApi.generateText(
+            prompt = prompt,
+            model = model,  // ✅ Используем переданную модель
+            fallbackModels = fallbackModels  // ✅ Fallback: flash-lite → flash → 3-flash → 2.5-pro → 3-pro
+        )) {
+            is DomainResult.Success -> {
+                val translated = api.data.trim()
+                if (translated.isBlank()) {
+                    DomainResult.failure(
+                        DomainError.TranslationFailed(
+                            from = sourceLanguage,
+                            to = targetLanguage,
+                            cause = "Empty translation"
+                        )
+                    )
+                } else {
+                    // Cache the result
+                    if (cacheEnabled) {
+                        translationCacheManager.cacheTranslation(
+                            originalText = trimmed,
+                            translatedText = translated,
+                            sourceLang = srcCode,
+                            targetLang = tgtCode
+                        )
+                    }
+
+                    val elapsed = System.currentTimeMillis() - start
+                    Timber.d("✅ Translated with $model in ${elapsed}ms")
+                    
+                    DomainResult.Success(
+                        TranslationResult(
+                            originalText = trimmed,
+                            translatedText = translated,
+                            sourceLanguage = sourceLanguage,
+                            targetLanguage = targetLanguage,
+                            fromCache = false,
+                            processingTimeMs = elapsed
                         )
                     )
                 }
