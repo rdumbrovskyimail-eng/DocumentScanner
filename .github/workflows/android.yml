@@ -119,40 +119,124 @@ jobs:
       if: always()
       run: |
         mkdir -p apk-output
+        echo "Searching for APKs..."
         find . -name "*.apk" -type f
         
-        DEBUG_APK=$(find . -path "*/debug/*.apk" | head -1)
-        RELEASE_APK=$(find . -path "*/release/*.apk" | head -1)
+        DEBUG_APK=$(find . -path "*/debug/*.apk" -o -path "*/outputs/apk/debug/*.apk" | head -1)
+        RELEASE_APK=$(find . -path "*/release/*.apk" -o -path "*/outputs/apk/release/*.apk" | head -1)
         
         if [ -n "$DEBUG_APK" ]; then
-          cp "$DEBUG_APK" "apk-output/app-debug.apk"
+          echo "Found debug APK: $DEBUG_APK"
+          cp "$DEBUG_APK" "apk-output/DocumentScanner-debug.apk"
           echo "debug_found=true" >> $GITHUB_OUTPUT
+        else
+          echo "debug_found=false" >> $GITHUB_OUTPUT
         fi
         
         if [ -n "$RELEASE_APK" ]; then
-          cp "$RELEASE_APK" "apk-output/app-release.apk"
+          echo "Found release APK: $RELEASE_APK"
+          cp "$RELEASE_APK" "apk-output/DocumentScanner-release.apk"
           echo "release_found=true" >> $GITHUB_OUTPUT
+        else
+          echo "release_found=false" >> $GITHUB_OUTPUT
         fi
         
         if [ -n "$DEBUG_APK" ] || [ -n "$RELEASE_APK" ]; then
           echo "any_apk=true" >> $GITHUB_OUTPUT
+          echo "📦 APK files prepared:"
           ls -lh apk-output/
         else
           echo "any_apk=false" >> $GITHUB_OUTPUT
+          echo "⚠️ No APK files found"
         fi
         
+    - name: Upload Debug APK
+      if: steps.find_apks.outputs.debug_found == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: DocumentScanner-Debug-APK
+        path: apk-output/DocumentScanner-debug.apk
+        retention-days: 30
+        
+    - name: Upload Release APK
+      if: steps.find_apks.outputs.release_found == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: DocumentScanner-Release-APK
+        path: apk-output/DocumentScanner-release.apk
+        retention-days: 90
+        
     - name: Create Release
-      if: steps.find_apks.outputs.any_apk == 'true'
+      if: steps.find_apks.outputs.any_apk == 'true' && github.event_name == 'push'
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v1.0.${{ github.run_number }}
-        name: Release v1.0.${{ github.run_number }}
+        name: DocumentScanner v1.0.${{ github.run_number }}
         body: |
-          ## 📱 Build #${{ github.run_number }}
+          ## 📱 DocumentScanner Build #${{ github.run_number }}
           
-          **Commit:** `${{ github.sha }}`
-          **Branch:** `${{ github.ref_name }}`
+          ### Build Information
+          - **Commit:** `${{ github.sha }}`
+          - **Branch:** `${{ github.ref_name }}`
+          - **Date:** ${{ github.event.head_commit.timestamp }}
+          - **Author:** @${{ github.actor }}
+          
+          ### 📦 Available APKs
+          ${{ steps.find_apks.outputs.debug_found == 'true' && '- ✅ Debug APK' || '- ❌ Debug APK (build failed)' }}
+          ${{ steps.find_apks.outputs.release_found == 'true' && '- ✅ Release APK' || '- ❌ Release APK (build failed)' }}
+          
+          ### 📝 Changes
+          ${{ github.event.head_commit.message }}
+          
+          ### ⬇️ Download
+          - **Debug APK**: For testing and development
+          - **Release APK**: Optimized production build
+          
+          > 💡 **Note:** Release APK is unsigned. You may need to enable "Install from Unknown Sources" on your device.
         files: apk-output/*.apk
         fail_on_unmatched_files: false
+        draft: false
+        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Build Summary
+      if: always()
+      run: |
+        echo "## 🏗️ Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Build Type | Status | APK |" >> $GITHUB_STEP_SUMMARY
+        echo "|------------|--------|-----|" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.build_debug.outputs.status }}" = "0" ]; then
+          DEBUG_STATUS="✅ Success"
+        else
+          DEBUG_STATUS="❌ Failed"
+        fi
+        
+        if [ "${{ steps.build_release.outputs.status }}" = "0" ]; then
+          RELEASE_STATUS="✅ Success"
+        else
+          RELEASE_STATUS="❌ Failed"
+        fi
+        
+        if [ "${{ steps.find_apks.outputs.debug_found }}" = "true" ]; then
+          DEBUG_APK="✅ Available"
+        else
+          DEBUG_APK="❌ Not found"
+        fi
+        
+        if [ "${{ steps.find_apks.outputs.release_found }}" = "true" ]; then
+          RELEASE_APK="✅ Available"
+        else
+          RELEASE_APK="❌ Not found"
+        fi
+        
+        echo "| Debug | $DEBUG_STATUS | $DEBUG_APK |" >> $GITHUB_STEP_SUMMARY
+        echo "| Release | $RELEASE_STATUS | $RELEASE_APK |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.find_apks.outputs.any_apk }}" = "true" ]; then
+          echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "APK files are available in the workflow artifacts and release section." >> $GITHUB_STEP_SUMMARY
+        fi
