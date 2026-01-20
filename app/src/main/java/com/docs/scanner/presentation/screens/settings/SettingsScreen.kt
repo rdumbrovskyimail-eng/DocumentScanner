@@ -1,30 +1,23 @@
 /*
  * SettingsScreen.kt
- * Version: 18.0.0 - CANCEL BUTTON INTEGRATION (2026)
+ * Version: 19.0.0 - TRANSLATION MODEL SELECTION (2026)
  * 
- * ✅ NEW IN 18.0.0:
+ * ✅ NEW IN 19.0.0:
+ * - Added translation model selection parameters
+ * - onTranslationModelChange callback
+ * - availableTranslationModels parameter
+ * - Full integration with TranslationTestSection
+ * 
+ * ✅ PREVIOUS IN 18.0.0:
  * - Added onCancelOcr callback integration
  * - Wired viewModel::cancelOcrTest to UI
  * - Complete cancel button support
  * 
- * ✅ NEW IN 17.0.0:
+ * ✅ PREVIOUS IN 17.0.0:
  * - Renamed "ML Kit" tab to "OCR Components"
  * - Added TranslationTestSection integration
  * - Added translation test parameters
  * - Added Gemini model selection callback
- * 
- * ✅ FIXED in 16.0.0:
- * - Unified ApiKeyEntry model throughout
- * - Removed ApiKeyData references
- * - Fixed .id → .key for API key identification
- * - Removed unnecessary .map { it.toApiKeyEntry() }
- * - All type mismatches resolved
- * 
- * ✅ PREVIOUS FIXES:
- * - Line 667 - Added Spacer import
- * - Lines 1288-1292 - Fixed ApiKeyEntry constructor
- * - All unresolved references
- * - Full multi-key failover support
  */
 
 package com.docs.scanner.presentation.screens.settings
@@ -224,7 +217,7 @@ fun SettingsScreen(
                         onImageSelected = viewModel::setMlkitSelectedImage,
                         onTestOcr = viewModel::runMlkitOcrTest,
                         onClearTestResult = viewModel::clearMlkitTestResult,
-                        onCancelOcr = viewModel::cancelOcrTest,  // ✅ ДОБАВЛЕНО
+                        onCancelOcr = viewModel::cancelOcrTest,
                         onClearMlkitCache = viewModel::clearMlkitCache,
                         onGeminiOcrEnabledChange = viewModel::setGeminiOcrEnabled,
                         onGeminiOcrThresholdChange = viewModel::setGeminiOcrThreshold,
@@ -239,7 +232,10 @@ fun SettingsScreen(
                         onTranslationSourceLangChange = viewModel::setTranslationSourceLang,
                         onTranslationTargetLangChange = viewModel::setTranslationTargetLang,
                         onTranslationTest = viewModel::testTranslation,
-                        onClearTranslationTest = viewModel::clearTranslationTest
+                        onClearTranslationTest = viewModel::clearTranslationTest,
+                        // ✅ NEW: Translation model selection
+                        onTranslationModelChange = viewModel::setTranslationModel,
+                        availableTranslationModels = viewModel.getAvailableTranslationModels()
                     )
 
                     SettingsTab.BACKUP -> BackupSettingsTab(
@@ -561,7 +557,7 @@ private fun GeneralSettingsTab(
     }
 }
 
-// ✅ ОБНОВЛЕННАЯ ФУНКЦИЯ С ПАРАМЕТРОМ onCancelOcr
+// ✅ UPDATED IN 19.0.0: Added translation model parameters
 @Composable
 private fun OcrComponentsTab(
     mlkitSettings: com.docs.scanner.presentation.screens.settings.components.MlkitSettingsState,
@@ -575,7 +571,7 @@ private fun OcrComponentsTab(
     onImageSelected: (android.net.Uri?) -> Unit,
     onTestOcr: () -> Unit,
     onClearTestResult: () -> Unit,
-    onCancelOcr: () -> Unit,  // ✅ ДОБАВЛЕНО
+    onCancelOcr: () -> Unit,
     onClearMlkitCache: () -> Unit,
     onGeminiOcrEnabledChange: (Boolean) -> Unit,
     onGeminiOcrThresholdChange: (Int) -> Unit,
@@ -590,7 +586,10 @@ private fun OcrComponentsTab(
     onTranslationSourceLangChange: (Language) -> Unit,
     onTranslationTargetLangChange: (Language) -> Unit,
     onTranslationTest: () -> Unit,
-    onClearTranslationTest: () -> Unit
+    onClearTranslationTest: () -> Unit,
+    // ✅ NEW: Translation model parameters
+    onTranslationModelChange: (String) -> Unit,
+    availableTranslationModels: List<com.docs.scanner.data.local.preferences.GeminiModelOption>
 ) {
     Column(
         modifier = Modifier
@@ -611,7 +610,7 @@ private fun OcrComponentsTab(
             onImageSelected = onImageSelected,
             onTestOcr = onTestOcr,
             onClearTestResult = onClearTestResult,
-            onCancelOcr = onCancelOcr,  // ✅ ПЕРЕДАЕМ
+            onCancelOcr = onCancelOcr,
             onGeminiOcrEnabledChange = onGeminiOcrEnabledChange,
             onGeminiOcrThresholdChange = onGeminiOcrThresholdChange,
             onGeminiOcrAlwaysChange = onGeminiOcrAlwaysChange,
@@ -627,13 +626,17 @@ private fun OcrComponentsTab(
         HorizontalDivider()
         Spacer(modifier = Modifier.height(24.dp))
 
+        // ✅ UPDATED: Added model selection parameters
         TranslationTestSection(
             state = mlkitSettings,
             onTextChange = onTranslationTestTextChange,
             onSourceLangChange = onTranslationSourceLangChange,
             onTargetLangChange = onTranslationTargetLangChange,
             onTranslate = onTranslationTest,
-            onClear = onClearTranslationTest
+            onClear = onClearTranslationTest,
+            // ✅ NEW parameters
+            onModelChange = onTranslationModelChange,
+            availableModels = availableTranslationModels
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -657,7 +660,8 @@ private fun OcrComponentsTab(
                     Text("Clear MLKit Recognizer Cache")
                 }
                 Text(
-                    text = "Frees memory by releasing cached ML Kit recognizers",style = MaterialTheme.typography.bodySmall,
+                    text = "Frees memory by releasing cached ML Kit recognizers",
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)
                 )
