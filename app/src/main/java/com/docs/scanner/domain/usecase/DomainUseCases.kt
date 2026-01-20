@@ -7,6 +7,7 @@
  * - Improved batch operations with generic helper ✅
  * - Better code organization ✅
  * - Added updatePosition for Records and Folders ✅
+ * - Added translateTextWithModel for model-specific translation ✅
  */
 
 package com.docs.scanner.domain.usecase
@@ -690,6 +691,36 @@ class TranslationUseCases @Inject constructor(
         return repo.translate(text, source, target)
     }
     
+    /**
+     * ✅ NEW in 2.0.0: Translates text using specified Gemini model.
+     * 
+     * Allows selecting specific model for translation.
+     * Used in Settings → Translation Test for testing different models.
+     * 
+     * @param text Text to translate
+     * @param source Source language (AUTO for auto-/**
+     * ✅ NEW in 2.0.0: Translates text using specified Gemini model.
+     * 
+     * Allows selecting specific model for translation.
+     * Used in Settings → Translation Test for testing different models.
+     * 
+     * @param text Text to translate
+     * @param source Source language (AUTO for auto-detect)
+     * @param target Target language
+     * @param model Gemini model ID (e.g., "gemini-2.5-flash-lite")
+     * @return TranslationResult or error
+     */
+    suspend fun translateTextWithModel(
+        text: String,
+        source: Language,
+        target: Language,
+        model: String
+    ): DomainResult<TranslationResult> {
+        if (text.isBlank()) return DomainResult.failure(DomainError.TranslationFailed(source, target, "Empty text"))
+        if (source == target && source != Language.AUTO) return DomainResult.failure(DomainError.UnsupportedLanguagePair(source, target))
+        return repo.translateWithModel(text, source, target, model)
+    }
+    
     suspend fun translateDocument(docId: DocumentId, targetLang: Language? = null): DomainResult<TranslationResult> {
         val doc = docRepo.getDocumentById(docId).getOrElse { return DomainResult.failure(it) }
         
@@ -936,4 +967,21 @@ class AllUseCases @Inject constructor(
 
     suspend fun deleteTerm(term: Term): LegacyResult<Unit> =
         terms.delete(term.id).toLegacyResult()
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 4. LEGACY STATE
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Legacy-ish progress state used by some presentation code when adding a document.
+ *
+ * TODO: Replace with a single shared processing/progress model across the app.
+ */
+sealed interface AddDocumentState {
+    data class Creating(val progress: Int, val message: String) : AddDocumentState
+    data class ProcessingOcr(val progress: Int, val message: String) : AddDocumentState
+    data class Translating(val progress: Int, val message: String) : AddDocumentState
+    data class Success(val documentId: Long) : AddDocumentState
+    data class Error(val message: String) : AddDocumentState
 }
