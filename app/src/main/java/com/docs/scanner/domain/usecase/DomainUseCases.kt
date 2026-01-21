@@ -687,19 +687,10 @@ class TranslationUseCases @Inject constructor(
 ) {
     suspend fun translateText(text: String, source: Language, target: Language): DomainResult<TranslationResult> {
         if (text.isBlank()) return DomainResult.failure(DomainError.TranslationFailed(source, target, "Empty text"))
-        if (source == target && source != Language.AUTO) return DomainResult.failure(DomainError.UnsupportedLanguagePair(source, target))
-        return repo.translate(text, source, target)
+        if (source == target && source != Language.AUTO) return DomainResult.failure(DomainError.UnsupportedLanguagePair(source, target))return repo.translate(text, source, target)
     }
-}
     
     /**
-     * ✅ NEW in 2.0.0: Translates text using specified Gemini model.
-     * 
-     * Allows selecting specific model for translation.
-     * Used in Settings → Translation Test for testing different models.
-     * 
-     * @param text Text to translate
-     * @param source Source language (AUTO for auto-detect)
      * ✅ NEW in 2.0.0: Translates text using specified Gemini model.
      * 
      * Allows selecting specific model for translation.
@@ -974,6 +965,7 @@ class AllUseCases @Inject constructor(
 // 4. LEGACY STATE
 // ══════════════════════════════════════════════════════════════════════════════
 
+/**
  * Legacy-ish progress state used by some presentation code when adding a document.
  *
  * TODO: Replace with a single shared processing/progress model across the app.
