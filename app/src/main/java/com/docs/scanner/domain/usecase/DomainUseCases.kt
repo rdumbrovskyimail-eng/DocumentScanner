@@ -435,8 +435,8 @@ class FolderUseCases @Inject constructor(
         desc: String? = null,
         color: Int? = null,
         icon: String? = null
-    ): DomainResult<FolderId> =
-        DomainResult.catching {
+    ): DomainResult<FolderId> {
+        return DomainResult.catching {
             val validName = FolderName.create(name).getOrThrow()
             if (repo.folderNameExists(validName.value))
                 throw DomainError.AlreadyExists(validName.value).toException()
@@ -452,6 +452,7 @@ class FolderUseCases @Inject constructor(
             )
             repo.createFolder(newFolder).getOrThrow()
         }
+    }
 
     suspend fun update(folder: Folder): DomainResult<Unit> {
         if (folder.isQuickScans)
@@ -511,8 +512,8 @@ class RecordUseCases @Inject constructor(
         tags: List<String> = emptyList(),
         sourceLang: Language = Language.AUTO,
         targetLang: Language = Language.ENGLISH
-    ): DomainResult<RecordId> =
-        DomainResult.catching {
+    ): DomainResult<RecordId> {
+        return DomainResult.catching {
             val validName = RecordName.create(name).getOrThrow()
             if (!folderRepo.folderExists(folderId))
                 throw DomainError.NotFoundError.Folder(folderId).toException()
@@ -534,6 +535,7 @@ class RecordUseCases @Inject constructor(
             )
             repo.createRecord(newRecord).getOrThrow()
         }
+    }
 
     suspend fun update(record: Record): DomainResult<Unit> =
         repo.updateRecord(record.copy(updatedAt = time.currentMillis()))
@@ -687,7 +689,8 @@ class TranslationUseCases @Inject constructor(
 ) {
     suspend fun translateText(text: String, source: Language, target: Language): DomainResult<TranslationResult> {
         if (text.isBlank()) return DomainResult.failure(DomainError.TranslationFailed(source, target, "Empty text"))
-        if (source == target && source != Language.AUTO) return DomainResult.failure(DomainError.UnsupportedLanguagePair(source, target))return repo.translate(text, source, target)
+        if (source == target && source != Language.AUTO) return DomainResult.failure(DomainError.UnsupportedLanguagePair(source, target))
+        return repo.translate(text, source, target)
     }
     
     /**
@@ -697,7 +700,7 @@ class TranslationUseCases @Inject constructor(
      * Used in Settings → Translation Test for testing different models.
      * 
      * @param text Text to translate
-     * @param source Source language (AUTO for auto-detect)
+     ** @param source Source language (AUTO for auto-detect)
      * @param target Target language
      * @param model Gemini model ID (e.g., "gemini-2.5-flash-lite")
      * @return TranslationResult or error
