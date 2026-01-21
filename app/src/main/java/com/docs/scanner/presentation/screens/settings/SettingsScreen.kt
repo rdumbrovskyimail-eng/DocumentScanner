@@ -647,8 +647,14 @@ private fun OcrTestCard(
                         Box(Modifier.fillMaxSize()) {
                             coil3.compose.AsyncImage(uri, "Selected image", Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Fit)
                             if (mlkitSettings.isTestRunning) {
-                                Box(Modifier.fillMaxSize().background(Color.Black.copy(0.5f)), Alignment.Center) {
-                                    Column(Alignment.CenterHorizontally, Arrangement.spacedBy(8.dp)) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.5f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
                                         CircularProgressIndicator(color = Color.White)
                                         Text("Processing OCR...", color = Color.White, style = MaterialTheme.typography.bodySmall)
                                     }
