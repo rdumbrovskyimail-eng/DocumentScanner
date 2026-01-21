@@ -1,10 +1,8 @@
 /*
  * SettingsScreen.kt
- * Version: 19.1 FINAL - UX REORGANIZATION 2026
+ * Version: 19.2 HOTFIX - Исправление ошибок компиляции
  * 
- * ✅ ИНСТРУКЦИЯ: Скопируйте все 3 части подряд в один файл
- * 
- * ЧАСТЬ 1 из 3: Импорты + Main Screen
+ * ✅ ВСЕ 35 ИСПРАВЛЕНИЙ ПРИМЕНЕНЫ
  */
 
 package com.docs.scanner.presentation.screens.settings
@@ -339,15 +337,6 @@ fun SettingsScreen(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ✅ КОНЕЦ ЧАСТИ 1 из 3
-// Продолжайте копировать ЧАСТЬ 2 (Tab Composables)
-// ═══════════════════════════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════════════════════
-// ✅ ЧАСТЬ 2 из 3: Tab Composables
-// Добавьте это СРАЗУ ПОСЛЕ части 1 (без пробела между ними)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // AI & OCR TAB
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -407,7 +396,12 @@ private fun AiOcrTab(
                     }
                     Text("${(mlkitSettings.confidenceThreshold * 100).toInt()}%", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 }
-                Slider(mlkitSettings.confidenceThreshold, onConfidenceThresholdChange, valueRange = 0.3f..0.95f, steps = 12)
+                Slider(
+                    value = mlkitSettings.confidenceThreshold,
+                    onValueChange = onConfidenceThresholdChange,
+                    valueRange = 0.3f..0.95f,
+                    steps = 12
+                )
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
                     Text("30%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("95%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -439,7 +433,10 @@ private fun AiOcrTab(
                     Text("Auto-translate after OCR", style = MaterialTheme.typography.bodyMedium)
                     Text("Automatically translate recognized text", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Switch(autoTranslate, onAutoTranslateChange)
+                Switch(
+                    checked = autoTranslate,
+                    onCheckedChange = onAutoTranslateChange
+                )
             }
             Spacer(Modifier.height(12.dp))
             SettingDropdown(
@@ -486,7 +483,13 @@ private fun TestingTab(
         }
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), Arrangement.spacedBy(16.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
         OcrTestCard(mlkitSettings, onImageSelected, onTestOcr, onClearTestResult, onCancelOcr, onTestGeminiFallbackChange)
         TranslationTestSection(mlkitSettings, onTranslationTestTextChange, onTranslationSourceLangChange, onTranslationTargetLangChange, onTranslationTest, onClearTranslationTest)
         
@@ -496,7 +499,14 @@ private fun TestingTab(
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(12.dp).background(if (isCollecting) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape))
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .background(
+                                if (isCollecting) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                CircleShape
+                            )
+                    )
                     Spacer(Modifier.width(8.dp))
                     Text(if (isCollecting) "Collecting..." else "Stopped", style = MaterialTheme.typography.labelLarge)
                 }
@@ -506,22 +516,40 @@ private fun TestingTab(
             }
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button({ if (isCollecting) { logCollector.stopCollecting(); isCollecting = false } else { logCollector.startCollecting(); isCollecting = true; collectedLines = 0 } }, Modifier.weight(1f)) {
+                // ИСПРАВЛЕНИЕ 1: Button "Stop/Start"
+                Button(
+                    onClick = { 
+                        if (isCollecting) { 
+                            logCollector.stopCollecting()
+                            isCollecting = false 
+                        } else { 
+                            logCollector.startCollecting()
+                            isCollecting = true
+                            collectedLines = 0 
+                        } 
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
                     Icon(if (isCollecting) Icons.Default.Stop else Icons.Default.PlayArrow, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(if (isCollecting) "Stop" else "Start")
                 }
-                OutlinedButton({
-                    scope.launch {
-                        if (logCollector.getCollectedLinesCount() == 0) {
-                            snackbarHostState.showSnackbar("⚠️ No logs collected. Press START first.", duration = SnackbarDuration.Short)
-                            return@launch
+                // ИСПРАВЛЕНИЕ 2: OutlinedButton "Save"
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            if (logCollector.getCollectedLinesCount() == 0) {
+                                snackbarHostState.showSnackbar("⚠️ No logs collected. Press START first.", duration = SnackbarDuration.Short)
+                                return@launch
+                            }
+                            logCollector.saveLogsNow()
+                            delay(500)
+                            snackbarHostState.showSnackbar("✅ ${logCollector.getCollectedLinesCount()} lines saved to Downloads/DocumentScanner_OCR_Logs/", duration = SnackbarDuration.Long)
                         }
-                        logCollector.saveLogsNow()
-                        delay(500)
-                        snackbarHostState.showSnackbar("✅ ${logCollector.getCollectedLinesCount()} lines saved to Downloads/DocumentScanner_OCR_Logs/", duration = SnackbarDuration.Long)
-                    }
-                }, collectedLines > 0, Modifier.weight(1f)) {
+                    },
+                    enabled = collectedLines > 0,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Icon(Icons.Default.Save, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Save")
@@ -533,7 +561,11 @@ private fun TestingTab(
             Text("Debug Logs Viewer", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             Text("View historical debug logs and session data", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
-            Button(onDebugClick, Modifier.fillMaxWidth()) {
+            // ИСПРАВЛЕНИЕ 3: Button "Open Debug Viewer"
+            Button(
+                onClick = onDebugClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Icon(Icons.Default.Visibility, null)
                 Spacer(Modifier.width(8.dp))
                 Text("Open Debug Viewer")
@@ -571,19 +603,35 @@ private fun OcrTestCard(
         Text("Test OCR with current settings on any image", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
-            OutlinedButton({ imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.weight(1f)) {
+            // ИСПРАВЛЕНИЕ 4: OutlinedButton "Select Image"
+            OutlinedButton(
+                onClick = { 
+                    imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) 
+                },
+                modifier = Modifier.weight(1f)
+            ) {
                 Icon(Icons.Default.Image, null)
                 Spacer(Modifier.width(8.dp))
                 Text("Select Image")
             }
             if (mlkitSettings.isTestRunning) {
-                OutlinedButton(onCancelOcr, Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                // ИСПРАВЛЕНИЕ 5: OutlinedButton "Cancel"
+                OutlinedButton(
+                    onClick = onCancelOcr,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
                     Icon(Icons.Default.Close, null)
                     Spacer(Modifier.width(8.dp))
                     Text("Cancel")
                 }
             } else {
-                Button(onTestOcr, mlkitSettings.selectedImageUri != null, Modifier.weight(1f)) {
+                // ИСПРАВЛЕНИЕ 6: Button "Run OCR"
+                Button(
+                    onClick = onTestOcr,
+                    enabled = mlkitSettings.selectedImageUri != null,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Icon(Icons.Default.PlayArrow, null)
                     Spacer(Modifier.width(8.dp))
                     Text("Run OCR")
@@ -606,7 +654,17 @@ private fun OcrTestCard(
                                     }
                                 }
                             }
-                            IconButton({ onImageSelected(null); onClearTestResult() }, Modifier.align(Alignment.TopEnd).padding(8.dp).background(MaterialTheme.colorScheme.surface.copy(0.8f), RoundedCornerShape(50))) {
+                            // ИСПРАВЛЕНИЕ 7: IconButton "Clear"
+                            IconButton(
+                                onClick = { 
+                                    onImageSelected(null)
+                                    onClearTestResult() 
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(8.dp)
+                                    .background(MaterialTheme.colorScheme.surface.copy(0.8f), RoundedCornerShape(50))
+                            ) {
                                 Icon(Icons.Default.Close, "Clear", tint = MaterialTheme.colorScheme.error)
                             }
                         }
@@ -628,7 +686,10 @@ private fun OcrTestCard(
                 Spacer(Modifier.height(12.dp))
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(0.3f))) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(mlkitSettings.testGeminiFallback, onTestGeminiFallbackChange)
+                        Checkbox(
+                            checked = mlkitSettings.testGeminiFallback,
+                            onCheckedChange = onTestGeminiFallbackChange
+                        )
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
                             Text("Test Gemini fallback", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
@@ -684,7 +745,13 @@ private fun GeneralTab(
     onClearTemp: () -> Unit,
     onImageQualityChange: (ImageQuality) -> Unit
 ) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), Arrangement.spacedBy(16.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
         SettingsCard(title = "Appearance", icon = Icons.Default.Palette) {
             SettingDropdown("Theme", themeMode.name, ThemeMode.entries.map { it.name }) { onThemeModeChange(ThemeMode.valueOf(it)) }
             Spacer(Modifier.height(12.dp))
@@ -692,13 +759,29 @@ private fun GeneralTab(
         }
 
         SettingsCard(title = "Translation Cache", icon = Icons.Default.Cached) {
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) { Text("Enable cache"); Switch(cacheEnabled, onCacheEnabledChange) }
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                Text("Enable cache")
+                Switch(
+                    checked = cacheEnabled,
+                    onCheckedChange = onCacheEnabledChange
+                )
+            }
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                 Text("TTL (days): $cacheTtlDays")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton({ onCacheTtlChange((cacheTtlDays - 1).coerceIn(1, 365)) }) { Text("-") }
-                    OutlinedButton({ onCacheTtlChange((cacheTtlDays + 1).coerceIn(1, 365)) }) { Text("+") }
+                    // ИСПРАВЛЕНИЕ 8: OutlinedButton "-" (Cache TTL)
+                    OutlinedButton(
+                        onClick = { onCacheTtlChange((cacheTtlDays - 1).coerceIn(1, 365)) }
+                    ) { 
+                        Text("-") 
+                    }
+                    // ИСПРАВЛЕНИЕ 9: OutlinedButton "+" (Cache TTL)
+                    OutlinedButton(
+                        onClick = { onCacheTtlChange((cacheTtlDays + 1).coerceIn(1, 365)) }
+                    ) { 
+                        Text("+") 
+                    }
                 }
             }
             cacheStats?.let { s ->
@@ -707,19 +790,59 @@ private fun GeneralTab(
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onRefreshCacheStats, Modifier.weight(1f)) { Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(4.dp)); Text("Refresh") }
-                OutlinedButton(onClearCache, Modifier.weight(1f)) { Icon(Icons.Default.Delete, null); Spacer(Modifier.width(4.dp)); Text("Clear") }
+                // ИСПРАВЛЕНИЕ 10: OutlinedButton "Refresh" (Cache)
+                OutlinedButton(
+                    onClick = onRefreshCacheStats,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Refresh, null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Refresh")
+                }
+                // ИСПРАВЛЕНИЕ 11: OutlinedButton "Clear" (Cache)
+                OutlinedButton(
+                    onClick = onClearCache,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Delete, null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Clear")
+                }
             }
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClearOldCache, Modifier.fillMaxWidth()) { Icon(Icons.Default.AutoDelete, null); Spacer(Modifier.width(8.dp)); Text("Clear old entries...") }
+            // ИСПРАВЛЕНИЕ 12: OutlinedButton "Clear old entries"
+            OutlinedButton(
+                onClick = onClearOldCache,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.AutoDelete, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Clear old entries...")
+            }
         }
 
         SettingsCard(title = "Storage", icon = Icons.Default.Storage) {
             Text(storageUsage?.formatTotal() ?: "Calculating...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onRefreshStorage, Modifier.weight(1f)) { Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(4.dp)); Text("Refresh") }
-                OutlinedButton(onClearTemp, Modifier.weight(1f)) { Icon(Icons.Default.CleaningServices, null); Spacer(Modifier.width(4.dp)); Text("Clear temp") }
+                // ИСПРАВЛЕНИЕ 13: OutlinedButton "Refresh" (Storage)
+                OutlinedButton(
+                    onClick = onRefreshStorage,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Refresh, null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Refresh")
+                }
+                // ИСПРАВЛЕНИЕ 14: OutlinedButton "Clear temp"
+                OutlinedButton(
+                    onClick = onClearTemp,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.CleaningServices, null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Clear temp")
+                }
             }
         }
 
@@ -728,15 +851,6 @@ private fun GeneralTab(
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ✅ КОНЕЦ ЧАСТИ 2 из 3
-// Продолжайте копировать ЧАСТЬ 3 (BackupTab + Helper Functions + Dialogs)
-// ═══════════════════════════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════════════════════
-// ✅ ЧАСТЬ 3 из 3 FINAL: BackupTab + Helper Functions + Dialogs
-// Добавьте это СРАЗУ ПОСЛЕ части 2 (без пробела между ними)
-// ═══════════════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BACKUP TAB
@@ -760,14 +874,28 @@ private fun BackupTab(
     onRestoreDriveBackup: (BackupInfo) -> Unit,
     onDeleteDriveBackup: (BackupInfo) -> Unit
 ) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), Arrangement.spacedBy(16.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
         SettingsCard(title = "Local Backup", icon = Icons.Default.Save) {
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                 Text("Include images")
-                Switch(includeImages, onIncludeImagesChange)
+                Switch(
+                    checked = includeImages,
+                    onCheckedChange = onIncludeImagesChange
+                )
             }
             Spacer(Modifier.height(12.dp))
-            Button(onCreateLocalBackup, !isBackingUp, Modifier.fillMaxWidth()) {
+            // ИСПРАВЛЕНИЕ 15: Button "Create Backup"
+            Button(
+                onClick = onCreateLocalBackup,
+                enabled = !isBackingUp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 if (isBackingUp) {
                     CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
@@ -792,18 +920,42 @@ private fun BackupTab(
             Text(driveEmail?.let { "Connected: $it" } ?: "Not connected", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onSignInDrive, driveEmail == null && !isBackingUp, Modifier.weight(1f)) { Text("Connect") }
-                OutlinedButton(onSignOutDrive, driveEmail != null && !isBackingUp, Modifier.weight(1f)) { Text("Disconnect") }
+                // ИСПРАВЛЕНИЕ 16: OutlinedButton "Connect" (Drive)
+                OutlinedButton(
+                    onClick = onSignInDrive,
+                    enabled = driveEmail == null && !isBackingUp,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Connect")
+                }
+                // ИСПРАВЛЕНИЕ 17: OutlinedButton "Disconnect" (Drive)
+                OutlinedButton(
+                    onClick = onSignOutDrive,
+                    enabled = driveEmail != null && !isBackingUp,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Disconnect")
+                }
             }
             if (driveEmail != null) {
                 Spacer(Modifier.height(16.dp))
-                Button(onUploadToDrive, !isBackingUp, Modifier.fillMaxWidth()) {
+                // ИСПРАВЛЕНИЕ 18: Button "Upload to Drive"
+                Button(
+                    onClick = onUploadToDrive,
+                    enabled = !isBackingUp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Icon(Icons.Default.CloudUpload, null)
                     Spacer(Modifier.width(8.dp))
                     Text("Upload to Drive")
                 }
                 Spacer(Modifier.height(8.dp))
-                OutlinedButton(onRefreshDriveBackups, !isBackingUp, Modifier.fillMaxWidth()) {
+                // ИСПРАВЛЕНИЕ 19: OutlinedButton "Refresh list" (Drive)
+                OutlinedButton(
+                    onClick = onRefreshDriveBackups,
+                    enabled = !isBackingUp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Icon(Icons.Default.Refresh, null)
                     Spacer(Modifier.width(8.dp))
                     Text("Refresh list")
@@ -846,7 +998,11 @@ private fun SettingDropdown(title: String, value: String, options: List<String>,
     Column {
         Text(title, style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(4.dp))
-        OutlinedButton({ expanded = true }, Modifier.fillMaxWidth()) {
+        // ИСПРАВЛЕНИЕ 20: OutlinedButton
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Text(value, Modifier.weight(1f))
             Icon(Icons.Default.ArrowDropDown, null)
         }
@@ -861,9 +1017,21 @@ private fun SettingDropdown(title: String, value: String, options: List<String>,
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun ScriptModeSelector(selectedMode: com.docs.scanner.data.remote.mlkit.OcrScriptMode, onModeSelected: (com.docs.scanner.data.remote.mlkit.OcrScriptMode) -> Unit) {
-    androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp), Arrangement.spacedBy(8.dp)) {
+    androidx.compose.foundation.layout.FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         com.docs.scanner.data.remote.mlkit.OcrScriptMode.entries.forEach { mode ->
-            FilterChip(mode == selectedMode, { onModeSelected(mode) }, { Text(mode.displayName) }, if (mode == selectedMode) {{ Icon(Icons.Default.Check, null, Modifier.size(18.dp)) }} else null)
+            // ИСПРАВЛЕНИЕ 21: FilterChip leadingIcon
+            FilterChip(
+                selected = mode == selectedMode,
+                onClick = { onModeSelected(mode) },
+                label = { Text(mode.displayName) },
+                leadingIcon = if (mode == selectedMode) {
+                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                } else null
+            )
         }
     }
     Text(selectedMode.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
@@ -879,7 +1047,10 @@ private fun SettingToggleRow(title: String, subtitle: String, checked: Boolean, 
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Switch(checked, onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange
+        )
     }
 }
 
@@ -891,8 +1062,24 @@ private fun BackupItem(name: String, size: String, onRestore: () -> Unit, onShar
             Text(size, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onRestore, Modifier.weight(1f)) { Icon(Icons.Default.Restore, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Restore") }
-                OutlinedButton(onShare, Modifier.weight(1f)) { Icon(Icons.Default.Share, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Share") }
+                // ИСПРАВЛЕНИЕ 22: OutlinedButton "Restore"
+                OutlinedButton(
+                    onClick = onRestore,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Restore, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Restore")
+                }
+                // ИСПРАВЛЕНИЕ 23: OutlinedButton "Share"
+                OutlinedButton(
+                    onClick = onShare,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Share, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Share")
+                }
             }
         }
     }
@@ -906,8 +1093,24 @@ private fun DriveBackupItem(backup: BackupInfo, onRestore: () -> Unit, onDelete:
             Text(backup.formatSize(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onRestore, Modifier.weight(1f)) { Icon(Icons.Default.Restore, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Restore") }
-                OutlinedButton(onDelete, Modifier.weight(1f)) { Icon(Icons.Default.Delete, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Delete") }
+                // ИСПРАВЛЕНИЕ 24: OutlinedButton "Restore"
+                OutlinedButton(
+                    onClick = onRestore,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Restore, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Restore")
+                }
+                // ИСПРАВЛЕНИЕ 25: OutlinedButton "Delete"
+                OutlinedButton(
+                    onClick = onDelete,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Delete, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Delete")
+                }
             }
         }
     }
@@ -929,74 +1132,144 @@ private fun InfoRow(label: String, value: String) {
 private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (String, String?) -> Unit, onTest: (String) -> Unit) {
     var key by remember { mutableStateOf("") }
     var label by remember { mutableStateOf("") }
-    AlertDialog(onDismiss, { Text("Add Gemini API Key") }, {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(label, { label = it }, { Text("Label (optional)") }, Modifier.fillMaxWidth(), singleLine = true)
-            OutlinedTextField(key, { key = it }, { Text("API Key") }, Modifier.fillMaxWidth())
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Gemini API Key") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // ИСПРАВЛЕНИЕ 26: OutlinedTextField "Label"
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it },
+                    label = { Text("Label (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                // ИСПРАВЛЕНИЕ 27: OutlinedTextField "API Key"
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it },
+                    label = { Text("API Key") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            // ИСПРАВЛЕНИЕ 28: TextButton "Save"
+            TextButton(
+                onClick = { onSave(key, label.ifBlank { null }) },
+                enabled = key.isNotBlank()
+            ) { 
+                Text("Save") 
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // ИСПРАВЛЕНИЕ 29: TextButton "Test"
+                TextButton(
+                    onClick = { onTest(key) },
+                    enabled = key.isNotBlank()
+                ) { 
+                    Text("Test") 
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
         }
-    }, { TextButton({ onSave(key, label.ifBlank { null }) }, key.isNotBlank()) { Text("Save") } }, {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton({ onTest(key) }, key.isNotBlank()) { Text("Test") }
-            TextButton(onDismiss) { Text("Cancel") }
-        }
-    })
+    )
 }
 
 @Composable
 private fun ClearOldCacheDialog(initialDays: Int, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
     var days by remember { mutableStateOf(initialDays) }
-    AlertDialog(onDismiss, { Text("Clear Old Cache") }, {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Delete entries older than $days days.")
-            Row(Modifier.fillMaxWidth(), Arrangement.Center, Alignment.CenterVertically) {
-                OutlinedButton({ days = (days - 1).coerceIn(1, 365) }) { Text("-") }
-                Spacer(Modifier.width(16.dp))
-                Text("$days days", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(16.dp))
-                OutlinedButton({ days = (days + 1).coerceIn(1, 365) }) { Text("+") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Clear Old Cache") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Delete entries older than $days days.")
+                Row(Modifier.fillMaxWidth(), Arrangement.Center, Alignment.CenterVertically) {
+                    // ИСПРАВЛЕНИЕ 30: OutlinedButton "-"
+                    OutlinedButton(
+                        onClick = { days = (days - 1).coerceIn(1, 365) }
+                    ) { 
+                        Text("-") 
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Text("$days days", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(16.dp))
+                    // ИСПРАВЛЕНИЕ 31: OutlinedButton "+"
+                    OutlinedButton(
+                        onClick = { days = (days + 1).coerceIn(1, 365) }
+                    ) { 
+                        Text("+") 
+                    }
+                }
             }
+        },
+        confirmButton = {
+            // ИСПРАВЛЕНИЕ 32: TextButton "Delete"
+            TextButton(
+                onClick = { onConfirm(days) }
+            ) { 
+                Text("Delete") 
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
-    }, { TextButton({ onConfirm(days) }) { Text("Delete") } }, { TextButton(onDismiss) { Text("Cancel") } })
+    )
 }
 
 @Composable
 private fun RestoreBackupDialog(backupName: String, onDismiss: () -> Unit, onConfirm: (merge: Boolean) -> Unit) {
     var merge by remember { mutableStateOf(false) }
-    AlertDialog(onDismiss, { Text("Restore Backup") }, {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Restore from: $backupName")
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Text("Merge into existing data")
-                Switch(merge, { merge = it })
-            }
-            if (!merge) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Existing data will be replaced", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Restore Backup") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Restore from: $backupName")
+                Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                    Text("Merge into existing data")
+                    // ИСПРАВЛЕНИЕ 33: Switch
+                    Switch(
+                        checked = merge,
+                        onCheckedChange = { merge = it }
+                    )
+                }
+                if (!merge) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Existing data will be replaced", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                        }
                     }
                 }
             }
+        },
+        confirmButton = {
+            // ИСПРАВЛЕНИЕ 34: TextButton "Merge/Replace"
+            TextButton(
+                onClick = { onConfirm(merge) }
+            ) { 
+                Text(if (merge) "Merge" else "Replace") 
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
-    }, { TextButton({ onConfirm(merge) }) { Text(if (merge) "Merge" else "Replace") } }, { TextButton(onDismiss) { Text("Cancel") } })
+    )
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DATA CLASSES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-data class LocalBackup(val name: String, val path: String, val sizeBytes: Long, val lastModified: Long)
+// ИСПРАВЛЕНИЕ 35: Убран дублирующийся LocalBackup (определен в SettingsViewModel.kt:1402)
 
 private fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ✅ КОНЕЦ ЧАСТИ 3 из 3
-// 
-// 🎉 ПОЗДРАВЛЯЕМ! Файл SettingsScreen.kt собран полностью.
-// 
-// Теперь:
-// 1. Замените TranslationTestSection.kt файлом из скачанных
-// 2. Скомпилируйте проект
-// 3. Наслаждайтесь новой структурой настроек!
+// ✅ КОНЕЦ ФАЙЛА SettingsScreen.kt v19.2 HOTFIX
 // ═══════════════════════════════════════════════════════════════════════════════
