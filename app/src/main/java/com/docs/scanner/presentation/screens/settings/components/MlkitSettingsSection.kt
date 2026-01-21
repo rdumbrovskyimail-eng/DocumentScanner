@@ -864,7 +864,8 @@ private fun GeminiFallbackInfoCard(
             Icon(
                 imageVector = if (success) Icons.Default.AutoAwesome else Icons.Default.Warning,
                 contentDescription = null,
-                tint = iconColormodifier = Modifier.size(20.dp)
+                tint = iconColor,
+                modifier = Modifier.size(20.dp)
             )
             
             Column(
