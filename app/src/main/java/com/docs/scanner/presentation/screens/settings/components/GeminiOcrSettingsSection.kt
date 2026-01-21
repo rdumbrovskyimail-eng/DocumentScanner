@@ -46,7 +46,10 @@ data class GeminiModelOption(
 
 /**
  * Settings section for Gemini OCR fallback configuration.
- * Version: 19.2 HOTFIX - Added model selection support
+ * Version: 19.2 HOTFIX FINAL - PUBLIC FUNCTION (NOT PRIVATE!)
+ * 
+ * ⚠️ CRITICAL: This function MUST be public (no 'private' modifier)
+ * to be accessible from SettingsScreen.kt
  */
 @Composable
 fun GeminiOcrSettingsSection(
@@ -215,7 +218,7 @@ private fun ThresholdSlider(
             value = threshold.toFloat(),
             onValueChange = { onThresholdChange(it.toInt()) },
             valueRange = 30f..80f,
-            steps = 9, // 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80
+            steps = 9,
             modifier = Modifier.padding(horizontal = 4.dp)
         )
         
