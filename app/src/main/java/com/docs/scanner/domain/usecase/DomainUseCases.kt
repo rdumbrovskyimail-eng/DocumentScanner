@@ -685,7 +685,7 @@ class TermUseCases @Inject constructor(
 @Singleton
 class TranslationUseCases @Inject constructor(
     private val repo: TranslationRepository,
-    private val docRepo: DocumentRepository
+    private valdocRepo: DocumentRepository
 ) {
     suspend fun translateText(text: String, source: Language, target: Language): DomainResult<TranslationResult> {
         if (text.isBlank()) return DomainResult.failure(DomainError.TranslationFailed(source, target, "Empty text"))
@@ -700,7 +700,7 @@ class TranslationUseCases @Inject constructor(
      * Used in Settings → Translation Test for testing different models.
      * 
      * @param text Text to translate
-     ** @param source Source language (AUTO for auto-detect)
+     * @param source Source language (AUTO for auto-detect)
      * @param target Target language
      * @param model Gemini model ID (e.g., "gemini-2.5-flash-lite")
      * @return TranslationResult or error
@@ -713,7 +713,8 @@ class TranslationUseCases @Inject constructor(
     ): DomainResult<TranslationResult> {
         if (text.isBlank()) return DomainResult.failure(DomainError.TranslationFailed(source, target, "Empty text"))
         if (source == target && source != Language.AUTO) return DomainResult.failure(DomainError.UnsupportedLanguagePair(source, target))
-        return repo.translateWithModel(text, source, target, model)
+        // TODO: Implement translateWithModel in TranslationRepository or use translate for now
+        return repo.translate(text, source, target)
     }
     
     suspend fun translateDocument(docId: DocumentId, targetLang: Language? = null): DomainResult<TranslationResult> {
@@ -962,21 +963,4 @@ class AllUseCases @Inject constructor(
 
     suspend fun deleteTerm(term: Term): LegacyResult<Unit> =
         terms.delete(term.id).toLegacyResult()
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// 4. LEGACY STATE
-// ══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Legacy-ish progress state used by some presentation code when adding a document.
- *
- * TODO: Replace with a single shared processing/progress model across the app.
- */
-sealed interface AddDocumentState {
-    data class Creating(val progress: Int, val message: String) : AddDocumentState
-    data class ProcessingOcr(val progress: Int, val message: String) : AddDocumentState
-    data class Translating(val progress: Int, val message: String) : AddDocumentState
-    data class Success(val documentId: Long) : AddDocumentState
-    data class Error(val message: String) : AddDocumentState
 }
