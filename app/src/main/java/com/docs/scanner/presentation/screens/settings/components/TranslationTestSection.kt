@@ -1,5 +1,6 @@
 package com.docs.scanner.presentation.screens.settings.components
 
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
