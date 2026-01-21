@@ -5,6 +5,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,31 +15,50 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+
+data class GeminiModelOption(
+    val id: String,
+    val displayName: String,
+    val description: String
+)
 
 /**
  * Settings section for Gemini OCR fallback configuration.
+ * Version: 19.2 HOTFIX - Added model selection support
  */
 @Composable
 fun GeminiOcrSettingsSection(
     enabled: Boolean,
     threshold: Int,
     alwaysUseGemini: Boolean,
+    selectedModel: String,
+    availableModels: List<GeminiModelOption>,
     onEnabledChange: (Boolean) -> Unit,
     onThresholdChange: (Int) -> Unit,
     onAlwaysUseGeminiChange: (Boolean) -> Unit,
+    onModelChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
@@ -96,6 +116,14 @@ fun GeminiOcrSettingsSection(
                         )
                     }
                 }
+                
+                // Model selector
+                Spacer(modifier = Modifier.height(12.dp))
+                ModelSelector(
+                    selectedModel = selectedModel,
+                    availableModels = availableModels,
+                    onModelChange = onModelChange
+                )
                 
                 // Info card
                 Spacer(modifier = Modifier.height(12.dp))
@@ -193,7 +221,7 @@ private fun ThresholdSlider(
         
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
                 text = "More ML Kit",
@@ -205,6 +233,81 @@ private fun ThresholdSlider(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun ModelSelector(
+    selectedModel: String,
+    availableModels: List<GeminiModelOption>,
+    onModelChange: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val currentModel = availableModels.find { it.id == selectedModel } 
+        ?: availableModels.firstOrNull()
+    
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Gemini Model",
+            style = MaterialTheme.typography.bodyLarge
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.Start
+            ) {
+                Text(
+                    text = currentModel?.displayName ?: "Select model",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                currentModel?.description?.let { desc ->
+                    Text(
+                        text = desc,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = "Select model"
+            )
+        }
+        
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            availableModels.forEach { model ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(
+                                text = model.displayName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (model.id == selectedModel) FontWeight.Bold else FontWeight.Normal
+                            )
+                            Text(
+                                text = model.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    onClick = {
+                        onModelChange(model.id)
+                        expanded = false
+                    }
+                )
+            }
         }
     }
 }
