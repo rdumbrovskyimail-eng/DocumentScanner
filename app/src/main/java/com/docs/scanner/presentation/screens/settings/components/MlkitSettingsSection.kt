@@ -1,28 +1,11 @@
 /*
  * MlkitSettingsSection.kt
- * Version: 12.0.0 - CANCEL BUTTON + SPEED INDICATORS (2026)
+ * Version: 20.0.0 - DUPLICATE REMOVED (2026)
  * 
- * ✅ NEW IN 12.0.0:
+ * ✅ FIXED IN 20.0.0:
+ * - Removed duplicate GeminiOcrSettingsSection (now uses unified version from separate file)
+ * - Removed duplicate ModelSpeedBadge (now in GeminiOcrSettingsSection.kt)
  * - Cancel button during OCR processing
- * - Speed badges (⚡/⚖️/🐌) for each Gemini model
- * - Warning card for slow models
- * - ModelSpeedBadge() composable
- * 
- * ✅ NEW IN 11.0.0:
- * - Gemini model selection dropdown
- * - Model display names and descriptions
- * - Visual model selection UI
- * 
- * ✅ NEW IN 10.1.0:
- * - Auto-translation display in OCR results
- * - Translation target language badge
- * - Translation timing display
- * 
- * ✅ NEW IN 10.0.0:
- * - Shows "Scanned by: ML Kit" or "Scanned by: Gemini AI" badge
- * - Color-coded source badge (blue for ML Kit, purple for Gemini)
- * - Gemini fallback reason display with timing
- * - Processing time breakdown
  * 
  * LOCATION: com.docs.scanner.presentation.screens.settings.components
  */
@@ -61,7 +44,6 @@ import coil3.compose.AsyncImage
 import com.docs.scanner.data.remote.mlkit.OcrScriptMode
 import com.docs.scanner.data.remote.mlkit.OcrTestResult
 import com.docs.scanner.data.local.security.ApiKeyEntry
-import com.docs.scanner.data.local.preferences.GeminiModelOption
 import com.docs.scanner.domain.core.OcrSource
 
 @Composable
@@ -77,15 +59,12 @@ fun MlkitSettingsSection(
     onImageSelected: (Uri?) -> Unit,
     onTestOcr: () -> Unit,
     onClearTestResult: () -> Unit,
-    onCancelOcr: () -> Unit,  // ✅ НОВЫЙ ПАРАМЕТР
-    // Gemini OCR callbacks
+    onCancelOcr: () -> Unit,
     onGeminiOcrEnabledChange: (Boolean) -> Unit,
     onGeminiOcrThresholdChange: (Int) -> Unit,
     onGeminiOcrAlwaysChange: (Boolean) -> Unit,
     onGeminiOcrModelChange: (String) -> Unit,
-    // Test Gemini fallback
     onTestGeminiFallbackChange: (Boolean) -> Unit,
-    // API Keys callbacks
     onAddApiKey: (key: String, label: String) -> Unit,
     onRemoveApiKey: (key: String) -> Unit,
     onSetPrimaryApiKey: (key: String) -> Unit,
@@ -109,7 +88,6 @@ fun MlkitSettingsSection(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // HEADER
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -129,7 +107,6 @@ fun MlkitSettingsSection(
 
             HorizontalDivider()
 
-            // SETTINGS
             Text(
                 text = "OCR Script Mode",
                 style = MaterialTheme.typography.labelLarge,
@@ -212,7 +189,6 @@ fun MlkitSettingsSection(
 
             HorizontalDivider()
 
-            // OCR TEST SECTION
             Text(
                 text = "Test OCR",
                 style = MaterialTheme.typography.titleSmall,
@@ -225,7 +201,6 @@ fun MlkitSettingsSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            // ✅ ОБНОВЛЕННЫЕ КНОПКИ С CANCEL
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -243,9 +218,7 @@ fun MlkitSettingsSection(
                     Text("Select Image")
                 }
                 
-                // ✅ НОВОЕ: Условное отображение Run/Cancel
                 if (state.isTestRunning) {
-                    // Показываем Cancel button когда OCR идёт
                     OutlinedButton(
                         onClick = onCancelOcr,
                         modifier = Modifier.weight(1f),
@@ -258,7 +231,6 @@ fun MlkitSettingsSection(
                         Text("Cancel")
                     }
                 } else {
-                    // Показываем Run button когда OCR не идёт
                     Button(
                         onClick = onTestOcr,
                         enabled = state.selectedImageUri != null,
@@ -271,7 +243,6 @@ fun MlkitSettingsSection(
                 }
             }
 
-            // IMAGE PREVIEW WITH OCR OVERLAY
             AnimatedVisibility(
                 visible = state.selectedImageUri != null,
                 enter = fadeIn() + expandVertically(),
@@ -403,10 +374,6 @@ fun MlkitSettingsSection(
                 }
             }
 
-            // ════════════════════════════════════════════════════════════════
-            // GEMINI OCR FALLBACK SECTION
-            // ════════════════════════════════════════════════════════════════
-            
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider()
             Spacer(modifier = Modifier.height(24.dp))
@@ -423,10 +390,6 @@ fun MlkitSettingsSection(
                 onModelChange = onGeminiOcrModelChange
             )
 
-            // ════════════════════════════════════════════════════════════════
-            // API KEYS SECTION
-            // ════════════════════════════════════════════════════════════════
-            
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider()
             Spacer(modifier = Modifier.height(24.dp))
@@ -440,10 +403,6 @@ fun MlkitSettingsSection(
                 onResetErrors = onResetApiKeyErrors
             )
 
-            // ════════════════════════════════════════════════════════════════
-            // TEST GEMINI FALLBACK CHECKBOX
-            // ════════════════════════════════════════════════════════════════
-            
             AnimatedVisibility(
                 visible = state.geminiOcrEnabled && state.selectedImageUri != null,
                 enter = fadeIn() + expandVertically(),
@@ -488,395 +447,9 @@ fun MlkitSettingsSection(
     }
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
-// ✅ ОБНОВЛЕННАЯ СЕКЦИЯ GEMINI OCR С SPEED BADGES И WARNING
-// ════════════════════════════════════════════════════════════════════════════════
-
 @Composable
-private fun GeminiOcrSettingsSection(
-    enabled: Boolean,
-    threshold: Int,
-    alwaysUseGemini: Boolean,
-    selectedModel: String,
-    availableModels: List<GeminiModelOption>,
-    onEnabledChange: (Boolean) -> Unit,
-    onThresholdChange: (Int) -> Unit,
-    onAlwaysUseGeminiChange: (Boolean) -> Unit,
-    onModelChange: (String) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // HEADER
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.AutoAwesome,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.tertiary
-            )
-            Text(
-                text = "Gemini AI Fallback",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Text(
-            text = "Use Gemini AI when ML Kit confidence is low or for handwritten text",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        // ENABLE TOGGLE
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Enable Gemini fallback",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = "Automatically use Gemini for low-quality scans",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(
-                checked = enabled,
-                onCheckedChange = onEnabledChange
-            )
-        }
-
-        // ✅ ВЫБОР МОДЕЛИ GEMINI
-        AnimatedVisibility(
-            visible = enabled,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Gemini Model",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                var expanded by remember { mutableStateOf(false) }
-                
-                OutlinedButton(
-                    onClick = { expanded = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            val selectedModelOption = availableModels.find { it.id == selectedModel }
-                            Text(
-                                text = selectedModelOption?.displayName ?: selectedModel,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
-                            selectedModelOption?.description?.let { desc ->
-                                Text(
-                                    text = desc,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        Icon(
-                            Icons.Default.ArrowDropDown, 
-                            contentDescription = null,
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
-                    }
-                }
-                
-                DropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                    modifier = Modifier.fillMaxWidth(0.9f)
-                ) {
-                    availableModels.forEach { model ->
-                        // ✅ ОБНОВЛЕННЫЙ DROPDOWN ITEM СО SPEED BADGE
-                        DropdownMenuItem(
-                            text = {
-                                Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = model.displayName,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = if (model.id == selectedModel) 
-                                                    FontWeight.Bold else FontWeight.Normal
-                                            )
-                                            
-                                            // ✅ НОВОЕ: Speed badge под именем модели
-                                            Spacer(Modifier.height(2.dp))
-                                            Row(
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                ModelSpeedBadge(model.id)
-                                                if (model.isRecommended) {
-                                                    Badge(
-                                                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                                                    ) {
-                                                        Text(
-                                                            text = "Recommended",
-                                                            style = MaterialTheme.typography.labelSmall
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        text = model.description,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            },
-                            onClick = {
-                                onModelChange(model.id)
-                                expanded = false
-                            },
-                            leadingIcon = if (model.id == selectedModel) {
-                                {
-                                    Icon(
-                                        Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            } else null
-                        )
-                        if (model != availableModels.last()) {
-                            HorizontalDivider()
-                        }
-                    }
-                }
-                
-                // ✅ НОВОЕ: Предупреждение для медленных моделей
-                AnimatedVisibility(
-                    visible = selectedModel in listOf("gemini-3-pro", "gemini-2.5-pro"),
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    Spacer(Modifier.height(8.dp))
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-                        ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = "⚠️ This model is slow (4-7s per image). For real-time OCR, use Gemini 3 Flash or Flash Lite.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // ALWAYS USE GEMINI TOGGLE
-        AnimatedVisibility(
-            visible = enabled,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Always use Gemini",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Text(
-                        text = "Skip ML Kit entirely (slower but more accurate)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = alwaysUseGemini,
-                    onCheckedChange = onAlwaysUseGeminiChange
-                )
-            }
-        }
-
-        // THRESHOLD SLIDER
-        AnimatedVisibility(
-            visible = enabled && !alwaysUseGemini,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "Confidence threshold",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = "Switch to Gemini when ML Kit confidence is below this",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Text(
-                        text = "$threshold%",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
-                }
-                
-                Slider(
-                    value = threshold.toFloat(),
-                    onValueChange = { onThresholdChange(it.toInt()) },
-                    valueRange = 30f..90f,
-                    steps = 11,
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.tertiary,
-                        activeTrackColor = MaterialTheme.colorScheme.tertiary
-                    )
-                )
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("30%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("90%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-
-        // INFO CARD
-        AnimatedVisibility(
-            visible = enabled,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(text = if (alwaysUseGemini) {
-                            "Gemini AI will process all images. This is slower but provides best accuracy for handwritten text."
-                        } else {
-                            "ML Kit processes images first. If confidence is below $threshold%, Gemini AI takes over for better accuracy."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ✅ НОВАЯ ФУНКЦИЯ: Speed Badge для моделей
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Badge показывающий скорость модели Gemini.
- * 
- * Категории:
- * - ⚡ FAST: gemini-3-flash, gemini-2.5-flash-lite (1-2 сек)
- * - ⚖️ BALANCED: gemini-2.5-flash (2-3 сек)
- * - 🐌 SLOW: gemini-3-pro, gemini-2.5-pro (4-7 сек)
- */
-@Composable
-private fun ModelSpeedBadge(modelId: String) {
-    val (text, color) = when (modelId) {
-        "gemini-3-flash", "gemini-2.5-flash-lite" -> 
-            "⚡ FAST" to Color(0xFF4CAF50)
-        
-        "gemini-2.5-flash" -> 
-            "⚖️ BALANCED" to Color(0xFF2196F3)
-        
-        "gemini-3-pro", "gemini-2.5-pro" -> 
-            "🐌 SLOW" to Color(0xFFFF9800)
-        
-        else -> 
-            "?" to Color(0xFF9E9E9E)
-    }
-    
-    Surface(
-        shape = RoundedCornerShape(4.dp),
-        color = color.copy(alpha = 0.15f),
-        border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = color
-        )
-    }
-}
-
-// ════════════════════════════════════════════════════════════════════════════════
-// HELPER COMPOSABLES
-// ════════════════════════════════════════════════════════════════════════════════
-
-@Composable
-private fun QuickStat(
-    label: String,
-    value: String
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+private fun QuickStat(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
             style = MaterialTheme.typography.labelLarge,
@@ -965,10 +538,6 @@ private fun SettingToggleRow(
     }
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
-// OCR TEST RESULT VIEW
-// ════════════════════════════════════════════════════════════════════════════════
-
 @Composable
 private fun OcrTestResultView(
     result: OcrTestResult,
@@ -987,7 +556,6 @@ private fun OcrTestResultView(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // HEADER with Source Badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1011,7 +579,6 @@ private fun OcrTestResultView(
                 }
             }
 
-            // STATS ROW
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -1040,7 +607,6 @@ private fun OcrTestResultView(
 
             HorizontalDivider()
 
-            // CHIPS ROW
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1065,7 +631,6 @@ private fun OcrTestResultView(
                 }
             }
 
-            // Gemini Fallback Info
             if (result.geminiFallbackTriggered) {
                 GeminiFallbackInfoCard(
                     reason = result.geminiFallbackReason,
@@ -1074,7 +639,6 @@ private fun OcrTestResultView(
                 )
             }
 
-            // LOW CONFIDENCE WARNING
             if (result.lowConfidenceWords > 0 && result.source == OcrSource.ML_KIT) {
                 Row(
                     modifier = Modifier
@@ -1102,7 +666,6 @@ private fun OcrTestResultView(
 
             HorizontalDivider()
 
-            // RECOGNIZED TEXT
             Text(
                 text = "Recognized Text:",
                 style = MaterialTheme.typography.labelLarge
@@ -1147,7 +710,6 @@ private fun OcrTestResultView(
                 }
             }
 
-            // AUTO-TRANSLATION
             if (result.translatedText != null) {
                 HorizontalDivider()
                 
@@ -1201,7 +763,6 @@ private fun OcrTestResultView(
                 }
             }
 
-            // WORD CONFIDENCES
             if (showWordConfidences && result.wordConfidences.isNotEmpty() && result.source == OcrSource.ML_KIT) {
                 HorizontalDivider()
                 
@@ -1303,8 +864,7 @@ private fun GeminiFallbackInfoCard(
             Icon(
                 imageVector = if (success) Icons.Default.AutoAwesome else Icons.Default.Warning,
                 contentDescription = null,
-                tint = iconColor,
-                modifier = Modifier.size(20.dp)
+                tint = iconColormodifier = Modifier.size(20.dp)
             )
             
             Column(
