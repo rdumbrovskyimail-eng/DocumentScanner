@@ -89,11 +89,16 @@ class SettingsDataStore @Inject constructor(
         private val KEY_LEGACY_API_KEY = stringPreferencesKey("gemini_api_key")
         
         // ✅ MODEL CONSTANTS - Synced with GeminiModelManager
-        // Must be kept in sync manually (unavoidable to break circular dependency)
+        // ⚠️ CRITICAL: Must be kept in sync manually with GeminiModelManager.PRODUCTION_MODELS
+        // These are public so GeminiModelManager can validate sync at runtime
         const val DEFAULT_OCR_MODEL = "gemini-2.5-flash-lite"
         const val DEFAULT_TRANSLATION_MODEL = "gemini-2.5-flash-lite"
         
-        private val VALID_MODELS = listOf(
+        /**
+         * ✅ PUBLIC: Allows GeminiModelManager to validate sync
+         * Must match GeminiModelManager.PRODUCTION_MODELS exactly
+         */
+        val VALID_MODELS = listOf(
             "gemini-3-flash-preview",
             "gemini-3-pro-preview",
             "gemini-2.5-flash-lite",
