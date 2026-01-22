@@ -1,8 +1,12 @@
 /*
  * SettingsViewModel.kt
- * Version: 20.0.0 - GLOBAL SETTINGS SYNC (2026)
+ * Version: 20.0.1 - TRANSLATION MODEL FIX (2026)
  * 
- * ✅ NEW IN 20.0.0 - GEMINI MODEL MANAGER INTEGRATION:
+ * ✅ FIXED IN 20.0.1:
+ * - testTranslation() теперь использует translateWithModel() вместо translateTextWithModel()
+ * - Полная совместимость с UseCases.translation API
+ * 
+ * ✅ PREVIOUS IN 20.0.0 - GEMINI MODEL MANAGER INTEGRATION:
  * - GeminiModelManager injection для централизованного управления моделями
  * - setGeminiOcrModel() делегирует валидацию и сохранение в ModelManager
  * - setTranslationModel() делегирует валидацию и сохранение в ModelManager
@@ -85,40 +89,21 @@ class SettingsViewModel @Inject constructor(
     private val geminiApi: GeminiApi,
     private val mlKitScanner: MLKitScanner,
     private val useCases: AllUseCases,
-    private val modelManager: GeminiModelManager // ✅ NEW: Inject model manager
+    private val modelManager: GeminiModelManager
 ) : ViewModel() {
 
     companion object {
         private const val TAG = "SettingsViewModel"
         private const val SYSTEM_LANGUAGE = "system"
-        
-        // ✅ Параметры debouncing
         private const val MODEL_SWITCH_DEBOUNCE_MS = 300L
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ JOB TRACKING ДЛЯ CANCELLATION
+    // JOB TRACKING
     // ═══════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Job для текущего OCR теста.
-     * Отменяется при:
-     * - Переключении модели OCR
-     * - Изменении настроек OCR
-     * - Явном вызове cancelOcrTest()
-     */
     private var currentOcrJob: Job? = null
-    
-    /**
-     * Job для переключения модели OCR.
-     * Используется для debouncing быстрых переключений.
-     */
     private var modelSwitchJob: Job? = null
-    
-    /**
-     * ✅ Job для переключения модели Translation.
-     * Используется для debouncing быстрых переключений.
-     */
     private var translationModelSwitchJob: Job? = null
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -199,7 +184,7 @@ class SettingsViewModel @Inject constructor(
     val localBackups: StateFlow<List<LocalBackup>> = _localBackups.asStateFlow()
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ ML KIT SETTINGS STATE - SYNCHRONIZED WITH DATASTORE
+    // ML KIT SETTINGS STATE
     // ═══════════════════════════════════════════════════════════════════════════
 
     private val _mlkitSettings = MutableStateFlow(MlkitSettingsState())
@@ -211,7 +196,7 @@ class SettingsViewModel @Inject constructor(
 
     init {
         if (BuildConfig.DEBUG) {
-            Timber.d("🔧 SettingsViewModel initialized (v20.0.0)")
+            Timber.d("🔧 SettingsViewModel initialized (v20.0.1)")
         }
         
         checkDriveConnection()
@@ -223,7 +208,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ MLKIT SETTINGS LOADER - UPDATED IN 20.0.0
+    // MLKIT SETTINGS LOADER
     // ═══════════════════════════════════════════════════════════════════════════
 
     private fun loadMlkitSettings() {
@@ -244,11 +229,9 @@ class SettingsViewModel @Inject constructor(
                 val geminiThreshold = settingsDataStore.geminiOcrThreshold.first()
                 val geminiAlways = settingsDataStore.geminiOcrAlways.first()
                 
-                // ✅ UPDATED: Use ModelManager for consistency
                 val geminiModel = modelManager.getGlobalOcrModel()
                 val availableModels = modelManager.getAvailableModels()
                 
-                // ✅ UPDATED: Load translation model from ModelManager
                 val translationModel = modelManager.getGlobalTranslationModel()
                 val availableTranslationModels = modelManager.getAvailableModels()
                 
@@ -756,7 +739,7 @@ class SettingsViewModel @Inject constructor(
                         _backupMessage.value = "✗ Download failed"
                         return@launch
                     }
-                }
+}
                 
                 when (useCases.backup.restoreFromLocal(localPath, merge)) {
                     is DomainResult.Success -> _backupMessage.value = "✓ Restored"
@@ -802,7 +785,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ ML KIT SETTINGS - SYNCHRONIZED OCR CONTROL
+    // ML KIT SETTINGS
     // ═══════════════════════════════════════════════════════════════════════════
 
     fun setMlkitScriptMode(mode: OcrScriptMode) {
@@ -844,7 +827,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ IMAGE SELECTION - FIXED FOR ANDROID 10-16+
+    // IMAGE SELECTION
     // ═══════════════════════════════════════════════════════════════════════════
 
     fun setMlkitSelectedImage(uri: Uri?) {
@@ -939,24 +922,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ ATOMIC GEMINI MODEL SWITCHING WITH DEBOUNCING (OCR) - UPDATED IN 20.0.0
+    // ATOMIC GEMINI MODEL SWITCHING (OCR)
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Sets OCR model (saves to DataStore → used globally in Editor).
-     * 
-     * ✅ UPDATED IN 20.0.0:
-     * - Validation and saving delegated to GeminiModelManager
-     * - ModelManager ensures consistency across Settings and Editor
-     * - Rollback through ModelManager on error
-     * 
-     * @param modelId Model identifier (e.g., "gemini-2.5-flash-lite")
-     */
     fun setGeminiOcrModel(modelId: String) {
-        // ✅ 1. Отменяем предыдущее переключение (debouncing)
         modelSwitchJob?.cancel()
         
-        // ✅ 2. Отменяем текущий OCR test если идёт
         if (_mlkitSettings.value.isTestRunning) {
             currentOcrJob?.cancel()
             _mlkitSettings.update { it.copy(isTestRunning = false) }
@@ -966,22 +937,16 @@ class SettingsViewModel @Inject constructor(
             }
         }
         
-        // ✅ 3. Запускаем новое переключение с задержкой
         modelSwitchJob = viewModelScope.launch {
             try {
-                // ✅ Debouncing: 300ms задержка
                 delay(MODEL_SWITCH_DEBOUNCE_MS)
                 
                 if (BuildConfig.DEBUG) {
                     Timber.d("🔄 Switching OCR model to: $modelId")
                 }
                 
-                // ✅ UPDATED: Use ModelManager for saving
                 modelManager.setGlobalOcrModel(modelId)
-                
-                // ✅ Только после успешного сохранения обновляем UI
                 _mlkitSettings.update { it.copy(selectedGeminiModel = modelId) }
-                
                 _saveMessage.value = "✓ OCR model: $modelId"
                 
                 if (BuildConfig.DEBUG) {
@@ -998,7 +963,6 @@ class SettingsViewModel @Inject constructor(
                 Timber.e(e, "Failed to switch OCR model")
                 _saveMessage.value = "✗ Failed to switch OCR model"
                 
-                // ✅ UPDATED: Rollback through ModelManager
                 viewModelScope.launch {
                     try {
                         val currentModel = modelManager.getGlobalOcrModel()
@@ -1011,11 +975,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    /**
-     * Returns available Gemini models for OCR UI display.
-     * 
-     * ✅ UPDATED IN 20.0.0: Delegated to GeminiModelManager
-     */
     fun getAvailableGeminiModels(): List<GeminiModelOption> {
         return modelManager.getAvailableModels()
     }
@@ -1025,38 +984,22 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ NEW in 20.0.0: TRANSLATION MODEL SELECTION
+    // TRANSLATION MODEL SELECTION
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Sets Translation model (saves to DataStore → used globally in Editor).
-     * 
-     * ✅ NEW IN 20.0.0:
-     * - Enables model selection in Translation Section
-     * - Validation and saving delegated to GeminiModelManager
-     * - Ensures global consistency for translations
-     * 
-     * @param modelId Model identifier (e.g., "gemini-2.5-flash-lite")
-     */
     fun setTranslationModel(modelId: String) {
-        // ✅ Отменяем предыдущее переключение (debouncing)
         translationModelSwitchJob?.cancel()
         
         translationModelSwitchJob = viewModelScope.launch {
             try {
-                // ✅ Debouncing: 300ms задержка
                 delay(MODEL_SWITCH_DEBOUNCE_MS)
                 
                 if (BuildConfig.DEBUG) {
                     Timber.d("🔄 Switching Translation model to: $modelId")
                 }
                 
-                // ✅ NEW: Save through ModelManager
                 modelManager.setGlobalTranslationModel(modelId)
-                
-                // ✅ Потом обновляем UI
                 _mlkitSettings.update { it.copy(selectedTranslationModel = modelId) }
-                
                 _saveMessage.value = "✓ Translation model: $modelId"
                 
                 if (BuildConfig.DEBUG) {
@@ -1073,7 +1016,6 @@ class SettingsViewModel @Inject constructor(
                 Timber.e(e, "Failed to switch Translation model")
                 _saveMessage.value = "✗ Failed to switch model"
                 
-                // ✅ NEW: Rollback through ModelManager
                 viewModelScope.launch {
                     try {
                         val currentModel = modelManager.getGlobalTranslationModel()
@@ -1086,24 +1028,14 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    /**
-     * Returns available models for Translation UI.
-     * 
-     * ✅ NEW IN 20.0.0: Used in Translation Section dropdown
-     */
     fun getAvailableTranslationModels(): List<GeminiModelOption> {
         return modelManager.getAvailableModels()
     }
 
     // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ CANCELLABLE OCR TEST - UPDATED IN 19.0.0
+    // CANCELLABLE OCR TEST
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Запускает тест OCR с поддержкой отмены.
-     * 
-     * ✅ UPDATED in 19.0.0: Auto-sync результата в Translation Test
-     */
     fun runMlkitOcrTest() {
         val currentState = _mlkitSettings.value
         val imageUri = currentState.selectedImageUri
@@ -1113,7 +1045,6 @@ class SettingsViewModel @Inject constructor(
             return
         }
         
-        // ✅ Отменяем предыдущий test если идёт
         currentOcrJob?.cancel()
         
         currentOcrJob = viewModelScope.launch {
@@ -1140,7 +1071,6 @@ class SettingsViewModel @Inject constructor(
                     is DomainResult.Success -> {
                         val ocrData = result.data
                         
-                        // Auto-translation если включено
                         var translatedText: String? = null
                         var translationTime: Long? = null
                         var translationTargetLang: Language? = null
@@ -1175,7 +1105,6 @@ class SettingsViewModel @Inject constructor(
                             }
                         }
                         
-                        // ✅ Проверяем что Job не отменён
                         if (isActive) {
                             _mlkitSettings.update { 
                                 it.copy(
@@ -1185,7 +1114,6 @@ class SettingsViewModel @Inject constructor(
                                         translationTimeMs = translationTime
                                     ), 
                                     isTestRunning = false,
-                                    // ✅ Auto-sync OCR text → Translation Test
                                     translationTestText = ocrData.text,
                                     translationSourceLang = ocrData.detectedLanguage ?: Language.AUTO,
                                     translationResult = null,
@@ -1227,9 +1155,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    /**
-     * ✅ Принудительная отмена OCR теста.
-     */
     fun cancelOcrTest() {
         currentOcrJob?.cancel()
         _mlkitSettings.update { 
@@ -1255,7 +1180,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ TRANSLATION TEST - UPDATED IN 19.0.0
+    // ✅ TRANSLATION TEST - FIXED IN 20.0.1
     // ═══════════════════════════════════════════════════════════════════════════
 
     fun setTranslationTestText(text: String) {
@@ -1271,7 +1196,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * ✅ UPDATED: Использует выбранную модель для перевода.
+     * ✅ FIXED IN 20.0.1: Uses translateWithModel() for Testing Tab
      */
     fun testTranslation() {
         val state = _mlkitSettings.value
@@ -1283,7 +1208,6 @@ class SettingsViewModel @Inject constructor(
             return
         }
         
-        // Проверка: source и target не должны совпадать (если source не AUTO)
         if (state.translationSourceLang != Language.AUTO && 
             state.translationSourceLang == state.translationTargetLang) {
             _mlkitSettings.update {
@@ -1296,8 +1220,6 @@ class SettingsViewModel @Inject constructor(
             _mlkitSettings.update { it.copy(isTranslating = true, translationError = null) }
             
             val start = System.currentTimeMillis()
-            
-            // ✅ Используем выбранную модель
             val selectedModel = state.selectedTranslationModel
             
             if (BuildConfig.DEBUG) {
@@ -1308,7 +1230,8 @@ class SettingsViewModel @Inject constructor(
                 Timber.d("   └─ Text: ${state.translationTestText.take(50)}...")
             }
             
-            when (val result = useCases.translation.translateTextWithModel(
+            // ✅ CRITICAL: Use translateWithModel instead of translateTextWithModel
+            when (val result = useCases.translation.translateWithModel(
                 text = state.translationTestText,
                 source = state.translationSourceLang,
                 target = state.translationTargetLang,
@@ -1357,11 +1280,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    /**
-     * ✅ Синхронизирует результат OCR в Translation Test.
-     * 
-     * Можно вызвать вручную через UI кнопку "Use OCR Text".
-     */
     fun syncOcrResultToTranslation() {
         val ocrResult = _mlkitSettings.value.testResult
         
@@ -1382,12 +1300,9 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ CLEANUP - UPDATED IN 20.0.0
+    // CLEANUP
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /**
-     * ✅ UPDATED в 20.0.0: Включена отмена translationModelSwitchJob.
-     */
     override fun onCleared() {
         super.onCleared()
         
@@ -1395,12 +1310,10 @@ class SettingsViewModel @Inject constructor(
             Timber.d("🧹 SettingsViewModel cleanup started")
         }
         
-        // ✅ Отменяем все активные Jobs
         currentOcrJob?.cancel()
         modelSwitchJob?.cancel()
         translationModelSwitchJob?.cancel()
         
-        // Очищаем кэши
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 mlKitScanner.clearCache()
