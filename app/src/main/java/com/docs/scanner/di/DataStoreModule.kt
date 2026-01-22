@@ -31,6 +31,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
  * 
  * Fixed issues:
  * - 🟠 Серьёзная #8: Name matches SettingsDataStore ("app_settings")
+ * - ✅ FIXED: Removed circular dependency (GeminiModelManager ← SettingsDataStore → GeminiModelManager)
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -52,7 +53,24 @@ object DataStoreModule {
     }
     
     /**
+     * Provides singleton SettingsDataStore.
+     * 
+     * ✅ CRITICAL FIX: Now created BEFORE GeminiModelManager
+     * This breaks the circular dependency chain.
+     */
+    @Provides
+    @Singleton
+    fun provideSettingsDataStore(
+        dataStore: DataStore<Preferences>
+    ): SettingsDataStore {
+        return SettingsDataStore(dataStore)
+    }
+    
+    /**
      * Provides singleton GeminiModelManager.
+     * 
+     * ✅ FIXED: Now receives SettingsDataStore as dependency
+     * (which is already created by Hilt above)
      * 
      * Used by:
      * - GeminiOcrService (dynamic model selection)
