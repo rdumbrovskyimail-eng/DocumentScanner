@@ -1,8 +1,13 @@
 /**
  * SettingsDataStore.kt
- * Version: 12.0.0 - UNIFIED MODEL MANAGEMENT (2026)
+ * Version: 13.0.0 - FIXED CIRCULAR DEPENDENCY (2026)
  *
- * ✅ NEW IN 12.0.0:
+ * ✅ NEW IN 13.0.0:
+ * - REMOVED GeminiModelManager from constructor (breaks circular dependency)
+ * - Model validation now uses hardcoded list (synced with GeminiModelManager)
+ * - getAvailableGeminiModels() returns local list (no manager dependency)
+ *
+ * ✅ PREVIOUS IN 12.0.0:
  * - Delegated model lists to GeminiModelManager
  * - Removed duplicate VALID_GEMINI_MODELS / VALID_TRANSLATION_MODELS
  * - Removed gemini-2.0-* models
@@ -12,8 +17,9 @@
  * - Translation model selection (KEY_TRANSLATION_MODEL)
  * - Separate model settings for OCR and Translation
  *
- * АРХИТЕКТУРА:
- * SettingsDataStore → GeminiModelManager → Единый список моделей
+ * АРХИТЕКТУРА (FIXED):
+ * SettingsDataStore ← DataStore (no circular dependency)
+ * GeminiModelManager ← SettingsDataStore (can now inject safely)
  */
 
 package com.docs.scanner.data.local.preferences
@@ -37,8 +43,10 @@ import javax.inject.Singleton
 
 @Singleton
 class SettingsDataStore @Inject constructor(
-    private val dataStore: DataStore<Preferences>,
-    private val modelManager: GeminiModelManager // ✅ INJECT manager
+    private val dataStore: DataStore<Preferences>
+    // ❌ REMOVED: private val modelManager: GeminiModelManager
+    // This was causing circular dependency:
+    // GeminiModelManager needs SettingsDataStore → SettingsDataStore needs GeminiModelManager
 ) {
     
     companion object {
@@ -79,6 +87,19 @@ class SettingsDataStore @Inject constructor(
         
         // Legacy key for migration
         private val KEY_LEGACY_API_KEY = stringPreferencesKey("gemini_api_key")
+        
+        // ✅ MODEL CONSTANTS - Synced with GeminiModelManager
+        // Must be kept in sync manually (unavoidable to break circular dependency)
+        const val DEFAULT_OCR_MODEL = "gemini-2.5-flash-lite"
+        const val DEFAULT_TRANSLATION_MODEL = "gemini-2.5-flash-lite"
+        
+        private val VALID_MODELS = listOf(
+            "gemini-3-flash-preview",
+            "gemini-3-pro-preview",
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro"
+        )
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
@@ -460,14 +481,13 @@ class SettingsDataStore @Inject constructor(
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ GEMINI MODEL SELECTION - DELEGATED TO MANAGER (12.0.0)
+    // ✅ GEMINI MODEL SELECTION - LOCAL VALIDATION (13.0.0)
     // ════════════════════════════════════════════════════════════════════════════════
     
     /**
      * Selected Gemini model for OCR.
      * 
-     * ✅ UPDATED: Now uses GeminiModelManager.DEFAULT_OCR_MODEL as default
-     * ✅ Validation delegated to GeminiModelManager.isValidModel()
+     * ✅ UPDATED 13.0.0: Uses local DEFAULT_OCR_MODEL constant
      */
     val geminiOcrModel: Flow<String> = dataStore.data
         .catch { e ->
@@ -475,20 +495,20 @@ class SettingsDataStore @Inject constructor(
             emit(emptyPreferences())
         }
         .map { prefs -> 
-            prefs[KEY_GEMINI_OCR_MODEL] ?: GeminiModelManager.DEFAULT_OCR_MODEL
+            prefs[KEY_GEMINI_OCR_MODEL] ?: DEFAULT_OCR_MODEL
         }
     
     /**
      * Sets the Gemini model for OCR.
      * 
-     * ✅ UPDATED: Validation delegated to GeminiModelManager
+     * ✅ UPDATED 13.0.0: Local validation using VALID_MODELS
      * 
-     * @param model Model identifier (validated by GeminiModelManager)
+     * @param model Model identifier (must be in VALID_MODELS)
      * @throws IllegalArgumentException if model is not valid
      */
     suspend fun setGeminiOcrModel(model: String) {
-        require(modelManager.isValidModel(model)) { 
-            "Invalid Gemini model: $model. Use GeminiModelManager.getModelIds() for valid models."
+        require(model in VALID_MODELS) { 
+            "Invalid Gemini model: $model. Valid models: $VALID_MODELS"
         }
         
         try {
@@ -505,20 +525,50 @@ class SettingsDataStore @Inject constructor(
     /**
      * Returns list of available Gemini models for OCR UI display.
      * 
-     * ✅ UPDATED: Delegated to GeminiModelManager
+     * ✅ UPDATED 13.0.0: Returns local hardcoded list (no manager dependency)
+     * ⚠️ NOTE: Must be kept in sync with GeminiModelManager.getAvailableModels()
      */
-    fun getAvailableGeminiModels(): List<GeminiModelOption> {
-        return modelManager.getAvailableModels()
-    }
+    fun getAvailableGeminiModels(): List<GeminiModelOption> = listOf(
+        GeminiModelOption(
+            id = "gemini-2.5-flash-lite",
+            displayName = "Gemini 2.5 Flash Lite 🚀",
+            description = "Ultra-fast • Stable • Best for OCR & Translation",
+            isRecommended = true
+        ),
+        GeminiModelOption(
+            id = "gemini-2.5-flash",
+            displayName = "Gemini 2.5 Flash ⚡",
+            description = "Very fast • Great balance",
+            isRecommended = false
+        ),
+        GeminiModelOption(
+            id = "gemini-3-flash-preview",
+            displayName = "Gemini 3 Flash (Preview)",
+            description = "Latest • May have rate limits",
+            isRecommended = false
+        ),
+        GeminiModelOption(
+            id = "gemini-3-pro-preview",
+            displayName = "Gemini 3 Pro (Preview) 💰",
+            description = "PAID ONLY • Highest quality • Slower",
+            isRecommended = false
+        ),
+        GeminiModelOption(
+            id = "gemini-2.5-pro",
+            displayName = "Gemini 2.5 Pro 🐌",
+            description = "Slow (4-7s) • Complex text only",
+            isRecommended = false
+        )
+    )
     
     // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ TRANSLATION MODEL SELECTION - DELEGATED TO MANAGER (12.0.0)
+    // ✅ TRANSLATION MODEL SELECTION - LOCAL VALIDATION (13.0.0)
     // ════════════════════════════════════════════════════════════════════════════════
     
     /**
      * Selected Gemini model for Translation.
      * 
-     * ✅ UPDATED: Now uses GeminiModelManager.DEFAULT_TRANSLATION_MODEL as default
+     * ✅ UPDATED 13.0.0: Uses local DEFAULT_TRANSLATION_MODEL constant
      */
     val translationModel: Flow<String> = dataStore.data
         .catch { e ->
@@ -526,20 +576,20 @@ class SettingsDataStore @Inject constructor(
             emit(emptyPreferences())
         }
         .map { prefs -> 
-            prefs[KEY_TRANSLATION_MODEL] ?: GeminiModelManager.DEFAULT_TRANSLATION_MODEL
+            prefs[KEY_TRANSLATION_MODEL] ?: DEFAULT_TRANSLATION_MODEL
         }
     
     /**
      * Sets the Gemini model for Translation.
      * 
-     * ✅ UPDATED: Validation delegated to GeminiModelManager
+     * ✅ UPDATED 13.0.0: Local validation using VALID_MODELS
      * 
-     * @param model Model identifier (validated by GeminiModelManager)
+     * @param model Model identifier (must be in VALID_MODELS)
      * @throws IllegalArgumentException if model is not valid
      */
     suspend fun setTranslationModel(model: String) {
-        require(modelManager.isValidModel(model)) { 
-            "Invalid Translation model: $model. Use GeminiModelManager.getModelIds() for valid models."
+        require(model in VALID_MODELS) { 
+            "Invalid Translation model: $model. Valid models: $VALID_MODELS"
         }
         
         try {
@@ -556,10 +606,11 @@ class SettingsDataStore @Inject constructor(
     /**
      * Returns list of available Gemini models for Translation UI display.
      * 
-     * ✅ UPDATED: Delegated to GeminiModelManager
+     * ✅ UPDATED 13.0.0: Returns local hardcoded list (no manager dependency)
+     * ⚠️ NOTE: Must be kept in sync with GeminiModelManager.getAvailableModels()
      */
     fun getAvailableTranslationModels(): List<GeminiModelOption> {
-        return modelManager.getAvailableModels()
+        return getAvailableGeminiModels() // Same models for translation
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
