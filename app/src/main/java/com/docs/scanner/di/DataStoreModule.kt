@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
+import com.docs.scanner.data.local.preferences.SettingsDataStore
+import com.docs.scanner.data.remote.gemini.GeminiModelManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -47,5 +49,20 @@ object DataStoreModule {
         @ApplicationContext context: Context
     ): DataStore<Preferences> {
         return context.dataStore
+    }
+    
+    /**
+     * Provides singleton GeminiModelManager.
+     * 
+     * Used by:
+     * - GeminiOcrService (dynamic model selection)
+     * - Any component needing Gemini model management
+     */
+    @Provides
+    @Singleton
+    fun provideGeminiModelManager(
+        settingsDataStore: SettingsDataStore
+    ): GeminiModelManager {
+        return GeminiModelManager(settingsDataStore)
     }
 }
