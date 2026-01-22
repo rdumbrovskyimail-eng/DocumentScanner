@@ -51,7 +51,7 @@ import com.docs.scanner.data.local.security.ApiKeyEntry
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
 import com.docs.scanner.data.remote.drive.DriveRepository
 import com.docs.scanner.data.remote.gemini.GeminiApi
-import com.docs.scanner.data.remote.gemini.GeminiModelManager
+import import com.docs.scanner.data.local.preferences.GeminiModelManager
 import com.docs.scanner.data.remote.mlkit.MLKitScanner
 import com.docs.scanner.data.remote.mlkit.OcrScriptMode
 import com.docs.scanner.domain.core.*
