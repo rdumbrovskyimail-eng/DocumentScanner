@@ -1,8 +1,12 @@
 /*
  * SettingsScreen.kt
- * Version: 19.2 HOTFIX - Исправление ошибок компиляции
+ * Version: 20.0.0 - AI & OCR TAB REORDERED + TRANSLATION MODEL SELECTOR
  * 
- * ✅ ВСЕ 35 ИСПРАВЛЕНИЙ ПРИМЕНЕНЫ
+ * ✅ NEW IN 20.0.0:
+ * 1. ML Kit OCR (first, unchanged)
+ * 2. Gemini AI Fallback (second, removed 2.0 models)
+ * 3. Translation (third, ADDED model selector!)
+ * 4. Gemini API Keys (fourth, moved down)
  */
 
 package com.docs.scanner.presentation.screens.settings
@@ -11,6 +15,7 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -42,6 +47,7 @@ import com.docs.scanner.domain.core.ImageQuality
 import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.core.ThemeMode
 import com.docs.scanner.presentation.screens.settings.components.ApiKeysSettingsSection
+import com.docs.scanner.presentation.screens.settings.components.GeminiModelOption
 import com.docs.scanner.presentation.screens.settings.components.GeminiOcrSettingsSection
 import com.docs.scanner.presentation.screens.settings.components.TranslationTestSection
 import com.docs.scanner.util.LogcatCollector
@@ -175,6 +181,7 @@ fun SettingsScreen(
                         onGeminiOcrThresholdChange = viewModel::setGeminiOcrThreshold,
                         onGeminiOcrAlwaysChange = viewModel::setGeminiOcrAlways,
                         onGeminiOcrModelChange = viewModel::setGeminiOcrModel,
+                        onTranslationModelChange = viewModel::setTranslationModel,
                         onAutoTranslateChange = viewModel::setAutoTranslate,
                         onTargetLanguageChange = viewModel::setTargetLanguage
                     )
@@ -337,7 +344,7 @@ fun SettingsScreen(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// AI & OCR TAB
+// AI & OCR TAB - ✅ UPDATED ORDER
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -360,6 +367,7 @@ private fun AiOcrTab(
     onGeminiOcrThresholdChange: (Int) -> Unit,
     onGeminiOcrAlwaysChange: (Boolean) -> Unit,
     onGeminiOcrModelChange: (String) -> Unit,
+    onTranslationModelChange: (String) -> Unit, // ✅ NEW
     onAutoTranslateChange: (Boolean) -> Unit,
     onTargetLanguageChange: (Language) -> Unit
 ) {
@@ -370,31 +378,52 @@ private fun AiOcrTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        SettingsCard(title = "Gemini API Keys", icon = Icons.Default.Key) {
-            ApiKeysSettingsSection(
-                keys = apiKeys,
-                isLoading = isLoadingKeys,
-                onAddKey = onAddApiKey,
-                onRemoveKey = onRemoveApiKey,
-                onSetPrimary = onSetPrimaryApiKey,
-                onResetErrors = onResetApiKeyErrors
-            )
-        }
-
+        // ═══════════════════════════════════════════════════════════════
+        // 1. ML KIT OCR (FIRST - unchanged)
+        // ═══════════════════════════════════════════════════════════════
         SettingsCard(title = "ML Kit OCR", icon = Icons.Default.TextFields) {
-            Text("On-device text recognition", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "On-device text recognition", 
+                style = MaterialTheme.typography.bodySmall, 
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(Modifier.height(12.dp))
+            
             ScriptModeSelector(mlkitSettings.scriptMode, onScriptModeChange)
+            
             Spacer(Modifier.height(12.dp))
-            SettingToggleRow("Auto-detect language", "Automatically detect script and language", mlkitSettings.autoDetectLanguage, onAutoDetectChange, Icons.Default.AutoAwesome)
+            
+            SettingToggleRow(
+                "Auto-detect language", 
+                "Automatically detect script and language", 
+                mlkitSettings.autoDetectLanguage, 
+                onAutoDetectChange, 
+                Icons.Default.AutoAwesome
+            )
+            
             Spacer(Modifier.height(12.dp))
+            
+            // Confidence threshold slider
             Column {
-                Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth(), 
+                    Arrangement.SpaceBetween, 
+                    Alignment.CenterVertically
+                ) {
                     Column {
                         Text("Confidence threshold", style = MaterialTheme.typography.bodyMedium)
-                        Text("Words below this are marked as low confidence", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            "Words below this are marked as low confidence", 
+                            style = MaterialTheme.typography.bodySmall, 
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    Text("${(mlkitSettings.confidenceThreshold * 100).toInt()}%", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        "${(mlkitSettings.confidenceThreshold * 100).toInt()}%", 
+                        style = MaterialTheme.typography.titleMedium, 
+                        fontWeight = FontWeight.Bold, 
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
                 Slider(
                     value = mlkitSettings.confidenceThreshold,
@@ -407,12 +436,31 @@ private fun AiOcrTab(
                     Text("95%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+            
             Spacer(Modifier.height(12.dp))
-            SettingToggleRow("Highlight low confidence words", "Show red highlighting on uncertain words", mlkitSettings.highlightLowConfidence, onHighlightLowConfidenceChange, Icons.Default.Highlight)
+            
+            SettingToggleRow(
+                "Highlight low confidence words", 
+                "Show red highlighting on uncertain words", 
+                mlkitSettings.highlightLowConfidence, 
+                onHighlightLowConfidenceChange, 
+                Icons.Default.Highlight
+            )
+            
             Spacer(Modifier.height(12.dp))
-            SettingToggleRow("Show word confidence scores", "Display confidence % for each word", mlkitSettings.showWordConfidences, onShowWordConfidencesChange, Icons.Default.Analytics)
+            
+            SettingToggleRow(
+                "Show word confidence scores", 
+                "Display confidence % for each word", 
+                mlkitSettings.showWordConfidences, 
+                onShowWordConfidencesChange, 
+                Icons.Default.Analytics
+            )
         }
 
+        // ═══════════════════════════════════════════════════════════════
+        // 2. GEMINI AI FALLBACK (SECOND - without 2.0 models)
+        // ═══════════════════════════════════════════════════════════════
         SettingsCard(title = "Gemini AI Fallback", icon = Icons.Default.AutoAwesome) {
             GeminiOcrSettingsSection(
                 enabled = mlkitSettings.geminiOcrEnabled,
@@ -427,26 +475,258 @@ private fun AiOcrTab(
             )
         }
 
+        // ═══════════════════════════════════════════════════════════════
+        // 3. TRANSLATION (THIRD - WITH MODEL SELECTOR!)
+        // ═══════════════════════════════════════════════════════════════
         SettingsCard(title = "Translation", icon = Icons.Default.Translate) {
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Auto-translate after OCR", style = MaterialTheme.typography.bodyMedium)
-                    Text("Automatically translate recognized text", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Switch(
-                    checked = autoTranslate,
-                    onCheckedChange = onAutoTranslateChange
+            TranslationSettingsSection(
+                autoTranslate = autoTranslate,
+                targetLanguage = targetLanguage,
+                selectedModel = mlkitSettings.selectedTranslationModel,
+                availableModels = mlkitSettings.availableTranslationModels,
+                onAutoTranslateChange = onAutoTranslateChange,
+                onTargetLanguageChange = onTargetLanguageChange,
+                onModelChange = onTranslationModelChange
+            )
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // 4. GEMINI API KEYS (FOURTH - moved down)
+        // ═══════════════════════════════════════════════════════════════
+        SettingsCard(title = "Gemini API Keys", icon = Icons.Default.Key) {
+            ApiKeysSettingsSection(
+                keys = apiKeys,
+                isLoading = isLoadingKeys,
+                onAddKey = onAddApiKey,
+                onRemoveKey = onRemoveApiKey,
+                onSetPrimary = onSetPrimaryApiKey,
+                onResetErrors = onResetApiKeyErrors
+            )
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ NEW: TRANSLATION SETTINGS SECTION (WITH MODEL SELECTOR)
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun TranslationSettingsSection(
+    autoTranslate: Boolean,
+    targetLanguage: Language,
+    selectedModel: String,
+    availableModels: List<GeminiModelOption>,
+    onAutoTranslateChange: (Boolean) -> Unit,
+    onTargetLanguageChange: (Language) -> Unit,
+    onModelChange: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // Auto-translate toggle
+        Row(
+            Modifier.fillMaxWidth(), 
+            Arrangement.SpaceBetween, 
+            Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Auto-translate after OCR", 
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    "Automatically translate recognized text", 
+                    style = MaterialTheme.typography.bodySmall, 
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(Modifier.height(12.dp))
-            SettingDropdown(
-                "Target Language",
-                "${targetLanguage.displayName} (${targetLanguage.code})",
-                Language.translationSupported.filter { it != Language.AUTO }.map { "${it.displayName} (${it.code})" }
-            ) { sel ->
-                Language.fromCode(sel.substringAfterLast("(").substringBefore(")").trim())?.let { onTargetLanguageChange(it) }
+            Switch(
+                checked = autoTranslate,
+                onCheckedChange = onAutoTranslateChange
+            )
+        }
+        
+        // Gemini Model Selector (NEW!)
+        Text(
+            "Gemini Model",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        
+        ModelSelectorDropdown(
+            selectedModel = selectedModel,
+            availableModels = availableModels,
+            onModelChange = onModelChange,
+            label = "Translation Model"
+        )
+        
+        // Target Language
+        SettingDropdown(
+            "Target Language",
+            "${targetLanguage.displayName} (${targetLanguage.code})",
+            Language.translationSupported.filter { it != Language.AUTO }.map { 
+                "${it.displayName} (${it.code})" 
+            }
+        ) { sel ->
+            Language.fromCode(
+                sel.substringAfterLast("(").substringBefore(")").trim()
+            )?.let { onTargetLanguageChange(it) }
+        }
+        
+        // Info card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    "💡 Translation uses the selected Gemini model. Faster models (Flash Lite) are recommended for instant results.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ NEW: MODEL SELECTOR DROPDOWN (reusable component)
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ModelSelectorDropdown(
+    selectedModel: String,
+    availableModels: List<GeminiModelOption>,
+    onModelChange: (String) -> Unit,
+    label: String = "Model"
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val currentModel = availableModels.find { it.id == selectedModel } 
+        ?: availableModels.firstOrNull()
+    
+    Column {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    Text(
+                        text = currentModel?.displayName ?: "Select model",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    currentModel?.description?.let { desc ->
+                        Text(
+                            text = desc,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Select $label"
+                )
+            }
+        }
+        
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            availableModels.forEach { model ->
+                DropdownMenuItem(
+                    text = {
+                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = model.displayName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (model.id == selectedModel) 
+                                            FontWeight.Bold else FontWeight.Normal
+                                    )
+                                    
+                                    Spacer(Modifier.height(4.dp))
+                                    
+                                    // Speed badge
+                                    ModelSpeedBadge(model.id)
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = model.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    onClick = {
+                        onModelChange(model.id)
+                        expanded = false
+                    }
+                )
+                if (model != availableModels.last()) {
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ NEW: MODEL SPEED BADGE
+// ═══════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ModelSpeedBadge(modelId: String) {
+    val (text, color) = when (modelId) {
+        "gemini-3-flash-preview", "gemini-2.5-flash-lite" -> 
+            "⚡ FAST" to Color(0xFF4CAF50)
+        
+        "gemini-2.5-flash" -> 
+            "⚖️ BALANCED" to Color(0xFF2196F3)
+        
+        "gemini-3-pro-preview", "gemini-2.5-pro" -> 
+            "🐌 SLOW" to Color(0xFFFF9800)
+        
+        else -> return
+    }
+    
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = color.copy(alpha = 0.15f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = color
+        )
     }
 }
 
@@ -516,7 +796,6 @@ private fun TestingTab(
             }
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // ИСПРАВЛЕНИЕ 1: Button "Stop/Start"
                 Button(
                     onClick = { 
                         if (isCollecting) { 
@@ -534,7 +813,6 @@ private fun TestingTab(
                     Spacer(Modifier.width(8.dp))
                     Text(if (isCollecting) "Stop" else "Start")
                 }
-                // ИСПРАВЛЕНИЕ 2: OutlinedButton "Save"
                 OutlinedButton(
                     onClick = {
                         scope.launch {
@@ -561,7 +839,6 @@ private fun TestingTab(
             Text("Debug Logs Viewer", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             Text("View historical debug logs and session data", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
-            // ИСПРАВЛЕНИЕ 3: Button "Open Debug Viewer"
             Button(
                 onClick = onDebugClick,
                 modifier = Modifier.fillMaxWidth()
@@ -603,7 +880,6 @@ private fun OcrTestCard(
         Text("Test OCR with current settings on any image", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
-            // ИСПРАВЛЕНИЕ 4: OutlinedButton "Select Image"
             OutlinedButton(
                 onClick = { 
                     imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) 
@@ -615,7 +891,6 @@ private fun OcrTestCard(
                 Text("Select Image")
             }
             if (mlkitSettings.isTestRunning) {
-                // ИСПРАВЛЕНИЕ 5: OutlinedButton "Cancel"
                 OutlinedButton(
                     onClick = onCancelOcr,
                     modifier = Modifier.weight(1f),
@@ -626,7 +901,6 @@ private fun OcrTestCard(
                     Text("Cancel")
                 }
             } else {
-                // ИСПРАВЛЕНИЕ 6: Button "Run OCR"
                 Button(
                     onClick = onTestOcr,
                     enabled = mlkitSettings.selectedImageUri != null,
@@ -660,7 +934,6 @@ private fun OcrTestCard(
                                     }
                                 }
                             }
-                            // ИСПРАВЛЕНИЕ 7: IconButton "Clear"
                             IconButton(
                                 onClick = { 
                                     onImageSelected(null)
@@ -776,13 +1049,11 @@ private fun GeneralTab(
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                 Text("TTL (days): $cacheTtlDays")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // ИСПРАВЛЕНИЕ 8: OutlinedButton "-" (Cache TTL)
                     OutlinedButton(
                         onClick = { onCacheTtlChange((cacheTtlDays - 1).coerceIn(1, 365)) }
                     ) { 
                         Text("-") 
                     }
-                    // ИСПРАВЛЕНИЕ 9: OutlinedButton "+" (Cache TTL)
                     OutlinedButton(
                         onClick = { onCacheTtlChange((cacheTtlDays + 1).coerceIn(1, 365)) }
                     ) { 
@@ -796,7 +1067,6 @@ private fun GeneralTab(
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // ИСПРАВЛЕНИЕ 10: OutlinedButton "Refresh" (Cache)
                 OutlinedButton(
                     onClick = onRefreshCacheStats,
                     modifier = Modifier.weight(1f)
@@ -805,7 +1075,6 @@ private fun GeneralTab(
                     Spacer(Modifier.width(4.dp))
                     Text("Refresh")
                 }
-                // ИСПРАВЛЕНИЕ 11: OutlinedButton "Clear" (Cache)
                 OutlinedButton(
                     onClick = onClearCache,
                     modifier = Modifier.weight(1f)
@@ -816,7 +1085,6 @@ private fun GeneralTab(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            // ИСПРАВЛЕНИЕ 12: OutlinedButton "Clear old entries"
             OutlinedButton(
                 onClick = onClearOldCache,
                 modifier = Modifier.fillMaxWidth()
@@ -831,7 +1099,6 @@ private fun GeneralTab(
             Text(storageUsage?.formatTotal() ?: "Calculating...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // ИСПРАВЛЕНИЕ 13: OutlinedButton "Refresh" (Storage)
                 OutlinedButton(
                     onClick = onRefreshStorage,
                     modifier = Modifier.weight(1f)
@@ -840,7 +1107,6 @@ private fun GeneralTab(
                     Spacer(Modifier.width(4.dp))
                     Text("Refresh")
                 }
-                // ИСПРАВЛЕНИЕ 14: OutlinedButton "Clear temp"
                 OutlinedButton(
                     onClick = onClearTemp,
                     modifier = Modifier.weight(1f)
@@ -896,7 +1162,6 @@ private fun BackupTab(
                 )
             }
             Spacer(Modifier.height(12.dp))
-            // ИСПРАВЛЕНИЕ 15: Button "Create Backup"
             Button(
                 onClick = onCreateLocalBackup,
                 enabled = !isBackingUp,
@@ -926,7 +1191,6 @@ private fun BackupTab(
             Text(driveEmail?.let { "Connected: $it" } ?: "Not connected", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // ИСПРАВЛЕНИЕ 16: OutlinedButton "Connect" (Drive)
                 OutlinedButton(
                     onClick = onSignInDrive,
                     enabled = driveEmail == null && !isBackingUp,
@@ -934,7 +1198,6 @@ private fun BackupTab(
                 ) {
                     Text("Connect")
                 }
-                // ИСПРАВЛЕНИЕ 17: OutlinedButton "Disconnect" (Drive)
                 OutlinedButton(
                     onClick = onSignOutDrive,
                     enabled = driveEmail != null && !isBackingUp,
@@ -945,7 +1208,6 @@ private fun BackupTab(
             }
             if (driveEmail != null) {
                 Spacer(Modifier.height(16.dp))
-                // ИСПРАВЛЕНИЕ 18: Button "Upload to Drive"
                 Button(
                     onClick = onUploadToDrive,
                     enabled = !isBackingUp,
@@ -956,7 +1218,6 @@ private fun BackupTab(
                     Text("Upload to Drive")
                 }
                 Spacer(Modifier.height(8.dp))
-                // ИСПРАВЛЕНИЕ 19: OutlinedButton "Refresh list" (Drive)
                 OutlinedButton(
                     onClick = onRefreshDriveBackups,
                     enabled = !isBackingUp,
@@ -1004,7 +1265,6 @@ private fun SettingDropdown(title: String, value: String, options: List<String>,
     Column {
         Text(title, style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(4.dp))
-        // ИСПРАВЛЕНИЕ 20: OutlinedButton
         OutlinedButton(
             onClick = { expanded = true },
             modifier = Modifier.fillMaxWidth()
@@ -1029,7 +1289,6 @@ private fun ScriptModeSelector(selectedMode: com.docs.scanner.data.remote.mlkit.
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         com.docs.scanner.data.remote.mlkit.OcrScriptMode.entries.forEach { mode ->
-            // ИСПРАВЛЕНИЕ 21: FilterChip leadingIcon
             FilterChip(
                 selected = mode == selectedMode,
                 onClick = { onModeSelected(mode) },
@@ -1068,7 +1327,6 @@ private fun BackupItem(name: String, size: String, onRestore: () -> Unit, onShar
             Text(size, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // ИСПРАВЛЕНИЕ 22: OutlinedButton "Restore"
                 OutlinedButton(
                     onClick = onRestore,
                     modifier = Modifier.weight(1f)
@@ -1077,7 +1335,6 @@ private fun BackupItem(name: String, size: String, onRestore: () -> Unit, onShar
                     Spacer(Modifier.width(4.dp))
                     Text("Restore")
                 }
-                // ИСПРАВЛЕНИЕ 23: OutlinedButton "Share"
                 OutlinedButton(
                     onClick = onShare,
                     modifier = Modifier.weight(1f)
@@ -1099,7 +1356,6 @@ private fun DriveBackupItem(backup: BackupInfo, onRestore: () -> Unit, onDelete:
             Text(backup.formatSize(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // ИСПРАВЛЕНИЕ 24: OutlinedButton "Restore"
                 OutlinedButton(
                     onClick = onRestore,
                     modifier = Modifier.weight(1f)
@@ -1108,7 +1364,6 @@ private fun DriveBackupItem(backup: BackupInfo, onRestore: () -> Unit, onDelete:
                     Spacer(Modifier.width(4.dp))
                     Text("Restore")
                 }
-                // ИСПРАВЛЕНИЕ 25: OutlinedButton "Delete"
                 OutlinedButton(
                     onClick = onDelete,
                     modifier = Modifier.weight(1f)
@@ -1143,7 +1398,6 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (String, String?) -> 
         title = { Text("Add Gemini API Key") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // ИСПРАВЛЕНИЕ 26: OutlinedTextField "Label"
                 OutlinedTextField(
                     value = label,
                     onValueChange = { label = it },
@@ -1151,7 +1405,6 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (String, String?) -> 
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
-                // ИСПРАВЛЕНИЕ 27: OutlinedTextField "API Key"
                 OutlinedTextField(
                     value = key,
                     onValueChange = { key = it },
@@ -1161,7 +1414,6 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (String, String?) -> 
             }
         },
         confirmButton = {
-            // ИСПРАВЛЕНИЕ 28: TextButton "Save"
             TextButton(
                 onClick = { onSave(key, label.ifBlank { null }) },
                 enabled = key.isNotBlank()
@@ -1171,7 +1423,6 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (String, String?) -> 
         },
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // ИСПРАВЛЕНИЕ 29: TextButton "Test"
                 TextButton(
                     onClick = { onTest(key) },
                     enabled = key.isNotBlank()
@@ -1194,7 +1445,6 @@ private fun ClearOldCacheDialog(initialDays: Int, onDismiss: () -> Unit, onConfi
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Delete entries older than $days days.")
                 Row(Modifier.fillMaxWidth(), Arrangement.Center, Alignment.CenterVertically) {
-                    // ИСПРАВЛЕНИЕ 30: OutlinedButton "-"
                     OutlinedButton(
                         onClick = { days = (days - 1).coerceIn(1, 365) }
                     ) { 
@@ -1203,7 +1453,6 @@ private fun ClearOldCacheDialog(initialDays: Int, onDismiss: () -> Unit, onConfi
                     Spacer(Modifier.width(16.dp))
                     Text("$days days", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.width(16.dp))
-                    // ИСПРАВЛЕНИЕ 31: OutlinedButton "+"
                     OutlinedButton(
                         onClick = { days = (days + 1).coerceIn(1, 365) }
                     ) { 
@@ -1213,7 +1462,6 @@ private fun ClearOldCacheDialog(initialDays: Int, onDismiss: () -> Unit, onConfi
             }
         },
         confirmButton = {
-            // ИСПРАВЛЕНИЕ 32: TextButton "Delete"
             TextButton(
                 onClick = { onConfirm(days) }
             ) { 
@@ -1237,7 +1485,6 @@ private fun RestoreBackupDialog(backupName: String, onDismiss: () -> Unit, onCon
                 Text("Restore from: $backupName")
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                     Text("Merge into existing data")
-                    // ИСПРАВЛЕНИЕ 33: Switch
                     Switch(
                         checked = merge,
                         onCheckedChange = { merge = it }
@@ -1255,7 +1502,6 @@ private fun RestoreBackupDialog(backupName: String, onDismiss: () -> Unit, onCon
             }
         },
         confirmButton = {
-            // ИСПРАВЛЕНИЕ 34: TextButton "Merge/Replace"
             TextButton(
                 onClick = { onConfirm(merge) }
             ) { 
@@ -1269,13 +1515,11 @@ private fun RestoreBackupDialog(backupName: String, onDismiss: () -> Unit, onCon
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// DATA CLASSES
+// UTILITY FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════════
-
-// ИСПРАВЛЕНИЕ 35: Убран дублирующийся LocalBackup (определен в SettingsViewModel.kt:1402)
 
 private fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ✅ КОНЕЦ ФАЙЛА SettingsScreen.kt v19.2 HOTFIX
+// ✅ END OF FILE - SettingsScreen.kt v20.0.0
 // ═══════════════════════════════════════════════════════════════════════════════
