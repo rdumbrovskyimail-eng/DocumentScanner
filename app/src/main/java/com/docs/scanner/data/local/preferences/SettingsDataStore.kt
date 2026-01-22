@@ -1,31 +1,19 @@
 /**
  * SettingsDataStore.kt
- * Version: 11.0.0 - TRANSLATION MODEL SELECTION + MODEL NAMES FIX (2026)
+ * Version: 12.0.0 - UNIFIED MODEL MANAGEMENT (2026)
  *
- * ✅ NEW IN 11.0.0:
+ * ✅ NEW IN 12.0.0:
+ * - Delegated model lists to GeminiModelManager
+ * - Removed duplicate VALID_GEMINI_MODELS / VALID_TRANSLATION_MODELS
+ * - Removed gemini-2.0-* models
+ * - All model operations now go through GeminiModelManager
+ *
+ * ✅ PREVIOUS IN 11.0.0:
  * - Translation model selection (KEY_TRANSLATION_MODEL)
- * - translationModel Flow и setTranslationModel()
- * - getAvailableTranslationModels() - отдельный список для перевода
- * - ИСПРАВЛЕНЫ имена моделей: gemini-3-flash → gemini-3-flash-preview
- * - gemini-3-pro → gemini-3-pro-preview (требует оплату!)
- * - Добавлены deprecated модели 2.0 для совместимости
- * - Default для OCR изменен на gemini-2.5-flash-lite (стабильный)
- * - Default для Translation: gemini-2.5-flash-lite (ultra-fast)
+ * - Separate model settings for OCR and Translation
  *
- * ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ:
- * - Gemini 3 модели требуют суффикс "-preview" (без него 404 error!)
- * - gemini-3-pro-preview НЕ имеет free tier - только платный доступ
- * - gemini-1.5-* модели RETIRED (404 error)
- * - gemini-2.0-* deprecated с 3 марта 2026
- *
- * ✅ PREVIOUS IN 10.0.0:
- * - Updated model list to Series 3.0 (latest Dec 2025)
- * - gemini-3-flash as recommended default
- * - Speed-optimized model descriptions
- *
- * Security:
- * - ✅ API keys stored in EncryptedKeyStorage (AES-256-GCM)
- * - ✅ Migration from plain text to encrypted storage
+ * АРХИТЕКТУРА:
+ * SettingsDataStore → GeminiModelManager → Единый список моделей
  */
 
 package com.docs.scanner.data.local.preferences
@@ -49,7 +37,8 @@ import javax.inject.Singleton
 
 @Singleton
 class SettingsDataStore @Inject constructor(
-    private val dataStore: DataStore<Preferences>
+    private val dataStore: DataStore<Preferences>,
+    private val modelManager: GeminiModelManager // ✅ INJECT manager
 ) {
     
     companion object {
@@ -84,58 +73,12 @@ class SettingsDataStore @Inject constructor(
         private val KEY_GEMINI_OCR_THRESHOLD = intPreferencesKey("gemini_ocr_threshold")
         private val KEY_GEMINI_OCR_ALWAYS = booleanPreferencesKey("gemini_ocr_always")
         
-        // ✅ Gemini Model Selection
+        // Gemini Model Selection
         private val KEY_GEMINI_OCR_MODEL = stringPreferencesKey("gemini_ocr_model")
-        
-        // ✅ NEW: Translation Model Selection
         private val KEY_TRANSLATION_MODEL = stringPreferencesKey("translation_model")
         
         // Legacy key for migration
         private val KEY_LEGACY_API_KEY = stringPreferencesKey("gemini_api_key")
-        
-        // ✅ ИСПРАВЛЕНО: Правильные имена моделей (January 2026)
-        // 
-        // ВАЖНО: 
-        // - Gemini 3 модели требуют суффикс "-preview"
-        // - gemini-3-pro-preview НЕ имеет free tier (только платный!)
-        // - gemini-2.0-flash и 2.0-flash-lite будут deprecated 3 марта 2026
-        //
-        private val VALID_GEMINI_MODELS = listOf(
-            // ═══════════════════════════════════════════════════════════════
-            // Series 3.0 (Preview - December 2025)
-            // ═══════════════════════════════════════════════════════════════
-            "gemini-3-flash-preview",    // ⚡ Fast, has FREE tier
-            "gemini-3-pro-preview",      // 🎯 Best quality, PAID ONLY!
-            
-            // ═══════════════════════════════════════════════════════════════
-            // Series 2.5 (Stable - recommended for production)
-            // ═══════════════════════════════════════════════════════════════
-            "gemini-2.5-flash-lite",     // 🚀 Ultra-fast, cheapest
-            "gemini-2.5-flash",          // ⚡ Fast, best balance
-            "gemini-2.5-pro",            // 🐌 Slow but accurate
-            
-            // ═══════════════════════════════════════════════════════════════
-            // Series 2.0 (Legacy - deprecated March 3, 2026)
-            // ═══════════════════════════════════════════════════════════════
-            "gemini-2.0-flash",          // ⚡ Fast (будет deprecated!)
-            "gemini-2.0-flash-lite"      // 🚀 Fastest (будет deprecated!)
-        )
-        
-        // ✅ NEW: Valid models for translation (same as OCR but with different defaults)
-        private val VALID_TRANSLATION_MODELS = listOf(
-            // Series 3.0 (Preview - December 2025)
-            "gemini-3-flash-preview",    // ⚡ Fast
-            "gemini-3-pro-preview",      // 🎯 Best quality, PAID ONLY!
-            
-            // Series 2.5 (Stable - RECOMMENDED FOR TRANSLATION)
-            "gemini-2.5-flash-lite",     // 🚀 Ultra-fast - BEST FOR TRANSLATION
-            "gemini-2.5-flash",          // ⚡ Very fast balanced
-            "gemini-2.5-pro",            // 🐌 Slow but accurate
-            
-            // Series 2.0 (Legacy)
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite"
-        )
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
@@ -517,28 +460,14 @@ class SettingsDataStore @Inject constructor(
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ GEMINI OCR MODEL SELECTION (11.0.0) - ИСПРАВЛЕНЫ ИМЕНА МОДЕЛЕЙ
+    // ✅ GEMINI MODEL SELECTION - DELEGATED TO MANAGER (12.0.0)
     // ════════════════════════════════════════════════════════════════════════════════
     
     /**
      * Selected Gemini model for OCR.
      * 
-     * ✅ ИСПРАВЛЕНО: Default = gemini-2.5-flash-lite (стабильный, быстрый)
-     * 
-     * Причина изменения: 
-     * - gemini-3-flash был неверным именем (нужен суффикс -preview)
-     * - gemini-2.5-flash-lite — стабильная, проверенная модель для production
-     * 
-     * Available models:
-     * 
-     * Series 3.0 (Preview):
-     * - gemini-3-flash-preview   ⚡ Fast, has FREE tier
-     * - gemini-3-pro-preview     🎯 Best quality, PAID ONLY!
-     * 
-     * Series 2.5 (Stable - RECOMMENDED):
-     * - gemini-2.5-flash-lite    🚀 Ultra-fast - BEST FOR OCR
-     * - gemini-2.5-flash         ⚡ Very fast - Great balance
-     * - gemini-2.5-pro           🐌 Slow - High accuracy
+     * ✅ UPDATED: Now uses GeminiModelManager.DEFAULT_OCR_MODEL as default
+     * ✅ Validation delegated to GeminiModelManager.isValidModel()
      */
     val geminiOcrModel: Flow<String> = dataStore.data
         .catch { e ->
@@ -546,18 +475,20 @@ class SettingsDataStore @Inject constructor(
             emit(emptyPreferences())
         }
         .map { prefs -> 
-            prefs[KEY_GEMINI_OCR_MODEL] ?: "gemini-2.5-flash-lite"  // ✅ ИЗМЕНЕН DEFAULT
+            prefs[KEY_GEMINI_OCR_MODEL] ?: GeminiModelManager.DEFAULT_OCR_MODEL
         }
     
     /**
      * Sets the Gemini model for OCR.
      * 
-     * @param model Model identifier (must be one of VALID_GEMINI_MODELS)
+     * ✅ UPDATED: Validation delegated to GeminiModelManager
+     * 
+     * @param model Model identifier (validated by GeminiModelManager)
      * @throws IllegalArgumentException if model is not valid
      */
     suspend fun setGeminiOcrModel(model: String) {
-        require(model in VALID_GEMINI_MODELS) { 
-            "Invalid Gemini model: $model. Valid models: $VALID_GEMINI_MODELS" 
+        require(modelManager.isValidModel(model)) { 
+            "Invalid Gemini model: $model. Use GeminiModelManager.getModelIds() for valid models."
         }
         
         try {
@@ -574,103 +505,41 @@ class SettingsDataStore @Inject constructor(
     /**
      * Returns list of available Gemini models for OCR UI display.
      * 
-     * ✅ ИСПРАВЛЕНО: Правильные имена моделей с суффиксами
-     * 
-     * РЕКОМЕНДАЦИИ:
-     * - Для OCR: gemini-2.5-flash-lite или gemini-2.5-flash (стабильные, быстрые)
-     * - gemini-3-flash-preview работает, но может иметь rate limits
-     * - gemini-3-pro-preview требует оплату!
+     * ✅ UPDATED: Delegated to GeminiModelManager
      */
-    fun getAvailableGeminiModels(): List<GeminiModelOption> = listOf(
-        // ═══════════════════════════════════════════════════════════════
-        // РЕКОМЕНДОВАННЫЕ ДЛЯ OCR (стабильные, быстрые)
-        // ═══════════════════════════════════════════════════════════════
-        GeminiModelOption(
-            id = "gemini-2.5-flash-lite",
-            displayName = "Gemini 2.5 Flash Lite 🚀",
-            description = "Ultra-fast • Stable • Best for OCR",
-            isRecommended = true  // ✅ РЕКОМЕНДОВАН
-        ),
-        GeminiModelOption(
-            id = "gemini-2.5-flash",
-            displayName = "Gemini 2.5 Flash ⚡",
-            description = "Very fast • Stable • Great balance",
-            isRecommended = false
-        ),
-        
-        // ═══════════════════════════════════════════════════════════════
-        // GEMINI 3 PREVIEW (может иметь rate limits)
-        // ═══════════════════════════════════════════════════════════════
-        GeminiModelOption(
-            id = "gemini-3-flash-preview",   // ✅ ИСПРАВЛЕНО: добавлен -preview
-            displayName = "Gemini 3 Flash (Preview) ⚡",
-            description = "Latest • Free tier • May have rate limits",
-            isRecommended = false
-        ),
-        GeminiModelOption(
-            id = "gemini-3-pro-preview",     // ✅ ИСПРАВЛЕНО: добавлен -preview
-            displayName = "Gemini 3 Pro (Preview) 🎯",
-            description = "Best quality • PAID ONLY • Slower",
-            isRecommended = false
-        ),
-        
-        // ═══════════════════════════════════════════════════════════════
-        // SLOWER BUT ACCURATE
-        // ═══════════════════════════════════════════════════════════════
-        GeminiModelOption(
-            id = "gemini-2.5-pro",
-            displayName = "Gemini 2.5 Pro 🐌",
-            description = "Slow • High accuracy • Complex text",
-            isRecommended = false
-        ),
-        
-        // ═══════════════════════════════════════════════════════════════
-        // LEGACY (deprecated March 3, 2026)
-        // ═══════════════════════════════════════════════════════════════
-        GeminiModelOption(
-            id = "gemini-2.0-flash",
-            displayName = "Gemini 2.0 Flash ⚠️",
-            description = "Legacy • Deprecated March 2026",
-            isRecommended = false
-        ),
-        GeminiModelOption(
-            id = "gemini-2.0-flash-lite",
-            displayName = "Gemini 2.0 Flash Lite ⚠️",
-            description = "Legacy • Deprecated March 2026",
-            isRecommended = false
-        )
-    )
+    fun getAvailableGeminiModels(): List<GeminiModelOption> {
+        return modelManager.getAvailableModels()
+    }
     
     // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ NEW: TRANSLATION MODEL SELECTION (11.0.0)
+    // ✅ TRANSLATION MODEL SELECTION - DELEGATED TO MANAGER (12.0.0)
     // ════════════════════════════════════════════════════════════════════════════════
     
     /**
      * Selected Gemini model for Translation.
      * 
-     * DEFAULT: gemini-2.5-flash-lite (ultra-fast for quick translations)
-     * 
-     * Translation benefits from faster models since:
-     * - Text is already extracted (no image processing)
-     * - Prompt is simple and focused
-     * - User expects near-instant results
+     * ✅ UPDATED: Now uses GeminiModelManager.DEFAULT_TRANSLATION_MODEL as default
      */
     val translationModel: Flow<String> = dataStore.data
         .catch { e ->
             Timber.e(e, "Error reading translationModel")
             emit(emptyPreferences())
         }
-        .map { prefs -> prefs[KEY_TRANSLATION_MODEL] ?: "gemini-2.5-flash-lite" }
+        .map { prefs -> 
+            prefs[KEY_TRANSLATION_MODEL] ?: GeminiModelManager.DEFAULT_TRANSLATION_MODEL
+        }
     
     /**
      * Sets the Gemini model for Translation.
      * 
-     * @param model Model identifier (must be one of VALID_TRANSLATION_MODELS)
+     * ✅ UPDATED: Validation delegated to GeminiModelManager
+     * 
+     * @param model Model identifier (validated by GeminiModelManager)
      * @throws IllegalArgumentException if model is not valid
      */
     suspend fun setTranslationModel(model: String) {
-        require(model in VALID_TRANSLATION_MODELS) { 
-            "Invalid Translation model: $model. Valid models: $VALID_TRANSLATION_MODELS" 
+        require(modelManager.isValidModel(model)) { 
+            "Invalid Translation model: $model. Use GeminiModelManager.getModelIds() for valid models."
         }
         
         try {
@@ -687,64 +556,11 @@ class SettingsDataStore @Inject constructor(
     /**
      * Returns list of available Gemini models for Translation UI display.
      * 
-     * Models are ordered by speed (fastest first) since translation
-     * should feel instant to users.
+     * ✅ UPDATED: Delegated to GeminiModelManager
      */
-    fun getAvailableTranslationModels(): List<GeminiModelOption> = listOf(
-        // ═══════════════════════════════════════════════════════════════
-        // FASTEST MODELS FIRST (translation should be instant)
-        // ═══════════════════════════════════════════════════════════════
-GeminiModelOption(
-            id = "gemini-2.5-flash-lite",
-            displayName = "Gemini 2.5 Flash Lite 🚀",
-            description = "Ultra-fast • Instant response • Best for translation",
-            isRecommended = true  // ✅ RECOMMENDED FOR TRANSLATION
-        ),
-        GeminiModelOption(
-            id = "gemini-2.5-flash",
-            displayName = "Gemini 2.5 Flash ⚡",
-            description = "Very fast • Great balance",
-            isRecommended = false
-        ),
-        GeminiModelOption(
-            id = "gemini-3-flash-preview",
-            displayName = "Gemini 3 Flash (Preview)",
-            description = "Latest • May have rate limits",
-            isRecommended = false
-        ),
-        
-        // ═══════════════════════════════════════════════════════════════
-        // SLOWER BUT MORE ACCURATE (for complex translations)
-        // ═══════════════════════════════════════════════════════════════
-        GeminiModelOption(
-            id = "gemini-2.5-pro",
-            displayName = "Gemini 2.5 Pro 🐌",
-            description = "Slow • Complex translations",
-            isRecommended = false
-        ),
-        GeminiModelOption(
-            id = "gemini-3-pro-preview",
-            displayName = "Gemini 3 Pro (Preview) 💰",
-            description = "PAID ONLY • Highest quality",
-            isRecommended = false
-        ),
-        
-        // ═══════════════════════════════════════════════════════════════
-        // LEGACY (deprecated March 3, 2026)
-        // ═══════════════════════════════════════════════════════════════
-        GeminiModelOption(
-            id = "gemini-2.0-flash",
-            displayName = "Gemini 2.0 Flash ⚠️",
-            description = "Legacy • Deprecated March 2026",
-            isRecommended = false
-        ),
-        GeminiModelOption(
-            id = "gemini-2.0-flash-lite",
-            displayName = "Gemini 2.0 Flash Lite ⚠️",
-            description = "Legacy • Deprecated March 2026",
-            isRecommended = false
-        )
-    )
+    fun getAvailableTranslationModels(): List<GeminiModelOption> {
+        return modelManager.getAvailableModels()
+    }
     
     // ════════════════════════════════════════════════════════════════════════════════
     // UTILITY
