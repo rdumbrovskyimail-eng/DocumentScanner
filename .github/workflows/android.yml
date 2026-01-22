@@ -1,4 +1,4 @@
-name: Android CI (Optimized)
+name: Android CI (Smart Logs)
 
 on:
   push:
@@ -9,7 +9,6 @@ on:
 permissions:
   contents: write
 
-# Отменяем предыдущие запуски для того же PR/branch
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -22,7 +21,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        # Shallow clone для ускорения
         fetch-depth: 1
     
     - name: Set up JDK 21
@@ -32,17 +30,13 @@ jobs:
         distribution: 'temurin'
         cache: 'gradle'
     
-    # ✅ Gradle Wrapper кэширование
     - name: Cache Gradle Wrapper
       uses: actions/cache@v4
       with:
-        path: |
-          ~/.gradle/wrapper
+        path: ~/.gradle/wrapper
         key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-wrapper-
+        restore-keys: ${{ runner.os }}-gradle-wrapper-
     
-    # ✅ Gradle Dependencies кэширование
     - name: Cache Gradle Dependencies
       uses: actions/cache@v4
       with:
@@ -51,10 +45,8 @@ jobs:
           ~/.gradle/daemon
           ~/.konan
         key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-
+        restore-keys: ${{ runner.os }}-gradle-
     
-    # ✅ Build Cache
     - name: Cache Build Output
       uses: actions/cache@v4
       with:
@@ -63,11 +55,9 @@ jobs:
           .gradle
           app/build
         key: ${{ runner.os }}-build-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-build-
+        restore-keys: ${{ runner.os }}-build-
     
-    # ✅ Gradle Build Cache конфигурация
-    - name: Configure Gradle Build Cache
+    - name: Configure Gradle
       run: |
         mkdir -p $HOME/.gradle
         cat > $HOME/.gradle/gradle.properties << EOF
@@ -81,17 +71,21 @@ jobs:
         kotlin.incremental=true
         EOF
     
-    # ✅ Gradle с правами выполнения
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
     
-    # ✅ КРИТИЧНО: Один clean для всех последующих сборок
-    - name: Clean build (once)
+    - name: Clean build
       run: ./gradlew clean --no-daemon --stacktrace
     
-    # ✅ Собираем Debug и Release ПАРАЛЛЕЛЬНО
-    - name: Build APKs (Parallel)
+    # ✅ НОВОЕ: Build с логированием только ошибок
+    - name: Build APKs with Error Logging
+      id: build
       run: |
+        set +e  # Не останавливаться на ошибке
+        
+        echo "🔨 Starting build..."
+        
+        # Перенаправляем вывод в файл
         ./gradlew assembleDebug assembleRelease \
           --parallel \
           --build-cache \
@@ -99,16 +93,73 @@ jobs:
           --max-workers=4 \
           --stacktrace \
           -Dorg.gradle.workers.max=4 \
-          -Dkotlin.compiler.execution.strategy=in-process
-      continue-on-error: true
-      
-    # ✅ Проверяем результаты сборки
+          -Dkotlin.compiler.execution.strategy=in-process \
+          > build.log 2>&1
+        
+        BUILD_EXIT_CODE=$?
+        
+        if [ $BUILD_EXIT_CODE -ne 0 ]; then
+          echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
+          echo "build_status=failed" >> $GITHUB_OUTPUT
+          
+          # ✅ Извлекаем ТОЛЬКО ОШИБКИ из лога
+          echo "## 🔴 Compilation Errors" > errors.txt
+          echo "" >> errors.txt
+          
+          # KSP ошибки
+          grep -A 5 "e: \[ksp\]" build.log >> errors.txt 2>/dev/null || true
+          
+          # Kotlin compilation errors
+          grep -A 3 "e: file://" build.log >> errors.txt 2>/dev/null || true
+          
+          # Task failed
+          grep -A 10 "Task.*failed" build.log >> errors.txt 2>/dev/null || true
+          
+          # Execution failed
+          grep -B 3 -A 5 "Execution failed for task" build.log >> errors.txt 2>/dev/null || true
+          
+          # FAILURE: Build failed
+          grep -A 20 "FAILURE: Build failed" build.log >> errors.txt 2>/dev/null || true
+          
+          # Показываем количество найденных ошибок
+          ERROR_COUNT=$(grep -c "^e:" build.log 2>/dev/null || echo "0")
+          echo "📊 Found $ERROR_COUNT error lines"
+          
+          # Выводим в консоль GitHub Actions
+          echo "### ❌ Build Failed"
+          echo ""
+          echo "\`\`\`"
+          head -n 100 errors.txt
+          echo "\`\`\`"
+          
+          exit 1
+        else
+          echo "✅ Build successful"
+          echo "build_status=success" >> $GITHUB_OUTPUT
+        fi
+    
+    # ✅ НОВОЕ: Upload только логов с ошибками (если сборка упала)
+    - name: Upload Error Logs
+      if: failure() && steps.build.outputs.build_status == 'failed'
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-error-logs
+        path: |
+          errors.txt
+          build/reports/kotlin-build/*.txt
+        retention-days: 7
+        if-no-files-found: ignore
+    
+    # ✅ Проверка собранных APK
     - name: Verify Build Output
+      if: success()
       run: |
-        echo "📦 Проверка собранных APK..."
+        echo "📦 Checking built APKs..."
         find app/build/outputs/apk -type f -name "*.apk" -exec ls -lh {} \;
-      
+    
+    # ✅ Подготовка APK для релиза
     - name: Prepare APKs for Release
+      if: success()
       run: |
         mkdir -p apks
         
@@ -116,10 +167,10 @@ jobs:
         if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
           cp app/build/outputs/apk/debug/app-debug.apk \
              apks/DocumentScanner-v${{ github.run_number }}-debug.apk
-          echo "✅ Debug APK: $(ls -lh apks/DocumentScanner-v${{ github.run_number }}-debug.apk | awk '{print $5}')"
+          echo "✅ Debug: $(ls -lh apks/DocumentScanner-v${{ github.run_number }}-debug.apk | awk '{print $5}')"
         fi
         
-        # Release APK (unsigned or signed)
+        # Release APK
         RELEASE_APK=""
         if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
           RELEASE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
@@ -129,26 +180,23 @@ jobs:
         
         if [ -n "$RELEASE_APK" ]; then
           cp "$RELEASE_APK" apks/DocumentScanner-v${{ github.run_number }}-release.apk
-          echo "✅ Release APK: $(ls -lh apks/DocumentScanner-v${{ github.run_number }}-release.apk | awk '{print $5}')"
-        else
-          echo "⚠️ Release APK не найден"
+          echo "✅ Release: $(ls -lh apks/DocumentScanner-v${{ github.run_number }}-release.apk | awk '{print $5}')"
         fi
         
-        echo ""
-        echo "📦 Все готовые файлы:"
-        ls -lh apks/ || echo "Нет файлов в apks/"
+        ls -lh apks/
     
-    # ✅ Upload артефактов (для отладки, если релиз не нужен)
+    # ✅ Upload APK (только при успешной сборке)
     - name: Upload APK Artifacts
-      uses: actions/upload-artifact@v4
       if: success()
+      uses: actions/upload-artifact@v4
       with:
         name: apk-builds
         path: apks/*.apk
         retention-days: 7
-      
+    
+    # ✅ Создание релиза
     - name: Create Release
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v1.0.${{ github.run_number }}
@@ -156,35 +204,29 @@ jobs:
         body: |
           ## 📱 DocumentScanner v1.0.${{ github.run_number }}
           
-          ### ⚡ Оптимизированная сборка
-          - Параллельная компиляция Debug + Release
-          - Gradle Build Cache включен
-          - Configuration Cache активен
-          
-          ### 📥 Установка
-          1. Скачайте APK файл
-          2. **Удалите старую версию** (Settings → Apps → DocumentScanner → Uninstall)
-          3. Установите новую версию
-          4. При необходимости: Settings → Security → Enable "Unknown sources"
-          
-          ### 📦 Доступные версии
-          - **Debug APK** - с отладочной информацией
-          - **Release APK** - минифицирован и оптимизирован (ProGuard/R8)
-          
-          ### 📝 Build Info
+          ### ⚡ Build Info
           - **Commit:** `${{ github.sha }}`
           - **Branch:** `${{ github.ref_name }}`
           - **Build #:** ${{ github.run_number }}
           - **Gradle:** 8.11.1
           - **JDK:** 21
           
+          ### 📥 Installation
+          1. Download APK
+          2. Uninstall old version
+          3. Install new APK
+          4. Enable "Unknown sources" if needed
+          
+          ### 📦 Available Versions
+          - **Debug APK** - with debug info
+          - **Release APK** - optimized (R8/ProGuard)
+          
         files: apks/*.apk
         fail_on_unmatched_files: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
-    # ✅ Очистка для следующей сборки
-    - name: Cleanup Gradle Daemon
+    # ✅ Cleanup
+    - name: Cleanup
       if: always()
-      run: |
-        ./gradlew --stop || true
+      run: ./gradlew --stop || true
