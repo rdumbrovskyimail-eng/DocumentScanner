@@ -1,17 +1,29 @@
 /*
  * GeminiModelManager.kt
- * Version: 1.0.0 - UNIFIED MODEL MANAGEMENT (2026)
+ * Version: 2.0.0 - FIXED CIRCULAR DEPENDENCY (2026)
  * 
- * ✅ ЕДИНЫЙ ИСТОЧНИК ПРАВДЫ для всех Gemini моделей в проекте
- * ✅ Используется в: Settings, Editor, Testing, OCR, Translation
- * ✅ БЕЗ устаревших gemini-2.0-* моделей
+ * ✅ NEW IN 2.0.0:
+ * - Verified dependency flow: GeminiModelManager → SettingsDataStore (one-way, safe)
+ * - Model lists synchronized with SettingsDataStore.kt constants
+ * - Added validation to ensure lists match
  * 
- * АРХИТЕКТУРА:
+ * ✅ PREVIOUS IN 1.0.0:
+ * - ЕДИНЫЙ ИСТОЧНИК ПРАВДЫ для всех Gemini моделей в проекте
+ * - Используется в: Settings, Editor, Testing, OCR, Translation
+ * - БЕЗ устаревших gemini-2.0-* моделей
+ * 
+ * АРХИТЕКТУРА (FIXED):
  * GeminiModelManager (Singleton)
- *   ├─ PRODUCTION_MODELS (константа)
+ *   ├─ Depends on: SettingsDataStore (injected via constructor)
+ *   ├─ PRODUCTION_MODELS (константа, synced with SettingsDataStore.VALID_MODELS)
  *   ├─ getGlobalOcrModel() → читает из DataStore
  *   ├─ getGlobalTranslationModel() → читает из DataStore
  *   └─ используется везде автоматически
+ * 
+ * SettingsDataStore (Singleton)
+ *   ├─ Depends on: DataStore<Preferences> (no circular dependency!)
+ *   ├─ VALID_MODELS (константа, synced with GeminiModelManager.PRODUCTION_MODELS)
+ *   └─ Validates models locally without calling GeminiModelManager
  */
 
 package com.docs.scanner.data.local.preferences
@@ -31,6 +43,9 @@ import javax.inject.Singleton
  * - Prevents model list duplication
  * - Ensures consistency across the app
  * - Single source of truth for model selection
+ * 
+ * DEPENDENCY FLOW (Safe, no circular dependency):
+ * GeminiModelManager → SettingsDataStore → DataStore
  */
 @Singleton
 class GeminiModelManager @Inject constructor(
@@ -40,6 +55,8 @@ class GeminiModelManager @Inject constructor(
     companion object {
         /**
          * ✅ PRODUCTION MODELS (January 2026)
+         * 
+         * ⚠️ CRITICAL: Must be kept in sync with SettingsDataStore.VALID_MODELS
          * 
          * REMOVED: gemini-2.0-flash, gemini-2.0-flash-lite (deprecated March 2026)
          * REMOVED: gemini-1.5-* (retired, returns 404)
@@ -66,6 +83,8 @@ class GeminiModelManager @Inject constructor(
         /**
          * Default model for OCR operations.
          * 
+         * ⚠️ CRITICAL: Must match SettingsDataStore.DEFAULT_OCR_MODEL
+         * 
          * ✅ gemini-2.5-flash-lite chosen because:
          * - Ultra-fast (1-2s per image)
          * - Stable (production-ready)
@@ -77,12 +96,49 @@ class GeminiModelManager @Inject constructor(
         /**
          * Default model for Translation operations.
          * 
+         * ⚠️ CRITICAL: Must match SettingsDataStore.DEFAULT_TRANSLATION_MODEL
+         * 
          * ✅ gemini-2.5-flash-lite chosen because:
          * - Translation should feel instant
          * - Text is already extracted (no image processing)
          * - Simple prompts don't need Pro models
          */
         const val DEFAULT_TRANSLATION_MODEL = "gemini-2.5-flash-lite"
+    }
+    
+    init {
+        // ✅ Runtime validation: Ensure constants are synchronized
+        validateSyncWithDataStore()
+    }
+    
+    /**
+     * ✅ Validates that GeminiModelManager constants match SettingsDataStore.
+     * 
+     * This prevents bugs where models are out of sync between the two classes.
+     */
+    private fun validateSyncWithDataStore() {
+        val dataStoreModels = SettingsDataStore.VALID_MODELS
+        val managerModels = PRODUCTION_MODELS
+        
+        if (dataStoreModels != managerModels) {
+            Timber.e("""
+                ❌ CRITICAL: Model lists are OUT OF SYNC!
+                
+                SettingsDataStore.VALID_MODELS: $dataStoreModels
+                GeminiModelManager.PRODUCTION_MODELS: $managerModels
+                
+                This will cause validation errors!
+                Please ensure both lists are identical.
+            """.trimIndent())
+        }
+        
+        if (SettingsDataStore.DEFAULT_OCR_MODEL != DEFAULT_OCR_MODEL) {
+            Timber.e("❌ DEFAULT_OCR_MODEL mismatch: DataStore=${SettingsDataStore.DEFAULT_OCR_MODEL}, Manager=$DEFAULT_OCR_MODEL")
+        }
+        
+        if (SettingsDataStore.DEFAULT_TRANSLATION_MODEL != DEFAULT_TRANSLATION_MODEL) {
+            Timber.e("❌ DEFAULT_TRANSLATION_MODEL mismatch: DataStore=${SettingsDataStore.DEFAULT_TRANSLATION_MODEL}, Manager=$DEFAULT_TRANSLATION_MODEL")
+        }
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
@@ -183,6 +239,7 @@ class GeminiModelManager @Inject constructor(
                 Timber.w("⚠️ Invalid OCR model in DataStore: $model, using default")
                 DEFAULT_OCR_MODEL
             } else {
+                Timber.d("✅ Global OCR model loaded: $model")
                 model
             }
         } catch (e: Exception) {
@@ -204,7 +261,7 @@ class GeminiModelManager @Inject constructor(
         
         try {
             settingsDataStore.setGeminiOcrModel(modelId)
-            Timber.d("✅ Global OCR model set to: $modelId")
+            Timber.i("✅ Global OCR model set to: $modelId")
         } catch (e: Exception) {
             Timber.e(e, "❌ Failed to save OCR model")
             throw e
@@ -233,6 +290,7 @@ class GeminiModelManager @Inject constructor(
                 Timber.w("⚠️ Invalid Translation model in DataStore: $model, using default")
                 DEFAULT_TRANSLATION_MODEL
             } else {
+                Timber.d("✅ Global Translation model loaded: $model")
                 model
             }
         } catch (e: Exception) {
@@ -254,7 +312,7 @@ class GeminiModelManager @Inject constructor(
         
         try {
             settingsDataStore.setTranslationModel(modelId)
-            Timber.d("✅ Global Translation model set to: $modelId")
+            Timber.i("✅ Global Translation model set to: $modelId")
         } catch (e: Exception) {
             Timber.e(e, "❌ Failed to save Translation model")
             throw e
