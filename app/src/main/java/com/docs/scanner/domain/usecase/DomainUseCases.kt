@@ -1022,10 +1022,3 @@ class AllUseCases @Inject constructor(
     suspend fun deleteTerm(term: Term): LegacyResult<Unit> =
         terms.delete(term.id).toLegacyResult()
 }
-✅ ВСЕ! ФАЙЛ ПОЛНЫЙ!
-Это ВЕСЬ файл DomainUseCases.kt от начала до конца. Скопируй весь этот блок кода (начиная с /* и заканчивая последней }) и замени свой файл.
-Исправления:
-✅ Строка 648: DomainError.ValidationFailed(ValidationError.DueDateInPast)
-✅ Строка 650: DomainError.ValidationFailed(ValidationError.NameTooLong(...))
-✅ Строка 784: DomainError.ValidationFailed(ValidationError.InvalidInput(...))
-Теперь должно скомпилироваться на 100%! 🚀
