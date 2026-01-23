@@ -1,8 +1,12 @@
 /*
  * SettingsViewModel.kt
- * Version: 20.0.1 - TRANSLATION MODEL FIX (2026)
+ * Version: 20.0.2 - TRANSLATION MODEL FIX v2 (2026)
  * 
- * ✅ FIXED IN 20.0.1:
+ * ✅ FIXED IN 20.0.2:
+ * - testTranslation() теперь использует translateTextWithModel() (правильный метод для Testing Tab)
+ * - Убран несуществующий параметр 'model' из translateText()
+ * 
+ * ✅ PREVIOUS IN 20.0.1:
  * - testTranslation() теперь использует translateWithModel() вместо translateTextWithModel()
  * - Полная совместимость с UseCases.translation API
  * 
@@ -14,23 +18,6 @@
  * - getAvailableTranslationModels() делегирует в ModelManager
  * - loadMlkitSettings() загружает модели через ModelManager
  * - Rollback при ошибках через ModelManager
- * 
- * ✅ PREVIOUS in 19.0.0 - TRANSLATION MODEL SELECTION:
- * - Translation model selection (gemini-2.5-flash-lite по умолчанию)
- * - Auto-sync OCR result → Translation test
- * - Separate model settings for OCR and Translation
- * - Debouncing для обоих model switchers
- * 
- * ✅ PREVIOUS in 18.0.0 - ATOMIC MODEL SWITCHING:
- * - Атомарное переключение моделей (DataStore → UI)
- * - Debouncing для быстрых переключений (300ms)
- * - Cancellable OCR Jobs
- * - Graceful cancellation с proper cleanup
- * 
- * АРХИТЕКТУРА СИНХРОНИЗАЦИИ:
- * Settings UI → ViewModel → GeminiModelManager → DataStore → MLKitScanner/GeminiTranslator → Editor
- *                    ↓                              ↓
- *              _mlkitSettings (UI)      Global Single Source of Truth
  */
 
 package com.docs.scanner.presentation.screens.settings
@@ -46,7 +33,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.BuildConfig
 import com.docs.scanner.data.local.preferences.GeminiModelOption
-import com.docs.scanner.data.local.preferences.GeminiModelManager  // ✅ ИСПРАВЛЕНО
+import com.docs.scanner.data.local.preferences.GeminiModelManager
 import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.data.local.security.ApiKeyEntry
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
@@ -196,7 +183,7 @@ class SettingsViewModel @Inject constructor(
 
     init {
         if (BuildConfig.DEBUG) {
-            Timber.d("🔧 SettingsViewModel initialized (v20.0.1)")
+            Timber.d("🔧 SettingsViewModel initialized (v20.0.2)")
         }
         
         checkDriveConnection()
@@ -739,7 +726,7 @@ class SettingsViewModel @Inject constructor(
                         _backupMessage.value = "✗ Download failed"
                         return@launch
                     }
-}
+                }
                 
                 when (useCases.backup.restoreFromLocal(localPath, merge)) {
                     is DomainResult.Success -> _backupMessage.value = "✓ Restored"
@@ -1180,7 +1167,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ TRANSLATION TEST - FIXED IN 20.0.1
+    // ✅ TRANSLATION TEST - FIXED IN 20.0.2
     // ═══════════════════════════════════════════════════════════════════════════
 
     fun setTranslationTestText(text: String) {
@@ -1196,7 +1183,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * ✅ FIXED IN 20.0.1: Uses translateWithModel() for Testing Tab
+     * ✅ FIXED IN 20.0.2: Uses translateTextWithModel() (correct method for Testing Tab)
      */
     fun testTranslation() {
         val state = _mlkitSettings.value
@@ -1230,8 +1217,8 @@ class SettingsViewModel @Inject constructor(
                 Timber.d("   └─ Text: ${state.translationTestText.take(50)}...")
             }
             
-            // ✅ CRITICAL: Use translateWithModel instead of translateTextWithModel
-            when (val result = useCases.translation.translateText(
+            // ✅ CRITICAL FIX: Use translateTextWithModel (accepts 'model' parameter)
+            when (val result = useCases.translation.translateTextWithModel(
                 text = state.translationTestText,
                 source = state.translationSourceLang,
                 target = state.translationTargetLang,
