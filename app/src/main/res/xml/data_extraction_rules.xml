@@ -4,8 +4,10 @@
         <!-- ✅ Include -->
         <include domain="database" path="." />
         <include domain="file" path="documents/" />
+        <include domain="sharedpref" path="." />
+        <include domain="file" path="." />
         
-        <!-- ✅ ДОБАВЛЕНО: Exclude sensitive data -->
+        <!-- ✅ Exclude sensitive data (теперь они в included путях) -->
         <exclude domain="sharedpref" path="." />
         <exclude domain="file" path="datastore/" />
     </cloud-backup>
@@ -14,8 +16,10 @@
         <!-- ✅ Include -->
         <include domain="database" path="." />
         <include domain="file" path="documents/" />
+        <include domain="sharedpref" path="." />
+        <include domain="file" path="." />
         
-        <!-- ✅ ДОБАВЛЕНО: Exclude sensitive data -->
+        <!-- ✅ Exclude sensitive data (теперь они в included путях) -->
         <exclude domain="sharedpref" path="." />
         <exclude domain="file" path="datastore/" />
     </device-transfer>
