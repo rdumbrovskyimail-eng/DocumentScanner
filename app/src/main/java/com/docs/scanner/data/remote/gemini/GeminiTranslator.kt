@@ -1,18 +1,10 @@
 /*
  * GeminiTranslator.kt
- * Version: 3.2.0 - FIXED VALIDATION ERRORS (2026)
+ * Version: 3.2.1 - CRITICAL FIX: ValidationError import and usage
  * 
- * ✅ NEW IN 3.2.0:
- * - Fixed ValidationError usage (InvalidInput with proper parameters)
- * - Fixed when expression return types
- * - Fixed DomainResult constructors (success/failure lowercase)
- * 
- * ✅ PREVIOUS IN 3.1.0:
- * - Full integration with SettingsDataStore for model selection
- * - Model parameter uses settings if not specified
- * - Cache key includes model for proper isolation
- * 
- * LOCATION: com.docs.scanner.data.remote.gemini
+ * ✅ FIXED in 3.2.1:
+ * - Line 139: Added proper ValidationError import and DomainError.ValidationFailed wrapper
+ * - Fixed DomainResult.Failure constructor usage
  */
 
 package com.docs.scanner.data.remote.gemini
@@ -33,14 +25,6 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Handles translation using Gemini API.
- * 
- * ✅ UPDATED: Full settings integration
- * - Uses model from GeminiModelManager
- * - Respects cache settings from SettingsDataStore
- * - Cache keys include model for isolation
- */
 @Singleton
 class GeminiTranslator @Inject constructor(
     private val geminiApi: GeminiApi,
@@ -54,21 +38,6 @@ class GeminiTranslator @Inject constructor(
         private const val TAG = "GeminiTranslator"
     }
     
-    // ════════════════════════════════════════════════════════════════════════════════
-    // PRIMARY TRANSLATION METHOD
-    // ════════════════════════════════════════════════════════════════════════════════
-    
-    /**
-     * Translates text using model from settings.
-     * 
-     * ✅ UPDATED: Uses model from GeminiModelManager if not specified
-     * 
-     * @param text Text to translate
-     * @param sourceLanguage Source language (use Language.AUTO for auto-detection)
-     * @param targetLanguage Target language
-     * @param useCacheOverride Optional cache override (null = use settings)
-     * @return Translation result
-     */
     suspend fun translate(
         text: String,
         sourceLanguage: Language,
@@ -76,7 +45,6 @@ class GeminiTranslator @Inject constructor(
         useCacheOverride: Boolean? = null
     ): DomainResult<TranslationResult> = withContext(Dispatchers.IO) {
         
-        // ✅ STEP 1: Get model from settings
         val model = try {
             modelManager.getGlobalTranslationModel()
         } catch (e: Exception) {
@@ -84,7 +52,6 @@ class GeminiTranslator @Inject constructor(
             GeminiModelManager.DEFAULT_TRANSLATION_MODEL
         }
         
-        // ✅ STEP 2: Call translateWithModel with settings model
         return@withContext translateWithModel(
             text = text,
             sourceLanguage = sourceLanguage,
@@ -94,23 +61,6 @@ class GeminiTranslator @Inject constructor(
         )
     }
     
-    // ════════════════════════════════════════════════════════════════════════════════
-    // MODEL-SPECIFIC TRANSLATION (for testing different models)
-    // ════════════════════════════════════════════════════════════════════════════════
-    
-    /**
-     * Translates text using specified model.
-     * 
-     * ✅ NEW: Allows model override for testing different models in Settings UI.
-     * ✅ Cache key includes model for proper isolation
-     * 
-     * @param text Text to translate
-     * @param sourceLanguage Source language
-     * @param targetLanguage Target language
-     * @param model Gemini model ID to use (e.g., "gemini-2.5-flash-lite")
-     * @param useCacheOverride Optional cache override (null = use settings)
-     * @return TranslationResult or error
-     */
     suspend fun translateWithModel(
         text: String,
         sourceLanguage: Language,
@@ -119,7 +69,6 @@ class GeminiTranslator @Inject constructor(
         useCacheOverride: Boolean? = null
     ): DomainResult<TranslationResult> = withContext(Dispatchers.IO) {
         
-        // ✅ STEP 1: Validate input
         val trimmed = text.trim()
         if (trimmed.isBlank()) {
             return@withContext DomainResult.success(
@@ -134,17 +83,19 @@ class GeminiTranslator @Inject constructor(
             )
         }
         
+        // ✅ FIX LINE 139: Proper ValidationError usage with DomainError.ValidationFailed wrapper
         if (sourceLanguage != Language.AUTO && sourceLanguage == targetLanguage) {
             return@withContext DomainResult.failure(
-                DomainError.ValidationError.InvalidInput(
-                    field = "languages",
-                    value = "$sourceLanguage -> $targetLanguage",
-                    reason = "Source and target languages must be different"
+                DomainError.ValidationFailed(
+                    ValidationError.InvalidInput(
+                        field = "languages",
+                        value = "$sourceLanguage -> $targetLanguage",
+                        reason = "Source and target languages must be different"
+                    )
                 )
             )
         }
         
-        // ✅ STEP 2: Validate model
         if (!modelManager.isValidModel(model)) {
             Timber.w("⚠️ Invalid model: $model, using default")
             val fallbackModel = GeminiModelManager.DEFAULT_TRANSLATION_MODEL
@@ -158,7 +109,6 @@ class GeminiTranslator @Inject constructor(
         val srcCode = sourceLanguage.code
         val tgtCode = targetLanguage.code
         
-        // ✅ STEP 3: Get cache settings
         val cacheEnabled = useCacheOverride ?: runCatching { 
             settingsDataStore.cacheEnabled.first() 
         }.getOrNull() ?: true
@@ -167,7 +117,6 @@ class GeminiTranslator @Inject constructor(
             settingsDataStore.cacheTtlDays.first() 
         }.getOrNull() ?: 30
         
-        // ✅ STEP 4: Check cache (key includes model!)
         if (cacheEnabled) {
             val cacheKey = buildCacheKey(trimmed, srcCode, tgtCode, model)
             val cached = translationCacheManager.getCachedTranslation(
@@ -194,7 +143,6 @@ class GeminiTranslator @Inject constructor(
             }
         }
         
-        // ✅ STEP 5: Build prompt
         val prompt = buildTranslationPrompt(trimmed, sourceLanguage, targetLanguage)
         
         if (Timber.forest().isNotEmpty()) {
@@ -205,7 +153,6 @@ class GeminiTranslator @Inject constructor(
             Timber.d("   └─ Text length: ${trimmed.length} chars")
         }
         
-        // ✅ STEP 6: Call API with fallback chain
         when (val result = geminiApi.generateText(
             prompt = prompt,
             model = model,
@@ -224,7 +171,6 @@ class GeminiTranslator @Inject constructor(
                     )
                 }
                 
-                // ✅ STEP 7: Cache result (with model in key)
                 if (cacheEnabled) {
                     val cacheKey = buildCacheKey(trimmed, srcCode, tgtCode, model)
                     translationCacheManager.cacheTranslation(
@@ -254,30 +200,19 @@ class GeminiTranslator @Inject constructor(
             }
             
             is DomainResult.Failure -> {
-    val processingTime = System.currentTimeMillis() - startTime
-    Timber.e("❌ Translation failed after ${processingTime}ms: ${result.error.message}")
-    return@withContext DomainResult.Failure<TranslationResult>(result.error)
-}
+                val processingTime = System.currentTimeMillis() - startTime
+                Timber.e("❌ Translation failed after ${processingTime}ms: ${result.error.message}")
+                return@withContext DomainResult.failure(result.error)
+            }
         }
     }
     
-    // ════════════════════════════════════════════════════════════════════════════════
-    // OCR TEXT CORRECTION
-    // ════════════════════════════════════════════════════════════════════════════════
-    
-    /**
-     * Fixes OCR errors in text using Gemini.
-     * 
-     * @param text OCR text to fix
-     * @return Fixed text or error
-     */
     suspend fun fixOcrText(text: String): DomainResult<String> = withContext(Dispatchers.IO) {
         val trimmed = text.trim()
         if (trimmed.isBlank()) {
             return@withContext DomainResult.success("")
         }
         
-        // ✅ Use model from settings
         val model = try {
             modelManager.getGlobalTranslationModel()
         } catch (e: Exception) {
@@ -298,10 +233,6 @@ class GeminiTranslator @Inject constructor(
             fallbackModels = getFallbackModels(model)
         )
     }
-    
-    // ════════════════════════════════════════════════════════════════════════════════
-    // CACHE MANAGEMENT
-    // ════════════════════════════════════════════════════════════════════════════════
     
     suspend fun clearCache() {
         translationCacheManager.clearAllCache()
@@ -330,16 +261,6 @@ class GeminiTranslator @Inject constructor(
         )
     }
     
-    // ════════════════════════════════════════════════════════════════════════════════
-    // HELPER METHODS
-    // ════════════════════════════════════════════════════════════════════════════════
-    
-    /**
-     * Builds cache key that includes model for proper isolation.
-     * 
-     * ✅ CRITICAL: Different models may produce different translations,
-     * so cache must be model-specific!
-     */
     private fun buildCacheKey(
         text: String,
         sourceCode: String,
@@ -347,13 +268,9 @@ class GeminiTranslator @Inject constructor(
         model: String
     ): String {
         val textHash = text.hashCode().toString(16)
-        // Format: src_tgt_model_hash
         return "${sourceCode}_${targetCode}_${model}_$textHash"
     }
     
-    /**
-     * Builds translation prompt for Gemini.
-     */
     private fun buildTranslationPrompt(
         text: String,
         source: Language,
@@ -373,15 +290,6 @@ class GeminiTranslator @Inject constructor(
         }
     }
     
-    /**
-     * Returns fallback models for the given primary model.
-     * 
-     * ✅ Strategy:
-     * - 3.x models → fallback to 2.5-flash-lite
-     * - 2.5-pro → fallback to 2.5-flash → 2.5-flash-lite
-     * - 2.5-flash → fallback to 2.5-flash-lite
-     * - 2.5-flash-lite → fallback to 2.5-flash
-     */
     private fun getFallbackModels(primaryModel: String): List<String> {
         return when (primaryModel) {
             "gemini-3-flash-preview" -> listOf(
