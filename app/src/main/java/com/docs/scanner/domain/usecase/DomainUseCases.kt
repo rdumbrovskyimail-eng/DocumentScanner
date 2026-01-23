@@ -11,7 +11,7 @@
 package com.docs.scanner.domain.usecase
 
 import android.net.Uri
-import com.docs.scanner.domain.model.ValidationError
+import com.docs.scanner.domain.core.ValidationError  // ✅ ИЗМЕНЕНО
 import com.docs.scanner.data.local.preferences.GeminiModelManager
 import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.domain.core.*
@@ -25,7 +25,6 @@ import kotlinx.coroutines.sync.withPermit
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
-
 // ══════════════════════════════════════════════════════════════════════════════
 // 1. COMPLEX SCENARIOS
 // ══════════════════════════════════════════════════════════════════════════════
