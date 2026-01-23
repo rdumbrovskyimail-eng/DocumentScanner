@@ -18,6 +18,7 @@
 package com.docs.scanner.data.remote.gemini
 
 import com.docs.scanner.data.cache.TranslationCacheManager
+import com.docs.scanner.domain.model.ValidationError
 import com.docs.scanner.data.local.preferences.GeminiModelManager
 import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.domain.core.DomainError
