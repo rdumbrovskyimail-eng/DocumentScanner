@@ -1,12 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- ✅ Include -->
+    <!-- ✅ Include то, что нужно сохранять -->
     <include domain="database" path="." />
     <include domain="file" path="documents/" />
-    <include domain="sharedpref" path="." />
-    <include domain="file" path="." />
     
-    <!-- ✅ Exclude sensitive data (теперь они в included путях) -->
+    <!-- ✅ Exclude чувствительные данные (НЕ включаем их выше) -->
     <exclude domain="sharedpref" path="." />
     <exclude domain="file" path="datastore/" />
     <exclude domain="file" path="cache/" />
