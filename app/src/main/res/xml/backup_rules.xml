@@ -1,12 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- ✅ Сначала включаем всё -->
-    <include domain="sharedpref" path="." />
-    <include domain="file" path="." />
+    <!-- Включаем то, что нужно бэкапить -->
     <include domain="database" path="." />
+    <include domain="file" path="documents/" />
     
-    <!-- ✅ Потом исключаем чувствительные данные -->
-    <exclude domain="sharedpref" path="." />
+    <!-- Исключаем только конкретные файлы/папки, но НЕ весь домен -->
     <exclude domain="file" path="datastore/" />
     <exclude domain="file" path="cache/" />
 </full-backup-content>
