@@ -12,6 +12,7 @@
 package com.docs.scanner.presentation.screens.settings
 
 import android.content.Intent
+import com.docs.scanner.data.local.preferences.GeminiModelOption
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
