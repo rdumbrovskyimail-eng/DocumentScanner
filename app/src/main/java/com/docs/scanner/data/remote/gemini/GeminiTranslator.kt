@@ -1,8 +1,13 @@
 /*
  * GeminiTranslator.kt
- * Version: 3.1.0 - SETTINGS INTEGRATION (2026)
+ * Version: 3.2.0 - FIXED VALIDATION ERRORS (2026)
  * 
- * ✅ NEW IN 3.1.0:
+ * ✅ NEW IN 3.2.0:
+ * - Fixed ValidationError usage (InvalidInput with proper parameters)
+ * - Fixed when expression return types
+ * - Fixed DomainResult constructors (success/failure lowercase)
+ * 
+ * ✅ PREVIOUS IN 3.1.0:
  * - Full integration with SettingsDataStore for model selection
  * - Model parameter uses settings if not specified
  * - Cache key includes model for proper isolation
@@ -116,7 +121,7 @@ class GeminiTranslator @Inject constructor(
         // ✅ STEP 1: Validate input
         val trimmed = text.trim()
         if (trimmed.isBlank()) {
-            return@withContext DomainResult.Success(
+            return@withContext DomainResult.success(
                 TranslationResult(
                     originalText = text,
                     translatedText = "",
@@ -129,9 +134,11 @@ class GeminiTranslator @Inject constructor(
         }
         
         if (sourceLanguage != Language.AUTO && sourceLanguage == targetLanguage) {
-            return@withContext DomainResult.Failure(
+            return@withContext DomainResult.failure(
                 DomainError.ValidationError.InvalidInput(
-                    "Source and target languages must be different"
+                    field = "languages",
+                    value = "$sourceLanguage -> $targetLanguage",
+                    reason = "Source and target languages must be different"
                 )
             )
         }
@@ -173,7 +180,7 @@ class GeminiTranslator @Inject constructor(
                 if (Timber.forest().isNotEmpty()) {
                     Timber.d("✅ Cache hit (model: $model)")
                 }
-                return@withContext DomainResult.Success(
+                return@withContext DomainResult.success(
                     TranslationResult(
                         originalText = trimmed,
                         translatedText = cached,
@@ -198,7 +205,7 @@ class GeminiTranslator @Inject constructor(
         }
         
         // ✅ STEP 6: Call API with fallback chain
-        return@withContext when (val result = geminiApi.generateText(
+        when (val result = geminiApi.generateText(
             prompt = prompt,
             model = model,
             fallbackModels = getFallbackModels(model)
@@ -207,48 +214,48 @@ class GeminiTranslator @Inject constructor(
                 val translated = result.data.trim()
                 
                 if (translated.isBlank()) {
-                    DomainResult.Failure(
+                    return@withContext DomainResult.failure(
                         DomainError.TranslationFailed(
                             from = sourceLanguage,
                             to = targetLanguage,
                             cause = "Empty translation response"
                         )
                     )
-                } else {
-                    // ✅ STEP 7: Cache result (with model in key)
-                    if (cacheEnabled) {
-                        val cacheKey = buildCacheKey(trimmed, srcCode, tgtCode, model)
-                        translationCacheManager.cacheTranslation(
-                            originalText = cacheKey,
-                            translatedText = translated,
-                            sourceLang = srcCode,
-                            targetLang = tgtCode
-                        )
-                    }
-                    
-                    val processingTime = System.currentTimeMillis() - startTime
-                    
-                    if (Timber.forest().isNotEmpty()) {
-                        Timber.d("✅ Translation successful (${processingTime}ms, model: $model)")
-                    }
-                    
-                    DomainResult.Success(
-                        TranslationResult(
-                            originalText = trimmed,
-                            translatedText = translated,
-                            sourceLanguage = sourceLanguage,
-                            targetLanguage = targetLanguage,
-                            fromCache = false,
-                            processingTimeMs = processingTime
-                        )
+                }
+                
+                // ✅ STEP 7: Cache result (with model in key)
+                if (cacheEnabled) {
+                    val cacheKey = buildCacheKey(trimmed, srcCode, tgtCode, model)
+                    translationCacheManager.cacheTranslation(
+                        originalText = cacheKey,
+                        translatedText = translated,
+                        sourceLang = srcCode,
+                        targetLang = tgtCode
                     )
                 }
+                
+                val processingTime = System.currentTimeMillis() - startTime
+                
+                if (Timber.forest().isNotEmpty()) {
+                    Timber.d("✅ Translation successful (${processingTime}ms, model: $model)")
+                }
+                
+                return@withContext DomainResult.success(
+                    TranslationResult(
+                        originalText = trimmed,
+                        translatedText = translated,
+                        sourceLanguage = sourceLanguage,
+                        targetLanguage = targetLanguage,
+                        fromCache = false,
+                        processingTimeMs = processingTime
+                    )
+                )
             }
             
             is DomainResult.Failure -> {
                 val processingTime = System.currentTimeMillis() - startTime
                 Timber.e("❌ Translation failed after ${processingTime}ms: ${result.error.message}")
-                result
+                return@withContext result
             }
         }
     }
@@ -266,7 +273,7 @@ class GeminiTranslator @Inject constructor(
     suspend fun fixOcrText(text: String): DomainResult<String> = withContext(Dispatchers.IO) {
         val trimmed = text.trim()
         if (trimmed.isBlank()) {
-            return@withContext DomainResult.Success("")
+            return@withContext DomainResult.success("")
         }
         
         // ✅ Use model from settings
