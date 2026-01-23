@@ -254,10 +254,10 @@ class GeminiTranslator @Inject constructor(
             }
             
             is DomainResult.Failure -> {
-                val processingTime = System.currentTimeMillis() - startTime
-                Timber.e("❌ Translation failed after ${processingTime}ms: ${result.error.message}")
-                return@withContext result
-            }
+    val processingTime = System.currentTimeMillis() - startTime
+    Timber.e("❌ Translation failed after ${processingTime}ms: ${result.error.message}")
+    return@withContext DomainResult.Failure<TranslationResult>(result.error)
+}
         }
     }
     
