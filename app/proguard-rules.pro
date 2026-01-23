@@ -277,6 +277,30 @@
 # -classobfuscationdictionary proguard-dictionary.txt
 # -packageobfuscationdictionary proguard-dictionary.txt
 
+# ════════════════════════════════════════════════════════════════════
+# GOOGLE DRIVE SDK - Missing Classes Fix (R8 Compatibility)
+# ════════════════════════════════════════════════════════════════════
+
+# Apache HTTP (используется Google Drive API, но эти классы не нужны на Android)
+-dontwarn javax.naming.**
+-dontwarn org.ietf.jgss.**
+-dontwarn org.apache.http.**
+-dontwarn org.apache.commons.codec.**
+
+# Joda Time (используется Google Tink crypto)
+-dontwarn org.joda.time.**
+
+# Keep Google HTTP Transport classes
+-keep class com.google.api.client.http.** { *; }
+-keep class com.google.api.client.json.** { *; }
+-keep class com.google.api.client.util.** { *; }
+
+# Keep Google Auth classes
+-keep class com.google.auth.** { *; }
+-keepclassmembers class com.google.auth.** { *; }
+
+# ════════════════════════════════════════════════════════════════════
+
 # ============================================
 # END OF PROGUARD RULES
 # ================================================================================
