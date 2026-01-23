@@ -130,7 +130,7 @@ class GeminiTranslator @Inject constructor(
         
         if (sourceLanguage != Language.AUTO && sourceLanguage == targetLanguage) {
             return@withContext DomainResult.Failure(
-                DomainError.ValidationError(
+                DomainError.ValidationError.InvalidInput(
                     "Source and target languages must be different"
                 )
             )
