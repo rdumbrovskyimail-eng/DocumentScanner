@@ -5,7 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import com.docs.scanner.data.local.preferences.SettingsDataStore
-import com.docs.scanner.data.remote.gemini.GeminiModelManager
+import com.docs.scanner.data.local.preferences.GeminiModelManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
