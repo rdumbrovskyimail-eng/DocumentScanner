@@ -86,7 +86,7 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
     
-    # ✅ УЛУЧШЕНО: Более агрессивная очистка
+    # ✅ ИСПРАВЛЕНО: Более агрессивная очистка + KSP
     - name: Clean build
       run: |
         echo "🧹 Deep cleaning..."
@@ -94,9 +94,22 @@ jobs:
         ./gradlew cleanBuildCache --no-daemon || true
         rm -rf app/build
         rm -rf build
+        rm -rf app/schemas
+        rm -rf app/.cxx
+        rm -rf .gradle/caches
+        rm -rf .gradle/*/kotlin
         echo "✅ Clean completed"
     
-    # ✅ НОВОЕ: Build с логированием только ошибок
+    # ✅ НОВОЕ: Принудительная очистка KSP кеша
+    - name: Clean KSP cache
+      run: |
+        echo "🗑️ Removing KSP generated files..."
+        find . -type d -name "ksp" -exec rm -rf {} + 2>/dev/null || true
+        rm -rf app/build/generated/ksp
+        rm -rf app/schemas
+        echo "✅ KSP cache cleared"
+    
+    # ✅ ИСПРАВЛЕНО: Build с отключенным configuration-cache для KSP
     - name: Build APKs with Error Logging
       id: build
       run: |
@@ -108,7 +121,7 @@ jobs:
         ./gradlew assembleDebug assembleRelease \
           --parallel \
           --build-cache \
-          --configuration-cache \
+          --no-configuration-cache \
           --max-workers=4 \
           --stacktrace \
           -Dorg.gradle.workers.max=4 \
