@@ -30,6 +30,18 @@ jobs:
         distribution: 'temurin'
         cache: 'gradle'
     
+    # ✅ НОВОЕ: Очистка кеша при необходимости
+    - name: Clear Gradle Cache (on cache corruption)
+      if: github.event_name == 'push' && contains(github.event.head_commit.message, '[clear-cache]')
+      run: |
+        echo "🧹 Clearing Gradle caches..."
+        rm -rf ~/.gradle/caches
+        rm -rf ~/.gradle/wrapper
+        rm -rf ~/.konan
+        rm -rf .gradle
+        rm -rf build-cache
+        echo "✅ Caches cleared"
+    
     - name: Cache Gradle Wrapper
       uses: actions/cache@v4
       with:
@@ -74,8 +86,15 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
     
+    # ✅ УЛУЧШЕНО: Более агрессивная очистка
     - name: Clean build
-      run: ./gradlew clean --no-daemon --stacktrace
+      run: |
+        echo "🧹 Deep cleaning..."
+        ./gradlew clean --no-daemon --stacktrace
+        ./gradlew cleanBuildCache --no-daemon || true
+        rm -rf app/build
+        rm -rf build
+        echo "✅ Clean completed"
     
     # ✅ НОВОЕ: Build с логированием только ошибок
     - name: Build APKs with Error Logging
@@ -226,7 +245,15 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
-    # ✅ Cleanup
+    # ✅ УЛУЧШЕНО: Cleanup с очисткой кеша
     - name: Cleanup
       if: always()
-      run: ./gradlew --stop || true
+      run: |
+        echo "🧹 Stopping Gradle daemon..."
+        ./gradlew --stop || true
+        
+        # Очистка временных файлов
+        rm -rf /tmp/gradle* 2>/dev/null || true
+        rm -rf /tmp/kotlin* 2>/dev/null || true
+        
+        echo "✅ Cleanup completed"
