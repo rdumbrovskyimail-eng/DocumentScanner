@@ -831,16 +831,14 @@ class TranslationUseCases @Inject constructor(
         
         // ✅ Validate model
         if (!modelManager.isValidModel(model)) {
-            return DomainResult.failure(
-                DomainError.ValidationFailed(
-                    ValidationError.InvalidValue(
-                        "model",
-                        model,
-                        "Invalid model: $model. Use GeminiModelManager.getModelIds() for valid models."
-                    )
-                )
-            )
-        }
+    return DomainResult.failure(
+        DomainError.ValidationError.InvalidInput(
+            field = "model",
+            value = model,
+            reason = "Invalid model: $model. Use GeminiModelManager.getModelIds() for valid models."
+        )
+    )
+}
         
         return try {
             if (Timber.forest().isNotEmpty()) {
