@@ -1231,7 +1231,7 @@ class SettingsViewModel @Inject constructor(
             }
             
             // ✅ CRITICAL: Use translateWithModel instead of translateTextWithModel
-            when (val result = useCases.translation.translateWithModel(
+            when (val result = useCases.translation.translateText(
                 text = state.translationTestText,
                 source = state.translationSourceLang,
                 target = state.translationTargetLang,
