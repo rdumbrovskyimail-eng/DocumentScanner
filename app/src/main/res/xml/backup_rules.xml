@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- Включаем то, что нужно бэкапить -->
+    <!-- Бэкапим ТОЛЬКО то, что явно указано -->
     <include domain="database" path="." />
     <include domain="file" path="documents/" />
     
-    <!-- Исключаем только конкретные файлы/папки, но НЕ весь домен -->
-    <exclude domain="file" path="datastore/" />
-    <exclude domain="file" path="cache/" />
+    <!-- НЕТ exclude - просто не включаем то, что не нужно -->
+    <!-- sharedpref, datastore, cache НЕ включены = НЕ бэкапятся -->
 </full-backup-content>
