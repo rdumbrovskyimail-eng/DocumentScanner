@@ -17,6 +17,8 @@
 package com.docs.scanner.domain.usecase
 
 import android.net.Uri
+import com.docs.scanner.domain.model.ValidationError.DueDateInPast
+import com.docs.scanner.domain.model.ValidationError.NameTooLong
 import com.docs.scanner.domain.model.ValidationError
 import com.docs.scanner.data.local.preferences.GeminiModelManager
 import com.docs.scanner.data.local.preferences.SettingsDataStore
@@ -643,9 +645,9 @@ class TermUseCases @Inject constructor(
         color: Int? = null
     ): DomainResult<TermId> = DomainResult.catching {
         val now = time.currentMillis()
-        if (dueDate <= now) throw DomainError.ValidationFailed(ValidationError.DueDateInPast).toException()
-        if (title.isBlank() || title.length > Term.TITLE_MAX_LENGTH)
-            throw DomainError.ValidationFailed(ValidationError.NameTooLong(title.length, Term.TITLE_MAX_LENGTH)).toException()
+if (dueDate <= now) throw DomainError.ValidationFailed(DueDateInPast).toException()
+if (title.isBlank() || title.length > Term.TITLE_MAX_LENGTH)
+    throw DomainError.ValidationFailed(NameTooLong(title.length, Term.TITLE_MAX_LENGTH)).toException()
         
         val newTerm = NewTerm(
             title = title.trim(),
