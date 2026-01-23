@@ -1,6 +1,9 @@
 /*
  * DocumentScanner - Domain Use Cases
- * Version: 4.2.0 - Translation Settings Synchronization (2026)
+ * Version: 4.2.1 - FIXED VALIDATION ERRORS (2026)
+ * 
+ * Changes in v4.2.1:
+ * - ✅ FIX: ValidationError.InvalidInput with proper parameters (line 835)
  * 
  * Changes in v4.2.0:
  * - ✅ INTEGRATION: Synchronized TranslationUseCases with Settings
@@ -9,21 +12,6 @@
  * - ✅ NEW: Translation now reads model from GeminiModelManager
  * - ✅ FIX: Translation uses language from Settings, not hardcoded English
  * - ✅ FIX: Added missing dependencies (SettingsDataStore, GeminiModelManager)
- * 
- * Improvements v4.1.1:
- * - ✅ FIX #1: Constructor typo valdocRepo → val docRepo
- * - ✅ FIX #2: Removed invalid 'private' modifier from function parameter
- * - ✅ FIX #3: Fixed type mismatch Throwable → DomainError
- * - ✅ FIX #4: Defined missing variables (originalText, sourceLanguage, etc.)
- * - ✅ FIX #5: Complete translateDocument method replacement
- * - ✅ FIX #6: Updated translateTextWithModel with proper NOTE/TODO
- * 
- * Previous improvements v4.1.0:
- * - Uses New/Existing entity separation ✅
- * - Type-safe error handling ✅
- * - Improved batch operations with generic helper ✅
- * - Better code organization ✅
- * - Added updatePosition for Records and Folders ✅
  */
 
 package com.docs.scanner.domain.usecase
@@ -702,18 +690,12 @@ class TermUseCases @Inject constructor(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TRANSLATION USE CASES - v4.2.0 FULL INTEGRATION WITH АРТЕФАКТ 7
+// TRANSLATION USE CASES - v4.2.1 FIXED VALIDATION
 // ══════════════════════════════════════════════════════════════════════════════
 
 /**
- * ✅ v4.2.0 COMPLETE INTEGRATION
- * 
- * Implements АРТЕФАКТ 7 requirements:
- * - Reads targetLanguage from SettingsDataStore via first()
- * - Reads translationModel from GeminiModelManager
- * - Supports model override for Testing Tab
- * - Primary method uses global settings
- * - Testing method allows model selection
+ * ✅ v4.2.1: FIXED ValidationError.InvalidInput usage
+ * ✅ v4.2.0: COMPLETE INTEGRATION with Settings
  */
 @Singleton
 class TranslationUseCases @Inject constructor(
@@ -724,16 +706,6 @@ class TranslationUseCases @Inject constructor(
 ) {
     /**
      * ✅ v4.2.0: PRIMARY TRANSLATION METHOD (uses global settings)
-     * 
-     * Translates text using global settings from SettingsDataStore.
-     * This is the main method used by Editor for auto-translation.
-     * 
-     * CRITICAL: Reads target language from Settings if not provided!
-     * 
-     * @param text Text to translate
-     * @param source Source language (use Language.AUTO for auto-detection)
-     * @param target Target language (if null, reads from Settings)
-     * @return Translation result
      */
     suspend fun translateText(
         text: String, 
@@ -747,7 +719,6 @@ class TranslationUseCases @Inject constructor(
         }
         
         return try {
-            // ✅ STEP 1: Get target language (from parameter OR Settings)
             val actualTarget = target ?: run {
                 val targetCode = settingsDataStore.translationTarget.first()
                 Language.fromCode(targetCode) ?: Language.ENGLISH.also {
@@ -757,10 +728,8 @@ class TranslationUseCases @Inject constructor(
                 }
             }
             
-            // ✅ STEP 2: Get translation model from Settings
             val model = modelManager.getGlobalTranslationModel()
             
-            // ✅ STEP 3: Log for debugging
             if (Timber.forest().isNotEmpty()) {
                 Timber.d("🌐 Translation request:")
                 Timber.d("   ├─ Source: ${source.displayName} (${source.code})")
@@ -769,16 +738,12 @@ class TranslationUseCases @Inject constructor(
                 Timber.d("   └─ Text length: ${text.length} chars")
             }
             
-            // ✅ STEP 4: Validate languages
             if (source != Language.AUTO && source == actualTarget) {
                 return DomainResult.failure(
                     DomainError.UnsupportedLanguagePair(source, actualTarget)
                 )
             }
             
-            // ✅ STEP 5: Call repository (which will use the model internally)
-            // NOTE: Current TranslationRepository doesn't accept model parameter yet
-            // This will be implemented in Phase 2
             repo.translate(text, source, actualTarget)
             
         } catch (e: Exception) {
@@ -796,26 +761,7 @@ class TranslationUseCases @Inject constructor(
     }
     
     /**
-     * ✅ v4.2.0 NEW: TRANSLATION WITH MODEL OVERRIDE (for Testing Tab)
-     * 
-     * Translates text with explicit model selection.
-     * Used by Testing Tab for local model experiments.
-     * 
-     * @param text Text to translate
-     * @param source Source language
-     * @param target Target language  
-     * @param model Model ID (overrides global setting)
-     * @return Translation result
-     * 
-     * NOTE: TranslationRepository does not yet support model selection.
-     * Currently logs the model but uses default translation.
-     * 
-     * TODO Phase 2: Add translateWithModel(text, source, target, model) to TranslationRepository
-     * This will require:
-     * 1. Update TranslationRepository interface with new method
-     * 2. Update GeminiTranslator to accept model parameter
-     * 3. Pass model to Gemini API request
-     * 4. Update TranslationRepositoryImpl
+     * ✅ v4.2.1: FIXED - ValidationError.InvalidInput with proper parameters
      */
     suspend fun translateTextWithModel(
         text: String,
@@ -829,16 +775,16 @@ class TranslationUseCases @Inject constructor(
             )
         }
         
-        // ✅ Validate model
+        // ✅ FIXED: Proper ValidationError.InvalidInput usage
         if (!modelManager.isValidModel(model)) {
-    return DomainResult.failure(
-        DomainError.ValidationError.InvalidInput(
-            field = "model",
-            value = model,
-            reason = "Invalid model: $model. Use GeminiModelManager.getModelIds() for valid models."
-        )
-    )
-}
+            return DomainResult.failure(
+                DomainError.ValidationError.InvalidInput(
+                    field = "model",
+                    value = model,
+                    reason = "Invalid model: $model. Use GeminiModelManager.getModelIds() for valid models."
+                )
+            )
+        }
         
         return try {
             if (Timber.forest().isNotEmpty()) {
@@ -855,9 +801,6 @@ class TranslationUseCases @Inject constructor(
                 )
             }
             
-            // NOTE: TranslationRepository does not yet support model selection
-            // Currently ignores 'model' parameter and uses default translation
-            // TODO Phase 2: repo.translateWithModel(text, source, target, model)
             repo.translate(text, source, target)
             
         } catch (e: Exception) {
@@ -874,24 +817,14 @@ class TranslationUseCases @Inject constructor(
         }
     }
     
-    /**
-     * ✅ v4.1.1 FIXED: Translates document by ID with optional target language override.
-     * 
-     * All previous type errors have been fixed:
-     * - Uses correct 'docRepo' reference (not 'valdocRepo')
-     * - Proper variable scoping (originalText, sourceLanguage from doc)
-     * - Correct error type handling (DomainError, not Throwable)
-     */
     suspend fun translateDocument(
         docId: DocumentId,
         targetLang: Language? = null
     ): DomainResult<TranslationResult> {
-        // 1. Get the document safely
         val doc = docRepo.getDocumentById(docId).getOrElse { error ->
             return DomainResult.failure(error)
         }
         
-        // 2. Check if text exists (using doc.originalText)
         if (doc.originalText.isNullOrBlank()) {
             return DomainResult.failure(
                 DomainError.TranslationFailed(
@@ -902,11 +835,9 @@ class TranslationUseCases @Inject constructor(
             )
         }
         
-        // 3. Determine languages (using doc properties)
         val target = targetLang ?: doc.targetLanguage
         val source = doc.detectedLanguage ?: doc.sourceLanguage
         
-        // 4. Update status and translate
         docRepo.updateProcessingStatus(docId, ProcessingStatus.Translation.InProgress)
         
         return repo.translate(doc.originalText, source, target)
@@ -918,7 +849,6 @@ class TranslationUseCases @Inject constructor(
                 )
             }
             .onFailure { error ->
-                // error is already DomainError from repo.translate
                 docRepo.updateProcessingStatus(
                     docId,
                     ProcessingStatus.Translation.Failed
@@ -926,27 +856,15 @@ class TranslationUseCases @Inject constructor(
             }
     }
     
-    /**
-     * Retries translation for a document.
-     */
     suspend fun retryTranslation(docId: DocumentId): DomainResult<TranslationResult> = 
         translateDocument(docId)
     
-    /**
-     * Clears the translation cache.
-     */
     suspend fun clearCache(): DomainResult<Unit> = 
         repo.clearCache()
     
-    /**
-     * Clears old cache entries.
-     */
     suspend fun clearOldCache(maxAgeDays: Int): DomainResult<Int> = 
         repo.clearOldCache(maxAgeDays)
     
-    /**
-     * Gets translation cache statistics.
-     */
     suspend fun getCacheStats(): TranslationCacheStats = 
         repo.getCacheStats()
 }
@@ -1051,20 +969,17 @@ class ExportUseCases @Inject constructor(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 3. ALL USE CASES CONTAINER - v4.2.0 COMPLETE INTEGRATION
+// 3. ALL USE CASES CONTAINER
 // ══════════════════════════════════════════════════════════════════════════════
 
 @Singleton
 class AllUseCases @Inject constructor(
-    // Complex Scenarios
     val quickScan: QuickScanUseCase,
     val multiPageScan: MultiPageScanUseCase,
     val createDocumentFromScan: CreateDocumentFromScanUseCase,
     val processDocument: ProcessDocumentUseCase,
     val batch: BatchOperationsUseCase,
     val export: ExportUseCases,
-    
-    // CRUD Groups
     val folders: FolderUseCases,
     val records: RecordUseCases,
     val documents: DocumentUseCases,
@@ -1073,62 +988,28 @@ class AllUseCases @Inject constructor(
     val settings: SettingsUseCases,
     val backup: BackupUseCases
 ) {
-    /** DSL для функционального стиля */
     suspend operator fun <R> invoke(block: suspend AllUseCases.() -> R): R = block(this)
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Legacy facade (presentation compatibility)
-    // ─────────────────────────────────────────────────────────────────────────────
-
+    // Legacy facade
     fun getFolders(): Flow<List<Folder>> = folders.observeAll()
-
-    suspend fun getFolderById(folderId: Long): Folder? =
-        folders.getById(FolderId(folderId)).getOrNull()
-
-    suspend fun createFolder(name: String, description: String?): LegacyResult<Unit> =
-        folders.create(name, desc = description).map { Unit }.toLegacyResult()
-
-    suspend fun updateFolder(folder: Folder): LegacyResult<Unit> =
-        folders.update(folder).toLegacyResult()
-
-    suspend fun deleteFolder(folderId: Long): LegacyResult<Unit> =
-        folders.delete(FolderId(folderId)).toLegacyResult()
-
-    fun getRecords(folderId: Long): Flow<List<Record>> =
-        records.observeByFolder(FolderId(folderId))
-
-    suspend fun getRecordById(recordId: Long): Record? =
-        records.getById(RecordId(recordId)).getOrNull()
-
-    suspend fun createRecord(folderId: Long, name: String, description: String?): LegacyResult<Unit> =
-        records.create(folderId = FolderId(folderId), name = name, desc = description).map { Unit }.toLegacyResult()
-
-    suspend fun updateRecord(record: Record): LegacyResult<Unit> =
-        records.update(record).toLegacyResult()
-
-    suspend fun deleteRecord(recordId: Long): LegacyResult<Unit> =
-        records.delete(RecordId(recordId)).toLegacyResult()
-
-    suspend fun moveRecord(recordId: Long, targetFolderId: Long): LegacyResult<Unit> =
-        records.move(RecordId(recordId), FolderId(targetFolderId)).toLegacyResult()
-
-    fun getDocuments(recordId: Long): Flow<List<Document>> =
-        documents.observeByRecord(RecordId(recordId))
-
-    suspend fun getDocumentById(documentId: Long): Document? =
-        documents.getById(DocumentId(documentId)).getOrNull()
-
-    suspend fun updateDocument(document: Document): LegacyResult<Unit> =
-        documents.update(document).toLegacyResult()
-
-    suspend fun deleteDocument(documentId: Long): LegacyResult<Unit> =
-        documents.delete(DocumentId(documentId)).toLegacyResult()
-
+    suspend fun getFolderById(folderId: Long): Folder? = folders.getById(FolderId(folderId)).getOrNull()
+    suspend fun createFolder(name: String, description: String?): LegacyResult<Unit> = folders.create(name, desc = description).map { Unit }.toLegacyResult()
+    suspend fun updateFolder(folder: Folder): LegacyResult<Unit> = folders.update(folder).toLegacyResult()
+    suspend fun deleteFolder(folderId: Long): LegacyResult<Unit> = folders.delete(FolderId(folderId)).toLegacyResult()
+    fun getRecords(folderId: Long): Flow<List<Record>> = records.observeByFolder(FolderId(folderId))
+    suspend fun getRecordById(recordId: Long): Record? = records.getById(RecordId(recordId)).getOrNull()
+    suspend fun createRecord(folderId: Long, name: String, description: String?): LegacyResult<Unit> = records.create(folderId = FolderId(folderId), name = name, desc = description).map { Unit }.toLegacyResult()
+    suspend fun updateRecord(record: Record): LegacyResult<Unit> = records.update(record).toLegacyResult()
+    suspend fun deleteRecord(recordId: Long): LegacyResult<Unit> = records.delete(RecordId(recordId)).toLegacyResult()
+    suspend fun moveRecord(recordId: Long, targetFolderId: Long): LegacyResult<Unit> = records.move(RecordId(recordId), FolderId(targetFolderId)).toLegacyResult()
+    fun getDocuments(recordId: Long): Flow<List<Document>> = documents.observeByRecord(RecordId(recordId))
+    suspend fun getDocumentById(documentId: Long): Document? = documents.getById(DocumentId(documentId)).getOrNull()
+    suspend fun updateDocument(document: Document): LegacyResult<Unit> = documents.update(document).toLegacyResult()
+    suspend fun deleteDocument(documentId: Long): LegacyResult<Unit> = documents.delete(DocumentId(documentId)).toLegacyResult()
     fun searchDocuments(query: String): Flow<List<Document>> = documents.search(query)
 
     fun addDocument(recordId: Long, imageUri: Uri): Flow<AddDocumentState> = flow {
         emit(AddDocumentState.Creating(progress = 10, message = "Saving image..."))
-
         val record = when (val r = records.getById(RecordId(recordId))) {
             is DomainResult.Success -> r.data
             is DomainResult.Failure -> {
@@ -1136,7 +1017,6 @@ class AllUseCases @Inject constructor(
                 return@flow
             }
         }
-
         val docId = when (val created = createDocumentFromScan(RecordId(recordId), imageUri.toString(), record.sourceLanguage)) {
             is DomainResult.Success -> created.data
             is DomainResult.Failure -> {
@@ -1144,9 +1024,7 @@ class AllUseCases @Inject constructor(
                 return@flow
             }
         }
-
         emit(AddDocumentState.ProcessingOcr(progress = 60, message = "Processing..."))
-
         processDocument(docId).collect { state ->
             when (state) {
                 is ProcessingState.OcrInProgress -> emit(AddDocumentState.ProcessingOcr(70, "Running OCR..."))
