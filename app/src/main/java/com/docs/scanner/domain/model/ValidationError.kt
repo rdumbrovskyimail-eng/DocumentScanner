@@ -28,6 +28,6 @@ sealed class ValidationError {
         val maxLength: Int
     ) : ValidationError()
     
-    object DueDateInPast : ValidationError()
-    object Unknown : ValidationError()
+    data object DueDateInPast : ValidationError()
+    data object Unknown : ValidationError()
 }
