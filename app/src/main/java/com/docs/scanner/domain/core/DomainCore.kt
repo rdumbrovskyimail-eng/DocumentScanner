@@ -283,13 +283,28 @@ sealed class DomainError {
 }
 
 sealed class ValidationError(val message: String) {
+    /**
+     * Invalid input with detailed context
+     */
+    data class InvalidInput(
+        val field: String,
+        val value: String,
+        val reason: String
+    ) : ValidationError("Invalid $field: $reason (value: $value)")
+    
     data object BlankName : ValidationError("Name cannot be blank")
     data object BlankTag : ValidationError("Tag cannot be blank")
     data object InvalidTagFormat : ValidationError("Tag can only contain a-z, 0-9, _, -")
+    
     data class NameTooLong(val len: Int, val max: Int) : ValidationError("Name too long: $len > $max")
     data class TagTooLong(val len: Int, val max: Int) : ValidationError("Tag too long: $len > $max")
     data class TooManyTags(val count: Int, val max: Int) : ValidationError("Too many tags: $count > $max")
+    
     data object DueDateInPast : ValidationError("Due date must be in future")
+    
+    data class EmptyField(val fieldName: String) : ValidationError("Field '$fieldName' cannot be empty")
+    
+    data object Unknown : ValidationError("Unknown validation error")
 }
 
 class DomainException(val error: DomainError) : Exception(error.message)
