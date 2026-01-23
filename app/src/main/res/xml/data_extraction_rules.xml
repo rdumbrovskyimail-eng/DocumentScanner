@@ -1,21 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
-        <!-- ✅ Include то, что нужно сохранять -->
+        <!-- ✅ Сначала включаем всё -->
+        <include domain="sharedpref" path="." />
+        <include domain="file" path="." />
         <include domain="database" path="." />
-        <include domain="file" path="documents/" />
         
-        <!-- ✅ Exclude чувствительные данные (НЕ включаем их выше) -->
+        <!-- ✅ Потом исключаем чувствительные данные -->
         <exclude domain="sharedpref" path="." />
         <exclude domain="file" path="datastore/" />
     </cloud-backup>
     
     <device-transfer>
-        <!-- ✅ Include то, что нужно сохранять -->
+        <!-- ✅ Сначала включаем всё -->
+        <include domain="sharedpref" path="." />
+        <include domain="file" path="." />
         <include domain="database" path="." />
-        <include domain="file" path="documents/" />
         
-        <!-- ✅ Exclude чувствительные данные (НЕ включаем их выше) -->
+        <!-- ✅ Потом исключаем чувствительные данные -->
         <exclude domain="sharedpref" path="." />
         <exclude domain="file" path="datastore/" />
     </device-transfer>
