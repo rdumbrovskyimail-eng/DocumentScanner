@@ -48,7 +48,6 @@ import com.docs.scanner.domain.core.ImageQuality
 import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.core.ThemeMode
 import com.docs.scanner.presentation.screens.settings.components.ApiKeysSettingsSection
-import com.docs.scanner.presentation.screens.settings.components.GeminiModelOption
 import com.docs.scanner.presentation.screens.settings.components.GeminiOcrSettingsSection
 import com.docs.scanner.presentation.screens.settings.components.TranslationTestSection
 import com.docs.scanner.util.LogcatCollector
