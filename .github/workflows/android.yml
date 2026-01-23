@@ -1,4 +1,4 @@
-name: Android CI (Smart Logs)
+name: Android CI
 
 on:
   push:
@@ -9,200 +9,30 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
     - uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
     
     - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
         java-version: '21'
         distribution: 'temurin'
-        cache: 'gradle'
-    
-    # ✅ НОВОЕ: Очистка кеша при необходимости
-    - name: Clear Gradle Cache (on cache corruption)
-      if: github.event_name == 'push' && contains(github.event.head_commit.message, '[clear-cache]')
-      run: |
-        echo "🧹 Clearing Gradle caches..."
-        rm -rf ~/.gradle/caches
-        rm -rf ~/.gradle/wrapper
-        rm -rf ~/.konan
-        rm -rf .gradle
-        rm -rf build-cache
-        echo "✅ Caches cleared"
-    
-    - name: Cache Gradle Wrapper
-      uses: actions/cache@v4
-      with:
-        path: ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
-        restore-keys: ${{ runner.os }}-gradle-wrapper-
-    
-    - name: Cache Gradle Dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/daemon
-          ~/.konan
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
-        restore-keys: ${{ runner.os }}-gradle-
-    
-    - name: Cache Build Output
-      uses: actions/cache@v4
-      with:
-        path: |
-          build-cache
-          .gradle
-          app/build
-        key: ${{ runner.os }}-build-${{ github.sha }}
-        restore-keys: ${{ runner.os }}-build-
-    
-    - name: Configure Gradle
-      run: |
-        mkdir -p $HOME/.gradle
-        cat > $HOME/.gradle/gradle.properties << EOF
-        org.gradle.caching=true
-        org.gradle.parallel=true
-        org.gradle.daemon=true
-        org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1536m -XX:+UseG1GC
-        org.gradle.configuration-cache=true
-        org.gradle.vfs.watch=true
-        android.useAndroidX=true
-        kotlin.incremental=true
-        EOF
     
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
     
-    # ✅ ИСПРАВЛЕНО: Более агрессивная очистка + KSP
-    - name: Clean build
-      run: |
-        echo "🧹 Deep cleaning..."
-        ./gradlew clean --no-daemon --stacktrace
-        ./gradlew cleanBuildCache --no-daemon || true
-        rm -rf app/build
-        rm -rf build
-        rm -rf app/schemas
-        rm -rf app/.cxx
-        rm -rf .gradle/caches
-        rm -rf .gradle/*/kotlin
-        echo "✅ Clean completed"
+    - name: Build with Gradle
+      run: ./gradlew assembleRelease
     
-    # ✅ НОВОЕ: Принудительная очистка KSP кеша
-    - name: Clean KSP cache
-      run: |
-        echo "🗑️ Removing KSP generated files..."
-        find . -type d -name "ksp" -exec rm -rf {} + 2>/dev/null || true
-        rm -rf app/build/generated/ksp
-        rm -rf app/schemas
-        echo "✅ KSP cache cleared"
-    
-    # ✅ ИСПРАВЛЕНО: Build с отключенным configuration-cache для KSP
-    - name: Build APKs with Error Logging
-      id: build
-      run: |
-        set +e  # Не останавливаться на ошибке
-        
-        echo "🔨 Starting build..."
-        
-        # Перенаправляем вывод в файл
-        ./gradlew assembleDebug assembleRelease \
-          --parallel \
-          --build-cache \
-          --no-configuration-cache \
-          --max-workers=4 \
-          --stacktrace \
-          -Dorg.gradle.workers.max=4 \
-          -Dkotlin.compiler.execution.strategy=in-process \
-          > build.log 2>&1
-        
-        BUILD_EXIT_CODE=$?
-        
-        if [ $BUILD_EXIT_CODE -ne 0 ]; then
-          echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
-          echo "build_status=failed" >> $GITHUB_OUTPUT
-          
-          # ✅ Извлекаем ТОЛЬКО ОШИБКИ из лога
-          echo "## 🔴 Compilation Errors" > errors.txt
-          echo "" >> errors.txt
-          
-          # KSP ошибки
-          grep -A 5 "e: \[ksp\]" build.log >> errors.txt 2>/dev/null || true
-          
-          # Kotlin compilation errors
-          grep -A 3 "e: file://" build.log >> errors.txt 2>/dev/null || true
-          
-          # Task failed
-          grep -A 10 "Task.*failed" build.log >> errors.txt 2>/dev/null || true
-          
-          # Execution failed
-          grep -B 3 -A 5 "Execution failed for task" build.log >> errors.txt 2>/dev/null || true
-          
-          # FAILURE: Build failed
-          grep -A 20 "FAILURE: Build failed" build.log >> errors.txt 2>/dev/null || true
-          
-          # Показываем количество найденных ошибок
-          ERROR_COUNT=$(grep -c "^e:" build.log 2>/dev/null || echo "0")
-          echo "📊 Found $ERROR_COUNT error lines"
-          
-          # Выводим в консоль GitHub Actions
-          echo "### ❌ Build Failed"
-          echo ""
-          echo "\`\`\`"
-          head -n 100 errors.txt
-          echo "\`\`\`"
-          
-          exit 1
-        else
-          echo "✅ Build successful"
-          echo "build_status=success" >> $GITHUB_OUTPUT
-        fi
-    
-    # ✅ НОВОЕ: Upload только логов с ошибками (если сборка упала)
-    - name: Upload Error Logs
-      if: failure() && steps.build.outputs.build_status == 'failed'
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-error-logs
-        path: |
-          errors.txt
-          build/reports/kotlin-build/*.txt
-        retention-days: 7
-        if-no-files-found: ignore
-    
-    # ✅ Проверка собранных APK
-    - name: Verify Build Output
-      if: success()
-      run: |
-        echo "📦 Checking built APKs..."
-        find app/build/outputs/apk -type f -name "*.apk" -exec ls -lh {} \;
-    
-    # ✅ Подготовка APK для релиза
     - name: Prepare APKs for Release
       if: success()
       run: |
         mkdir -p apks
         
-        # Debug APK
-        if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
-          cp app/build/outputs/apk/debug/app-debug.apk \
-             apks/DocumentScanner-v${{ github.run_number }}-debug.apk
-          echo "✅ Debug: $(ls -lh apks/DocumentScanner-v${{ github.run_number }}-debug.apk | awk '{print $5}')"
-        fi
-        
-        # Release APK
         RELEASE_APK=""
         if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
           RELEASE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
@@ -212,21 +42,8 @@ jobs:
         
         if [ -n "$RELEASE_APK" ]; then
           cp "$RELEASE_APK" apks/DocumentScanner-v${{ github.run_number }}-release.apk
-          echo "✅ Release: $(ls -lh apks/DocumentScanner-v${{ github.run_number }}-release.apk | awk '{print $5}')"
         fi
-        
-        ls -lh apks/
     
-    # ✅ Upload APK (только при успешной сборке)
-    - name: Upload APK Artifacts
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: apk-builds
-        path: apks/*.apk
-        retention-days: 7
-    
-    # ✅ Создание релиза
     - name: Create Release
       if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
@@ -236,37 +53,10 @@ jobs:
         body: |
           ## 📱 DocumentScanner v1.0.${{ github.run_number }}
           
-          ### ⚡ Build Info
-          - **Commit:** `${{ github.sha }}`
-          - **Branch:** `${{ github.ref_name }}`
-          - **Build #:** ${{ github.run_number }}
-          - **Gradle:** 8.11.1
-          - **JDK:** 21
-          
-          ### 📥 Installation
-          1. Download APK
-          2. Uninstall old version
-          3. Install new APK
-          4. Enable "Unknown sources" if needed
-          
-          ### 📦 Available Versions
-          - **Debug APK** - with debug info
-          - **Release APK** - optimized (R8/ProGuard)
+          **Commit:** `${{ github.sha }}`
+          **Build #:** ${{ github.run_number }}
           
         files: apks/*.apk
         fail_on_unmatched_files: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
-    # ✅ УЛУЧШЕНО: Cleanup с очисткой кеша
-    - name: Cleanup
-      if: always()
-      run: |
-        echo "🧹 Stopping Gradle daemon..."
-        ./gradlew --stop || true
-        
-        # Очистка временных файлов
-        rm -rf /tmp/gradle* 2>/dev/null || true
-        rm -rf /tmp/kotlin* 2>/dev/null || true
-        
-        echo "✅ Cleanup completed"
