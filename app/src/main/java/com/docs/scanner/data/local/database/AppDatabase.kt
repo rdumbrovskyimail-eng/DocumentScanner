@@ -1,11 +1,11 @@
 /*
  * DocumentScanner - App Database
- * Version: 7.1.1 (Build 711) - PRODUCTION READY 2026
+ * Version: 7.2.0 (Build 720) - PRODUCTION READY 2026
  *
- * ✅ CRITICAL FIXES (Session 13):
- * - Fixed syntax error in MIGRATION_4_5 (line 328)
- * - Fixed serializer() references - added proper imports
- * - Schema remains at version 18
+ * ✅ CRITICAL FIXES (Session 14):
+ * - Added MIGRATION_18_19 for model column in translation_cache
+ * - Schema version updated to 19
+ * - ModelConstants integration
  */
 
 package com.docs.scanner.data.local.database
@@ -16,6 +16,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.docs.scanner.data.local.database.dao.*
 import com.docs.scanner.data.local.database.entity.*
+import com.docs.scanner.domain.core.ModelConstants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
@@ -37,7 +38,7 @@ import timber.log.Timber
         TranslationCacheEntity::class,
         SearchHistoryEntity::class
     ],
-    version = 18,
+    version = 19, // ✅ ИЗМЕНЕНО: было 18, стало 19
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -89,12 +90,91 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_14_15,
                     MIGRATION_15_16,
                     MIGRATION_16_17,
-                    MIGRATION_17_18
+                    MIGRATION_17_18,
+                    MIGRATION_18_19 // ✅ ДОБАВЛЕНО: новая миграция
                 )
                 .addCallback(DatabaseCallback(context))
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                 .build()
+        }
+
+        // ✅ ДОБАВЛЕНО: Миграция 18→19 (добавление колонки model)
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try {
+                    Timber.d("🔄 Running migration 18 → 19: Adding model to translation_cache")
+                    
+                    // Попытка добавить колонку (может уже существовать)
+                    try {
+                        db.execSQL("ALTER TABLE translation_cache ADD COLUMN model TEXT")
+                        Timber.d("✅ Added model column")
+                    } catch (e: Exception) {
+                        Timber.w(e, "⚠️ translation_cache.model might already exist")
+                    }
+                    
+                    // Заполнить существующие записи дефолтным значением
+                    db.execSQL("""
+                        UPDATE translation_cache 
+                        SET model = '${ModelConstants.DEFAULT_TRANSLATION_MODEL}' 
+                        WHERE model IS NULL
+                    """)
+                    Timber.d("✅ Updated existing rows with default model")
+                    
+                    // Пересоздать таблицу с NOT NULL constraint
+                    db.execSQL("""
+                        CREATE TABLE IF NOT EXISTS translation_cache_new (
+                            cache_key TEXT PRIMARY KEY NOT NULL,
+                            original_text TEXT NOT NULL,
+                            translated_text TEXT NOT NULL,
+                            source_language TEXT NOT NULL,
+                            target_language TEXT NOT NULL,
+                            model TEXT NOT NULL DEFAULT '${ModelConstants.DEFAULT_TRANSLATION_MODEL}',
+                            timestamp INTEGER NOT NULL
+                        )
+                    """)
+                    
+                    db.execSQL("""
+                        INSERT INTO translation_cache_new 
+                        SELECT cache_key, original_text, translated_text, 
+                               source_language, target_language, model, timestamp
+                        FROM translation_cache
+                    """)
+                    
+                    db.execSQL("DROP TABLE translation_cache")
+                    db.execSQL("ALTER TABLE translation_cache_new RENAME TO translation_cache")
+                    
+                    Timber.d("✅ Recreated table with NOT NULL constraint")
+                    
+                    // Восстановить индексы
+                    db.execSQL("""
+                        CREATE INDEX IF NOT EXISTS index_translation_cache_timestamp 
+                        ON translation_cache(timestamp ASC)
+                    """)
+                    
+                    db.execSQL("""
+                        CREATE INDEX IF NOT EXISTS index_translation_cache_languages 
+                        ON translation_cache(source_language, target_language)
+                    """)
+                    
+                    db.execSQL("""
+                        CREATE INDEX IF NOT EXISTS index_translation_cache_model 
+                        ON translation_cache(model)
+                    """)
+                    
+                    Timber.d("✅ Created indices")
+                    
+                    // Очистить кэш (ключи изменились из-за model)
+                    db.execSQL("DELETE FROM translation_cache")
+                    Timber.w("⚠️ Cleared translation cache (keys regenerated with model)")
+                    
+                    Timber.d("✅ Migration 18→19 completed successfully")
+                    
+                } catch (e: Exception) {
+                    Timber.e(e, "❌ Migration 18→19 FAILED")
+                    throw e
+                }
+            }
         }
     }
 }
@@ -341,7 +421,6 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
 
 val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        // ✅ FIX: Properly formatted SQL
         db.execSQL(
             """
             CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts 
@@ -488,11 +567,6 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
     }
 }
 
-/**
- * ✅ CRITICAL FIX: Migration 17→18 (Session 12)
- * 
- * Adds 'position' column to folders and records tables for drag & drop reordering.
- */
 val MIGRATION_17_18 = object : Migration(17, 18) {
     override fun migrate(db: SupportSQLiteDatabase) {
         try {
