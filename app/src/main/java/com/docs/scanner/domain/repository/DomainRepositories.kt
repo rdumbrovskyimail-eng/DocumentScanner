@@ -1,12 +1,18 @@
 /*
  * DocumentScanner - Domain Repositories
- * Version: 4.1.0 - Production Ready 2026 Enhanced
+ * Version: 7.2.0 (Build 720) - PRODUCTION READY 2026
  * 
- * Improvements v4.1.0:
- * - Type-safe progress callbacks (UploadProgress/DownloadProgress) ✅
- * - Updated method signatures for New/Existing entity separation ✅
- * - Improved nullability annotations ✅
- * - Better method naming consistency ✅
+ * ✅ CRITICAL FIXES APPLIED (Session 14):
+ * - Added model parameter to TranslationRepository.translate()
+ * - Model now defaults to ModelConstants.DEFAULT_TRANSLATION_MODEL
+ * - Enables model-aware caching and translation
+ * - Synchronized with TranslationCacheManager v2.0.0
+ * 
+ * ✅ ALL PREVIOUS IMPROVEMENTS:
+ * - Type-safe progress callbacks (UploadProgress/DownloadProgress)
+ * - Updated method signatures for New/Existing entity separation
+ * - Improved nullability annotations
+ * - Better method naming consistency
  */
 
 package com.docs.scanner.domain.repository
@@ -30,7 +36,7 @@ interface FolderRepository {
     suspend fun folderNameExists(name: String, excludeId: FolderId? = null): Boolean
     suspend fun getFolderCount(): Int
     
-    // Mutate - ✅ UPDATED: NewFolder for creation
+    // Mutate
     suspend fun createFolder(newFolder: NewFolder): DomainResult<FolderId>
     suspend fun updateFolder(folder: Folder): DomainResult<Unit>
     suspend fun deleteFolder(id: FolderId, deleteContents: Boolean = false): DomainResult<Unit>
@@ -62,7 +68,7 @@ interface RecordRepository {
     suspend fun getAllTags(): List<String>
     suspend fun searchRecords(query: String): List<Record>
     
-    // Mutate - ✅ UPDATED: NewRecord for creation
+    // Mutate
     suspend fun createRecord(newRecord: NewRecord): DomainResult<RecordId>
     suspend fun updateRecord(record: Record): DomainResult<Unit>
     suspend fun deleteRecord(id: RecordId): DomainResult<Unit>
@@ -78,7 +84,7 @@ interface RecordRepository {
     suspend fun updatePosition(id: RecordId, position: Int): DomainResult<Unit>
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
 // DOCUMENT REPOSITORY
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -104,7 +110,7 @@ interface DocumentRepository {
     suspend fun getDocumentCountInRecord(recordId: RecordId): Int
     suspend fun getNextPosition(recordId: RecordId): Int
     
-    // Mutate - ✅ UPDATED: NewDocument for creation
+    // Mutate
     suspend fun createDocument(newDoc: NewDocument): DomainResult<DocumentId>
     suspend fun createDocuments(newDocs: List<NewDocument>): DomainResult<List<DocumentId>>
     suspend fun updateDocument(doc: Document): DomainResult<Unit>
@@ -142,7 +148,7 @@ interface TermRepository {
     suspend fun getOverdueCount(now: Long): Int
     suspend fun getDueTodayCount(now: Long): Int
     
-    // Mutate - ✅ UPDATED: NewTerm for creation
+    // Mutate
     suspend fun createTerm(newTerm: NewTerm): DomainResult<TermId>
     suspend fun updateTerm(term: Term): DomainResult<Unit>
     suspend fun deleteTerm(id: TermId): DomainResult<Unit>
@@ -155,7 +161,7 @@ interface TermRepository {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// OCR REPOSITORY - ✅ UPDATED: Added explicit engine selection methods
+// OCR REPOSITORY
 // ══════════════════════════════════════════════════════════════════════════════
 
 interface OcrRepository {
@@ -163,7 +169,7 @@ interface OcrRepository {
     suspend fun recognizeText(imagePath: String, lang: Language = Language.AUTO): DomainResult<OcrResult>
     suspend fun recognizeTextDetailed(imagePath: String, lang: Language = Language.AUTO): DomainResult<DetailedOcrResult>
     
-    // ✅ NEW: Explicit engine selection
+    // Explicit engine selection
     suspend fun recognizeTextMlKitOnly(imagePath: String): DomainResult<OcrResult>
     suspend fun recognizeTextGeminiOnly(imagePath: String): DomainResult<OcrResult>
     
@@ -210,7 +216,26 @@ data class BoundingBox(
 // ══════════════════════════════════════════════════════════════════════════════
 
 interface TranslationRepository {
-    suspend fun translate(text: String, source: Language, target: Language, useCache: Boolean = true): DomainResult<TranslationResult>
+    /**
+     * Translate text from source to target language.
+     *
+     * ✅ CRITICAL FIX (v2.0.0): Added model parameter
+     *
+     * @param text Text to translate
+     * @param source Source language
+     * @param target Target language
+     * @param model Translation model to use (defaults to ModelConstants.DEFAULT_TRANSLATION_MODEL)
+     * @param useCache Whether to use translation cache (default: true)
+     * @return Translation result or error
+     */
+    suspend fun translate(
+        text: String, 
+        source: Language, 
+        target: Language, 
+        model: String = com.docs.scanner.domain.core.ModelConstants.DEFAULT_TRANSLATION_MODEL,
+        useCache: Boolean = true
+    ): DomainResult<TranslationResult>
+    
     suspend fun translateBatch(texts: List<String>, source: Language, target: Language): DomainResult<List<TranslationResult>>
     suspend fun detectLanguage(text: String): DomainResult<Language>
     suspend fun isLanguagePairSupported(source: Language, target: Language): Boolean
@@ -303,7 +328,7 @@ data class StorageUsage(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// BACKUP REPOSITORY - ✅ UPDATED: Type-safe progress
+// BACKUP REPOSITORY
 // ══════════════════════════════════════════════════════════════════════════════
 
 interface BackupRepository {
@@ -311,7 +336,7 @@ interface BackupRepository {
     suspend fun createLocalBackup(includeImages: Boolean = true): DomainResult<String>
     suspend fun restoreFromLocal(path: String, merge: Boolean = false): DomainResult<RestoreResult>
     
-    // Google Drive - ✅ UPDATED: Type-safe progress callbacks
+    // Google Drive
     suspend fun uploadToGoogleDrive(
         localPath: String, 
         onProgress: ((UploadProgress) -> Unit)? = null
