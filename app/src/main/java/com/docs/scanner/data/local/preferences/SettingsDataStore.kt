@@ -1,25 +1,16 @@
 /**
  * SettingsDataStore.kt
- * Version: 13.0.0 - FIXED CIRCULAR DEPENDENCY (2026)
+ * Version: 14.0.0 - ADDED TRANSLATION SOURCE & OCR SETTINGS (2026)
  *
- * ✅ NEW IN 13.0.0:
+ * ✅ NEW IN 14.0.0:
+ * - KEY_TRANSLATION_SOURCE + Flow + Setter (CRITICAL FIX for translation bug)
+ * - KEY_AUTO_DETECT_LANGUAGE + Flow + Setter
+ * - KEY_CONFIDENCE_THRESHOLD + Flow + Setter
+ *
+ * ✅ PREVIOUS IN 13.0.0:
  * - REMOVED GeminiModelManager from constructor (breaks circular dependency)
  * - Model validation now uses hardcoded list (synced with GeminiModelManager)
  * - getAvailableGeminiModels() returns local list (no manager dependency)
- *
- * ✅ PREVIOUS IN 12.0.0:
- * - Delegated model lists to GeminiModelManager
- * - Removed duplicate VALID_GEMINI_MODELS / VALID_TRANSLATION_MODELS
- * - Removed gemini-2.0-* models
- * - All model operations now go through GeminiModelManager
- *
- * ✅ PREVIOUS IN 11.0.0:
- * - Translation model selection (KEY_TRANSLATION_MODEL)
- * - Separate model settings for OCR and Translation
- *
- * АРХИТЕКТУРА (FIXED):
- * SettingsDataStore ← DataStore (no circular dependency)
- * GeminiModelManager ← SettingsDataStore (can now inject safely)
  */
 
 package com.docs.scanner.data.local.preferences
@@ -29,6 +20,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
@@ -44,9 +36,6 @@ import javax.inject.Singleton
 @Singleton
 class SettingsDataStore @Inject constructor(
     private val dataStore: DataStore<Preferences>
-    // ❌ REMOVED: private val modelManager: GeminiModelManager
-    // This was causing circular dependency:
-    // GeminiModelManager needs SettingsDataStore → SettingsDataStore needs GeminiModelManager
 ) {
     
     companion object {
@@ -65,6 +54,11 @@ class SettingsDataStore @Inject constructor(
         
         // OCR Settings
         private val KEY_OCR_LANGUAGE = stringPreferencesKey("ocr_language")
+        private val KEY_AUTO_DETECT_LANGUAGE = booleanPreferencesKey("auto_detect_language")
+        private val KEY_CONFIDENCE_THRESHOLD = floatPreferencesKey("confidence_threshold")
+        
+        // Translation Settings
+        private val KEY_TRANSLATION_SOURCE = stringPreferencesKey("translation_source")
         private val KEY_TRANSLATION_TARGET = stringPreferencesKey("translation_target")
         private val KEY_AUTO_TRANSLATE = booleanPreferencesKey("auto_translate")
         private val KEY_SAVE_ORIGINALS = booleanPreferencesKey("save_originals")
@@ -88,16 +82,9 @@ class SettingsDataStore @Inject constructor(
         // Legacy key for migration
         private val KEY_LEGACY_API_KEY = stringPreferencesKey("gemini_api_key")
         
-        // ✅ MODEL CONSTANTS - Synced with GeminiModelManager
-        // ⚠️ CRITICAL: Must be kept in sync manually with GeminiModelManager.PRODUCTION_MODELS
-        // These are public so GeminiModelManager can validate sync at runtime
         const val DEFAULT_OCR_MODEL = "gemini-2.5-flash-lite"
         const val DEFAULT_TRANSLATION_MODEL = "gemini-2.5-flash-lite"
         
-        /**
-         * ✅ PUBLIC: Allows GeminiModelManager to validate sync
-         * Must match GeminiModelManager.PRODUCTION_MODELS exactly
-         */
         val VALID_MODELS = listOf(
             "gemini-3-flash-preview",
             "gemini-3-pro-preview",
@@ -108,7 +95,7 @@ class SettingsDataStore @Inject constructor(
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
-    // 🔴 CRITICAL: API KEY MIGRATION
+    // API KEY MIGRATION
     // ════════════════════════════════════════════════════════════════════════════════
     
     suspend fun migrateApiKeyToEncrypted(encryptedStorage: EncryptedKeyStorage): Boolean {
@@ -314,6 +301,64 @@ class SettingsDataStore @Inject constructor(
         }
     }
     
+    val autoDetectLanguage: Flow<Boolean> = dataStore.data
+        .catch { e ->
+            Timber.e(e, "Error reading autoDetectLanguage")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_AUTO_DETECT_LANGUAGE] ?: true }
+
+    suspend fun setAutoDetectLanguage(enabled: Boolean) {
+        try {
+            dataStore.edit { prefs ->
+                prefs[KEY_AUTO_DETECT_LANGUAGE] = enabled
+            }
+            Timber.d("✅ Auto-detect language set to: $enabled")
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting autoDetectLanguage")
+        }
+    }
+
+    val confidenceThreshold: Flow<Float> = dataStore.data
+        .catch { e ->
+            Timber.e(e, "Error reading confidenceThreshold")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_CONFIDENCE_THRESHOLD] ?: 0.7f }
+
+    suspend fun setConfidenceThreshold(threshold: Float) {
+        try {
+            dataStore.edit { prefs ->
+                prefs[KEY_CONFIDENCE_THRESHOLD] = threshold.coerceIn(0f, 1f)
+            }
+            Timber.d("✅ Confidence threshold set to: $threshold")
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting confidenceThreshold")
+        }
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // TRANSLATION SETTINGS
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    val translationSource: Flow<String> = dataStore.data
+        .catch { exception ->
+            Timber.e(exception, "Error reading translation source")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_TRANSLATION_SOURCE] ?: "auto" }
+
+    suspend fun setTranslationSource(language: String) {
+        try {
+            dataStore.edit { prefs ->
+                prefs[KEY_TRANSLATION_SOURCE] = language
+            }
+            Timber.d("✅ Translation source set to: $language")
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting translation source")
+        }
+    }
+    
     val translationTarget: Flow<String> = dataStore.data
         .catch { exception ->
             Timber.e(exception, "Error reading translation target")
@@ -486,14 +531,9 @@ class SettingsDataStore @Inject constructor(
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ GEMINI MODEL SELECTION - LOCAL VALIDATION (13.0.0)
+    // GEMINI MODEL SELECTION
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Selected Gemini model for OCR.
-     * 
-     * ✅ UPDATED 13.0.0: Uses local DEFAULT_OCR_MODEL constant
-     */
     val geminiOcrModel: Flow<String> = dataStore.data
         .catch { e ->
             Timber.e(e, "Error reading geminiOcrModel")
@@ -503,14 +543,6 @@ class SettingsDataStore @Inject constructor(
             prefs[KEY_GEMINI_OCR_MODEL] ?: DEFAULT_OCR_MODEL
         }
     
-    /**
-     * Sets the Gemini model for OCR.
-     * 
-     * ✅ UPDATED 13.0.0: Local validation using VALID_MODELS
-     * 
-     * @param model Model identifier (must be in VALID_MODELS)
-     * @throws IllegalArgumentException if model is not valid
-     */
     suspend fun setGeminiOcrModel(model: String) {
         require(model in VALID_MODELS) { 
             "Invalid Gemini model: $model. Valid models: $VALID_MODELS"
@@ -527,12 +559,6 @@ class SettingsDataStore @Inject constructor(
         }
     }
     
-    /**
-     * Returns list of available Gemini models for OCR UI display.
-     * 
-     * ✅ UPDATED 13.0.0: Returns local hardcoded list (no manager dependency)
-     * ⚠️ NOTE: Must be kept in sync with GeminiModelManager.getAvailableModels()
-     */
     fun getAvailableGeminiModels(): List<GeminiModelOption> = listOf(
         GeminiModelOption(
             id = "gemini-2.5-flash-lite",
@@ -566,15 +592,6 @@ class SettingsDataStore @Inject constructor(
         )
     )
     
-    // ════════════════════════════════════════════════════════════════════════════════
-    // ✅ TRANSLATION MODEL SELECTION - LOCAL VALIDATION (13.0.0)
-    // ════════════════════════════════════════════════════════════════════════════════
-    
-    /**
-     * Selected Gemini model for Translation.
-     * 
-     * ✅ UPDATED 13.0.0: Uses local DEFAULT_TRANSLATION_MODEL constant
-     */
     val translationModel: Flow<String> = dataStore.data
         .catch { e ->
             Timber.e(e, "Error reading translationModel")
@@ -584,14 +601,6 @@ class SettingsDataStore @Inject constructor(
             prefs[KEY_TRANSLATION_MODEL] ?: DEFAULT_TRANSLATION_MODEL
         }
     
-    /**
-     * Sets the Gemini model for Translation.
-     * 
-     * ✅ UPDATED 13.0.0: Local validation using VALID_MODELS
-     * 
-     * @param model Model identifier (must be in VALID_MODELS)
-     * @throws IllegalArgumentException if model is not valid
-     */
     suspend fun setTranslationModel(model: String) {
         require(model in VALID_MODELS) { 
             "Invalid Translation model: $model. Valid models: $VALID_MODELS"
@@ -608,24 +617,14 @@ class SettingsDataStore @Inject constructor(
         }
     }
     
-    /**
-     * Returns list of available Gemini models for Translation UI display.
-     * 
-     * ✅ UPDATED 13.0.0: Returns local hardcoded list (no manager dependency)
-     * ⚠️ NOTE: Must be kept in sync with GeminiModelManager.getAvailableModels()
-     */
     fun getAvailableTranslationModels(): List<GeminiModelOption> {
-        return getAvailableGeminiModels() // Same models for translation
+        return getAvailableGeminiModels()
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
     // UTILITY
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Clear all settings.
-     * ⚠️ Does NOT clear API keys (they're in EncryptedKeyStorage).
-     */
     suspend fun clearAll() {
         try {
             dataStore.edit { it.clear() }
