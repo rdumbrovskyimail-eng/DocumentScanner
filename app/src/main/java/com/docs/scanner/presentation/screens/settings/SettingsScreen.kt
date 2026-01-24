@@ -1,12 +1,11 @@
 /*
  * SettingsScreen.kt
- * Version: 20.0.0 - AI & OCR TAB REORDERED + TRANSLATION MODEL SELECTOR
+ * Version: 21.0.0 - TESTING TAB DELEGATION (2026)
  * 
- * ✅ NEW IN 20.0.0:
- * 1. ML Kit OCR (first, unchanged)
- * 2. Gemini AI Fallback (second, removed 2.0 models)
- * 3. Translation (third, ADDED model selector!)
- * 4. Gemini API Keys (fourth, moved down)
+ * ✅ CRITICAL FIX:
+ * - Removed duplicate TestingTab() function
+ * - Now uses TestingTab from separate file
+ * - Removed duplicate OcrTestCard and QuickStat
  */
 
 package com.docs.scanner.presentation.screens.settings
@@ -31,10 +30,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -49,9 +45,7 @@ import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.core.ThemeMode
 import com.docs.scanner.presentation.screens.settings.components.ApiKeysSettingsSection
 import com.docs.scanner.presentation.screens.settings.components.GeminiOcrSettingsSection
-import com.docs.scanner.presentation.screens.settings.components.TranslationTestSection
-import com.docs.scanner.util.LogcatCollector
-import kotlinx.coroutines.delay
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -344,7 +338,7 @@ fun SettingsScreen(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// AI & OCR TAB - ✅ UPDATED ORDER
+// AI & OCR TAB
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
@@ -367,7 +361,7 @@ private fun AiOcrTab(
     onGeminiOcrThresholdChange: (Int) -> Unit,
     onGeminiOcrAlwaysChange: (Boolean) -> Unit,
     onGeminiOcrModelChange: (String) -> Unit,
-    onTranslationModelChange: (String) -> Unit, // ✅ NEW
+    onTranslationModelChange: (String) -> Unit,
     onAutoTranslateChange: (Boolean) -> Unit,
     onTargetLanguageChange: (Language) -> Unit
 ) {
@@ -378,9 +372,6 @@ private fun AiOcrTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // ═══════════════════════════════════════════════════════════════
-        // 1. ML KIT OCR (FIRST - unchanged)
-        // ═══════════════════════════════════════════════════════════════
         SettingsCard(title = "ML Kit OCR", icon = Icons.Default.TextFields) {
             Text(
                 "On-device text recognition", 
@@ -403,7 +394,6 @@ private fun AiOcrTab(
             
             Spacer(Modifier.height(12.dp))
             
-            // Confidence threshold slider
             Column {
                 Row(
                     Modifier.fillMaxWidth(), 
@@ -458,9 +448,6 @@ private fun AiOcrTab(
             )
         }
 
-        // ═══════════════════════════════════════════════════════════════
-        // 2. GEMINI AI FALLBACK (SECOND - without 2.0 models)
-        // ═══════════════════════════════════════════════════════════════
         SettingsCard(title = "Gemini AI Fallback", icon = Icons.Default.AutoAwesome) {
             GeminiOcrSettingsSection(
                 enabled = mlkitSettings.geminiOcrEnabled,
@@ -475,9 +462,6 @@ private fun AiOcrTab(
             )
         }
 
-        // ═══════════════════════════════════════════════════════════════
-        // 3. TRANSLATION (THIRD - WITH MODEL SELECTOR!)
-        // ═══════════════════════════════════════════════════════════════
         SettingsCard(title = "Translation", icon = Icons.Default.Translate) {
             TranslationSettingsSection(
                 autoTranslate = autoTranslate,
@@ -490,9 +474,6 @@ private fun AiOcrTab(
             )
         }
 
-        // ═══════════════════════════════════════════════════════════════
-        // 4. GEMINI API KEYS (FOURTH - moved down)
-        // ═══════════════════════════════════════════════════════════════
         SettingsCard(title = "Gemini API Keys", icon = Icons.Default.Key) {
             ApiKeysSettingsSection(
                 keys = apiKeys,
@@ -506,10 +487,6 @@ private fun AiOcrTab(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ✅ NEW: TRANSLATION SETTINGS SECTION (WITH MODEL SELECTOR)
-// ═══════════════════════════════════════════════════════════════════════════
-
 @Composable
 private fun TranslationSettingsSection(
     autoTranslate: Boolean,
@@ -521,7 +498,6 @@ private fun TranslationSettingsSection(
     onModelChange: (String) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // Auto-translate toggle
         Row(
             Modifier.fillMaxWidth(), 
             Arrangement.SpaceBetween, 
@@ -544,7 +520,6 @@ private fun TranslationSettingsSection(
             )
         }
         
-        // Gemini Model Selector (NEW!)
         Text(
             "Gemini Model",
             style = MaterialTheme.typography.labelLarge,
@@ -558,7 +533,6 @@ private fun TranslationSettingsSection(
             label = "Translation Model"
         )
         
-        // Target Language
         SettingDropdown(
             "Target Language",
             "${targetLanguage.displayName} (${targetLanguage.code})",
@@ -571,7 +545,6 @@ private fun TranslationSettingsSection(
             )?.let { onTargetLanguageChange(it) }
         }
         
-        // Info card
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -598,10 +571,6 @@ private fun TranslationSettingsSection(
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ✅ NEW: MODEL SELECTOR DROPDOWN (reusable component)
-// ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun ModelSelectorDropdown(
@@ -647,8 +616,7 @@ private fun ModelSelectorDropdown(
                 )
             }
         }
-        
-        DropdownMenu(
+DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
@@ -671,7 +639,6 @@ private fun ModelSelectorDropdown(
                                     
                                     Spacer(Modifier.height(4.dp))
                                     
-                                    // Speed badge
                                     ModelSpeedBadge(model.id)
                                 }
                             }
@@ -695,10 +662,6 @@ private fun ModelSelectorDropdown(
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ✅ NEW: MODEL SPEED BADGE
-// ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun ModelSpeedBadge(modelId: String) {
@@ -727,277 +690,6 @@ private fun ModelSpeedBadge(modelId: String) {
             fontWeight = FontWeight.SemiBold,
             color = color
         )
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// TESTING TAB
-// ═══════════════════════════════════════════════════════════════════════════════
-
-@Composable
-private fun TestingTab(
-    mlkitSettings: com.docs.scanner.presentation.screens.settings.components.MlkitSettingsState,
-    onImageSelected: (android.net.Uri?) -> Unit,
-    onTestOcr: () -> Unit,
-    onClearTestResult: () -> Unit,
-    onCancelOcr: () -> Unit,
-    onTestGeminiFallbackChange: (Boolean) -> Unit,
-    onTranslationTestTextChange: (String) -> Unit,
-    onTranslationSourceLangChange: (Language) -> Unit,
-    onTranslationTargetLangChange: (Language) -> Unit,
-    onTranslationTest: () -> Unit,
-    onClearTranslationTest: () -> Unit,
-    onDebugClick: () -> Unit,
-    snackbarHostState: SnackbarHostState
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val logCollector = remember { LogcatCollector.getInstance(context) }
-    var isCollecting by remember { mutableStateOf(logCollector.isCollecting()) }
-    var collectedLines by remember { mutableStateOf(0) }
-
-    LaunchedEffect(isCollecting) {
-        while (isCollecting) {
-            collectedLines = logCollector.getCollectedLinesCount()
-            delay(1000)
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        OcrTestCard(mlkitSettings, onImageSelected, onTestOcr, onClearTestResult, onCancelOcr, onTestGeminiFallbackChange)
-        TranslationTestSection(mlkitSettings, onTranslationTestTextChange, onTranslationSourceLangChange, onTranslationTargetLangChange, onTranslationTest, onClearTranslationTest)
-        
-        SettingsCard(title = "Debug Tools", icon = Icons.Default.BugReport) {
-            Text("OCR Log Collector", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            Text("Capture real-time logs to diagnose OCR/MLKit issues", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .background(
-                                if (isCollecting) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                CircleShape
-                            )
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (isCollecting) "Collecting..." else "Stopped", style = MaterialTheme.typography.labelLarge)
-                }
-                if (isCollecting || collectedLines > 0) {
-                    Text("$collectedLines lines", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = { 
-                        if (isCollecting) { 
-                            logCollector.stopCollecting()
-                            isCollecting = false 
-                        } else { 
-                            logCollector.startCollecting()
-                            isCollecting = true
-                            collectedLines = 0 
-                        } 
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(if (isCollecting) Icons.Default.Stop else Icons.Default.PlayArrow, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (isCollecting) "Stop" else "Start")
-                }
-                OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            if (logCollector.getCollectedLinesCount() == 0) {
-                                snackbarHostState.showSnackbar("⚠️ No logs collected. Press START first.", duration = SnackbarDuration.Short)
-                                return@launch
-                            }
-                            logCollector.saveLogsNow()
-                            delay(500)
-                            snackbarHostState.showSnackbar("✅ ${logCollector.getCollectedLinesCount()} lines saved to Downloads/DocumentScanner_OCR_Logs/", duration = SnackbarDuration.Long)
-                        }
-                    },
-                    enabled = collectedLines > 0,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Save, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Save")
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(12.dp))
-            Text("Debug Logs Viewer", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            Text("View historical debug logs and session data", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = onDebugClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Visibility, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Open Debug Viewer")
-            }
-        }
-
-        SettingsCard(title = "App Info", icon = Icons.Default.Info) {
-            InfoRow("Version", BuildConfig.VERSION_NAME)
-            InfoRow("Build", BuildConfig.VERSION_CODE.toString())
-            InfoRow("Package", BuildConfig.APPLICATION_ID)
-            InfoRow("Debug Mode", if (BuildConfig.DEBUG) "ON" else "OFF")
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// OCR TEST CARD
-// ═══════════════════════════════════════════════════════════════════════════════
-
-@Composable
-private fun OcrTestCard(
-    mlkitSettings: com.docs.scanner.presentation.screens.settings.components.MlkitSettingsState,
-    onImageSelected: (android.net.Uri?) -> Unit,
-    onTestOcr: () -> Unit,
-    onClearTestResult: () -> Unit,
-    onCancelOcr: () -> Unit,
-    onTestGeminiFallbackChange: (Boolean) -> Unit
-) {
-    val imagePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        onImageSelected(uri)
-        onClearTestResult()
-    }
-
-    SettingsCard(title = "OCR Test", icon = Icons.Default.Science) {
-        Text("Test OCR with current settings on any image", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
-                onClick = { 
-                    imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) 
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Image, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Select Image")
-            }
-            if (mlkitSettings.isTestRunning) {
-                OutlinedButton(
-                    onClick = onCancelOcr,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Icon(Icons.Default.Close, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Cancel")
-                }
-            } else {
-                Button(
-                    onClick = onTestOcr,
-                    enabled = mlkitSettings.selectedImageUri != null,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.PlayArrow, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Run OCR")
-                }
-            }
-        }
-        
-        androidx.compose.animation.AnimatedVisibility(mlkitSettings.selectedImageUri != null) {
-            mlkitSettings.selectedImageUri?.let { uri ->
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Spacer(Modifier.height(12.dp))
-                    Card(Modifier.fillMaxWidth().height(200.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                        Box(Modifier.fillMaxSize()) {
-                            coil3.compose.AsyncImage(uri, "Selected image", Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Fit)
-                            if (mlkitSettings.isTestRunning) {
-                                Box(
-                                    modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.5f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        CircularProgressIndicator(color = Color.White)
-                                        Text("Processing OCR...", color = Color.White, style = MaterialTheme.typography.bodySmall)
-                                    }
-                                }
-                            }
-                            IconButton(
-                                onClick = { 
-                                    onImageSelected(null)
-                                    onClearTestResult() 
-                                },
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(8.dp)
-                                    .background(MaterialTheme.colorScheme.surface.copy(0.8f), RoundedCornerShape(50))
-                            ) {
-                                Icon(Icons.Default.Close, "Clear", tint = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    }
-                    mlkitSettings.testResult?.let { result ->
-                        Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly) {
-                            QuickStat("Words", result.totalWords.toString())
-                            QuickStat("Confidence", result.confidencePercent)
-                            QuickStat("Quality", result.qualityRating)
-                            QuickStat("Time", "${result.processingTimeMs}ms")
-                        }
-                    }
-                }
-            }
-        }
-        
-        androidx.compose.animation.AnimatedVisibility(mlkitSettings.geminiOcrEnabled && mlkitSettings.selectedImageUri != null) {
-            Column {
-                Spacer(Modifier.height(12.dp))
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(0.3f))) {
-                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = mlkitSettings.testGeminiFallback,
-                            onCheckedChange = onTestGeminiFallbackChange
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("Test Gemini fallback", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                            Text("Force Gemini OCR to test handwriting recognition", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
-        }
-        
-        androidx.compose.animation.AnimatedVisibility(mlkitSettings.testError != null) {
-            mlkitSettings.testError?.let { error ->
-                Spacer(Modifier.height(12.dp))
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error)
-                        Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun QuickStat(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -1291,9 +983,8 @@ private fun ScriptModeSelector(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // ✅ FIX: Filter out AUTO - we have a separate auto-detect toggle
         com.docs.scanner.data.remote.mlkit.OcrScriptMode.entries
-            .filter { it != com.docs.scanner.data.remote.mlkit.OcrScriptMode.AUTO }  // ✅ ДОБАВЛЕНО!
+            .filter { it != com.docs.scanner.data.remote.mlkit.OcrScriptMode.AUTO }
             .forEach { mode ->
                 FilterChip(
                     selected = mode == selectedMode,
@@ -1530,7 +1221,3 @@ private fun RestoreBackupDialog(backupName: String, onDismiss: () -> Unit, onCon
 // ═══════════════════════════════════════════════════════════════════════════════
 
 private fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ✅ END OF FILE - SettingsScreen.kt v20.0.0
-// ═══════════════════════════════════════════════════════════════════════════════
