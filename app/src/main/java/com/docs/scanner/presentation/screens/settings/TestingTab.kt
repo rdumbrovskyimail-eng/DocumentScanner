@@ -1,25 +1,21 @@
 /*
  * TestingTab.kt
- * Version: 2.0.0 - SETTINGS SYNCHRONIZATION (2026)
+ * Version: 3.0.0 - ENHANCED VISUAL DESIGN (2026)
  * 
- * ✅ CRITICAL CHANGES IN 2.0.0:
- * 1. Testing now uses GLOBAL settings from Settings tabs (not local)
- * 2. Auto-detect → reads from OCR Settings (autoDetectLanguage)
- * 3. Gemini Fallback → reads model from OCR Settings (selectedGeminiModel)
- * 4. Translation → reads source/target from Translation Settings
- * 5. Model versions are displayed in results
- * 6. Green lamp indicator when OCR text is ready for translation
+ * ✅ NEW IN 3.0.0:
+ * - Modern card-based layout with visual hierarchy
+ * - Model version badges for OCR and Translation
+ * - Green/Red lamp indicator for translation readiness
+ * - Streamlined flow: Image → Scan Text → Translation
+ * - Removed App Info block
+ * - Enhanced visual feedback with icons and colors
  * 
- * ❌ REMOVED:
- * - Local settings (localOcrModel, localThreshold, etc.)
- * - Source/Target language dropdowns (taken from Settings)
- * - Model selectors in Testing (use Settings tabs)
- * 
- * ✅ NEW:
- * - Model version display in OCR result
- * - Model version display in Translation result
- * - Green/Red lamp for translation readiness
- * - "Scan Text" field immediately after OCR card
+ * FLOW:
+ * 1. Select Image → Run OCR
+ * 2. OCR Result shows with Model Badge (ML Kit / Gemini 3 Flash / etc)
+ * 3. Scan Text appears in dedicated field
+ * 4. Translation lamp turns GREEN when text is ready
+ * 5. Press Translate → Result shows with Model Badge
  */
 
 package com.docs.scanner.presentation.screens.settings
@@ -27,15 +23,20 @@ package com.docs.scanner.presentation.screens.settings
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -48,8 +49,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.core.OcrSource
 import com.docs.scanner.presentation.screens.settings.components.MlkitSettingsState
 import com.docs.scanner.util.LogcatCollector
@@ -65,6 +68,8 @@ fun TestingTab(
     onCancelOcr: () -> Unit,
     onTestGeminiFallbackChange: (Boolean) -> Unit,
     onTranslationTestTextChange: (String) -> Unit,
+    onTranslationSourceLangChange: (Language) -> Unit,
+    onTranslationTargetLangChange: (Language) -> Unit,
     onTranslationTest: () -> Unit,
     onClearTranslationTest: () -> Unit,
     onDebugClick: () -> Unit,
@@ -92,6 +97,9 @@ fun TestingTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // ═══════════════════════════════════════════════════════════════
+        // 1. OCR TEST CARD
+        // ═══════════════════════════════════════════════════════════════
         OcrTestCard(
             mlkitSettings = mlkitSettings,
             onImageSelected = onImageSelected,
@@ -101,6 +109,9 @@ fun TestingTab(
             onTestGeminiFallbackChange = onTestGeminiFallbackChange
         )
         
+        // ═══════════════════════════════════════════════════════════════
+        // 2. SCAN TEXT FIELD (appears after OCR)
+        // ═══════════════════════════════════════════════════════════════
         AnimatedVisibility(
             visible = mlkitSettings.testResult != null,
             enter = fadeIn() + expandVertically(),
@@ -109,17 +120,24 @@ fun TestingTab(
             ScanTextCard(
                 text = mlkitSettings.testResult?.text ?: "",
                 source = mlkitSettings.testResult?.source ?: OcrSource.UNKNOWN,
-                modelUsed = getOcrModelDisplayName(mlkitSettings)
+                modelUsed = getOcrModelDisplayName(mlkitSettings),
+                processingTime = mlkitSettings.testResult?.processingTimeMs ?: 0,
+                confidence = mlkitSettings.testResult?.confidencePercent ?: "N/A"
             )
         }
         
-        TranslationTestCard(
+        // ═══════════════════════════════════════════════════════════════
+        // 3. TRANSLATION CARD
+        // ═══════════════════════════════════════════════════════════════
+        TranslationCard(
             mlkitSettings = mlkitSettings,
-            onTextChange = onTranslationTestTextChange,
             onTranslate = onTranslationTest,
             onClear = onClearTranslationTest
         )
         
+        // ═══════════════════════════════════════════════════════════════
+        // 4. DEBUG TOOLS CARD
+        // ═══════════════════════════════════════════════════════════════
         DebugToolsCard(
             isCollecting = isCollecting,
             collectedLines = collectedLines,
@@ -165,6 +183,10 @@ private fun getOcrModelDisplayName(settings: MlkitSettingsState): String {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// OCR TEST CARD - Enhanced with Settings Info
+// ═══════════════════════════════════════════════════════════════════════════
+
 @Composable
 private fun OcrTestCard(
     mlkitSettings: MlkitSettingsState,
@@ -185,67 +207,87 @@ private fun OcrTestCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
-        )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.DocumentScanner,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
                     )
                     Text(
                         text = "OCR Test",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
 
+            // Settings Info
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                 )
             ) {
                 Column(
-                    modifier = Modifier.padding(12.dp),
+                    modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = "📋 Using Settings from OCR Tab:",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Current Settings from OCR Tab",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                     
                     SettingInfoRow(
+                        icon = Icons.Default.Language,
                         label = "Auto-detect",
-                        value = if (mlkitSettings.autoDetectLanguage) "Enabled" else "Disabled"
+                        value = if (mlkitSettings.autoDetectLanguage) "✓ Enabled" else "✗ Disabled"
                     )
                     
                     SettingInfoRow(
+                        icon = Icons.Default.AutoAwesome,
                         label = "Gemini Fallback",
                         value = when {
                             mlkitSettings.geminiOcrAlways -> "Always"
-                            mlkitSettings.geminiOcrEnabled -> "Threshold: ${mlkitSettings.geminiOcrThreshold}%"
+                            mlkitSettings.geminiOcrEnabled -> "Threshold ${mlkitSettings.geminiOcrThreshold}%"
                             else -> "Disabled"
                         }
                     )
                     
                     if (mlkitSettings.geminiOcrEnabled) {
                         SettingInfoRow(
-                            label = "Gemini Model",
+                            icon = Icons.Default.Psychology,
+                            label = "Model",
                             value = mlkitSettings.availableGeminiModels
                                 .find { it.id == mlkitSettings.selectedGeminiModel }
                                 ?.displayName ?: mlkitSettings.selectedGeminiModel
@@ -254,7 +296,8 @@ private fun OcrTestCard(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Action Buttons
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(
                     onClick = {
                         imagePickerLauncher.launch(
@@ -277,7 +320,7 @@ private fun OcrTestCard(
                 ) {
                     if (mlkitSettings.isTestRunning) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(18.dp),
                             strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.onPrimary
                         )
@@ -291,42 +334,46 @@ private fun OcrTestCard(
                 }
             }
 
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
-                )
+            // Force Gemini Checkbox
+            AnimatedVisibility(
+                visible = mlkitSettings.geminiOcrEnabled && mlkitSettings.selectedImageUri != null
             ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = mlkitSettings.testGeminiFallback,
-                        onCheckedChange = onTestGeminiFallbackChange
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "Force Gemini OCR",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = mlkitSettings.testGeminiFallback,
+                            onCheckedChange = onTestGeminiFallbackChange
                         )
-                        Text(
-                            "Test handwriting recognition",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "🔬 Force Gemini OCR",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "Test handwriting recognition",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
 
+            // Image Preview
             AnimatedVisibility(visible = mlkitSettings.selectedImageUri != null) {
                 mlkitSettings.selectedImageUri?.let { uri ->
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        HorizontalDivider()
-                        
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Card(
-                            Modifier.fillMaxWidth().height(200.dp),
+                            Modifier.fillMaxWidth().height(220.dp),
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surfaceVariant
                             )
@@ -341,18 +388,25 @@ private fun OcrTestCard(
                                 
                                 if (mlkitSettings.isTestRunning) {
                                     Box(
-                                        modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.5f)),
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(0.7f)),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Column(
                                             horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                            verticalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
-                                            CircularProgressIndicator(color = Color.White)
+                                            CircularProgressIndicator(
+                                                color = Color.White,
+                                                modifier = Modifier.size(48.dp),
+                                                strokeWidth = 4.dp
+                                            )
                                             Text(
                                                 "Processing OCR...",
                                                 color = Color.White,
-                                                style = MaterialTheme.typography.bodySmall
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Medium
                                             )
                                         }
                                     }
@@ -365,10 +419,10 @@ private fun OcrTestCard(
                                     },
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
-                                        .padding(8.dp)
+                                        .padding(12.dp)
                                         .background(
-                                            MaterialTheme.colorScheme.surface.copy(0.8f),
-                                            RoundedCornerShape(50)
+                                            MaterialTheme.colorScheme.errorContainer,
+                                            CircleShape
                                         )
                                 ) {
                                     Icon(
@@ -380,21 +434,39 @@ private fun OcrTestCard(
                             }
                         }
                         
+                        // Quick Stats
                         mlkitSettings.testResult?.let { result ->
                             Row(
                                 Modifier.fillMaxWidth(),
                                 Arrangement.SpaceEvenly
                             ) {
-                                QuickStat("Words", result.totalWords.toString())
-                                QuickStat("Confidence", result.confidencePercent)
-                                QuickStat("Quality", result.qualityRating)
-                                QuickStat("Time", "${result.processingTimeMs}ms")
+                                QuickStat(
+                                    icon = Icons.Default.TextFields,
+                                    label = "Words",
+                                    value = result.totalWords.toString()
+                                )
+                                QuickStat(
+                                    icon = Icons.Default.Psychology,
+                                    label = "Confidence",
+                                    value = result.confidencePercent
+                                )
+                                QuickStat(
+                                    icon = Icons.Default.Star,
+                                    label = "Quality",
+                                    value = result.qualityRating
+                                )
+                                QuickStat(
+                                    icon = Icons.Default.Speed,
+                                    label = "Time",
+                                    value = "${result.processingTimeMs}ms"
+                                )
                             }
                         }
                     }
                 }
             }
             
+            // Error Display
             AnimatedVisibility(visible = mlkitSettings.testError != null) {
                 mlkitSettings.testError?.let { error ->
                     Card(
@@ -404,14 +476,15 @@ private fun OcrTestCard(
                         )
                     ) {
                         Row(
-                            Modifier.padding(12.dp),
+                            Modifier.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Icon(
                                 Icons.Default.Error,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(24.dp)
                             )
                             Text(
                                 error,
@@ -426,142 +499,201 @@ private fun OcrTestCard(
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SCAN TEXT CARD - With Model Badge
+// ═══════════════════════════════════════════════════════════════════════════
+
 @Composable
 private fun ScanTextCard(
     text: String,
     source: OcrSource,
-    modelUsed: String
+    modelUsed: String,
+    processingTime: Long,
+    confidence: String
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
-        )
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Header with Model Badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "📄 Scan Text",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SourceBadge(source = source)
-                    
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer
-                    ) {
-                        Text(
-                            text = modelUsed,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Description,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(
+                        text = "Scan Result",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
+                
+                ModelBadge(source = source, modelName = modelUsed)
             }
             
-            Card(
-                Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+            // Stats Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(
-                    text = text.ifBlank { "(No text recognized)" },
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(12.dp),
-                    color = if (text.isBlank()) 
-                        MaterialTheme.colorScheme.onSurfaceVariant 
-                    else 
-                        MaterialTheme.colorScheme.onSurface
-                )
+                MiniStat(icon = Icons.Default.Speed, label = "${processingTime}ms")
+                MiniStat(icon = Icons.Default.Psychology, label = confidence)
+            }
+            
+            HorizontalDivider()
+            
+            // Text Content
+            SelectionContainer {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Text(
+                        text = text.ifBlank { "No text recognized" },
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(16.dp),
+                        color = if (text.isBlank()) 
+                            MaterialTheme.colorScheme.onSurfaceVariant 
+                        else 
+                            MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
         }
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// TRANSLATION CARD - With Lamp Indicator
+// ═══════════════════════════════════════════════════════════════════════════
+
 @Composable
-private fun TranslationTestCard(
+private fun TranslationCard(
     mlkitSettings: MlkitSettingsState,
-    onTextChange: (String) -> Unit,
     onTranslate: () -> Unit,
     onClear: () -> Unit
 ) {
+    val lampColor by animateColorAsState(
+        targetValue = if (mlkitSettings.isTranslationReady) {
+            Color(0xFF4CAF50) // Green
+        } else {
+            Color(0xFFF44336) // Red
+        },
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "lamp_color"
+    )
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
-        )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Header with Lamp
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.Translate,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
                     )
                     Text(
-                        text = "Translation Test",
-                        style = MaterialTheme.typography.titleMedium,
+                        text = "Translation",
+                        style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
-                    
-                    StatusIndicator(isReady = mlkitSettings.isTranslationReady)
+                }
+                
+                // Lamp Indicator
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .background(lampColor, CircleShape)
+                    )
+                    Text(
+                        text = if (mlkitSettings.isTranslationReady) "Ready" else "No text",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = lampColor,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
             
+            // Settings Info
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                 )
             ) {
                 Column(
-                    modifier = Modifier.padding(12.dp),
+                    modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = "📋 Using Settings from Translation Tab:",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Settings from Translation Tab",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    
+                    SettingInfoRow(
+                        icon = Icons.Default.Language,
+                        label = "Languages",
+                        value = "${mlkitSettings.translationSourceLang.displayName} → ${mlkitSettings.translationTargetLang.displayName}"
                     )
                     
                     SettingInfoRow(
-                        label = "Source Language",
-                        value = "${mlkitSettings.translationSourceLang.displayName} (${mlkitSettings.translationSourceLang.code})"
-                    )
-                    
-                    SettingInfoRow(
-                        label = "Target Language",
-                        value = "${mlkitSettings.translationTargetLang.displayName} (${mlkitSettings.translationTargetLang.code})"
-                    )
-                    
-                    SettingInfoRow(
-                        label = "Gemini Model",
+                        icon = Icons.Default.Psychology,
+                        label = "Model",
                         value = mlkitSettings.availableTranslationModels
                             .find { it.id == mlkitSettings.selectedTranslationModel }
                             ?.displayName ?: mlkitSettings.selectedTranslationModel
@@ -569,6 +701,7 @@ private fun TranslationTestCard(
                 }
             }
             
+            // Auto-filled indicator
             AnimatedVisibility(visible = mlkitSettings.isTextFromOcr) {
                 Card(
                     colors = CardDefaults.cardColors(
@@ -576,44 +709,36 @@ private fun TranslationTestCard(
                     )
                 ) {
                     Row(
-                        Modifier.padding(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             Icons.Default.CheckCircle,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.tertiary
                         )
                         Text(
-                            "Text auto-filled from OCR scan",
-                            style = MaterialTheme.typography.labelSmall,
+                            "✨ Text auto-filled from OCR scan",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onTertiaryContainer
                         )
                     }
                 }
             }
             
-            OutlinedTextField(
-                value = mlkitSettings.translationTestText,
-                onValueChange = onTextChange,
-                label = { Text("Text to translate") },
-                placeholder = { Text("Run OCR scan first or enter text manually...") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
-                maxLines = 5
-            )
-            
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Action Buttons
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
                     onClick = onTranslate,
-                    enabled = mlkitSettings.translationTestText.isNotBlank() && !mlkitSettings.isTranslating,
+                    enabled = mlkitSettings.isTranslationReady && !mlkitSettings.isTranslating,
                     modifier = Modifier.weight(1f)
                 ) {
                     if (mlkitSettings.isTranslating) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(18.dp),
                             strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.onPrimary
                         )
@@ -636,42 +761,35 @@ private fun TranslationTestCard(
                 }
             }
             
+            // Translation Result
             AnimatedVisibility(
-                visible = mlkitSettings.translationResult != null || mlkitSettings.translationError != null,
+                visible = mlkitSettings.translationResult != null,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     HorizontalDivider()
-                    Spacer(Modifier.height(12.dp))
                     
-                    mlkitSettings.translationResult?.let { result ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "📋 Translation:",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                            
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.tertiaryContainer
-                            ) {
-                                Text(
-                                    text = mlkitSettings.availableTranslationModels
-                                        .find { it.id == mlkitSettings.selectedTranslationModel }
-                                        ?.displayName ?: mlkitSettings.selectedTranslationModel,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(4.dp))
+                    // Result Header with Model Badge
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Translation Result",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
                         
+                        TranslationModelBadge(
+                            modelName = mlkitSettings.availableTranslationModels
+                                .find { it.id == mlkitSettings.selectedTranslationModel }
+                                ?.displayName ?: mlkitSettings.selectedTranslationModel
+                        )
+                    }
+                    
+                    SelectionContainer {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(
@@ -679,35 +797,39 @@ private fun TranslationTestCard(
                             )
                         ) {
                             Text(
-                                text = result,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(12.dp)
+                                text = mlkitSettings.translationResult ?: "",
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.padding(16.dp)
                             )
                         }
                     }
-                    
-                    mlkitSettings.translationError?.let { error ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer
-                            )
+                }
+            }
+            
+            // Translation Error
+            AnimatedVisibility(visible = mlkitSettings.translationError != null) {
+                mlkitSettings.translationError?.let { error ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Error,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                                Text(
-                                    text = error,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Error,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = error,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
                         }
                     }
                 }
@@ -715,6 +837,10 @@ private fun TranslationTestCard(
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DEBUG TOOLS CARD
+// ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun DebugToolsCard(
@@ -728,24 +854,26 @@ private fun DebugToolsCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
-        )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.BugReport,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
                 )
                 Text(
                     text = "Debug Tools",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -755,32 +883,39 @@ private fun DebugToolsCard(
                 Arrangement.SpaceBetween,
                 Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     Box(
                         modifier = Modifier
-                            .size(12.dp)
+                            .size(14.dp)
                             .background(
                                 if (isCollecting) MaterialTheme.colorScheme.primary 
                                 else MaterialTheme.colorScheme.outline,
                                 CircleShape
                             )
                     )
-                    Spacer(Modifier.width(8.dp))
                     Text(
                         if (isCollecting) "Collecting..." else "Stopped",
-                        style = MaterialTheme.typography.labelLarge
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 if (isCollecting || collectedLines > 0) {
-                    Text(
-                        "$collectedLines lines",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Badge(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            "$collectedLines lines",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
             
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
                     onClick = onStartStop,
                     modifier = Modifier.weight(1f)
@@ -788,7 +923,7 @@ private fun DebugToolsCard(
                     Icon(
                         if (isCollecting) Icons.Default.Stop else Icons.Default.PlayArrow,
                         null,
-                        Modifier.size(18.dp)
+                        Modifier.size(20.dp)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(if (isCollecting) "Stop" else "Start")
@@ -798,7 +933,7 @@ private fun DebugToolsCard(
                     enabled = collectedLines > 0,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.Default.Save, null, Modifier.size(18.dp))
+                    Icon(Icons.Default.Save, null, Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Save")
                 }
@@ -818,31 +953,64 @@ private fun DebugToolsCard(
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// UI COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
 @Composable
-private fun SettingInfoRow(label: String, value: String) {
+private fun SettingInfoRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Text(
             text = value,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
 
 @Composable
-private fun QuickStat(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun QuickStat(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
+        )
         Text(
             text = value,
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
         )
@@ -855,55 +1023,98 @@ private fun QuickStat(label: String, value: String) {
 }
 
 @Composable
-private fun StatusIndicator(isReady: Boolean) {
+private fun MiniStat(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String
+) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .background(
-                    if (isReady) Color(0xFF4CAF50) else Color(0xFFF44336),
-                    CircleShape
-                )
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.primary
         )
         Text(
-            text = if (isReady) "Ready" else "No text",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.primary
         )
     }
 }
 
 @Composable
-private fun SourceBadge(source: OcrSource) {
-    val (text, color, icon) = when (source) {
-        OcrSource.ML_KIT -> Triple("ML Kit", Color(0xFF2196F3), Icons.Default.PhoneAndroid)
-        OcrSource.GEMINI -> Triple("Gemini AI", Color(0xFF9C27B0), Icons.Default.AutoAwesome)
-        OcrSource.UNKNOWN -> Triple("Unknown", Color(0xFF9E9E9E), Icons.Default.Help)
+private fun ModelBadge(source: OcrSource, modelName: String) {
+    val (backgroundColor, contentColor, icon) = when (source) {
+        OcrSource.ML_KIT -> Triple(
+            Color(0xFF2196F3).copy(alpha = 0.15f),
+            Color(0xFF1976D2),
+            Icons.Default.PhoneAndroid
+        )
+        OcrSource.GEMINI -> Triple(
+            Color(0xFF9C27B0).copy(alpha = 0.15f),
+            Color(0xFF7B1FA2),
+            Icons.Default.AutoAwesome
+        )
+        OcrSource.UNKNOWN -> Triple(
+            Color(0xFF9E9E9E).copy(alpha = 0.15f),
+            Color(0xFF616161),
+            Icons.Default.Help
+        )
     }
     
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = color.copy(alpha = 0.15f)
+        shape = RoundedCornerShape(20.dp),
+        color = backgroundColor,
+        border = BorderStroke(1.5.dp, contentColor.copy(alpha = 0.3f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = color
+                modifier = Modifier.size(16.dp),
+                tint = contentColor
             )
             Text(
-                text = text,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = color
+                text = modelName,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = contentColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun TranslationModelBadge(modelName: String) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = Color(0xFF4CAF50).copy(alpha = 0.15f),
+        border = BorderStroke(1.5.dp, Color(0xFF388E3C).copy(alpha = 0.3f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Psychology,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = Color(0xFF388E3C)
+            )
+            Text(
+                text = modelName,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1B5E20)
             )
         }
     }
