@@ -1,18 +1,25 @@
 /*
  * TestingTab.kt
- * Version: 1.0.0 - COMPLETE REDESIGN (2026)
+ * Version: 2.0.0 - SETTINGS SYNCHRONIZATION (2026)
  * 
- * ✅ NEW STRUCTURE:
- * 1. OCR Test (with LOCAL model settings)
- * 2. Translation Test (with LOCAL model settings + auto-sync)
- * 3. Debug Tools (Log Collector OFF by default)
- * ❌ App Info REMOVED
+ * ✅ CRITICAL CHANGES IN 2.0.0:
+ * 1. Testing now uses GLOBAL settings from Settings tabs (not local)
+ * 2. Auto-detect → reads from OCR Settings (autoDetectLanguage)
+ * 3. Gemini Fallback → reads model from OCR Settings (selectedGeminiModel)
+ * 4. Translation → reads source/target from Translation Settings
+ * 5. Model versions are displayed in results
+ * 6. Green lamp indicator when OCR text is ready for translation
  * 
- * CRITICAL FEATURES:
- * - Local settings (не сохраняются в DataStore)
- * - 🟢/🔴 Status indicator for translation
- * - Auto-sync OCR result → Translation input
- * - Model selectors in BOTH sections
+ * ❌ REMOVED:
+ * - Local settings (localOcrModel, localThreshold, etc.)
+ * - Source/Target language dropdowns (taken from Settings)
+ * - Model selectors in Testing (use Settings tabs)
+ * 
+ * ✅ NEW:
+ * - Model version display in OCR result
+ * - Model version display in Translation result
+ * - Green/Red lamp for translation readiness
+ * - "Scan Text" field immediately after OCR card
  */
 
 package com.docs.scanner.presentation.screens.settings
@@ -25,7 +32,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -43,21 +49,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
-import com.docs.scanner.BuildConfig
-import com.docs.scanner.data.local.preferences.GeminiModelOption
-import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.core.OcrSource
 import com.docs.scanner.presentation.screens.settings.components.MlkitSettingsState
 import com.docs.scanner.util.LogcatCollector
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import timber.log.Timber
-
-// ═══════════════════════════════════════════════════════════════════════════
-// TESTING TAB - MAIN COMPOSABLE
-// ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
 fun TestingTab(
@@ -68,8 +65,6 @@ fun TestingTab(
     onCancelOcr: () -> Unit,
     onTestGeminiFallbackChange: (Boolean) -> Unit,
     onTranslationTestTextChange: (String) -> Unit,
-    onTranslationSourceLangChange: (Language) -> Unit,
-    onTranslationTargetLangChange: (Language) -> Unit,
     onTranslationTest: () -> Unit,
     onClearTranslationTest: () -> Unit,
     onDebugClick: () -> Unit,
@@ -80,15 +75,8 @@ fun TestingTab(
     val scope = rememberCoroutineScope()
     val logCollector = remember { LogcatCollector.getInstance(context) }
     
-    var isCollecting by remember { mutableStateOf(false) } // ✅ OFF by default
+    var isCollecting by remember { mutableStateOf(false) }
     var collectedLines by remember { mutableStateOf(0) }
-    
-    // ✅ LOCAL model settings (не сохраняются)
-    var localOcrModel by remember { mutableStateOf(mlkitSettings.selectedGeminiModel) }
-    var localOcrThreshold by remember { mutableStateOf(mlkitSettings.geminiOcrThreshold) }
-    var localOcrAlways by remember { mutableStateOf(mlkitSettings.geminiOcrAlways) }
-    
-    var localTranslationModel by remember { mutableStateOf(mlkitSettings.selectedTranslationModel) }
 
     LaunchedEffect(isCollecting) {
         while (isCollecting) {
@@ -104,17 +92,8 @@ fun TestingTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // ═══════════════════════════════════════════════════════════════
-        // 1. OCR TEST (with local settings)
-        // ═══════════════════════════════════════════════════════════════
         OcrTestCard(
             mlkitSettings = mlkitSettings,
-            localModel = localOcrModel,
-            localThreshold = localOcrThreshold,
-            localAlways = localOcrAlways,
-            onLocalModelChange = { localOcrModel = it },
-            onLocalThresholdChange = { localOcrThreshold = it },
-            onLocalAlwaysChange = { localOcrAlways = it },
             onImageSelected = onImageSelected,
             onTestOcr = onTestOcr,
             onClearTestResult = onClearTestResult,
@@ -122,23 +101,25 @@ fun TestingTab(
             onTestGeminiFallbackChange = onTestGeminiFallbackChange
         )
         
-        // ═══════════════════════════════════════════════════════════════
-        // 2. TRANSLATION TEST (with local model + auto-sync)
-        // ═══════════════════════════════════════════════════════════════
+        AnimatedVisibility(
+            visible = mlkitSettings.testResult != null,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            ScanTextCard(
+                text = mlkitSettings.testResult?.text ?: "",
+                source = mlkitSettings.testResult?.source ?: OcrSource.UNKNOWN,
+                modelUsed = getOcrModelDisplayName(mlkitSettings)
+            )
+        }
+        
         TranslationTestCard(
             mlkitSettings = mlkitSettings,
-            localModel = localTranslationModel,
-            onLocalModelChange = { localTranslationModel = it },
             onTextChange = onTranslationTestTextChange,
-            onSourceLangChange = onTranslationSourceLangChange,
-            onTargetLangChange = onTranslationTargetLangChange,
             onTranslate = onTranslationTest,
             onClear = onClearTranslationTest
         )
         
-        // ═══════════════════════════════════════════════════════════════
-        // 3. DEBUG TOOLS (minimal, OFF by default)
-        // ═══════════════════════════════════════════════════════════════
         DebugToolsCard(
             isCollecting = isCollecting,
             collectedLines = collectedLines,
@@ -171,24 +152,22 @@ fun TestingTab(
             },
             onOpenDebugViewer = onDebugClick
         )
-        
-        // ❌ APP INFO REMOVED
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 1. OCR TEST CARD (with local settings)
-// ═══════════════════════════════════════════════════════════════════════════
+private fun getOcrModelDisplayName(settings: MlkitSettingsState): String {
+    return if (settings.testResult?.source == OcrSource.GEMINI) {
+        settings.availableGeminiModels
+            .find { it.id == settings.selectedGeminiModel }
+            ?.displayName ?: settings.selectedGeminiModel
+    } else {
+        "ML Kit"
+    }
+}
 
 @Composable
 private fun OcrTestCard(
     mlkitSettings: MlkitSettingsState,
-    localModel: String,
-    localThreshold: Int,
-    localAlways: Boolean,
-    onLocalModelChange: (String) -> Unit,
-    onLocalThresholdChange: (Int) -> Unit,
-    onLocalAlwaysChange: (Boolean) -> Unit,
     onImageSelected: (android.net.Uri?) -> Unit,
     onTestOcr: () -> Unit,
     onClearTestResult: () -> Unit,
@@ -212,38 +191,70 @@ private fun OcrTestCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // ───────────────────────────────────────────────────────────
-            // HEADER
-            // ───────────────────────────────────────────────────────────
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Science,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "OCR Test",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            
-            Text(
-                text = "Test OCR with current settings on any image",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            
-            // ───────────────────────────────────────────────────────────
-            // ACTION BUTTONS
-            // ───────────────────────────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DocumentScanner,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "OCR Test",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "📋 Using Settings from OCR Tab:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    
+                    SettingInfoRow(
+                        label = "Auto-detect",
+                        value = if (mlkitSettings.autoDetectLanguage) "Enabled" else "Disabled"
+                    )
+                    
+                    SettingInfoRow(
+                        label = "Gemini Fallback",
+                        value = when {
+                            mlkitSettings.geminiOcrAlways -> "Always"
+                            mlkitSettings.geminiOcrEnabled -> "Threshold: ${mlkitSettings.geminiOcrThreshold}%"
+                            else -> "Disabled"
+                        }
+                    )
+                    
+                    if (mlkitSettings.geminiOcrEnabled) {
+                        SettingInfoRow(
+                            label = "Gemini Model",
+                            value = mlkitSettings.availableGeminiModels
+                                .find { it.id == mlkitSettings.selectedGeminiModel }
+                                ?.displayName ?: mlkitSettings.selectedGeminiModel
+                        )
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
                         imagePickerLauncher.launch(
@@ -257,150 +268,58 @@ private fun OcrTestCard(
                     Text("Select Image")
                 }
                 
-                if (mlkitSettings.isTestRunning) {
-                    OutlinedButton(
-                        onClick = onCancelOcr,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
+                Button(
+                    onClick = {
+                        if (mlkitSettings.isTestRunning) onCancelOcr() else onTestOcr()
+                    },
+                    enabled = mlkitSettings.selectedImageUri != null,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (mlkitSettings.isTestRunning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
                         )
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text("Cancel")
-                    }
-                } else {
-                    Button(
-                        onClick = onTestOcr,
-                        enabled = mlkitSettings.selectedImageUri != null,
-                        modifier = Modifier.weight(1f)
-                    ) {
+                    } else {
                         Icon(Icons.Default.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Run OCR")
+                        Text("Run Scan")
                     }
                 }
             }
-            
-            // ───────────────────────────────────────────────────────────
-            // ✅ LOCAL FALLBACK SETTINGS (for testing only)
-            // ───────────────────────────────────────────────────────────
-            AnimatedVisibility(
-                visible = mlkitSettings.geminiOcrEnabled && mlkitSettings.selectedImageUri != null
+
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
+                )
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    HorizontalDivider()
-                    
-                    Text(
-                        text = "⚙️ Test Settings (local, not saved)",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
+                Row(
+                    Modifier.fillMaxWidth().padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = mlkitSettings.testGeminiFallback,
+                        onCheckedChange = onTestGeminiFallbackChange
                     )
-                    
-                    // Model selector
-                    Text(
-                        "Gemini Model",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    
-                    LocalModelSelector(
-                        selectedModel = localModel,
-                        availableModels = mlkitSettings.availableGeminiModels,
-                        onModelChange = onLocalModelChange
-                    )
-                    
-                    // Always use Gemini toggle
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Always use Gemini", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "Skip ML Kit entirely",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = localAlways,
-                            onCheckedChange = onLocalAlwaysChange
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Force Gemini OCR",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
                         )
-                    }
-                    
-                    // Threshold slider (only if not always)
-                    AnimatedVisibility(visible = !localAlways) {
-                        Column {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                Arrangement.SpaceBetween,
-                                Alignment.CenterVertically
-                            ) {
-                                Text("Quality threshold", style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    "$localThreshold%",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            Slider(
-                                value = localThreshold.toFloat(),
-                                onValueChange = { onLocalThresholdChange(it.toInt()) },
-                                valueRange = 30f..80f,
-                                steps = 9
-                            )
-                            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                                Text(
-                                    "More ML Kit",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    "More Gemini",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                    
-                    // Force Gemini checkbox
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
+                        Text(
+                            "Test handwriting recognition",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    ) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = mlkitSettings.testGeminiFallback,
-                                onCheckedChange = onTestGeminiFallbackChange
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    "Force Gemini OCR",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    "Test handwriting recognition",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
                     }
                 }
             }
-            
-            // ───────────────────────────────────────────────────────────
-            // SELECTED IMAGE PREVIEW
-            // ───────────────────────────────────────────────────────────
+
             AnimatedVisibility(visible = mlkitSettings.selectedImageUri != null) {
                 mlkitSettings.selectedImageUri?.let { uri ->
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -461,7 +380,6 @@ private fun OcrTestCard(
                             }
                         }
                         
-                        // Quick stats
                         mlkitSettings.testResult?.let { result ->
                             Row(
                                 Modifier.fillMaxWidth(),
@@ -477,9 +395,6 @@ private fun OcrTestCard(
                 }
             }
             
-            // ───────────────────────────────────────────────────────────
-            // ERROR MESSAGE
-            // ───────────────────────────────────────────────────────────
             AnimatedVisibility(visible = mlkitSettings.testError != null) {
                 mlkitSettings.testError?.let { error ->
                     Card(
@@ -507,60 +422,81 @@ private fun OcrTestCard(
                     }
                 }
             }
-            
-            // ───────────────────────────────────────────────────────────
-            // OCR RESULT with SOURCE BADGE
-            // ───────────────────────────────────────────────────────────
-            AnimatedVisibility(visible = mlkitSettings.testResult != null) {
-                mlkitSettings.testResult?.let { result ->
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        HorizontalDivider()
-                        
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            Arrangement.SpaceBetween,
-                            Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "📄 OCR Result:",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                            
-                            // ✅ SOURCE BADGE (ML Kit / Gemini)
-                            SourceBadge(source = result.source)
-                        }
-                        
-                        Card(
-                            Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
-                            )
-                        ) {
-                            Text(
-                                text = result.text,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(12.dp)
-                            )
-                        }
+        }
+    }
+}
+
+@Composable
+private fun ScanTextCard(
+    text: String,
+    source: OcrSource,
+    modelUsed: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "📄 Scan Text",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SourceBadge(source = source)
+                    
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Text(
+                            text = modelUsed,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
                     }
                 }
+            }
+            
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Text(
+                    text = text.ifBlank { "(No text recognized)" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(12.dp),
+                    color = if (text.isBlank()) 
+                        MaterialTheme.colorScheme.onSurfaceVariant 
+                    else 
+                        MaterialTheme.colorScheme.onSurface
+                )
             }
         }
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 2. TRANSLATION TEST CARD (with local model + auto-sync)
-// ═══════════════════════════════════════════════════════════════════════════
-
 @Composable
 private fun TranslationTestCard(
     mlkitSettings: MlkitSettingsState,
-    localModel: String,
-    onLocalModelChange: (String) -> Unit,
     onTextChange: (String) -> Unit,
-    onSourceLangChange: (Language) -> Unit,
-    onTargetLangChange: (Language) -> Unit,
     onTranslate: () -> Unit,
     onClear: () -> Unit
 ) {
@@ -574,9 +510,6 @@ private fun TranslationTestCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // ───────────────────────────────────────────────────────────
-            // HEADER with STATUS INDICATOR
-            // ───────────────────────────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -596,13 +529,46 @@ private fun TranslationTestCard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
+                    
+                    StatusIndicator(isReady = mlkitSettings.isTranslationReady)
                 }
-                
-                // ✅ STATUS INDICATOR (🔴/🟢)
-                StatusIndicator(isReady = mlkitSettings.isTranslationReady)
             }
             
-            // ✅ "FROM OCR" BADGE
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "📋 Using Settings from Translation Tab:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    
+                    SettingInfoRow(
+                        label = "Source Language",
+                        value = "${mlkitSettings.translationSourceLang.displayName} (${mlkitSettings.translationSourceLang.code})"
+                    )
+                    
+                    SettingInfoRow(
+                        label = "Target Language",
+                        value = "${mlkitSettings.translationTargetLang.displayName} (${mlkitSettings.translationTargetLang.code})"
+                    )
+                    
+                    SettingInfoRow(
+                        label = "Gemini Model",
+                        value = mlkitSettings.availableTranslationModels
+                            .find { it.id == mlkitSettings.selectedTranslationModel }
+                            ?.displayName ?: mlkitSettings.selectedTranslationModel
+                    )
+                }
+            }
+            
             AnimatedVisibility(visible = mlkitSettings.isTextFromOcr) {
                 Card(
                     colors = CardDefaults.cardColors(
@@ -621,7 +587,7 @@ private fun TranslationTestCard(
                             tint = MaterialTheme.colorScheme.tertiary
                         )
                         Text(
-                            "Text from OCR result",
+                            "Text auto-filled from OCR scan",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onTertiaryContainer
                         )
@@ -629,65 +595,16 @@ private fun TranslationTestCard(
                 }
             }
             
-            // ───────────────────────────────────────────────────────────
-            // ✅ LOCAL TRANSLATION SETTINGS
-            // ───────────────────────────────────────────────────────────
-            HorizontalDivider()
-            
-            Text(
-                text = "⚙️ Test Settings (local, not saved)",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-            
-            // Model selector
-            Text(
-                "Gemini Model",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            
-            LocalModelSelector(
-                selectedModel = localModel,
-                availableModels = mlkitSettings.availableTranslationModels,
-                onModelChange = onLocalModelChange
-            )
-            
-            // Language dropdowns
-            LanguageDropdown(
-                label = "Source Language",
-                selected = mlkitSettings.translationSourceLang,
-                options = Language.translationSupported,
-                onSelect = onSourceLangChange
-            )
-            
-            Spacer(Modifier.height(8.dp))
-            
-            LanguageDropdown(
-                label = "Target Language",
-                selected = mlkitSettings.translationTargetLang,
-                options = Language.translationSupported.filter { it != Language.AUTO },
-                onSelect = onTargetLangChange
-            )
-            
-            // ───────────────────────────────────────────────────────────
-            // INPUT FIELD
-            // ───────────────────────────────────────────────────────────
-            HorizontalDivider()
-            
             OutlinedTextField(
                 value = mlkitSettings.translationTestText,
                 onValueChange = onTextChange,
                 label = { Text("Text to translate") },
-                placeholder = { Text("Enter text or use OCR result...") },
+                placeholder = { Text("Run OCR scan first or enter text manually...") },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3,
                 maxLines = 5
             )
             
-            // ───────────────────────────────────────────────────────────
-            // ACTION BUTTONS
-            // ───────────────────────────────────────────────────────────
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = onTranslate,
@@ -719,9 +636,6 @@ private fun TranslationTestCard(
                 }
             }
             
-            // ───────────────────────────────────────────────────────────
-            // RESULT / ERROR
-            // ───────────────────────────────────────────────────────────
             AnimatedVisibility(
                 visible = mlkitSettings.translationResult != null || mlkitSettings.translationError != null,
                 enter = fadeIn() + expandVertically(),
@@ -731,12 +645,31 @@ private fun TranslationTestCard(
                     HorizontalDivider()
                     Spacer(Modifier.height(12.dp))
                     
-                    // Success
                     mlkitSettings.translationResult?.let { result ->
-                        Text(
-                            text = "📋 Translation:",
-                            style = MaterialTheme.typography.labelLarge
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "📋 Translation:",
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                            
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.tertiaryContainer
+                            ) {
+                                Text(
+                                    text = mlkitSettings.availableTranslationModels
+                                        .find { it.id == mlkitSettings.selectedTranslationModel }
+                                        ?.displayName ?: mlkitSettings.selectedTranslationModel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
                         Spacer(Modifier.height(4.dp))
                         
                         Card(
@@ -753,7 +686,6 @@ private fun TranslationTestCard(
                         }
                     }
                     
-                    // Error
                     mlkitSettings.translationError?.let { error ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -784,10 +716,6 @@ private fun TranslationTestCard(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 3. DEBUG TOOLS CARD (minimal, OFF by default)
-// ═══════════════════════════════════════════════════════════════════════════
-
 @Composable
 private fun DebugToolsCard(
     isCollecting: Boolean,
@@ -805,10 +733,7 @@ private fun DebugToolsCard(
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
-) {
-            // ───────────────────────────────────────────────────────────
-            // HEADER
-            // ───────────────────────────────────────────────────────────
+        ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -825,23 +750,6 @@ private fun DebugToolsCard(
                 )
             }
             
-            // ───────────────────────────────────────────────────────────
-            // OCR LOG COLLECTOR
-            // ───────────────────────────────────────────────────────────
-            Text(
-                "OCR Log Collector",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "Capture real-time logs to diagnose OCR/MLKit issues",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            
-            Spacer(Modifier.height(12.dp))
-            
-            // Status indicator
             Row(
                 Modifier.fillMaxWidth(),
                 Arrangement.SpaceBetween,
@@ -872,9 +780,6 @@ private fun DebugToolsCard(
                 }
             }
             
-            Spacer(Modifier.height(16.dp))
-            
-            // Control buttons
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = onStartStop,
@@ -899,24 +804,7 @@ private fun DebugToolsCard(
                 }
             }
             
-            Spacer(Modifier.height(12.dp))
             HorizontalDivider()
-            Spacer(Modifier.height(12.dp))
-            
-            // ───────────────────────────────────────────────────────────
-            // DEBUG VIEWER
-            // ───────────────────────────────────────────────────────────
-            Text(
-                "Debug Logs Viewer",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "View historical debug logs and session data",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            
-            Spacer(Modifier.height(12.dp))
             
             Button(
                 onClick = onOpenDebugViewer,
@@ -930,154 +818,42 @@ private fun DebugToolsCard(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// HELPER COMPOSABLES
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Local model selector (not saved to DataStore)
- */
 @Composable
-private fun LocalModelSelector(
-    selectedModel: String,
-    availableModels: List<GeminiModelOption>,
-    onModelChange: (String) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val currentModel = availableModels.find { it.id == selectedModel } 
-        ?: availableModels.firstOrNull()
-    
-    OutlinedButton(
-        onClick = { expanded = true },
-        modifier = Modifier.fillMaxWidth()
+private fun SettingInfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.Start
-            ) {
-                Text(
-                    text = currentModel?.displayName ?: "Select model",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
-                currentModel?.description?.let { desc ->
-                    Text(
-                        text = desc,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowDown,
-                contentDescription = "Select model"
-            )
-        }
-    }
-    
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = { expanded = false }
-    ) {
-        availableModels.forEach { model ->
-            DropdownMenuItem(
-                text = {
-                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = model.displayName,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (model.id == selectedModel) 
-                                        FontWeight.Bold else FontWeight.Normal
-                                )
-                                
-                                Spacer(Modifier.height(4.dp))
-                                
-                                // Speed badge
-                                ModelSpeedBadge(model.id)
-                            }
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = model.description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                onClick = {
-                    onModelChange(model.id)
-                    expanded = false
-                }
-            )
-            if (model != availableModels.last()) {
-                HorizontalDivider()
-            }
-        }
-    }
-}
-
-/**
- * Language dropdown selector
- */
-@Composable
-private fun LanguageDropdown(
-    label: String,
-    selected: Language,
-    options: List<Language>,
-    onSelect: (Language) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    
-    Column {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(4.dp))
-        
-        OutlinedButton(
-            onClick = { expanded = true },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = "${selected.displayName} (${selected.code})",
-                modifier = Modifier.weight(1f)
-            )
-            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-        }
-        
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.fillMaxWidth(0.9f)
-        ) {
-            options.forEach { lang ->
-                DropdownMenuItem(
-                    text = { Text("${lang.displayName} (${lang.code})") },
-                    onClick = {
-                        expanded = false
-                        onSelect(lang)
-                    }
-                )
-            }
-        }
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 
-/**
- * Status indicator (🔴/🟢)
- */
+@Composable
+private fun QuickStat(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
 @Composable
 private fun StatusIndicator(isReady: Boolean) {
     Row(
@@ -1100,33 +876,17 @@ private fun StatusIndicator(isReady: Boolean) {
     }
 }
 
-/**
- * Source badge (ML Kit / Gemini AI)
- */
 @Composable
 private fun SourceBadge(source: OcrSource) {
     val (text, color, icon) = when (source) {
-        OcrSource.ML_KIT -> Triple(
-            "ML Kit",
-            Color(0xFF2196F3),
-            Icons.Default.PhoneAndroid
-        )
-        OcrSource.GEMINI -> Triple(
-            "Gemini AI",
-            Color(0xFF9C27B0),
-            Icons.Default.AutoAwesome
-        )
-        OcrSource.UNKNOWN -> Triple(
-            "Unknown",
-            Color(0xFF9E9E9E),
-            Icons.Default.Help
-        )
+        OcrSource.ML_KIT -> Triple("ML Kit", Color(0xFF2196F3), Icons.Default.PhoneAndroid)
+        OcrSource.GEMINI -> Triple("Gemini AI", Color(0xFF9C27B0), Icons.Default.AutoAwesome)
+        OcrSource.UNKNOWN -> Triple("Unknown", Color(0xFF9E9E9E), Icons.Default.Help)
     }
     
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = color.copy(alpha = 0.15f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.3f))
+        color = color.copy(alpha = 0.15f)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -1146,58 +906,5 @@ private fun SourceBadge(source: OcrSource) {
                 color = color
             )
         }
-    }
-}
-
-/**
- * Model speed badge
- */
-@Composable
-private fun ModelSpeedBadge(modelId: String) {
-    val (text, color) = when (modelId) {
-        "gemini-3-flash-preview", "gemini-2.5-flash-lite" -> 
-            "⚡ FAST" to Color(0xFF4CAF50)
-        
-        "gemini-2.5-flash" -> 
-            "⚖️ BALANCED" to Color(0xFF2196F3)
-        
-        "gemini-3-pro-preview", "gemini-2.5-pro" -> 
-            "🐌 SLOW" to Color(0xFFFF9800)
-        
-        else -> return
-    }
-    
-    Surface(
-        shape = RoundedCornerShape(4.dp),
-        color = color.copy(alpha = 0.15f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.3f))
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = color
-        )
-    }
-}
-
-/**
- * Quick stat display
- */
-@Composable
-private fun QuickStat(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
