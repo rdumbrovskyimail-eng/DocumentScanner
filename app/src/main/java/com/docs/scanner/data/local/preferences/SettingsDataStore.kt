@@ -1,16 +1,18 @@
 /**
  * SettingsDataStore.kt
- * Version: 14.0.0 - ADDED TRANSLATION SOURCE & OCR SETTINGS (2026)
+ * Version: 7.2.0 - MODEL CONSTANTS INTEGRATION (2026)
  *
- * ✅ NEW IN 14.0.0:
- * - KEY_TRANSLATION_SOURCE + Flow + Setter (CRITICAL FIX for translation bug)
- * - KEY_AUTO_DETECT_LANGUAGE + Flow + Setter
- * - KEY_CONFIDENCE_THRESHOLD + Flow + Setter
+ * ✅ CRITICAL FIX (Session 14):
+ * - Uses ModelConstants.VALID_MODELS
+ * - Uses ModelConstants.DEFAULT_OCR_MODEL
+ * - Uses ModelConstants.DEFAULT_TRANSLATION_MODEL
+ * - Removed hardcoded VALID_MODELS list (single source of truth)
  *
- * ✅ PREVIOUS IN 13.0.0:
- * - REMOVED GeminiModelManager from constructor (breaks circular dependency)
- * - Model validation now uses hardcoded list (synced with GeminiModelManager)
- * - getAvailableGeminiModels() returns local list (no manager dependency)
+ * ✅ PREVIOUS FIXES:
+ * - Added KEY_TRANSLATION_SOURCE + Flow + Setter
+ * - Added KEY_AUTO_DETECT_LANGUAGE + Flow + Setter
+ * - Added KEY_CONFIDENCE_THRESHOLD + Flow + Setter
+ * - Removed GeminiModelManager from constructor (circular dependency fix)
  */
 
 package com.docs.scanner.data.local.preferences
@@ -25,6 +27,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
 import com.docs.scanner.data.remote.mlkit.OcrQualityThresholds
+import com.docs.scanner.domain.core.ModelConstants
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -82,16 +85,10 @@ class SettingsDataStore @Inject constructor(
         // Legacy key for migration
         private val KEY_LEGACY_API_KEY = stringPreferencesKey("gemini_api_key")
         
-        const val DEFAULT_OCR_MODEL = "gemini-2.5-flash-lite"
-        const val DEFAULT_TRANSLATION_MODEL = "gemini-2.5-flash-lite"
-        
-        val VALID_MODELS = listOf(
-            "gemini-3-flash-preview",
-            "gemini-3-pro-preview",
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-flash",
-            "gemini-2.5-pro"
-        )
+        // ✅ CRITICAL FIX: Use ModelConstants instead of hardcoded values
+        val VALID_MODELS = ModelConstants.VALID_MODELS
+        const val DEFAULT_OCR_MODEL = ModelConstants.DEFAULT_OCR_MODEL
+        const val DEFAULT_TRANSLATION_MODEL = ModelConstants.DEFAULT_TRANSLATION_MODEL
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
@@ -544,8 +541,8 @@ class SettingsDataStore @Inject constructor(
         }
     
     suspend fun setGeminiOcrModel(model: String) {
-        require(model in VALID_MODELS) { 
-            "Invalid Gemini model: $model. Valid models: $VALID_MODELS"
+        require(model in ModelConstants.VALID_MODELS) { 
+            "Invalid Gemini model: $model. Valid models: ${ModelConstants.VALID_MODELS}"
         }
         
         try {
@@ -602,8 +599,8 @@ class SettingsDataStore @Inject constructor(
         }
     
     suspend fun setTranslationModel(model: String) {
-        require(model in VALID_MODELS) { 
-            "Invalid Translation model: $model. Valid models: $VALID_MODELS"
+        require(model in ModelConstants.VALID_MODELS) { 
+            "Invalid Translation model: $model. Valid models: ${ModelConstants.VALID_MODELS}"
         }
         
         try {
