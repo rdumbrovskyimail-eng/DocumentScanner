@@ -1,8 +1,9 @@
 # ================================================================================
 # DocumentScanner - Unified Dependency Catalog
-# Version: 7.0.1 - FIXED (2026 Standards)
+# Version: 7.2.1 - FINAL (2026 Standards)
 # 
-# ✅ FIX: Исправлена синтаксическая ошибка в bundles.testing
+# ✅ ADDED: room-testing for MigrationTest support
+# ✅ FIXED: bundles.testing syntax error
 # ================================================================================
 
 [versions]
@@ -89,6 +90,7 @@ robolectric = "4.15.0"
 [libraries]
 # --- Material Components (XML themes, widgets) ---
 google-material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+
 # --- Core ---
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidx-core" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "androidx-appcompat" }
@@ -184,6 +186,7 @@ room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "
 room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 room-paging = { group = "androidx.room", name = "room-paging", version.ref = "room" }
 room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 datastore-prefs = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "security-crypto" }
 
@@ -274,9 +277,6 @@ coroutines = [
     "kotlinx-coroutines-play-services"
 ]
 
-# ✅ FIX: Исправлена синтаксическая ошибка
-# БЫЛО: "kotlinx"kotlinx-coroutines-test"
-# СТАЛО: "kotlinx-coroutines-test"
 testing = [
     "junit-jupiter-api",
     "junit-jupiter-params",
