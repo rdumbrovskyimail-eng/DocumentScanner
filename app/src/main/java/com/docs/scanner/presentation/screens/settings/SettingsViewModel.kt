@@ -1,23 +1,16 @@
 /*
  * SettingsViewModel.kt
- * Version: 20.0.2 - TRANSLATION MODEL FIX v2 (2026)
+ * Version: 21.0.0 - GLOBAL SETTINGS SYNCHRONIZATION (2026)
  * 
- * ✅ FIXED IN 20.0.2:
- * - testTranslation() теперь использует translateTextWithModel() (правильный метод для Testing Tab)
- * - Убран несуществующий параметр 'model' из translateText()
+ * ✅ NEW IN 21.0.0:
+ * - testTranslation() reads source/target from DataStore (CRITICAL FIX)
+ * - runMlkitOcrTest() reads ALL OCR settings from DataStore
+ * - loadMlkitSettings() syncs ALL settings from DataStore
+ * - Added setTranslationSourceLang() with DataStore persistence
+ * - setTranslationTargetLang() now saves to DataStore
  * 
- * ✅ PREVIOUS IN 20.0.1:
- * - testTranslation() теперь использует translateWithModel() вместо translateTextWithModel()
- * - Полная совместимость с UseCases.translation API
- * 
- * ✅ PREVIOUS IN 20.0.0 - GEMINI MODEL MANAGER INTEGRATION:
- * - GeminiModelManager injection для централизованного управления моделями
- * - setGeminiOcrModel() делегирует валидацию и сохранение в ModelManager
- * - setTranslationModel() делегирует валидацию и сохранение в ModelManager
- * - getAvailableGeminiModels() делегирует в ModelManager
- * - getAvailableTranslationModels() делегирует в ModelManager
- * - loadMlkitSettings() загружает модели через ModelManager
- * - Rollback при ошибках через ModelManager
+ * ✅ FIX FOR: "переводит на английскую почемуто"
+ * Testing Tab now uses 100% global settings from DataStore
  */
 
 package com.docs.scanner.presentation.screens.settings
@@ -85,17 +78,9 @@ class SettingsViewModel @Inject constructor(
         private const val MODEL_SWITCH_DEBOUNCE_MS = 300L
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // JOB TRACKING
-    // ═══════════════════════════════════════════════════════════════════════════
-    
     private var currentOcrJob: Job? = null
     private var modelSwitchJob: Job? = null
     private var translationModelSwitchJob: Job? = null
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // API KEYS STATE
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private val _apiKeys = MutableStateFlow<List<ApiKeyEntry>>(emptyList())
     val apiKeys: StateFlow<List<ApiKeyEntry>> = _apiKeys.asStateFlow()
@@ -109,10 +94,6 @@ class SettingsViewModel @Inject constructor(
     private val _keyTestMessage = MutableStateFlow("")
     val keyTestMessage: StateFlow<String> = _keyTestMessage.asStateFlow()
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // GOOGLE DRIVE STATE
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private val _driveEmail = MutableStateFlow<String?>(null)
     val driveEmail: StateFlow<String?> = _driveEmail.asStateFlow()
 
@@ -124,10 +105,6 @@ class SettingsViewModel @Inject constructor(
 
     private val _backupMessage = MutableStateFlow("")
     val backupMessage: StateFlow<String> = _backupMessage.asStateFlow()
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // APP SETTINGS STATE
-    // ═══════════════════════════════════════════════════════════════════════════
 
     val themeMode: StateFlow<ThemeMode> =
         useCases.settings.observeThemeMode()
@@ -157,10 +134,6 @@ class SettingsViewModel @Inject constructor(
         settingsDataStore.cacheTtlDays
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 30)
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // STORAGE & CACHE STATE
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private val _storageUsage = MutableStateFlow<StorageUsage?>(null)
     val storageUsage: StateFlow<StorageUsage?> = _storageUsage.asStateFlow()
 
@@ -170,20 +143,12 @@ class SettingsViewModel @Inject constructor(
     private val _localBackups = MutableStateFlow<List<LocalBackup>>(emptyList())
     val localBackups: StateFlow<List<LocalBackup>> = _localBackups.asStateFlow()
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // ML KIT SETTINGS STATE
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private val _mlkitSettings = MutableStateFlow(MlkitSettingsState())
     val mlkitSettings: StateFlow<MlkitSettingsState> = _mlkitSettings.asStateFlow()
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // INITIALIZATION
-    // ═══════════════════════════════════════════════════════════════════════════
-
     init {
         if (BuildConfig.DEBUG) {
-            Timber.d("🔧 SettingsViewModel initialized (v20.0.2)")
+            Timber.d("🔧 SettingsViewModel initialized (v21.0.0 - GLOBAL SETTINGS SYNC)")
         }
         
         checkDriveConnection()
@@ -194,58 +159,85 @@ class SettingsViewModel @Inject constructor(
         loadMlkitSettings()
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // MLKIT SETTINGS LOADER
-    // ═══════════════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ MLKIT SETTINGS LOADER - COMPLETE SYNCHRONIZATION (21.0.0)
+    // ════════════════════════════════════════════════════════════════════════════════
 
     private fun loadMlkitSettings() {
         viewModelScope.launch {
             try {
-                val mode = settingsDataStore.ocrLanguage.first().uppercase()
-                
-                val scriptMode = when (mode) {
-                    "LATIN" -> OcrScriptMode.LATIN
-                    "CHINESE" -> OcrScriptMode.CHINESE
-                    "JAPANESE" -> OcrScriptMode.JAPANESE
-                    "KOREAN" -> OcrScriptMode.KOREAN
-                    "DEVANAGARI" -> OcrScriptMode.DEVANAGARI
-                    else -> OcrScriptMode.AUTO
+                val scriptMode = try {
+                    val mode = settingsDataStore.ocrLanguage.first().trim().uppercase()
+                    when (mode) {
+                        "LATIN" -> OcrScriptMode.LATIN
+                        "CHINESE" -> OcrScriptMode.CHINESE
+                        "JAPANESE" -> OcrScriptMode.JAPANESE
+                        "KOREAN" -> OcrScriptMode.KOREAN
+                        "DEVANAGARI" -> OcrScriptMode.DEVANAGARI
+                        else -> OcrScriptMode.LATIN
+                    }
+                } catch (e: Exception) {
+                    OcrScriptMode.LATIN
                 }
+                
+                val autoDetect = try {
+                    settingsDataStore.autoDetectLanguage.first()
+                } catch (e: Exception) { true }
+                
+                val confidenceThreshold = try {
+                    settingsDataStore.confidenceThreshold.first()
+                } catch (e: Exception) { 0.7f }
                 
                 val geminiEnabled = settingsDataStore.geminiOcrEnabled.first()
                 val geminiThreshold = settingsDataStore.geminiOcrThreshold.first()
                 val geminiAlways = settingsDataStore.geminiOcrAlways.first()
-                
                 val geminiModel = modelManager.getGlobalOcrModel()
-                val availableModels = modelManager.getAvailableModels()
+                
+                val translationSourceCode = try {
+                    settingsDataStore.translationSource.first()
+                } catch (e: Exception) { "auto" }
+                
+                val translationTargetCode = try {
+                    settingsDataStore.translationTarget.first()
+                } catch (e: Exception) { "en" }
                 
                 val translationModel = modelManager.getGlobalTranslationModel()
-                val availableTranslationModels = modelManager.getAvailableModels()
+                val availableModels = modelManager.getAvailableModels()
                 
                 _mlkitSettings.update { 
                     it.copy(
                         scriptMode = scriptMode,
+                        autoDetectLanguage = autoDetect,
+                        confidenceThreshold = confidenceThreshold,
                         geminiOcrEnabled = geminiEnabled,
                         geminiOcrThreshold = geminiThreshold,
                         geminiOcrAlways = geminiAlways,
                         selectedGeminiModel = geminiModel,
                         availableGeminiModels = availableModels,
+                        translationSourceLang = Language.fromCode(translationSourceCode) ?: Language.AUTO,
+                        translationTargetLang = Language.fromCode(translationTargetCode) ?: Language.ENGLISH,
                         selectedTranslationModel = translationModel,
-                        availableTranslationModels = availableTranslationModels
+                        availableTranslationModels = availableModels
                     ) 
                 }
                 
                 if (BuildConfig.DEBUG) {
-                    Timber.d("📝 Loaded MLKit settings:")
-                    Timber.d("   ├─ Script mode: $scriptMode")
-                    Timber.d("   ├─ Gemini fallback: $geminiEnabled")
-                    Timber.d("   ├─ Gemini threshold: $geminiThreshold%")
-                    Timber.d("   ├─ Gemini always: $geminiAlways")
-                    Timber.d("   ├─ OCR model: $geminiModel")
-                    Timber.d("   └─ Translation model: $translationModel")
+                    Timber.d("════════════════════════════════════════════")
+                    Timber.d("📋 SETTINGS LOADED FOR TESTING TAB")
+                    Timber.d("════════════════════════════════════════════")
+                    Timber.d("   Script Mode:       $scriptMode")
+                    Timber.d("   Auto-detect:       $autoDetect")
+                    Timber.d("   Confidence:        ${(confidenceThreshold * 100).toInt()}%")
+                    Timber.d("   Gemini Enabled:    $geminiEnabled")
+                    Timber.d("   Gemini Threshold:  $geminiThreshold%")
+                    Timber.d("   Gemini Always:     $geminiAlways")
+                    Timber.d("   OCR Model:         $geminiModel")
+                    Timber.d("   Translation:       $translationSourceCode → $translationTargetCode")
+                    Timber.d("   Translation Model: $translationModel")
+                    Timber.d("════════════════════════════════════════════")
                 }
             } catch (e: Exception) {
-                Timber.w(e, "Failed to load MLKit settings")
+                Timber.e(e, "Failed to load MLKit settings")
             }
         }
     }
@@ -288,10 +280,6 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // API KEYS MANAGEMENT
-    // ═══════════════════════════════════════════════════════════════════════════
 
     fun addApiKey(key: String, label: String?) {
         viewModelScope.launch {
@@ -400,10 +388,6 @@ class SettingsViewModel @Inject constructor(
     private fun isValidApiKey(key: String): Boolean = 
         key.matches(Regex("^AIza[A-Za-z0-9_-]{35}$"))
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // APP SETTINGS
-    // ═══════════════════════════════════════════════════════════════════════════
-
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch {
             when (val r = useCases.settings.setThemeMode(mode)) {
@@ -440,7 +424,7 @@ class SettingsViewModel @Inject constructor(
                     "JAPANESE" -> OcrScriptMode.JAPANESE
                     "KOREAN" -> OcrScriptMode.KOREAN
                     "DEVANAGARI" -> OcrScriptMode.DEVANAGARI
-                    else -> OcrScriptMode.AUTO
+                    else -> OcrScriptMode.LATIN
                 }
                 _mlkitSettings.update { it.copy(scriptMode = scriptMode) }
             } catch (e: Exception) {
@@ -505,10 +489,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // CACHE & STORAGE
-    // ═══════════════════════════════════════════════════════════════════════════
-
     fun refreshCacheStats() {
         viewModelScope.launch {
             try {
@@ -568,10 +548,6 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // LOCAL BACKUP
-    // ═══════════════════════════════════════════════════════════════════════════
 
     fun createLocalBackup(includeImages: Boolean) {
         viewModelScope.launch {
@@ -634,10 +610,6 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // GOOGLE DRIVE
-    // ═══════════════════════════════════════════════════════════════════════════
 
     fun refreshDriveBackups() {
         viewModelScope.launch {
@@ -771,21 +743,17 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // ML KIT SETTINGS
-    // ═══════════════════════════════════════════════════════════════════════════
-
     fun setMlkitScriptMode(mode: OcrScriptMode) {
         viewModelScope.launch {
             _mlkitSettings.update { it.copy(scriptMode = mode) }
             
             val modeStr = when (mode) {
-                OcrScriptMode.AUTO -> "AUTO"
                 OcrScriptMode.LATIN -> "LATIN"
                 OcrScriptMode.CHINESE -> "CHINESE"
                 OcrScriptMode.JAPANESE -> "JAPANESE"
                 OcrScriptMode.KOREAN -> "KOREAN"
                 OcrScriptMode.DEVANAGARI -> "DEVANAGARI"
+                else -> "LATIN"
             }
             
             try {
@@ -799,10 +767,24 @@ class SettingsViewModel @Inject constructor(
 
     fun setMlkitAutoDetect(enabled: Boolean) {
         _mlkitSettings.update { it.copy(autoDetectLanguage = enabled) }
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setAutoDetectLanguage(enabled)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save auto-detect setting")
+            }
+        }
     }
 
     fun setMlkitConfidenceThreshold(threshold: Float) {
         _mlkitSettings.update { it.copy(confidenceThreshold = threshold) }
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setConfidenceThreshold(threshold)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save confidence threshold")
+            }
+        }
     }
 
     fun setMlkitHighlightLowConfidence(enabled: Boolean) {
@@ -812,10 +794,6 @@ class SettingsViewModel @Inject constructor(
     fun setMlkitShowWordConfidences(enabled: Boolean) {
         _mlkitSettings.update { it.copy(showWordConfidences = enabled) }
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // IMAGE SELECTION
-    // ═══════════════════════════════════════════════════════════════════════════
 
     fun setMlkitSelectedImage(uri: Uri?) {
         if (uri == null) {
@@ -868,10 +846,6 @@ class SettingsViewModel @Inject constructor(
     fun getAvailableScriptModes(): List<OcrScriptMode> = 
         mlKitScanner.getAvailableScriptModes()
 
-    // ════════════════════════════════════════════════════════════════════════════════
-    // GEMINI OCR FALLBACK SETTINGS
-    // ════════════════════════════════════════════════════════════════════════════════
-    
     fun setGeminiOcrEnabled(enabled: Boolean) {
         _mlkitSettings.update { it.copy(geminiOcrEnabled = enabled) }
         viewModelScope.launch {
@@ -908,10 +882,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // ════════════════════════════════════════════════════════════════════════════════
-    // ATOMIC GEMINI MODEL SWITCHING (OCR)
-    // ════════════════════════════════════════════════════════════════════════════════
-    
     fun setGeminiOcrModel(modelId: String) {
         modelSwitchJob?.cancel()
         
@@ -970,10 +940,6 @@ class SettingsViewModel @Inject constructor(
         _mlkitSettings.update { it.copy(testGeminiFallback = enabled) }
     }
 
-    // ════════════════════════════════════════════════════════════════════════════════
-    // TRANSLATION MODEL SELECTION
-    // ════════════════════════════════════════════════════════════════════════════════
-    
     fun setTranslationModel(modelId: String) {
         translationModelSwitchJob?.cancel()
         
@@ -1020,7 +986,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ════════════════════════════════════════════════════════════════════════════════
-    // CANCELLABLE OCR TEST
+    // ✅ CANCELLABLE OCR TEST - READS ALL SETTINGS FROM DATASTORE (21.0.0)
     // ════════════════════════════════════════════════════════════════════════════════
     
     fun runMlkitOcrTest() {
@@ -1039,55 +1005,92 @@ class SettingsViewModel @Inject constructor(
                 it.copy(isTestRunning = true, testResult = null, testError = null) 
             }
             
-            if (BuildConfig.DEBUG) {
-                Timber.d("🧪 Starting OCR test")
-                Timber.d("   ├─ Mode: ${currentState.scriptMode}")
-                Timber.d("   ├─ Model: ${currentState.selectedGeminiModel}")
-                Timber.d("   ├─ Threshold: ${(currentState.confidenceThreshold * 100).toInt()}%")
-                Timber.d("   └─ Gemini fallback: ${currentState.testGeminiFallback}")
-            }
-            
             try {
+                val autoDetect = try {
+                    settingsDataStore.autoDetectLanguage.first()
+                } catch (e: Exception) { true }
+                
+                val confidenceThreshold = try {
+                    settingsDataStore.confidenceThreshold.first()
+                } catch (e: Exception) { 0.7f }
+                
+                val geminiEnabled = try {
+                    settingsDataStore.geminiOcrEnabled.first()
+                } catch (e: Exception) { true }
+                
+                val geminiThreshold = try {
+                    settingsDataStore.geminiOcrThreshold.first()
+                } catch (e: Exception) { 65 }
+                
+                val geminiAlways = try {
+                    settingsDataStore.geminiOcrAlways.first()
+                } catch (e: Exception) { false }
+                
+                val ocrModel = try {
+                    settingsDataStore.geminiOcrModel.first()
+                } catch (e: Exception) { GeminiModelManager.DEFAULT_OCR_MODEL }
+                
+                val scriptMode = currentState.scriptMode
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("════════════════════════════════════════════")
+                    Timber.d("🔬 OCR TEST (100% FROM SETTINGS)")
+                    Timber.d("════════════════════════════════════════════")
+                    Timber.d("   Script Mode:     $scriptMode")
+                    Timber.d("   Auto-detect:     $autoDetect")
+                    Timber.d("   Confidence:      ${(confidenceThreshold * 100).toInt()}%")
+                    Timber.d("   Gemini Enabled:  $geminiEnabled")
+                    Timber.d("   Gemini Threshold:${geminiThreshold}%")
+                    Timber.d("   Gemini Always:   $geminiAlways")
+                    Timber.d("   OCR Model:       $ocrModel")
+                    Timber.d("   Force Gemini:    ${currentState.testGeminiFallback}")
+                    Timber.d("════════════════════════════════════════════")
+                }
+                
                 when (val result = mlKitScanner.testOcr(
                     uri = imageUri,
-                    scriptMode = currentState.scriptMode,
-                    autoDetectLanguage = currentState.autoDetectLanguage,
-                    confidenceThreshold = currentState.confidenceThreshold,
-                    testGeminiFallback = currentState.testGeminiFallback
+                    scriptMode = scriptMode,
+                    autoDetectLanguage = autoDetect,
+                    confidenceThreshold = confidenceThreshold,
+                    testGeminiFallback = currentState.testGeminiFallback || geminiAlways
                 )) {
                     is DomainResult.Success -> {
                         val ocrData = result.data
                         
+                        val autoTranslate = try {
+                            settingsDataStore.autoTranslate.first()
+                        } catch (e: Exception) { false }
+                        
+                        val translationTargetCode = try {
+                            settingsDataStore.translationTarget.first()
+                        } catch (e: Exception) { "en" }
+                        val translationTargetLang = Language.fromCode(translationTargetCode) ?: Language.ENGLISH
+                        
                         var translatedText: String? = null
                         var translationTime: Long? = null
-                        var translationTargetLang: Language? = null
                         
-                        if (ocrData.text.isNotBlank()) {
-                            val autoTranslateEnabled = try {
-                                settingsDataStore.autoTranslate.first()
-                            } catch (e: Exception) { false }
+                        if (autoTranslate && ocrData.text.isNotBlank()) {
+                            val translationStart = System.currentTimeMillis()
                             
-                            if (autoTranslateEnabled) {
-                                translationTargetLang = try {
-                                    settingsDataStore.translationTarget.first().let { code ->
-                                        Language.fromCode(code) ?: Language.ENGLISH
+                            if (BuildConfig.DEBUG) {
+                                Timber.d("🌐 Auto-translating to ${translationTargetLang.displayName}...")
+                            }
+                            
+                            when (val translateResult = useCases.translation.translateText(
+                                text = ocrData.text,
+                                source = ocrData.detectedLanguage ?: Language.AUTO,
+                                target = translationTargetLang
+                            )) {
+                                is DomainResult.Success -> {
+                                    translatedText = translateResult.data.translatedText
+                                    translationTime = System.currentTimeMillis() - translationStart
+                                    
+                                    if (BuildConfig.DEBUG) {
+                                        Timber.d("✅ Auto-translation completed in ${translationTime}ms")
                                     }
-                                } catch (e: Exception) { Language.ENGLISH }
-                                
-                                val translationStart = System.currentTimeMillis()
-                                
-                                when (val translateResult = useCases.translation.translateText(
-                                    text = ocrData.text,
-                                    source = ocrData.detectedLanguage ?: Language.AUTO,
-                                    target = translationTargetLang
-                                )) {
-                                    is DomainResult.Success -> {
-                                        translatedText = translateResult.data.translatedText
-                                        translationTime = System.currentTimeMillis() - translationStart
-                                    }
-                                    is DomainResult.Failure -> {
-                                        Timber.w("Auto-translation failed: ${translateResult.error.message}")
-                                    }
+                                }
+                                is DomainResult.Failure -> {
+                                    Timber.w("⚠️ Auto-translation failed: ${translateResult.error.message}")
                                 }
                             }
                         }
@@ -1104,13 +1107,26 @@ class SettingsViewModel @Inject constructor(
                                     translationTestText = ocrData.text,
                                     translationSourceLang = ocrData.detectedLanguage ?: Language.AUTO,
                                     translationResult = null,
-                                    translationError = null
+                                    translationError = null,
+                                    selectedGeminiModel = ocrModel,
+                                    autoDetectLanguage = autoDetect,
+                                    confidenceThreshold = confidenceThreshold,
+                                    geminiOcrEnabled = geminiEnabled,
+                                    geminiOcrThreshold = geminiThreshold,
+                                    geminiOcrAlways = geminiAlways
                                 ) 
                             }
                             
                             if (BuildConfig.DEBUG) {
-                                Timber.d("✅ OCR test success: ${ocrData.totalWords} words, ${ocrData.processingTimeMs}ms")
-                                Timber.d("📋 Synced to Translation Test: ${ocrData.text.take(50)}...")
+                                Timber.d("════════════════════════════════════════════")
+                                Timber.d("✅ OCR TEST SUCCESS")
+                                Timber.d("════════════════════════════════════════════")
+                                Timber.d("   Words:      ${ocrData.totalWords}")
+                                Timber.d("   Source:     ${ocrData.source.name}")
+                                Timber.d("   Confidence: ${ocrData.confidencePercent}")
+                                Timber.d("   Time:       ${ocrData.processingTimeMs}ms")
+                                Timber.d("   → Synced to Translation Test")
+                                Timber.d("════════════════════════════════════════════")
                             }
                         }
                     }
@@ -1118,24 +1134,29 @@ class SettingsViewModel @Inject constructor(
                     is DomainResult.Failure -> {
                         if (isActive) {
                             _mlkitSettings.update { 
-                                it.copy(testError = result.error.message, isTestRunning = false) 
+                                it.copy(
+                                    testError = result.error.message, 
+                                    isTestRunning = false
+                                ) 
                             }
+                            Timber.e("❌ OCR TEST FAILED: ${result.error.message}")
                         }
                     }
                 }
                 
             } catch (e: CancellationException) {
-                if (BuildConfig.DEBUG) {
-                    Timber.d("🛑 OCR test cancelled")
-                }
+                Timber.d("🛑 OCR test cancelled")
                 throw e
                 
             } catch (e: Exception) {
-                Timber.e(e, "MLKit OCR test exception")
+                Timber.e(e, "❌ OCR test exception")
                 
                 if (isActive) {
                     _mlkitSettings.update { 
-                        it.copy(testError = "OCR failed: ${e.message}", isTestRunning = false) 
+                        it.copy(
+                            testError = "OCR failed: ${e.message}", 
+                            isTestRunning = false
+                        ) 
                     }
                 }
             }
@@ -1166,25 +1187,48 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ TRANSLATION TEST - FIXED IN 20.0.2
-    // ═══════════════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ TRANSLATION TEST - READS FROM DATASTORE (21.0.0)
+    // ════════════════════════════════════════════════════════════════════════════════
 
     fun setTranslationTestText(text: String) {
         _mlkitSettings.update { it.copy(translationTestText = text) }
     }
 
     fun setTranslationSourceLang(lang: Language) {
-        _mlkitSettings.update { it.copy(translationSourceLang = lang) }
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setTranslationSource(lang.code)
+                _mlkitSettings.update { it.copy(translationSourceLang = lang) }
+                _saveMessage.value = "✓ Source language: ${lang.displayName}"
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("✅ Translation source saved: ${lang.displayName} (${lang.code})")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save translation source")
+                _saveMessage.value = "✗ Failed to save source language"
+            }
+        }
     }
 
     fun setTranslationTargetLang(lang: Language) {
-        _mlkitSettings.update { it.copy(translationTargetLang = lang) }
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setTranslationTarget(lang.code)
+                _mlkitSettings.update { it.copy(translationTargetLang = lang) }
+                _saveMessage.value = "✓ Target language: ${lang.displayName}"
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("✅ Translation target saved: ${lang.displayName} (${lang.code})")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save translation target")
+                _saveMessage.value = "✗ Failed to save target language"
+            }
+        }
     }
 
-    /**
-     * ✅ FIXED IN 20.0.2: Uses translateTextWithModel() (correct method for Testing Tab)
-     */
     fun testTranslation() {
         val state = _mlkitSettings.value
         
@@ -1195,33 +1239,59 @@ class SettingsViewModel @Inject constructor(
             return
         }
         
-        if (state.translationSourceLang != Language.AUTO && 
-            state.translationSourceLang == state.translationTargetLang) {
-            _mlkitSettings.update {
-                it.copy(translationError = "Source and target languages must be different")
-            }
-            return
-        }
-        
         viewModelScope.launch {
             _mlkitSettings.update { it.copy(isTranslating = true, translationError = null) }
             
             val start = System.currentTimeMillis()
-            val selectedModel = state.selectedTranslationModel
             
-            if (BuildConfig.DEBUG) {
-                Timber.d("🌐 Translation test starting")
-                Timber.d("   ├─ Model: $selectedModel")
-                Timber.d("   ├─ From: ${state.translationSourceLang.displayName}")
-                Timber.d("   ├─ To: ${state.translationTargetLang.displayName}")
-                Timber.d("   └─ Text: ${state.translationTestText.take(50)}...")
+            val sourceLang = try {
+                val code = settingsDataStore.translationSource.first()
+                Language.fromCode(code) ?: Language.AUTO
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to read source language, using AUTO")
+                Language.AUTO
             }
             
-            // ✅ CRITICAL FIX: Use translateTextWithModel (accepts 'model' parameter)
+            val targetLang = try {
+                val code = settingsDataStore.translationTarget.first()
+                Language.fromCode(code) ?: Language.ENGLISH
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to read target language, using English")
+                Language.ENGLISH
+            }
+            
+            val selectedModel = try {
+                modelManager.getGlobalTranslationModel()
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to get translation model, using default")
+                GeminiModelManager.DEFAULT_TRANSLATION_MODEL
+            }
+            
+            if (sourceLang != Language.AUTO && sourceLang == targetLang) {
+                _mlkitSettings.update {
+                    it.copy(
+                        translationError = "Source and target languages must be different",
+                        isTranslating = false
+                    )
+                }
+                return@launch
+            }
+            
+            if (BuildConfig.DEBUG) {
+                Timber.d("════════════════════════════════════════════")
+                Timber.d("🌐 TRANSLATION TEST (100% FROM SETTINGS)")
+                Timber.d("════════════════════════════════════════════")
+                Timber.d("   Source:  ${sourceLang.displayName} (${sourceLang.code})")
+                Timber.d("   Target:  ${targetLang.displayName} (${targetLang.code})")
+                Timber.d("   Model:   $selectedModel")
+                Timber.d("   Text:    ${state.translationTestText.take(50)}...")
+                Timber.d("════════════════════════════════════════════")
+            }
+            
             when (val result = useCases.translation.translateTextWithModel(
                 text = state.translationTestText,
-                source = state.translationSourceLang,
-                target = state.translationTargetLang,
+                source = sourceLang,
+                target = targetLang,
                 model = selectedModel
             )) {
                 is DomainResult.Success -> {
@@ -1230,13 +1300,18 @@ class SettingsViewModel @Inject constructor(
                         it.copy(
                             translationResult = result.data.translatedText,
                             isTranslating = false,
-                            translationError = null
+                            translationError = null,
+                            translationSourceLang = sourceLang,
+                            translationTargetLang = targetLang
                         )
                     }
-                    _saveMessage.value = "✓ Translated in ${time}ms using $selectedModel"
+                    _saveMessage.value = "✓ Translated to ${targetLang.displayName} in ${time}ms"
                     
                     if (BuildConfig.DEBUG) {
-                        Timber.d("✅ Translation success in ${time}ms")
+                        Timber.d("✅ Translation SUCCESS")
+                        Timber.d("   → ${sourceLang.code} to ${targetLang.code}")
+                        Timber.d("   → Model: $selectedModel")
+                        Timber.d("   → Time: ${time}ms")
                     }
                 }
                 
@@ -1248,10 +1323,7 @@ class SettingsViewModel @Inject constructor(
                             translationError = result.error.message
                         )
                     }
-                    
-                    if (BuildConfig.DEBUG) {
-                        Timber.e("❌ Translation failed: ${result.error.message}")
-                    }
+                    Timber.e("❌ Translation FAILED: ${result.error.message}")
                 }
             }
         }
@@ -1285,10 +1357,6 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // CLEANUP
-    // ═══════════════════════════════════════════════════════════════════════════
 
     override fun onCleared() {
         super.onCleared()
