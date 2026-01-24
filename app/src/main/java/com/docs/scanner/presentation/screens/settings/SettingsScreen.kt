@@ -1282,24 +1282,35 @@ private fun SettingDropdown(title: String, value: String, options: List<String>,
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun ScriptModeSelector(selectedMode: com.docs.scanner.data.remote.mlkit.OcrScriptMode, onModeSelected: (com.docs.scanner.data.remote.mlkit.OcrScriptMode) -> Unit) {
+private fun ScriptModeSelector(
+    selectedMode: com.docs.scanner.data.remote.mlkit.OcrScriptMode, 
+    onModeSelected: (com.docs.scanner.data.remote.mlkit.OcrScriptMode) -> Unit
+) {
     androidx.compose.foundation.layout.FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        com.docs.scanner.data.remote.mlkit.OcrScriptMode.entries.forEach { mode ->
-            FilterChip(
-                selected = mode == selectedMode,
-                onClick = { onModeSelected(mode) },
-                label = { Text(mode.displayName) },
-                leadingIcon = if (mode == selectedMode) {
-                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                } else null
-            )
-        }
+        // ✅ FIX: Filter out AUTO - we have a separate auto-detect toggle
+        com.docs.scanner.data.remote.mlkit.OcrScriptMode.entries
+            .filter { it != com.docs.scanner.data.remote.mlkit.OcrScriptMode.AUTO }  // ✅ ДОБАВЛЕНО!
+            .forEach { mode ->
+                FilterChip(
+                    selected = mode == selectedMode,
+                    onClick = { onModeSelected(mode) },
+                    label = { Text(mode.displayName) },
+                    leadingIcon = if (mode == selectedMode) {
+                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    } else null
+                )
+            }
     }
-    Text(selectedMode.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+    Text(
+        selectedMode.description, 
+        style = MaterialTheme.typography.bodySmall, 
+        color = MaterialTheme.colorScheme.onSurfaceVariant, 
+        modifier = Modifier.padding(top = 4.dp)
+    )
 }
 
 @Composable
