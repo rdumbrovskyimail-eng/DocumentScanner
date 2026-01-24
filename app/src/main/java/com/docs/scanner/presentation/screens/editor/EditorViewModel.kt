@@ -1,19 +1,17 @@
 /*
  * EditorViewModel.kt
- * Version: 3.0.0 - SETTINGS SYNCHRONIZATION (2026)
+ * Version: 7.2.0 - MODEL CONSTANTS INTEGRATION (2026)
  * 
- * ✅ NEW IN 3.0.0:
+ * ✅ CRITICAL FIX (Session 14):
+ * - Uses ModelConstants via GeminiModelManager
  * - Reads targetLanguage from SettingsDataStore
  * - Reads translationModel from GeminiModelManager
- * - Passes settings to GeminiTranslator
+ * - Removed Timber.forest().isNotEmpty() checks (redundant)
+ * 
+ * ✅ PREVIOUS FIXES:
+ * - Settings synchronization (v3.0.0)
  * - Auto-translation uses correct language from Settings
- * 
- * CRITICAL FIX:
- * "я поставил язык русский в гемини транслейт, 
- *  а вот переволось на АНГЛИЙСКИЙ!"
- * 
- * ПРИЧИНА: Editor не читал настройки из Settings!
- * РЕШЕНИЕ: Теперь Editor читает targetLanguage из DataStore
+ * - Fixed: "я поставил язык русский, а вот перевелось на АНГЛИЙСКИЙ!"
  */
 
 package com.docs.scanner.presentation.screens.editor
@@ -38,8 +36,8 @@ import javax.inject.Inject
 @HiltViewModel
 class EditorViewModel @Inject constructor(
     private val useCases: AllUseCases,
-    private val settingsDataStore: SettingsDataStore, // ✅ NEW: Inject settings
-    private val modelManager: GeminiModelManager,     // ✅ NEW: Inject model manager
+    private val settingsDataStore: SettingsDataStore,
+    private val modelManager: GeminiModelManager,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -47,10 +45,6 @@ class EditorViewModel @Inject constructor(
         private const val TAG = "EditorViewModel"
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // STATE - Compatible with existing EditorUiState structure
-    // ═══════════════════════════════════════════════════════════════════════════
-    
     private val recordId: Long = savedStateHandle.get<Long>("recordId") ?: 0L
 
     private val _uiState = MutableStateFlow<EditorUiState>(EditorUiState.Loading)
@@ -61,10 +55,6 @@ class EditorViewModel @Inject constructor(
 
     private val _moveTargets = MutableStateFlow<List<Record>>(emptyList())
     val moveTargets: StateFlow<List<Record>> = _moveTargets.asStateFlow()
-    
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Selection Mode State
-    // ═══════════════════════════════════════════════════════════════════════════
     
     private val _selectedDocIds = MutableStateFlow<Set<Long>>(emptySet())
     val selectedDocIds: StateFlow<Set<Long>> = _selectedDocIds.asStateFlow()
@@ -81,16 +71,6 @@ class EditorViewModel @Inject constructor(
     
     val selectedCount: Int get() = _selectedDocIds.value.size
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ NEW: GLOBAL SETTINGS (from DataStore)
-    // ═══════════════════════════════════════════════════════════════════════════
-    
-    /**
-     * Target language for translation (from Settings).
-     * 
-     * ✅ CRITICAL FIX: This is the missing link!
-     * User sets Russian in Settings → DataStore → Editor reads it → Translator uses it
-     */
     private val targetLanguage = settingsDataStore.translationTarget
         .map { code ->
             Language.fromCode(code) ?: Language.ENGLISH.also {
@@ -103,22 +83,14 @@ class EditorViewModel @Inject constructor(
             Language.ENGLISH
         )
     
-    /**
-     * Translation model (from Settings).
-     * 
-     * ✅ NEW: Model selection now affects Editor
-     */
     private val translationModel = flow {
         emit(modelManager.getGlobalTranslationModel())
     }.stateIn(
         viewModelScope,
         SharingStarted.Lazily,
-        GeminiModelManager.DEFAULT_TRANSLATION_MODEL
+        ModelConstants.DEFAULT_TRANSLATION_MODEL
     )
     
-    /**
-     * Auto-translate enabled flag (from Settings).
-     */
     private val autoTranslateEnabled = settingsDataStore.autoTranslate
         .stateIn(
             viewModelScope,
@@ -126,15 +98,10 @@ class EditorViewModel @Inject constructor(
             false
         )
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // INIT
-    // ═══════════════════════════════════════════════════════════════════════════
-
     init {
         if (recordId != 0L) {
             loadData()
             
-            // ✅ DEBUG: Log settings on init
             viewModelScope.launch {
                 val target = targetLanguage.value
                 val model = translationModel.value
@@ -189,10 +156,6 @@ class EditorViewModel @Inject constructor(
             }
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ DOCUMENT ACTIONS - UPDATED with Settings Integration
-    // ═══════════════════════════════════════════════════════════════════════════
 
     fun addDocument(uri: Uri) {
         viewModelScope.launch {
@@ -302,10 +265,6 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // DRAG & DROP REORDER
-    // ═══════════════════════════════════════════════════════════════════════════
-    
     fun reorderDocuments(fromIndex: Int, toIndex: Int) {
         val currentState = _uiState.value
         if (currentState !is EditorUiState.Success) return
@@ -350,10 +309,6 @@ class EditorViewModel @Inject constructor(
             reorderDocuments(index, index + 1)
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // RECORD ACTIONS
-    // ═══════════════════════════════════════════════════════════════════════════
 
     fun updateRecordName(name: String) {
         viewModelScope.launch {
@@ -451,10 +406,6 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ DOCUMENT TEXT & RETRY - UPDATED with Settings Integration
-    // ═══════════════════════════════════════════════════════════════════════════
-
     fun updateDocumentText(documentId: Long, originalText: String?, translatedText: String?) {
         viewModelScope.launch {
             val doc = useCases.getDocumentById(documentId) ?: return@launch
@@ -499,14 +450,6 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Retry translation for a document.
-     * 
-     * ✅ CRITICAL FIX: Now uses targetLanguage from Settings!
-     * 
-     * BEFORE: Hardcoded English or wrong language
-     * AFTER: Reads from settingsDataStore.translationTarget
-     */
     fun retryTranslation(documentId: Long) {
         viewModelScope.launch {
             val currentState = _uiState.value
@@ -518,34 +461,29 @@ class EditorViewModel @Inject constructor(
                 processingProgress = 30
             )
 
-            // ✅ CRITICAL: Use target language from Settings
             val target = targetLanguage.value
             val model = translationModel.value
             
-            if (timber.log.Timber.forest().isNotEmpty()) {
-                Timber.d("🌐 Retrying translation:")
-                Timber.d("   ├─ Target: ${target.displayName} (${target.code})")
-                Timber.d("   └─ Model: $model")
-            }
+            Timber.d("🌐 Retrying translation:")
+            Timber.d("   ├─ Target: ${target.displayName} (${target.code})")
+            Timber.d("   └─ Model: $model")
 
-            when (val result = useCases.retryTranslation(documentId)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
+            when (val result = useCases.translation.translateDocument(
+                docId = DocumentId(documentId),
+                targetLang = target
+            )) {
+                is DomainResult.Success -> {
                     _uiState.value = currentState.copy(isProcessing = false)
                 }
-                is com.docs.scanner.domain.model.Result.Error -> {
+                is DomainResult.Failure -> {
                     _uiState.value = currentState.copy(
                         isProcessing = false,
-                        errorMessage = "Translation failed: ${result.exception.message}"
+                        errorMessage = "Translation failed: ${result.error.message}"
                     )
                 }
-                else -> {}
             }
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // MOVE DOCUMENT
-    // ═══════════════════════════════════════════════════════════════════════════
 
     fun moveDocument(documentId: Long, targetRecordId: Long) {
         viewModelScope.launch {
@@ -559,10 +497,6 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SELECTION MODE (Multi-select)
-    // ═══════════════════════════════════════════════════════════════════════════
-    
     fun enterSelectionMode() {
         _isSelectionMode.value = true
     }
@@ -597,10 +531,6 @@ class EditorViewModel @Inject constructor(
         _selectedDocIds.value = emptySet()
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // BATCH ACTIONS
-    // ═══════════════════════════════════════════════════════════════════════════
-    
     fun deleteSelectedDocuments() {
         val docIds = _selectedDocIds.value.toList()
         if (docIds.isEmpty()) return
@@ -682,10 +612,6 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SMART RETRY (retry all failed)
-    // ═══════════════════════════════════════════════════════════════════════════
-    
     fun retryFailedDocuments() {
         val currentState = _uiState.value
         if (currentState !is EditorUiState.Success) return
@@ -715,10 +641,6 @@ class EditorViewModel @Inject constructor(
             ) ?: return@launch
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ SHARE - UPDATED with Settings Integration
-    // ═══════════════════════════════════════════════════════════════════════════
 
     fun shareRecordAsPdf() {
         viewModelScope.launch {
@@ -797,12 +719,6 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // HELPERS
-    // ═══════════════════════════════════════════════════════════════════════════════════
-    // HELPERS
-    // ═══════════════════════════════════════════════════════════════════════════
-
     fun clearError() {
         val currentState = _uiState.value
         if (currentState is EditorUiState.Success) {
@@ -817,10 +733,6 @@ class EditorViewModel @Inject constructor(
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// UI STATE - Same as existing (IMPORTANT: Keep compatible!)
-// ═══════════════════════════════════════════════════════════════════════════════
 
 sealed interface EditorUiState {
     data object Loading : EditorUiState
