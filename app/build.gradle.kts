@@ -1,9 +1,9 @@
 /*
  * DocumentScanner - App Module Configuration
- * Version: 7.2.1 - COIL ADDED FOR MLKIT SETTINGS (2026 Standards)
+ * Version: 7.2.1 - FINAL (2026 Standards)
  * 
- * ✅ ADDED: Coil image loading library
- * ✅ FIXED: MLKit settings image preview support
+ * ✅ ADDED: Coil 3.x image loading library
+ * ✅ ADDED: room-testing for MigrationTest support
  */
 
 import java.util.Properties
@@ -217,13 +217,9 @@ dependencies {
     ksp(libs.androidx.hilt.compiler)
     ksp(libs.room.compiler)
 
-    // ✅ COIL - Image Loading Library (CRITICAL FOR MLKIT SETTINGS)
-    // Version check: либо используй libs.coil.compose если есть в libs.versions.toml,
-    // либо добавь явно версию ниже
+    // ✅ COIL 3.x - Image Loading Library
     implementation(libs.coil.compose)
     implementation(libs.coil.network)
-    // АЛЬТЕРНАТИВА если нет в version catalog:
-    // implementation("io.coil-kt:coil-compose:2.5.0")
 
     implementation(libs.google.material)
 
@@ -232,8 +228,6 @@ dependencies {
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.perf)
-
-    // ✅ Native Compose drag & drop - no external library needed
 
     implementation(libs.kotlinx.datetime)
     implementation(libs.kotlinx.collections.immutable)
@@ -249,10 +243,15 @@ dependencies {
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
+    // ✅ TESTING
     testImplementation(libs.bundles.testing)
+    
+    // ✅ ANDROID TESTING (includes room-testing for MigrationTest)
     androidTestImplementation(libs.bundles.testing.android)
+    androidTestImplementation(libs.room.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test)
+    
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.leakcanary)
 }
@@ -280,7 +279,7 @@ tasks.register("printBuildInfo") {
             |├─ Compile SDK: ${android.compileSdk}
             |├─ Java: ${JavaVersion.current()}
             |├─ Kotlin: ${libs.versions.kotlin.get()}
-            |└─ AGP: ${libs.versions.agp.get()}
+|└─ AGP: ${libs.versions.agp.get()}
             |
         """.trimMargin())
     }
