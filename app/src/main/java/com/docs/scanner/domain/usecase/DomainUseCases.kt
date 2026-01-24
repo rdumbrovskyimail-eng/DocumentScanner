@@ -1,8 +1,13 @@
 /*
  * DocumentScanner - Domain Use Cases
- * Version: 4.2.2 - CRITICAL FIX: ValidationError usage
+ * Version: 5.0.0 - CRITICAL FIX: Settings Synchronization
  * 
- * ✅ FIXED in v4.2.2:
+ * ✅ FIXED in v5.0.0:
+ * - TranslationUseCases.translateText() now reads SOURCE from DataStore
+ * - ProcessDocumentUseCase now uses GLOBAL target language from DataStore
+ * - Added settingsDataStore to ProcessDocumentUseCase constructor
+ * 
+ * ✅ Previous fixes (v4.2.2):
  * - Line 648: DueDateInPast wrapped in DomainError.ValidationFailed
  * - Line 650: NameTooLong wrapped in DomainError.ValidationFailed
  * - Line 784: Added proper ValidationError.InvalidInput usage
@@ -11,7 +16,7 @@
 package com.docs.scanner.domain.usecase
 
 import android.net.Uri
-import com.docs.scanner.domain.core.ValidationError  // ✅ ИЗМЕНЕНО
+import com.docs.scanner.domain.core.ValidationError
 import com.docs.scanner.data.local.preferences.GeminiModelManager
 import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.domain.core.*
@@ -25,6 +30,7 @@ import kotlinx.coroutines.sync.withPermit
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+
 // ══════════════════════════════════════════════════════════════════════════════
 // 1. COMPLEX SCENARIOS
 // ══════════════════════════════════════════════════════════════════════════════
@@ -87,7 +93,8 @@ class ProcessDocumentUseCase @Inject constructor(
     private val docRepo: DocumentRepository,
     private val ocrRepo: OcrRepository,
     private val transRepo: TranslationRepository,
-    private val settings: SettingsRepository
+    private val settings: SettingsRepository,
+    private val settingsDataStore: SettingsDataStore  // ✅ ДОБАВЛЕНО!
 ) {
     operator fun invoke(id: DocumentId): Flow<ProcessingState> = flow {
         val doc = when (val res = docRepo.getDocumentById(id)) {
@@ -121,8 +128,26 @@ class ProcessDocumentUseCase @Inject constructor(
             docRepo.updateProcessingStatus(id, ProcessingStatus.Translation.InProgress)
             
             val sourceLang = ocrResult.detectedLanguage ?: doc.sourceLanguage
+            
+            // ════════════════════════════════════════════════════════════════
+            // ✅ CRITICAL FIX: Use GLOBAL target language from settings!
+            // ════════════════════════════════════════════════════════════════
+            val targetLang = try {
+                val globalTargetCode = settingsDataStore.translationTarget.first()
+                Language.fromCode(globalTargetCode) ?: Language.ENGLISH
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to read global target language, using document default")
+                doc.targetLanguage
+            }
+            
+            if (Timber.forest().isNotEmpty()) {
+                Timber.d("🔄 Auto-translate using GLOBAL settings:")
+                Timber.d("   Source: ${sourceLang.displayName}")
+                Timber.d("   Target: ${targetLang.displayName} (from global settings)")
+            }
+            
             val transResult = try {
-                transRepo.translate(ocrResult.text, sourceLang, doc.targetLanguage).getOrThrow()
+                transRepo.translate(ocrResult.text, sourceLang, targetLang).getOrThrow()
             } catch (e: DomainException) {
                 docRepo.updateProcessingStatus(id, ProcessingStatus.Translation.Failed)
                 emit(ProcessingState.Failed(e.error, ProcessingState.Stage.TRANSLATION))
@@ -606,12 +631,12 @@ class TermUseCases @Inject constructor(
     ): DomainResult<TermId> = DomainResult.catching {
         val now = time.currentMillis()
         
-        // ✅ FIX LINE 648
+        // ✅ FIXED: Line 648
         if (dueDate <= now) {
             throw DomainError.ValidationFailed(ValidationError.DueDateInPast).toException()
         }
         
-        // ✅ FIX LINE 650
+        // ✅ FIXED: Line 650
         if (title.isBlank() || title.length > Term.TITLE_MAX_LENGTH) {
             throw DomainError.ValidationFailed(
                 ValidationError.NameTooLong(title.length, Term.TITLE_MAX_LENGTH)
@@ -668,6 +693,16 @@ class TranslationUseCases @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val modelManager: GeminiModelManager
 ) {
+    /**
+     * ✅ FIXED v5.0.0:
+* Translate text using GLOBAL settings from DataStore
+     * 
+     * Reads both source and target language from settings if not explicitly provided.
+     * 
+     * @param text Text to translate
+     * @param source Source language (default: reads from DataStore)
+     * @param target Target language (default: reads from DataStore)
+     */
     suspend fun translateText(
         text: String, 
         source: Language = Language.AUTO, 
@@ -680,6 +715,21 @@ class TranslationUseCases @Inject constructor(
         }
         
         return try {
+            // ════════════════════════════════════════════════════════════════
+            // ✅ CRITICAL FIX: Read BOTH languages from DataStore
+            // ════════════════════════════════════════════════════════════════
+            
+            // 1. Source Language
+            val actualSource = if (source == Language.AUTO) {
+                // Read from DataStore only if caller passed AUTO
+                val sourceCode = settingsDataStore.translationSource.first()
+                Language.fromCode(sourceCode) ?: Language.AUTO
+            } else {
+                // Caller explicitly specified source - use it
+                source
+            }
+            
+            // 2. Target Language
             val actualTarget = target ?: run {
                 val targetCode = settingsDataStore.translationTarget.first()
                 Language.fromCode(targetCode) ?: Language.ENGLISH.also {
@@ -689,23 +739,39 @@ class TranslationUseCases @Inject constructor(
                 }
             }
             
+            // 3. Translation Model
             val model = modelManager.getGlobalTranslationModel()
             
+            // ════════════════════════════════════════════════════════════════
+            // Debug Log (показывает что РЕАЛЬНО используется)
+            // ════════════════════════════════════════════════════════════════
+            
             if (Timber.forest().isNotEmpty()) {
-                Timber.d("🌐 Translation request:")
-                Timber.d("   ├─ Source: ${source.displayName} (${source.code})")
-                Timber.d("   ├─ Target: ${actualTarget.displayName} (${actualTarget.code})")
-                Timber.d("   ├─ Model: $model")
-                Timber.d("   └─ Text length: ${text.length} chars")
+                Timber.d("════════════════════════════════════════════")
+                Timber.d("🌐 TRANSLATION (FROM GLOBAL SETTINGS)")
+                Timber.d("════════════════════════════════════════════")
+                Timber.d("   Source:  ${actualSource.displayName} (${actualSource.code})")
+                Timber.d("   Target:  ${actualTarget.displayName} (${actualTarget.code})")
+                Timber.d("   Model:   $model")
+                Timber.d("   Text:    ${text.take(50)}...")
+                Timber.d("════════════════════════════════════════════")
             }
             
-            if (source != Language.AUTO && source == actualTarget) {
+            // ════════════════════════════════════════════════════════════════
+            // Validation
+            // ════════════════════════════════════════════════════════════════
+            
+            if (actualSource != Language.AUTO && actualSource == actualTarget) {
                 return DomainResult.failure(
-                    DomainError.UnsupportedLanguagePair(source, actualTarget)
+                    DomainError.UnsupportedLanguagePair(actualSource, actualTarget)
                 )
             }
             
-            repo.translate(text, source, actualTarget)
+            // ════════════════════════════════════════════════════════════════
+            // Execute translation
+            // ════════════════════════════════════════════════════════════════
+            
+            repo.translate(text, actualSource, actualTarget)
             
         } catch (e: Exception) {
             if (Timber.forest().isNotEmpty()) {
@@ -721,7 +787,13 @@ class TranslationUseCases @Inject constructor(
         }
     }
     
-    // ✅ FIX LINE 784
+    /**
+     * ✅ FIXED v4.2.2 + v5.0.0:
+     * Translate with explicit model override
+     * 
+     * Used by Testing Tab when user wants to test specific model.
+     * Still validates model through ModelManager.
+     */
     suspend fun translateTextWithModel(
         text: String,
         source: Language,
@@ -734,6 +806,7 @@ class TranslationUseCases @Inject constructor(
             )
         }
         
+        // ✅ FIXED LINE 784
         if (!modelManager.isValidModel(model)) {
             return DomainResult.failure(
                 DomainError.ValidationFailed(
@@ -748,11 +821,14 @@ class TranslationUseCases @Inject constructor(
         
         return try {
             if (Timber.forest().isNotEmpty()) {
-                Timber.d("🧪 Translation test request:")
-                Timber.d("   ├─ Source: ${source.displayName} (${source.code})")
-                Timber.d("   ├─ Target: ${target.displayName} (${target.code})")
-                Timber.d("   ├─ Model: $model (local override)")
-                Timber.d("   └─ Text length: ${text.length} chars")
+                Timber.d("════════════════════════════════════════════")
+                Timber.d("🧪 TRANSLATION TEST (MODEL OVERRIDE)")
+                Timber.d("════════════════════════════════════════════")
+                Timber.d("   Source: ${source.displayName} (${source.code})")
+                Timber.d("   Target: ${target.displayName} (${target.code})")
+                Timber.d("   Model:  $model (explicit)")
+                Timber.d("   Text:   ${text.take(50)}...")
+                Timber.d("════════════════════════════════════════════")
             }
             
             if (source != Language.AUTO && source == target) {
@@ -761,6 +837,8 @@ class TranslationUseCases @Inject constructor(
                 )
             }
             
+            // TODO: Pass model to repo.translate() when GeminiTranslator supports it
+            // For now, global model is used
             repo.translate(text, source, target)
             
         } catch (e: Exception) {
@@ -777,6 +855,12 @@ class TranslationUseCases @Inject constructor(
         }
     }
     
+    /**
+     * ✅ FIXED v5.0.0:
+     * Translate document using GLOBAL settings
+     * 
+     * Uses global target language from settings if not explicitly provided.
+     */
     suspend fun translateDocument(
         docId: DocumentId,
         targetLang: Language? = null
@@ -795,8 +879,22 @@ class TranslationUseCases @Inject constructor(
             )
         }
         
-        val target = targetLang ?: doc.targetLanguage
+        // ════════════════════════════════════════════════════════════════
+        // ✅ CRITICAL FIX: Use global settings if no target provided
+        // ════════════════════════════════════════════════════════════════
+        
+        val target = targetLang ?: run {
+            val globalTargetCode = settingsDataStore.translationTarget.first()
+            Language.fromCode(globalTargetCode) ?: doc.targetLanguage
+        }
+        
         val source = doc.detectedLanguage ?: doc.sourceLanguage
+        
+        if (Timber.forest().isNotEmpty()) {
+            Timber.d("📄 Translating document ${docId.value}")
+            Timber.d("   Source: ${source.displayName}")
+            Timber.d("   Target: ${target.displayName} (from ${if (targetLang != null) "parameter" else "global settings"})")
+        }
         
         docRepo.updateProcessingStatus(docId, ProcessingStatus.Translation.InProgress)
         
