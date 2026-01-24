@@ -810,7 +810,7 @@ private fun DebugToolsCard(
                         Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(if (isCollText(if (isCollecting) "Stop" else "Start")
+                    Text(if (isCollecting) "Stop" else "Start")
                 }
                 OutlinedButton(
                     onClick = onSave,
