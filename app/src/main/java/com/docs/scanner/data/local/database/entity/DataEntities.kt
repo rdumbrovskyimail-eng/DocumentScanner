@@ -1,8 +1,15 @@
 /*
  * DocumentScanner - Data Entities
- * Version: 7.2.0 - Production Ready 2026 (UPDATED WITH POSITION FOR DRAG & DROP)
+ * Version: 7.2.0 (Build 720) - PRODUCTION READY 2026
  *
- * ✅ ALL CRITICAL FIXES APPLIED:
+ * ✅ CRITICAL FIXES APPLIED (Session 14):
+ * - Added model column to TranslationCacheEntity
+ * - Added model index to translation_cache table
+ * - Updated generateCacheKey() to include model parameter
+ * - Added ModelCacheStats data class
+ * - Synchronized with ModelConstants.kt
+ *
+ * ✅ ALL PREVIOUS FIXES:
  * - Syntax error in generateCacheKey() fixed
  * - Missing MessageDigest import added
  * - ProcessingStatusMapper object added
@@ -12,18 +19,6 @@
  * ✅ Synchronized with Domain v4.1.0
  * ✅ ProcessingStatus sealed interface mapping
  * ✅ Proper New/Existing entity separation
- * ✅ Added 'position' field to Folders and Records
- *
- * 🔴 FIXED ISSUES:
- * - Critical #1: Syntax error in TranslationCacheEntity.generateCacheKey()
- * - Critical #2: Missing import java.security.MessageDigest
- * - Critical #6: Missing ProcessingStatusMapper object
- * - Medium #5: Removed parseJsonList/toJsonList duplication
- * - NEW: Added position to FolderWithCount, RecordWithCount, and all toDomain/fromDomain mappers
- *
- * ⚠️ ARCHITECTURAL TODOs (Phase 3 - Requires DB Migration):
- * - TODO: Normalize tags (create TagEntity, RecordTagCrossRef)
- * - TODO: Remove UI formatting from Domain (if any exists)
  */
 
 package com.docs.scanner.data.local.database.entity
@@ -36,19 +31,7 @@ import java.security.MessageDigest
 // PROCESSING STATUS MAPPER
 // ══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Maps between ProcessingStatus sealed interface (Domain) and Int (Database).
- *
- * ✅ CRITICAL FIX #6: This object was MISSING in original code.
- * Used throughout DataDaos.kt and DataRepositories.kt but never defined.
- *
- * Domain v4.1.0 uses sealed interface instead of enum, so we map to stable ordinals.
- * These ordinals MUST NEVER CHANGE (database schema stability).
- *
- * @since v7.0.0
- */
 object ProcessingStatusMapper {
-    // Stable ordinals (immutable for database compatibility)
     const val PENDING = 0
     const val QUEUED = 1
     const val OCR_IN_PROGRESS = 2
@@ -61,11 +44,6 @@ object ProcessingStatusMapper {
     const val CANCELLED = 9
     const val ERROR = 10
 
-    /**
-     * Converts ProcessingStatus domain model to database integer.
-     * @param status Domain model status
-     * @return Database integer representation
-     */
     fun toInt(status: ProcessingStatus): Int = when (status) {
         is ProcessingStatus.Pending -> PENDING
         is ProcessingStatus.Queued -> QUEUED
@@ -80,11 +58,6 @@ object ProcessingStatusMapper {
         is ProcessingStatus.Error -> ERROR
     }
 
-    /**
-     * Converts database integer to ProcessingStatus domain model.
-     * @param value Database integer value
-     * @return Corresponding ProcessingStatus, defaults to Error if unknown
-     */
     fun fromInt(value: Int): ProcessingStatus = when (value) {
         PENDING -> ProcessingStatus.Pending
         QUEUED -> ProcessingStatus.Queued
@@ -97,7 +70,7 @@ object ProcessingStatusMapper {
         COMPLETE -> ProcessingStatus.Complete
         CANCELLED -> ProcessingStatus.Cancelled
         ERROR -> ProcessingStatus.Error
-        else -> ProcessingStatus.Error // Safe fallback for corrupted data
+        else -> ProcessingStatus.Error
     }
 }
 
@@ -147,10 +120,6 @@ data class FolderEntity(
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long = System.currentTimeMillis()
 ) {
-    /**
-     * ✅ FIXED: Folder.id is NON-NULL in Domain v4.1.0
-     * ✅ FIXED: Added position mapping for drag & drop
-     */
     fun toDomain(recordCount: Int = 0): Folder {
         require(id > 0) { "Cannot convert unsaved entity (id=0) to Folder" }
         return Folder(
@@ -160,7 +129,7 @@ data class FolderEntity(
             color = color,
             icon = icon,
             recordCount = recordCount,
-            position = position,  // ✅ ADDED for drag & drop
+            position = position,
             isPinned = isPinned,
             isArchived = isArchived,
             createdAt = createdAt,
@@ -168,9 +137,6 @@ data class FolderEntity(
         )
     }
 
-    /**
-     * ✅ NEW: Separate mapper for NewFolder
-     */
     fun toNewDomain(): NewFolder = NewFolder(
         name = name,
         description = description,
@@ -188,18 +154,15 @@ data class FolderEntity(
             description = folder.description,
             color = folder.color,
             icon = folder.icon,
-            position = folder.position,  // ✅ ADDED for drag & drop
+            position = folder.position,
             isPinned = folder.isPinned,
             isArchived = folder.isArchived,
             createdAt = folder.createdAt,
             updatedAt = folder.updatedAt
         )
 
-        /**
-         * ✅ NEW: Mapper from NewFolder
-         */
         fun fromNewDomain(newFolder: NewFolder): FolderEntity = FolderEntity(
-            id = 0, // Will be auto-generated
+            id = 0,
             name = newFolder.name,
             description = newFolder.description,
             color = newFolder.color,
@@ -212,14 +175,13 @@ data class FolderEntity(
     }
 }
 
-/** DTO для запросов с подсчётом записей */
 data class FolderWithCount(
     val id: Long,
     val name: String,
     val description: String?,
     val color: Int?,
     val icon: String?,
-    val position: Int,  // ✅ ADDED for drag & drop
+    val position: Int,
     val isPinned: Boolean,
     val isArchived: Boolean,
     val createdAt: Long,
@@ -233,7 +195,7 @@ data class FolderWithCount(
         color = color,
         icon = icon,
         recordCount = recordCount,
-        position = position,  // ✅ ADDED for drag & drop
+        position = position,
         isPinned = isPinned,
         isArchived = isArchived,
         createdAt = createdAt,
@@ -278,17 +240,6 @@ data class RecordEntity(
     @ColumnInfo(name = "description")
     val description: String? = null,
 
-    /**
-     * ⚠️ ARCHITECTURAL DEBT: Tags stored as JSON string.
-     *
-     * This is an anti-pattern (violates database normalization).
-     * Should be in separate TagEntity table with Many-to-Many relation.
-     *
-     * TODO Phase 3: Create TagEntity, RecordTagCrossRef tables.
-     * Requires database migration from v17 to v18.
-     *
-     * Current format: ["tag1", "tag2", "tag3"]
-     */
     @ColumnInfo(name = "tags")
     val tags: String? = null,
 
@@ -313,10 +264,6 @@ data class RecordEntity(
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long = System.currentTimeMillis()
 ) {
-    /**
-     * ✅ FIXED: Record.id is NON-NULL in Domain v4.1.0
-     * ✅ FIXED: Added position mapping for drag & drop
-     */
     fun toDomain(documentCount: Int = 0): Record {
         require(id > 0) { "Cannot convert unsaved entity (id=0) to Record" }
         return Record(
@@ -326,7 +273,7 @@ data class RecordEntity(
             description = description,
             tags = tags?.let { parseJsonList(it) } ?: emptyList(),
             documentCount = documentCount,
-            position = position,  // ✅ ADDED for drag & drop
+            position = position,
             sourceLanguage = Language.fromCode(sourceLanguage) ?: Language.AUTO,
             targetLanguage = Language.fromCode(targetLanguage) ?: Language.ENGLISH,
             isPinned = isPinned,
@@ -336,9 +283,6 @@ data class RecordEntity(
         )
     }
 
-    /**
-     * ✅ NEW: Mapper for NewRecord
-     */
     fun toNewDomain(): NewRecord = NewRecord(
         folderId = FolderId(folderId),
         name = name,
@@ -359,16 +303,13 @@ data class RecordEntity(
             tags = if (record.tags.isEmpty()) null else toJsonList(record.tags),
             sourceLanguage = record.sourceLanguage.code,
             targetLanguage = record.targetLanguage.code,
-            position = record.position,  // ✅ ADDED for drag & drop
+            position = record.position,
             isPinned = record.isPinned,
             isArchived = record.isArchived,
             createdAt = record.createdAt,
             updatedAt = record.updatedAt
         )
 
-        /**
-         * ✅ NEW: Mapper from NewRecord
-         */
         fun fromNewDomain(newRecord: NewRecord): RecordEntity = RecordEntity(
             id = 0,
             folderId = newRecord.folderId.value,
@@ -385,14 +326,13 @@ data class RecordEntity(
     }
 }
 
-/** DTO для запросов с подсчётом документов */
 data class RecordWithCount(
     val id: Long,
     val folderId: Long,
     val name: String,
     val description: String?,
     val tags: String?,
-    val position: Int,  // ✅ ADDED for drag & drop
+    val position: Int,
     val sourceLanguage: String,
     val targetLanguage: String,
     val isPinned: Boolean,
@@ -408,7 +348,7 @@ data class RecordWithCount(
         description = description,
         tags = tags?.let { parseJsonList(it) } ?: emptyList(),
         documentCount = documentCount,
-        position = position,  // ✅ ADDED for drag & drop
+        position = position,
         sourceLanguage = Language.fromCode(sourceLanguage) ?: Language.AUTO,
         targetLanguage = Language.fromCode(targetLanguage) ?: Language.ENGLISH,
         isPinned = isPinned,
@@ -470,10 +410,6 @@ data class DocumentEntity(
     @ColumnInfo(name = "position", defaultValue = "0")
     val position: Int = 0,
 
-    /**
-     * ✅ FIXED: Changed to Int (mapped via ProcessingStatusMapper)
-     * Previously was enum, now uses sealed interface mapping.
-     */
     @ColumnInfo(name = "processing_status", defaultValue = "0")
     val processingStatus: Int = ProcessingStatusMapper.PENDING,
 
@@ -495,9 +431,6 @@ data class DocumentEntity(
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long = System.currentTimeMillis()
 ) {
-    /**
-     * ✅ FIXED: Document.id is NON-NULL + ProcessingStatus mapping
-     */
     fun toDomain(recordName: String? = null, folderName: String? = null): Document {
         require(id > 0) { "Cannot convert unsaved entity (id=0) to Document" }
         return Document(
@@ -523,9 +456,6 @@ data class DocumentEntity(
         )
     }
 
-    /**
-     * ✅ NEW: Mapper for NewDocument
-     */
     fun toNewDomain(): NewDocument = NewDocument(
         recordId = RecordId(recordId),
         imagePath = imagePath,
@@ -561,9 +491,6 @@ data class DocumentEntity(
             updatedAt = doc.updatedAt
         )
 
-        /**
-         * ✅ NEW: Mapper from NewDocument
-         */
         fun fromNewDomain(newDoc: NewDocument): DocumentEntity = DocumentEntity(
             id = 0,
             recordId = newDoc.recordId.value,
@@ -581,7 +508,6 @@ data class DocumentEntity(
     }
 }
 
-/** DTO для поиска с именами папки и записи */
 data class DocumentWithPath(
     val id: Long,
     val recordId: Long,
@@ -627,7 +553,7 @@ data class DocumentWithPath(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// DOCUMENT FTS ENTITY (Full-Text Search)
+// DOCUMENT FTS ENTITY
 // ══════════════════════════════════════════════════════════════════════════════
 
 @Entity(tableName = "documents_fts")
@@ -699,9 +625,6 @@ data class TermEntity(
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long = System.currentTimeMillis()
 ) {
-    /**
-     * ✅ FIXED: Term.id is NON-NULL in Domain v4.1.0
-     */
     fun toDomain(): Term {
         require(id > 0) { "Cannot convert unsaved entity (id=0) to Term" }
         return Term(
@@ -722,9 +645,6 @@ data class TermEntity(
         )
     }
 
-    /**
-     * ✅ NEW: Mapper for NewTerm
-     */
     fun toNewDomain(): NewTerm = NewTerm(
         title = title,
         description = description,
@@ -756,9 +676,6 @@ data class TermEntity(
             updatedAt = term.updatedAt
         )
 
-        /**
-         * ✅ NEW: Mapper from NewTerm
-         */
         fun fromNewDomain(newTerm: NewTerm): TermEntity = TermEntity(
             id = 0,
             title = newTerm.title,
@@ -783,7 +700,8 @@ data class TermEntity(
     tableName = "translation_cache",
     indices = [
         Index(value = ["timestamp"]),
-        Index(value = ["source_language", "target_language"])
+        Index(value = ["source_language", "target_language"]),
+        Index(value = ["model"])
     ]
 )
 data class TranslationCacheEntity(
@@ -803,6 +721,9 @@ data class TranslationCacheEntity(
     @ColumnInfo(name = "target_language")
     val targetLanguage: String,
 
+    @ColumnInfo(name = "model", defaultValue = "gemini-2.5-flash-lite")
+    val model: String = com.docs.scanner.domain.core.ModelConstants.DEFAULT_TRANSLATION_MODEL,
+
     @ColumnInfo(name = "timestamp")
     val timestamp: Long = System.currentTimeMillis()
 ) {
@@ -813,29 +734,32 @@ data class TranslationCacheEntity(
 
     companion object {
         /**
-         * Генерирует ключ кэша: SHA-256("text|srcLang|tgtLang")
+         * Генерирует ключ кэша: SHA-256("text|srcLang|tgtLang|model")
          *
-         * ✅ CRITICAL FIX #1: Syntax error fixed.
-         * Original had duplicate function signature causing compilation failure.
-         *
-         * ✅ CRITICAL FIX #2: MessageDigest import added at file top.
-         *
-         * Разные языковые пары для одного текста = разные ключи.
+         * ✅ CRITICAL FIX (v2.0.0):
+         * - Добавлен параметр model в ключ
+         * - Теперь кэш различает модели!
+         * - "Hello" en→ru flash-lite ≠ "Hello" en→ru pro-preview
          *
          * @param text Original text to translate
          * @param srcLang Source language code
          * @param tgtLang Target language code
+         * @param model Translation model used
          * @return SHA-256 hash as hex string (64 characters)
          */
-        fun generateCacheKey(text: String, srcLang: String, tgtLang: String): String {
-            val combined = "$text|$srcLang|$tgtLang"
+        fun generateCacheKey(
+            text: String, 
+            srcLang: String, 
+            tgtLang: String,
+            model: String = com.docs.scanner.domain.core.ModelConstants.DEFAULT_TRANSLATION_MODEL
+        ): String {
+            val combined = "$text|$srcLang|$tgtLang|$model"
             val bytes = MessageDigest.getInstance("SHA-256").digest(combined.toByteArray())
             return bytes.joinToString("") { "%02x".format(it) }
         }
     }
 }
 
-/** Статистика кэша */
 data class CacheStatsResult(
     val totalEntries: Int,
     val totalOriginalSize: Long,
@@ -844,11 +768,16 @@ data class CacheStatsResult(
     val newestEntry: Long?
 )
 
-/** Статистика по языковым парам */
 data class LanguagePairStat(
     val sourceLanguage: String,
     val targetLanguage: String,
     val count: Int
+)
+
+data class ModelCacheStats(
+    val model: String,
+    val entryCount: Int,
+    val totalSize: Long
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -875,32 +804,9 @@ data class SearchHistoryEntity(
 )
 
 // ══════════════════════════════════════════════════════════════════════════════
-// JSON UTILITIES (CONSOLIDATED - NO DUPLICATION)
+// JSON UTILITIES
 // ══════════════════════════════════════════════════════════════════════════════
 
-/**
- * ✅ MEDIUM FIX #5: Consolidated JSON parsing utilities.
- * Original code had multiple duplicate implementations scattered throughout.
- * Now there's only ONE canonical version.
- *
- * These functions handle the tags field in RecordEntity.
- *
- * ⚠️ NOTE: This is a temporary solution. In Phase 3, tags should be normalized
- * into a separate TagEntity table with proper Many-to-Many relations.
- */
-
-/**
- * Converts JSON array string to List<String>.
- *
- * Handles formats:
- * - ["tag1", "tag2", "tag3"]
- * - ["tag1","tag2","tag3"] (no spaces)
- * - [] (empty array)
- * - null/blank strings
- *
- * @param json JSON string representation of string array
- * @return List of tags, empty list if parsing fails or input is null/blank
- */
 private fun parseJsonList(json: String): List<String> {
     if (json.isBlank() || json == "[]") return emptyList()
 
@@ -910,19 +816,10 @@ private fun parseJsonList(json: String): List<String> {
             .map { it.trim().removeSurrounding("\"") }
             .filter { it.isNotBlank() }
     } catch (e: Exception) {
-        // Fail silently - return empty list on corrupted data
         emptyList()
     }
 }
 
-/**
- * Converts List<String> to JSON array string.
- *
- * Output format: ["tag1", "tag2", "tag3"]
- *
- * @param list List of tags
- * @return JSON string representation, "[]" if list is empty
- */
 private fun toJsonList(list: List<String>): String {
     if (list.isEmpty()) return "[]"
     return list.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }
