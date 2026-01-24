@@ -3,9 +3,11 @@
  * Version: 5.0.0 - CRITICAL FIX: Settings Synchronization
  * 
  * ✅ FIXED in v5.0.0:
- * - TranslationUseCases.translateText() now reads SOURCE from DataStore
- * - ProcessDocumentUseCase now uses GLOBAL target language from DataStore
- * - Added settingsDataStore to ProcessDocumentUseCase constructor
+ * - TranslationUseCases.translateText() now reads model from DataStore
+ * - TranslationUseCases.translateTextWithModel() passes model to repository
+ * - TranslationUseCases.translateDocument() uses global translation model
+ * - ProcessDocumentUseCase reads translation model from DataStore
+ * - All translation operations now use selected model from settings
  * 
  * ✅ Previous fixes (v4.2.2):
  * - Line 648: DueDateInPast wrapped in DomainError.ValidationFailed
@@ -130,7 +132,7 @@ class ProcessDocumentUseCase @Inject constructor(
             val sourceLang = ocrResult.detectedLanguage ?: doc.sourceLanguage
             
             // ════════════════════════════════════════════════════════════════
-            // ✅ CRITICAL FIX: Use GLOBAL target language from settings!
+            // ✅ ПРАВКА 4: Читаем GLOBAL target language из DataStore
             // ════════════════════════════════════════════════════════════════
             val targetLang = try {
                 val globalTargetCode = settingsDataStore.translationTarget.first()
@@ -140,14 +142,24 @@ class ProcessDocumentUseCase @Inject constructor(
                 doc.targetLanguage
             }
             
+            // ════════════════════════════════════════════════════════════════
+            // ✅ НОВОЕ: Читаем выбранную модель перевода
+            // ════════════════════════════════════════════════════════════════
+            val translationModel = try {
+                settingsDataStore.translationModel.first()
+            } catch (e: Exception) {
+                GeminiModelManager.DEFAULT_TRANSLATION_MODEL
+            }
+            
             if (Timber.forest().isNotEmpty()) {
                 Timber.d("🔄 Auto-translate using GLOBAL settings:")
                 Timber.d("   Source: ${sourceLang.displayName}")
                 Timber.d("   Target: ${targetLang.displayName} (from global settings)")
+                Timber.d("   Model:  $translationModel")
             }
             
             val transResult = try {
-                transRepo.translate(ocrResult.text, sourceLang, targetLang).getOrThrow()
+                transRepo.translate(ocrResult.text, sourceLang, targetLang, translationModel).getOrThrow()
             } catch (e: DomainException) {
                 docRepo.updateProcessingStatus(id, ProcessingStatus.Translation.Failed)
                 emit(ProcessingState.Failed(e.error, ProcessingState.Stage.TRANSLATION))
@@ -679,7 +691,7 @@ class TermUseCases @Inject constructor(
     suspend fun complete(id: TermId): DomainResult<Unit> = repo.markCompleted(id, time.currentMillis())
     suspend fun uncomplete(id: TermId): DomainResult<Unit> = repo.markNotCompleted(id, time.currentMillis())
     suspend fun cancel(id: TermId): DomainResult<Unit> = repo.cancelTerm(id, time.currentMillis())
-    suspend fun restore(id: TermId): DomainResult<Unit> = repo.restoreTerm(id, time.currentMillis())
+suspend fun restore(id: TermId): DomainResult<Unit> = repo.restoreTerm(id, time.currentMillis())
     
     suspend fun getActiveCount(): Int = repo.getActiveCount()
     suspend fun getOverdueCount(): Int = repo.getOverdueCount(time.currentMillis())
@@ -694,10 +706,10 @@ class TranslationUseCases @Inject constructor(
     private val modelManager: GeminiModelManager
 ) {
     /**
-     * ✅ FIXED v5.0.0:
-* Translate text using GLOBAL settings from DataStore
+     * ✅ FIXED v5.0.0 - ПРАВКА 3.1:
+     * Translate text using GLOBAL settings from DataStore
      * 
-     * Reads both source and target language from settings if not explicitly provided.
+     * Reads source, target language AND translation model from settings if not explicitly provided.
      * 
      * @param text Text to translate
      * @param source Source language (default: reads from DataStore)
@@ -739,7 +751,9 @@ class TranslationUseCases @Inject constructor(
                 }
             }
             
-            // 3. Translation Model
+            // ════════════════════════════════════════════════════════════════
+            // ✅ ПРАВКА 3.1: Read selected translation model from DataStore
+            // ════════════════════════════════════════════════════════════════
             val model = modelManager.getGlobalTranslationModel()
             
             // ════════════════════════════════════════════════════════════════
@@ -768,10 +782,10 @@ class TranslationUseCases @Inject constructor(
             }
             
             // ════════════════════════════════════════════════════════════════
-            // Execute translation
+            // ✅ ПРАВКА 3.1: Pass model to repository
             // ════════════════════════════════════════════════════════════════
             
-            repo.translate(text, actualSource, actualTarget)
+            repo.translate(text, actualSource, actualTarget, model)
             
         } catch (e: Exception) {
             if (Timber.forest().isNotEmpty()) {
@@ -788,7 +802,7 @@ class TranslationUseCases @Inject constructor(
     }
     
     /**
-     * ✅ FIXED v4.2.2 + v5.0.0:
+     * ✅ FIXED v4.2.2 + v5.0.0 - ПРАВКА 3.2:
      * Translate with explicit model override
      * 
      * Used by Testing Tab when user wants to test specific model.
@@ -837,9 +851,10 @@ class TranslationUseCases @Inject constructor(
                 )
             }
             
-            // TODO: Pass model to repo.translate() when GeminiTranslator supports it
-            // For now, global model is used
-            repo.translate(text, source, target)
+            // ════════════════════════════════════════════════════════════════
+            // ✅ ПРАВКА 3.2: Pass explicit model to repository
+            // ════════════════════════════════════════════════════════════════
+            repo.translate(text, source, target, model)
             
         } catch (e: Exception) {
             if (Timber.forest().isNotEmpty()) {
@@ -856,10 +871,10 @@ class TranslationUseCases @Inject constructor(
     }
     
     /**
-     * ✅ FIXED v5.0.0:
+     * ✅ FIXED v5.0.0 - ПРАВКА 3.3:
      * Translate document using GLOBAL settings
      * 
-     * Uses global target language from settings if not explicitly provided.
+     * Uses global target language AND translation model from settings if not explicitly provided.
      */
     suspend fun translateDocument(
         docId: DocumentId,
@@ -890,15 +905,21 @@ class TranslationUseCases @Inject constructor(
         
         val source = doc.detectedLanguage ?: doc.sourceLanguage
         
+        // ════════════════════════════════════════════════════════════════
+        // ✅ ПРАВКА 3.3: Read selected translation model
+        // ════════════════════════════════════════════════════════════════
+        val model = modelManager.getGlobalTranslationModel()
+        
         if (Timber.forest().isNotEmpty()) {
             Timber.d("📄 Translating document ${docId.value}")
             Timber.d("   Source: ${source.displayName}")
             Timber.d("   Target: ${target.displayName} (from ${if (targetLang != null) "parameter" else "global settings"})")
+            Timber.d("   Model:  $model")
         }
         
         docRepo.updateProcessingStatus(docId, ProcessingStatus.Translation.InProgress)
         
-        return repo.translate(doc.originalText, source, target)
+        return repo.translate(doc.originalText, source, target, model)
             .onSuccess { result ->
                 docRepo.updateTranslationResult(
                     docId,
