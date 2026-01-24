@@ -3,6 +3,7 @@ package com.docs.scanner.data.remote.gemini
 import com.docs.scanner.domain.core.DomainError
 import com.docs.scanner.domain.core.DomainResult
 import com.docs.scanner.domain.core.Language
+import com.docs.scanner.domain.core.ModelConstants
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -10,9 +11,14 @@ import javax.inject.Singleton
 /**
  * Gemini API Facade with dual-mode operation.
  * 
- * Version: 2.0.1 - FIXED (2026)
+ * Version: 7.2.0 - MODEL CONSTANTS INTEGRATION (2026)
  * 
- * ✅ FIXES:
+ * ✅ CRITICAL FIX (Session 14):
+ * - Uses ModelConstants.DEFAULT_TRANSLATION_MODEL
+ * - Uses ModelConstants.getFallbackModels() for intelligent fallback
+ * - Removed hardcoded model names
+ * 
+ * ✅ Previous fixes:
  * - Fixed DomainResult.Failure wrapping in generateTextWithKey
  * - Split into two methods: generateText() with failover and generateTextWithKey() for testing
  * - Fixed conflict between manual apiKey parameter and keyManager.executeWithFailover
@@ -21,7 +27,7 @@ import javax.inject.Singleton
  * Features:
  * - Automatic API key failover (production)
  * - Single key testing (settings UI)
- * - Fallback model support
+ * - Intelligent fallback model support via ModelConstants
  * - Comprehensive error handling
  */
 @Singleton
@@ -32,8 +38,8 @@ class GeminiApi @Inject constructor(
     
     companion object {
         private const val TAG = "GeminiApi"
-        private const val DEFAULT_MODEL = "gemini-2.0-flash-lite"
-        private const val FALLBACK_MODEL = "gemini-1.5-flash"
+        private val DEFAULT_MODEL = ModelConstants.DEFAULT_TRANSLATION_MODEL
+        private const val FALLBACK_MODEL = "gemini-2.5-flash"
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
@@ -53,8 +59,8 @@ class GeminiApi @Inject constructor(
      * 4. Returns result or error after all keys exhausted
      * 
      * @param prompt User prompt
-     * @param model Model to use (default: gemini-2.0-flash-lite)
-     * @param fallbackModels Models to try if primary fails
+     * @param model Model to use (default: ModelConstants.DEFAULT_TRANSLATION_MODEL)
+     * @param fallbackModels Models to try if primary fails (auto-generated via ModelConstants)
      * @return Generated text or error
      */
     suspend fun generateText(
@@ -75,7 +81,6 @@ class GeminiApi @Inject constructor(
         return try {
             val request = createRequest(prompt)
             
-            // ✅ Use failover - GeminiKeyManager will try multiple keys
             val response = keyManager.executeWithFailover { apiKey ->
                 service.generateContent(
                     model = model,
@@ -136,7 +141,6 @@ class GeminiApi @Inject constructor(
         return try {
             val request = createRequest(prompt)
             
-            // ✅ Direct call - NO failover, test this specific key
             var lastError: Exception? = null
             val modelsToTry = listOf(model) + fallbackModels
             
@@ -150,7 +154,6 @@ class GeminiApi @Inject constructor(
                         body = request
                     )
                     
-                    // If successful, extract and return
                     return extractTextFromResponse(response)
                     
                 } catch (e: Exception) {
@@ -160,7 +163,6 @@ class GeminiApi @Inject constructor(
                 }
             }
             
-            // All models failed
             Timber.e(lastError, "$TAG: All models failed for test key")
             DomainResult.failure(DomainError.NetworkFailed(lastError!!))
             
