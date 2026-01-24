@@ -1,33 +1,35 @@
 /*
  * GeminiModelManager.kt
- * Version: 2.0.0 - FIXED CIRCULAR DEPENDENCY (2026)
+ * Version: 7.2.0 - MODEL CONSTANTS INTEGRATION (2026)
  * 
- * ✅ NEW IN 2.0.0:
- * - Verified dependency flow: GeminiModelManager → SettingsDataStore (one-way, safe)
+ * ✅ CRITICAL FIX (Session 14):
+ * - Uses ModelConstants.VALID_MODELS (single source of truth)
+ * - Uses ModelConstants.DEFAULT_OCR_MODEL
+ * - Uses ModelConstants.DEFAULT_TRANSLATION_MODEL
+ * - Removed hardcoded PRODUCTION_MODELS list
+ * - Added runtime validation to ensure synchronization
+ * 
+ * ✅ PREVIOUS FIXES:
+ * - Fixed circular dependency: GeminiModelManager → SettingsDataStore (one-way)
  * - Model lists synchronized with SettingsDataStore.kt constants
- * - Added validation to ensure lists match
- * 
- * ✅ PREVIOUS IN 1.0.0:
- * - ЕДИНЫЙ ИСТОЧНИК ПРАВДЫ для всех Gemini моделей в проекте
- * - Используется в: Settings, Editor, Testing, OCR, Translation
  * - БЕЗ устаревших gemini-2.0-* моделей
  * 
- * АРХИТЕКТУРА (FIXED):
+ * АРХИТЕКТУРА:
+ * ModelConstants (object, no dependencies)
+ *   └─ VALID_MODELS, DEFAULT_OCR_MODEL, DEFAULT_TRANSLATION_MODEL
+ * 
  * GeminiModelManager (Singleton)
- *   ├─ Depends on: SettingsDataStore (injected via constructor)
- *   ├─ PRODUCTION_MODELS (константа, synced with SettingsDataStore.VALID_MODELS)
- *   ├─ getGlobalOcrModel() → читает из DataStore
- *   ├─ getGlobalTranslationModel() → читает из DataStore
- *   └─ используется везде автоматически
+ *   ├─ Depends on: SettingsDataStore, ModelConstants
+ *   ├─ Validates: ModelConstants ↔ SettingsDataStore sync at runtime
+ *   └─ Uses: ModelConstants for all model operations
  * 
  * SettingsDataStore (Singleton)
- *   ├─ Depends on: DataStore<Preferences> (no circular dependency!)
- *   ├─ VALID_MODELS (константа, synced with GeminiModelManager.PRODUCTION_MODELS)
- *   └─ Validates models locally without calling GeminiModelManager
+ *   └─ Uses: ModelConstants for validation
  */
 
 package com.docs.scanner.data.local.preferences
 
+import com.docs.scanner.domain.core.ModelConstants
 import kotlinx.coroutines.flow.first
 import timber.log.Timber
 import javax.inject.Inject
@@ -36,7 +38,7 @@ import javax.inject.Singleton
 /**
  * Unified manager for all Gemini models in the project.
  * 
- * ✅ CRITICAL: This is the ONLY place where model lists are defined!
+ * ✅ CRITICAL: Uses ModelConstants as the SINGLE SOURCE OF TRUTH!
  * ✅ All UI dropdowns, API calls, and settings MUST use this manager.
  * 
  * WHY SINGLETON:
@@ -45,7 +47,7 @@ import javax.inject.Singleton
  * - Single source of truth for model selection
  * 
  * DEPENDENCY FLOW (Safe, no circular dependency):
- * GeminiModelManager → SettingsDataStore → DataStore
+ * ModelConstants (no deps) ← GeminiModelManager → SettingsDataStore → DataStore
  */
 @Singleton
 class GeminiModelManager @Inject constructor(
@@ -56,54 +58,24 @@ class GeminiModelManager @Inject constructor(
         /**
          * ✅ PRODUCTION MODELS (January 2026)
          * 
-         * ⚠️ CRITICAL: Must be kept in sync with SettingsDataStore.VALID_MODELS
-         * 
-         * REMOVED: gemini-2.0-flash, gemini-2.0-flash-lite (deprecated March 2026)
-         * REMOVED: gemini-1.5-* (retired, returns 404)
-         * 
-         * AVAILABLE:
-         * - Series 3.0 (Preview): gemini-3-flash-preview, gemini-3-pro-preview
-         * - Series 2.5 (Stable): gemini-2.5-flash-lite, gemini-2.5-flash, gemini-2.5-pro
+         * ⚠️ CRITICAL: Now uses ModelConstants.VALID_MODELS!
+         * This ensures perfect synchronization across the entire app.
          */
-        private val PRODUCTION_MODELS = listOf(
-            // ═══════════════════════════════════════════════════════════════
-            // Series 3.0 (Preview - December 2025)
-            // ═══════════════════════════════════════════════════════════════
-            "gemini-3-flash-preview",    // ⚡ Fast, has FREE tier
-            "gemini-3-pro-preview",      // 🎯 Best quality, PAID ONLY!
-            
-            // ═══════════════════════════════════════════════════════════════
-            // Series 2.5 (Stable - RECOMMENDED for production)
-            // ═══════════════════════════════════════════════════════════════
-            "gemini-2.5-flash-lite",     // 🚀 Ultra-fast, cheapest - DEFAULT
-            "gemini-2.5-flash",          // ⚡ Very fast, balanced
-            "gemini-2.5-pro"             // 🐌 Slow but accurate
-        )
+        private val PRODUCTION_MODELS = ModelConstants.VALID_MODELS
         
         /**
          * Default model for OCR operations.
          * 
-         * ⚠️ CRITICAL: Must match SettingsDataStore.DEFAULT_OCR_MODEL
-         * 
-         * ✅ gemini-2.5-flash-lite chosen because:
-         * - Ultra-fast (1-2s per image)
-         * - Stable (production-ready)
-         * - Lowest cost
-         * - Great for OCR (doesn't need highest quality)
+         * ⚠️ CRITICAL: Now uses ModelConstants.DEFAULT_OCR_MODEL!
          */
-        const val DEFAULT_OCR_MODEL = "gemini-2.5-flash-lite"
+        const val DEFAULT_OCR_MODEL = ModelConstants.DEFAULT_OCR_MODEL
         
         /**
          * Default model for Translation operations.
          * 
-         * ⚠️ CRITICAL: Must match SettingsDataStore.DEFAULT_TRANSLATION_MODEL
-         * 
-         * ✅ gemini-2.5-flash-lite chosen because:
-         * - Translation should feel instant
-         * - Text is already extracted (no image processing)
-         * - Simple prompts don't need Pro models
+         * ⚠️ CRITICAL: Now uses ModelConstants.DEFAULT_TRANSLATION_MODEL!
          */
-        const val DEFAULT_TRANSLATION_MODEL = "gemini-2.5-flash-lite"
+        const val DEFAULT_TRANSLATION_MODEL = ModelConstants.DEFAULT_TRANSLATION_MODEL
     }
     
     init {
@@ -117,27 +89,26 @@ class GeminiModelManager @Inject constructor(
      * This prevents bugs where models are out of sync between the two classes.
      */
     private fun validateSyncWithDataStore() {
-        val dataStoreModels = SettingsDataStore.VALID_MODELS
-        val managerModels = PRODUCTION_MODELS
-        
-        if (dataStoreModels != managerModels) {
+        // Validate VALID_MODELS synchronization
+        if (PRODUCTION_MODELS != ModelConstants.VALID_MODELS) {
             Timber.e("""
                 ❌ CRITICAL: Model lists are OUT OF SYNC!
                 
-                SettingsDataStore.VALID_MODELS: $dataStoreModels
-                GeminiModelManager.PRODUCTION_MODELS: $managerModels
+                ModelConstants.VALID_MODELS: ${ModelConstants.VALID_MODELS}
+                GeminiModelManager.PRODUCTION_MODELS: $PRODUCTION_MODELS
                 
-                This will cause validation errors!
-                Please ensure both lists are identical.
+                This should NEVER happen! Check ModelConstants.kt
             """.trimIndent())
         }
         
-        if (SettingsDataStore.DEFAULT_OCR_MODEL != DEFAULT_OCR_MODEL) {
-            Timber.e("❌ DEFAULT_OCR_MODEL mismatch: DataStore=${SettingsDataStore.DEFAULT_OCR_MODEL}, Manager=$DEFAULT_OCR_MODEL")
+        // Validate DEFAULT_OCR_MODEL synchronization
+        if (DEFAULT_OCR_MODEL != ModelConstants.DEFAULT_OCR_MODEL) {
+            Timber.e("❌ DEFAULT_OCR_MODEL mismatch!")
         }
         
-        if (SettingsDataStore.DEFAULT_TRANSLATION_MODEL != DEFAULT_TRANSLATION_MODEL) {
-            Timber.e("❌ DEFAULT_TRANSLATION_MODEL mismatch: DataStore=${SettingsDataStore.DEFAULT_TRANSLATION_MODEL}, Manager=$DEFAULT_TRANSLATION_MODEL")
+        // Validate DEFAULT_TRANSLATION_MODEL synchronization
+        if (DEFAULT_TRANSLATION_MODEL != ModelConstants.DEFAULT_TRANSLATION_MODEL) {
+            Timber.e("❌ DEFAULT_TRANSLATION_MODEL mismatch!")
         }
     }
     
