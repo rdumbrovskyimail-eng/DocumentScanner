@@ -1,13 +1,21 @@
 /*
  * DocumentScanner - Data Access Objects
- * Version: 6.5.0 - PRODUCTION READY 2026 (WITH POSITION IN SELECT)
+ * Version: 7.2.0 (Build 720) - PRODUCTION READY 2026
  *
- * ✅ Merged all DAOs into single file
- * ✅ Added getAllModifiedSince() methods for incremental backup
- * ✅ Optimized SQL queries with JOINs
- * ✅ Full compatibility with Domain v4.1.0
- * ✅ Added ORDER BY position queries for manual sorting
- * ✅ FIXED: Added position field to all FolderWithCount/RecordWithCount SELECT queries
+ * ✅ CRITICAL FIXES APPLIED (Session 14):
+ * - Added model column support to TranslationCacheDao
+ * - Added getByModel() query for model-specific cache lookup
+ * - Added clearByModel() for clearing cache by model
+ * - Added getStatsByModel() for per-model cache statistics
+ * - Updated queries to support model-aware caching
+ *
+ * ✅ ALL PREVIOUS FIXES:
+ * - Merged all DAOs into single file
+ * - Added getAllModifiedSince() methods for incremental backup
+ * - Optimized SQL queries with JOINs
+ * - Full compatibility with Domain v4.1.0
+ * - Added ORDER BY position queries for manual sorting
+ * - FIXED: Added position field to all FolderWithCount/RecordWithCount SELECT queries
  */
 
 package com.docs.scanner.data.local.database.dao
@@ -47,7 +55,6 @@ interface FolderDao {
     @Query("SELECT * FROM folders WHERE id = :folderId")
     fun observeById(folderId: Long): Flow<FolderEntity?>
 
-    // Получение папки с количеством записей внутри
     @Query("""
         SELECT f.id, f.name, f.description, f.color, f.icon, f.position,
                f.is_pinned AS isPinned, f.is_archived AS isArchived, 
@@ -59,10 +66,6 @@ interface FolderDao {
         GROUP BY f.id
     """)
     suspend fun getByIdWithCount(folderId: Long): FolderWithCount?
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // СОРТИРОВКА ПО ДАТЕ (updated_at DESC)
-    // ═══════════════════════════════════════════════════════════════════════════
 
     @Query("""
         SELECT f.id, f.name, f.description, f.color, f.icon, f.position,
@@ -89,10 +92,6 @@ interface FolderDao {
     """)
     fun observeAllIncludingArchivedWithCount(): Flow<List<FolderWithCount>>
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // СОРТИРОВКА ПО ИМЕНИ (name ASC)
-    // ═══════════════════════════════════════════════════════════════════════════
-
     @Query("""
         SELECT f.id, f.name, f.description, f.color, f.icon, f.position,
                f.is_pinned AS isPinned, f.is_archived AS isArchived, 
@@ -118,10 +117,6 @@ interface FolderDao {
     """)
     fun observeAllIncludingArchivedByName(): Flow<List<FolderWithCount>>
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // СОРТИРОВКА ПО ПОЗИЦИИ (position ASC) - для ручного режима
-    // ═══════════════════════════════════════════════════════════════════════════
-
     @Query("""
         SELECT f.id, f.name, f.description, f.color, f.icon, f.position,
                f.is_pinned AS isPinned, f.is_archived AS isArchived, 
@@ -146,8 +141,6 @@ interface FolderDao {
         ORDER BY f.is_pinned DESC, f.position ASC
     """)
     fun observeAllIncludingArchivedByPosition(): Flow<List<FolderWithCount>>
-
-    // ═══════════════════════════════════════════════════════════════════════════
 
     @Query("SELECT EXISTS(SELECT 1 FROM folders WHERE id = :folderId)")
     suspend fun exists(folderId: Long): Boolean
@@ -220,10 +213,6 @@ interface RecordDao {
     """)
     suspend fun getByIdWithCount(recordId: Long): RecordWithCount?
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // СОРТИРОВКА ПО ДАТЕ (updated_at DESC)
-    // ═══════════════════════════════════════════════════════════════════════════
-
     @Query("""
         SELECT r.id, r.folder_id AS folderId, r.name, r.description, r.tags, r.position,
                r.source_language AS sourceLanguage, r.target_language AS targetLanguage,
@@ -251,10 +240,6 @@ interface RecordDao {
         ORDER BY r.is_pinned DESC, r.updated_at DESC
     """)
     fun observeByFolderIncludingArchivedWithCount(folderId: Long): Flow<List<RecordWithCount>>
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // СОРТИРОВКА ПО ИМЕНИ (name ASC)
-    // ═══════════════════════════════════════════════════════════════════════════
 
     @Query("""
         SELECT r.id, r.folder_id AS folderId, r.name, r.description, r.tags, r.position,
@@ -284,10 +269,6 @@ interface RecordDao {
     """)
     fun observeByFolderIncludingArchivedByName(folderId: Long): Flow<List<RecordWithCount>>
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // СОРТИРОВКА ПО ПОЗИЦИИ (position ASC) - для ручного режима
-    // ═══════════════════════════════════════════════════════════════════════════
-
     @Query("""
         SELECT r.id, r.folder_id AS folderId, r.name, r.description, r.tags, r.position,
                r.source_language AS sourceLanguage, r.target_language AS targetLanguage,
@@ -315,10 +296,6 @@ interface RecordDao {
         ORDER BY r.is_pinned DESC, r.position ASC
     """)
     fun observeByFolderIncludingArchivedByPosition(folderId: Long): Flow<List<RecordWithCount>>
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // ОСТАЛЬНЫЕ ЗАПРОСЫ
-    // ═══════════════════════════════════════════════════════════════════════════
 
     @Query("""
         SELECT r.id, r.folder_id AS folderId, r.name, r.description, r.tags, r.position,
@@ -676,6 +653,22 @@ interface TranslationCacheDao {
         FROM translation_cache
     """)
     suspend fun getStats(): CacheStatsResult
+
+    @Query("SELECT * FROM translation_cache WHERE model = :model ORDER BY timestamp DESC")
+    suspend fun getByModel(model: String): List<TranslationCacheEntity>
+
+    @Query("DELETE FROM translation_cache WHERE model = :model")
+    suspend fun clearByModel(model: String): Int
+
+    @Query("""
+        SELECT model, 
+               COUNT(*) as entryCount,
+               COALESCE(SUM(LENGTH(original_text) + LENGTH(translated_text)), 0) as totalSize
+        FROM translation_cache 
+        GROUP BY model
+        ORDER BY entryCount DESC
+    """)
+    suspend fun getStatsByModel(): List<ModelCacheStats>
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
