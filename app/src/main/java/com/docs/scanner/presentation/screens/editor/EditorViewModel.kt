@@ -1,6 +1,6 @@
 /*
  * EditorViewModel.kt
- * Version: 6.2.1 - PRODUCTION READY (2026) - 100% FIXED
+ * Version: 6.3.0 - PRODUCTION READY (2026) - 100% FIXED
  */
 
 package com.docs.scanner.presentation.screens.editor
@@ -352,7 +352,7 @@ class EditorViewModel @Inject constructor(
         
         val docs = currentState.documents
         val index = docs.indexOfFirst { it.id.value == documentId }
-        if (index >= 0 && index < docs.lastIndex) {
+        if (index >= 0 && index < docs.size - 1) {
             reorderDocuments(index, index + 1)
         }
     }
@@ -609,7 +609,7 @@ class EditorViewModel @Inject constructor(
         val history = _editHistory.value.toMutableList()
         if (history.isEmpty()) return
         
-        val lastEdit = history.removeAt(history.lastIndex)
+        val lastEdit = history.removeAt(history.size - 1)
         _editHistory.value = history
         
         viewModelScope.launch {
@@ -626,202 +626,201 @@ class EditorViewModel @Inject constructor(
 
     private fun addToHistory(
         documentId: Long, 
-        field: TextEditField, 
-        previousValue: String?, 
-        newValue: String?
-    ) {
-        val history = _editHistory.value.toMutableList()
-        history.add(TextEditHistoryItem(documentId, field, previousValue, newValue))
-        
-        while (history.size > maxHistorySize) {
-            history.removeAt(0)
-        }
-        
-        _editHistory.value = history
+        field: TextEditField,previousValue: String?,
+newValue: String?
+) {
+val history = _editHistory.value.toMutableList()
+history.add(TextEditHistoryItem(documentId, field, previousValue, newValue))
+while (history.size > maxHistorySize) {
+        history.removeAt(0)
     }
+    
+    _editHistory.value = history
+}
 
-    fun retryOcr(documentId: Long) {
-        viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
+fun retryOcr(documentId: Long) {
+    viewModelScope.launch {
+        val currentState = _uiState.value
+        if (currentState !is EditorUiState.Success) return@launch
 
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Retrying OCR...",
-                processingProgress = 30
-            )
+        _uiState.value = currentState.copy(
+            isProcessing = true,
+            processingMessage = "Retrying OCR...",
+            processingProgress = 30
+        )
 
-            when (val result = useCases.fixOcr(documentId)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    _uiState.value = currentState.copy(isProcessing = false)
-                }
-                is com.docs.scanner.domain.model.Result.Error -> {
-                    _uiState.value = currentState.copy(
-                        isProcessing = false,
-                        errorMessage = "OCR failed: ${result.exception.message}"
-                    )
-                }
-                else -> {}
+        when (val result = useCases.fixOcr(documentId)) {
+            is com.docs.scanner.domain.model.Result.Success -> {
+                _uiState.value = currentState.copy(isProcessing = false)
             }
+            is com.docs.scanner.domain.model.Result.Error -> {
+                _uiState.value = currentState.copy(
+                    isProcessing = false,
+                    errorMessage = "OCR failed: ${result.exception.message}"
+                )
+            }
+            else -> {}
         }
     }
+}
 
-    fun retryTranslation(documentId: Long) {
-        viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
+fun retryTranslation(documentId: Long) {
+    viewModelScope.launch {
+        val currentState = _uiState.value
+        if (currentState !is EditorUiState.Success) return@launch
 
-            val doc = useCases.getDocumentById(documentId)
-            if (doc == null) {
-                updateErrorMessage("Document not found")
-                return@launch
+        val doc = useCases.getDocumentById(documentId)
+        if (doc == null) {
+            updateErrorMessage("Document not found")
+            return@launch
+        }
+        if (doc.originalText.isNullOrBlank()) {
+            updateErrorMessage("No OCR text to translate")
+            return@launch
+        }
+
+        _uiState.value = currentState.copy(
+            isProcessing = true,
+            processingMessage = "Retrying translation...",
+            processingProgress = 30
+        )
+
+        val target = targetLanguage.value
+        val model = translationModel.value
+        
+        Timber.d("🌐 Retrying translation:")
+        Timber.d("   ├─ Target: ${target.displayName} (${target.code})")
+        Timber.d("   └─ Model: $model")
+
+        when (val result = useCases.translation.translateDocument(
+            docId = DocumentId(documentId),
+            targetLang = target
+        )) {
+            is DomainResult.Success -> {
+                _uiState.value = currentState.copy(isProcessing = false)
             }
-            if (doc.originalText.isNullOrBlank()) {
-                updateErrorMessage("No OCR text to translate")
-                return@launch
+            is DomainResult.Failure -> {
+                _uiState.value = currentState.copy(
+                    isProcessing = false,
+                    errorMessage = "Translation failed: ${result.error.message}"
+                )
             }
+        }
+    }
+}
 
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Retrying translation...",
-                processingProgress = 30
-            )
+fun retryFailedDocuments() {
+    val currentState = _uiState.value
+    if (currentState !is EditorUiState.Success) return
+    
+    val failedDocs = currentState.documents.filter { it.processingStatus.isFailed }
+    if (failedDocs.isEmpty()) return
+    
+    viewModelScope.launch {
+        _uiState.value = currentState.copy(
+            isProcessing = true,
+            processingMessage = "Retrying failed...",
+            processingProgress = 0
+        )
+        
+        useCases.batch.processDocuments(
+            docIds = failedDocs.map { it.id },
+            onProgress = { done, total ->
+                _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
+                    processingMessage = "Processing ($done/$total)...",
+                    processingProgress = (done * 100) / total
+                ) ?: return@processDocuments
+            }
+        )
+        
+        _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
+            isProcessing = false
+        ) ?: return@launch
+    }
+}
 
-            val target = targetLanguage.value
-            val model = translationModel.value
-            
-            Timber.d("🌐 Retrying translation:")
-            Timber.d("   ├─ Target: ${target.displayName} (${target.code})")
-            Timber.d("   └─ Model: $model")
+fun retryAllOcr() {
+    val currentState = _uiState.value
+    if (currentState !is EditorUiState.Success) return
+    if (currentState.documents.isEmpty()) return
+    
+    viewModelScope.launch {
+        _uiState.value = currentState.copy(
+            isProcessing = true,
+            processingMessage = "Retrying all OCR...",
+            processingProgress = 0
+        )
+        
+        val total = currentState.documents.size
+        currentState.documents.forEachIndexed { index, doc ->
+            useCases.fixOcr(doc.id.value)
+            _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
+                processingProgress = ((index + 1) * 100) / total
+            ) ?: return@launch
+        }
+        
+        _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
+            isProcessing = false
+        ) ?: return@launch
+    }
+}
 
-            when (val result = useCases.translation.translateDocument(
-                docId = DocumentId(documentId),
+fun retryAllTranslation() {
+    val currentState = _uiState.value
+    if (currentState !is EditorUiState.Success) return
+    if (currentState.documents.isEmpty()) return
+    
+    viewModelScope.launch {
+        _uiState.value = currentState.copy(
+            isProcessing = true,
+            processingMessage = "Retrying all translations...",
+            processingProgress = 0
+        )
+        
+        val target = targetLanguage.value
+        val total = currentState.documents.size
+        var failedCount = 0
+        
+        Timber.d("🌐 Retrying all translations to: ${target.displayName}")
+        
+        currentState.documents.forEachIndexed { index, doc ->
+            when (useCases.translation.translateDocument(
+                docId = doc.id,
                 targetLang = target
             )) {
-                is DomainResult.Success -> {
-                    _uiState.value = currentState.copy(isProcessing = false)
-                }
-                is DomainResult.Failure -> {
-                    _uiState.value = currentState.copy(
-                        isProcessing = false,
-                        errorMessage = "Translation failed: ${result.error.message}"
-                    )
-                }
-            }
-        }
-    }
-
-    fun retryFailedDocuments() {
-        val currentState = _uiState.value
-        if (currentState !is EditorUiState.Success) return
-        
-        val failedDocs = currentState.documents.filter { it.processingStatus.isFailed }
-        if (failedDocs.isEmpty()) return
-        
-        viewModelScope.launch {
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Retrying failed...",
-                processingProgress = 0
-            )
-            
-            useCases.batch.processDocuments(
-                docIds = failedDocs.map { it.id },
-                onProgress = { done, total ->
-                    _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                        processingMessage = "Processing ($done/$total)...",
-                        processingProgress = (done * 100) / total
-                    ) ?: return@processDocuments
-                }
-            )
-            
-            _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                isProcessing = false
-            ) ?: return@launch
-        }
-    }
-
-    fun retryAllOcr() {
-        val currentState = _uiState.value
-        if (currentState !is EditorUiState.Success) return
-        if (currentState.documents.isEmpty()) return
-        
-        viewModelScope.launch {
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Retrying all OCR...",
-                processingProgress = 0
-            )
-            
-            val total = currentState.documents.size
-            currentState.documents.forEachIndexed { index, doc ->
-                useCases.fixOcr(doc.id.value)
-                _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                    processingProgress = ((index + 1) * 100) / total
-                ) ?: return@launch
+                is DomainResult.Failure -> failedCount++
+                else -> {}
             }
             
             _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                isProcessing = false
+                processingProgress = ((index + 1) * 100) / total
             ) ?: return@launch
         }
-    }
-
-    fun retryAllTranslation() {
-        val currentState = _uiState.value
-        if (currentState !is EditorUiState.Success) return
-        if (currentState.documents.isEmpty()) return
         
-        viewModelScope.launch {
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Retrying all translations...",
-                processingProgress = 0
-            )
-            
-            val target = targetLanguage.value
-            val total = currentState.documents.size
-            var failedCount = 0
-            
-            Timber.d("🌐 Retrying all translations to: ${target.displayName}")
-            
-            currentState.documents.forEachIndexed { index, doc ->
-                when (useCases.translation.translateDocument(
-                    docId = doc.id,
-                    targetLang = target
-                )) {
-                    is DomainResult.Failure -> failedCount++
-                    else -> {}
-                }
-                
-                _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                    processingProgress = ((index + 1) * 100) / total
-                ) ?: return@launch
-            }
-            
-            _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                isProcessing = false,
-                errorMessage = if (failedCount > 0) "$failedCount translations failed" else null
-            ) ?: return@launch
+        _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
+            isProcessing = false,
+            errorMessage = if (failedCount > 0) "$failedCount translations failed" else null
+        ) ?: return@launch
+    }
+}
+
+fun moveDocument(documentId: Long, targetRecordId: Long) {
+    if (targetRecordId == recordId) {
+        updateErrorMessage("Document is already in this record")
+        return
+    }
+    
+    viewModelScope.launch {
+        when (val result = useCases.documents.move(
+            DocumentId(documentId),
+            RecordId(targetRecordId)
+        )) {
+            is DomainResult.Success -> { /* Auto-refresh */ }
+            is DomainResult.Failure -> updateErrorMessage("Failed to move: ${result.error.message}")
         }
     }
+}
 
-    fun moveDocument(documentId: Long, targetRecordId: Long) {
-        if (targetRecordId == recordId) {
-            updateErrorMessage("Document is already in this record")
-            return
-        }
-        
-        viewModelScope.launch {
-            when (val result = useCases.documents.move(
-                DocumentId(documentId),
-RecordId(targetRecordId)
-)) {
-is DomainResult.Success -> { /* Auto-refresh */ }
-is DomainResult.Failure -> updateErrorMessage("Failed to move: ${result.error.message}")
-}
-}
-}
 fun enterSelectionMode() {
     _isSelectionMode.value = true
 }
@@ -985,7 +984,6 @@ fun aiRewriteText(documentId: Long, text: String, isOcrText: Boolean) {
         )
         
         try {
-            // Берем модель из настроек (реактивно)
             val model = translationModel.value
 
             Timber.d("🤖 AI Rewrite using model: $model")
