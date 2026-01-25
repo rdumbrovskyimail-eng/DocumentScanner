@@ -194,19 +194,19 @@ class EditorViewModel @Inject constructor(
             _uiState.value = EditorUiState.Error("Invalid record ID")
         }
     }
-    
     private fun loadOcrSettings() {
-        viewModelScope.launch {
-            settingsDataStore.confidenceThreshold.collect { threshold ->
-                _ocrSettings.value = _ocrSettings.value.copy(confidenceThreshold = threshold)
-            }
-        }
-        viewModelScope.launch {
-            settingsDataStore.geminiEnabled.collect { enabled ->
-                _ocrSettings.value = _ocrSettings.value.copy(geminiEnabled = enabled)
-            }
+    viewModelScope.launch {
+        settingsDataStore.confidenceThreshold.collect { threshold ->
+            _ocrSettings.value = _ocrSettings.value.copy(confidenceThreshold = threshold)
         }
     }
+    viewModelScope.launch {
+        // ✅ ИСПРАВЛЕНО: используем geminiOcrEnabled вместо geminiEnabled
+        settingsDataStore.geminiOcrEnabled.collect { enabled ->
+            _ocrSettings.value = _ocrSettings.value.copy(geminiEnabled = enabled)
+        }
+    }
+}
 
     private fun loadData() {
         viewModelScope.launch {
