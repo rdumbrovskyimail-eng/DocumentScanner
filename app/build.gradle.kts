@@ -1,9 +1,10 @@
 /*
  * DocumentScanner - App Module Configuration
- * Version: 7.2.1 - FINAL (2026 Standards)
+ * Version: 7.2.2 - FINAL (2026 Standards) + Drag & Drop Support
  * 
  * ✅ ADDED: Coil 3.x image loading library
  * ✅ ADDED: room-testing for MigrationTest support
+ * ✅ ADDED: sh.calvin.reorderable for Drag & Drop functionality
  */
 
 import java.util.Properties
@@ -50,8 +51,8 @@ android {
         minSdk = 26
         targetSdk = 36
         
-        versionCode = 721
-        versionName = "7.2.1"
+        versionCode = 722
+        versionName = "7.2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -241,6 +242,9 @@ dependencies {
 
     implementation(libs.androidx.profileinstaller)
 
+    // ✅ DRAG & DROP LIBRARY - sh.calvin.reorderable
+    implementation("sh.calvin.reorderable:reorderable:2.3.0")
+
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     // ✅ TESTING
@@ -279,7 +283,7 @@ tasks.register("printBuildInfo") {
             |├─ Compile SDK: ${android.compileSdk}
             |├─ Java: ${JavaVersion.current()}
             |├─ Kotlin: ${libs.versions.kotlin.get()}
-|└─ AGP: ${libs.versions.agp.get()}
+            |└─ AGP: ${libs.versions.agp.get()}
             |
         """.trimMargin())
     }
