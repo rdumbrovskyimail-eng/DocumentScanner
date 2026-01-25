@@ -805,210 +805,185 @@ private fun ActionButtonsRow(
         
         // Clear
         if (onClearFormatting != null) {
-    MicroButton(
-        text = "Clear",
-        icon = Icons.Default.FormatClear,
-        onClick = {
-            pendingAction = "clear"
-            showTextSelector = true
-        },
-        enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
-    )
-}
-        
-        Spacer(modifier = Modifier.weight(1f))
-        
-        // Share page
-        if (onSharePage != null) {
-            IconButton(
-                onClick = onSharePage,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    Icons.Default.Share,
-                    contentDescription = "Share page",
-                    modifier = Modifier.size(18.dp),
-                    tint = GoogleDocsTextSecondary
-                )
-            }
-        }
-        
-        // More menu
-        IconButton(
-            onClick = onMenuClick,
-            modifier = Modifier.size(36.dp)
-        ) {
-            Icon(
-                Icons.Default.MoreVert,
-                contentDescription = "More options",
-                modifier = Modifier.size(18.dp),
-                tint = GoogleDocsTextSecondary
+            MicroButton(
+                text = "Clear",
+                icon = Icons.Default.FormatClear,
+                onClick = {
+                    pendingAction = "clear"
+                    showTextSelector = true
+                },
+                enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
             )
         }
-    }
-    
-    // Text selector dialog
-    if (showTextSelector) {
-        AlertDialog(
-            onDismissRequest = { 
-                showTextSelector = false 
-                pendingAction = null
-            },
-            title = { Text("Select text") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (ocrText.isNotBlank()) {
-                        OutlinedButton(
-                            onClick = {
-                                when (pendingAction) {
-                                    "ai" -> onAiRewrite?.invoke(true)
-                                    "copy" -> onCopyText?.invoke(ocrText)
-                                    "paste" -> onPasteText?.invoke(true)
-                                    "clear" -> onClearFormatting?.invoke(true)
-                                }
-                                showTextSelector = false
-                                pendingAction = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("OCR Text")
-                        }
-                    }
-                    if (translatedText.isNotBlank()) {
-                        OutlinedButton(
-                            onClick = {
-                                when (pendingAction) {
-                                    "ai" -> onAiRewrite?.invoke(false)
-                                    "copy" -> onCopyText?.invoke(translatedText)
-                                    "paste" -> onPasteText?.invoke(false)
-                                    "clear" -> onClearFormatting?.invoke(false)
-                                }
-                                showTextSelector = false
-                                pendingAction = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Translation")
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { 
-                    showTextSelector = false 
-                    pendingAction = null
-                }) {
-                    Text("Cancel")
-                }
-            }
+        
+        Spacer(modifier = Modifier.weight(1f))
+// Share page
+if (onSharePage != null) {
+IconButton(
+onClick = onSharePage,
+modifier = Modifier.size(36.dp)
+) {
+Icon(
+Icons.Default.Share,
+contentDescription = "Share page",
+modifier = Modifier.size(18.dp),
+tint = GoogleDocsTextSecondary
+)
+}
+}
+// More menu
+    IconButton(
+        onClick = onMenuClick,
+        modifier = Modifier.size(36.dp)
+    ) {
+        Icon(
+            Icons.Default.MoreVert,
+            contentDescription = "More options",
+            modifier = Modifier.size(18.dp),
+            tint = GoogleDocsTextSecondary
         )
     }
 }
 
+// Text selector dialog
+if (showTextSelector) {
+    AlertDialog(
+        onDismissRequest = { 
+            showTextSelector = false 
+            pendingAction = null
+        },
+        title = { Text("Select text") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (ocrText.isNotBlank()) {
+                    OutlinedButton(
+                        onClick = {
+                            when (pendingAction) {
+                                "ai" -> onAiRewrite?.invoke(true)
+                                "copy" -> onCopyText?.invoke(ocrText)
+                                "paste" -> onPasteText?.invoke(true)
+                                "clear" -> onClearFormatting?.invoke(true)
+                            }
+                            showTextSelector = false
+                            pendingAction = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("OCR Text")
+                    }
+                }
+                if (translatedText.isNotBlank()) {
+                    OutlinedButton(
+                        onClick = {
+                            when (pendingAction) {
+                                "ai" -> onAiRewrite?.invoke(false)
+                                "copy" -> onCopyText?.invoke(translatedText)
+                                "paste" -> onPasteText?.invoke(false)
+                                "clear" -> onClearFormatting?.invoke(false)
+                            }
+                            showTextSelector = false
+                            pendingAction = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Translation")
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = { 
+                showTextSelector = false 
+                pendingAction = null
+            }) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+}
 // ═══════════════════════════════════════════════════════════════════════════════
 // HIGHLIGHTED CONFIDENCE TEXT (#56-57)
 // ═══════════════════════════════════════════════════════════════════════════════
-
 @Composable
 private fun HighlightedConfidenceText(
-    text: String,
-    wordConfidences: Map<String, Float>,
-    threshold: Float,
-    onWordTap: (String, Float) -> Unit
+text: String,
+wordConfidences: Map<String, Float>,
+threshold: Float,
+onWordTap: (String, Float) -> Unit
 ) {
-    val annotatedString = buildAnnotatedString {
-        val words = text.split(Regex("\\s+"))
-        words.forEachIndexed { index, word ->
-            // ✅ ИСПРАВЛЕНО: Убираем пунктуацию перед поиском в Map
-            val cleanWord = word.replace(Regex("[^\\w]"), "")
-            val confidence = wordConfidences[cleanWord] ?: wordConfidences[word] ?: 1f
-            
-            if (confidence < threshold) {
-                // Low confidence - highlight
-                val bgColor = when {
-                    confidence < 0.5f -> Color(0xFFF44336).copy(alpha = 0.3f)
-                    confidence < 0.7f -> Color(0xFFFF9800).copy(alpha = 0.3f)
-                    else -> Color(0xFFFFC107).copy(alpha = 0.3f)
-                }
-                
-                pushStringAnnotation("word", "$cleanWord|$confidence")
-                withStyle(SpanStyle(background = bgColor)) {
-                    append(word)  // ✅ Выводим оригинальное слово с пунктуацией
-                }
-                pop()
-            } else {
-                append(word)
+val annotatedString = buildAnnotatedString {
+val words = text.split(Regex("\s+"))
+words.forEachIndexed { index, word ->
+// ✅ ИСПРАВЛЕНО: Убираем пунктуацию перед поиском в Map
+val cleanWord = word.replace(Regex("[^\w]"), "")
+val confidence = wordConfidences[cleanWord] ?: wordConfidences[word] ?: 1f
+if (confidence < threshold) {
+            // Low confidence - highlight
+            val bgColor = when {
+                confidence < 0.5f -> Color(0xFFF44336).copy(alpha = 0.3f)
+                confidence < 0.7f -> Color(0xFFFF9800).copy(alpha = 0.3f)
+                else -> Color(0xFFFFC107).copy(alpha = 0.3f)
             }
             
-            if (index < words.lastIndex) {
-                append(" ")
+            pushStringAnnotation("word", "$cleanWord|$confidence")
+            withStyle(SpanStyle(background = bgColor)) {
+                append(word)  // ✅ Выводим оригинальное слово с пунктуацией
             }
+            pop()
+        } else {
+            append(word)
+        }
+        
+        if (index < words.lastIndex) {
+            append(" ")
         }
     }
-    
-    ClickableText(
-        text = annotatedString,
-        style = MaterialTheme.typography.bodySmall.copy(
-            color = GoogleDocsTextPrimary,
-            textAlign = TextAlign.Justify
-        ),
-        onClick = { offset ->
-            annotatedString.getStringAnnotations("word", offset, offset)
-                .firstOrNull()?.let { annotation ->
-                    val parts = annotation.item.split("|")
-                    if (parts.size == 2) {
-                        onWordTap(parts[0], parts[1].toFloatOrNull() ?: 1f)
-                    }
-                }
-        }
-    )
-}
-    
-    ClickableText(
-        text = annotatedString,
-        style = MaterialTheme.typography.bodySmall.copy(
-            color = GoogleDocsTextPrimary,
-            textAlign = TextAlign.Justify
-        ),
-        onClick = { offset ->
-            annotatedString.getStringAnnotations("word", offset, offset)
-                .firstOrNull()?.let { annotation ->
-                    val parts = annotation.item.split("|")
-                    if (parts.size == 2) {
-                        onWordTap(parts[0], parts[1].toFloatOrNull() ?: 1f)
-                    }
-                }
-        }
-    )
 }
 
+ClickableText(
+    text = annotatedString,
+    style = MaterialTheme.typography.bodySmall.copy(
+        color = GoogleDocsTextPrimary,
+        textAlign = TextAlign.Justify
+    ),
+    onClick = { offset ->
+        annotatedString.getStringAnnotations("word", offset, offset)
+            .firstOrNull()?.let { annotation ->
+                val parts = annotation.item.split("|")
+                if (parts.size == 2) {
+                    onWordTap(parts[0], parts[1].toFloatOrNull() ?: 1f)
+                }
+            }
+    }
+)
+}
 // ═══════════════════════════════════════════════════════════════════════════════
 // HELPER COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════════
-
 @Composable
 private fun SmallIconButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit
+icon: androidx.compose.ui.graphics.vector.ImageVector,
+contentDescription: String,
+onClick: () -> Unit
 ) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.size(28.dp),
-        shape = RoundedCornerShape(8.dp),
-        color = Color.Black.copy(alpha = 0.5f)
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = Color.White,
-                modifier = Modifier.size(16.dp)
-            )
-        }
-    }
+Surface(
+onClick = onClick,
+modifier = Modifier.size(28.dp),
+shape = RoundedCornerShape(8.dp),
+color = Color.Black.copy(alpha = 0.5f)
+) {
+Box(
+contentAlignment = Alignment.Center,
+modifier = Modifier.fillMaxSize()
+) {
+Icon(
+imageVector = icon,
+contentDescription = contentDescription,
+tint = Color.White,
+modifier = Modifier.size(16.dp)
+)
+}
+}
 }
