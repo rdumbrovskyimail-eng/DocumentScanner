@@ -59,13 +59,14 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.docs.scanner.domain.core.ProcessingStatus
 import com.docs.scanner.domain.model.Document
+import com.docs.scanner.presentation.components.MicroButton
 import com.docs.scanner.presentation.theme.*
 import java.io.File
+import java.util.Locale
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DOCUMENT CARD (Google Docs Style 2026) - BACKWARDS COMPATIBLE
@@ -524,10 +525,10 @@ private fun OcrTextContent(
                 document.detectedLanguage?.let { lang ->
                     Surface(
                         shape = RoundedCornerShape(4.dp),
-                        color = GoogleDocsSecondaryContainer
+                        color = MaterialTheme.colorScheme.secondaryContainer
                     ) {
                         Text(
-                            text = lang.uppercase(),
+                            text = lang.uppercase(Locale.getDefault()),
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
@@ -815,23 +816,23 @@ private fun ActionButtonsRow(
                 enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
             )
         }
-        
-        Spacer(modifier = Modifier.weight(1f))
+Spacer(modifier = Modifier.weight(1f))
 // Share page
-if (onSharePage != null) {
-IconButton(
-onClick = onSharePage,
-modifier = Modifier.size(36.dp)
-) {
-Icon(
-Icons.Default.Share,
-contentDescription = "Share page",
-modifier = Modifier.size(18.dp),
-tint = GoogleDocsTextSecondary
-)
-}
-}
-// More menu
+    if (onSharePage != null) {
+        IconButton(
+            onClick = onSharePage,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                Icons.Default.Share,
+                contentDescription = "Share page",
+                modifier = Modifier.size(18.dp),
+                tint = GoogleDocsTextSecondary
+            )
+        }
+    }
+    
+    // More menu
     IconButton(
         onClick = onMenuClick,
         modifier = Modifier.size(36.dp)
@@ -916,7 +917,7 @@ onWordTap: (String, Float) -> Unit
 val annotatedString = buildAnnotatedString {
 val words = text.split(Regex("\s+"))
 words.forEachIndexed { index, word ->
-// ✅ ИСПРАВЛЕНО: Убираем пунктуацию перед поиском в Map
+// Убираем пунктуацию перед поиском в Map
 val cleanWord = word.replace(Regex("[^\w]"), "")
 val confidence = wordConfidences[cleanWord] ?: wordConfidences[word] ?: 1f
 if (confidence < threshold) {
@@ -929,7 +930,7 @@ if (confidence < threshold) {
             
             pushStringAnnotation("word", "$cleanWord|$confidence")
             withStyle(SpanStyle(background = bgColor)) {
-                append(word)  // ✅ Выводим оригинальное слово с пунктуацией
+                append(word)
             }
             pop()
         } else {
