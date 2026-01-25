@@ -54,6 +54,7 @@ import com.docs.scanner.presentation.theme.*
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import java.io.File
+import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
