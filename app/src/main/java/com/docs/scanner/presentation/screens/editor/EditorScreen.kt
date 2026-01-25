@@ -1,6 +1,6 @@
 /*
  * EditorScreen.kt
- * Version: 5.2.2 - PRODUCTION READY (2026) - 100% FIXED
+ * Version: 5.3.0 - PRODUCTION READY (2026) - 100% FIXED
  */
 
 package com.docs.scanner.presentation.screens.editor
@@ -768,9 +768,9 @@ fun EditorScreen(
             },
             confirmButton = {
                 TextButton(
-                    onClick = {
-                        viewModel.updateLanguages(source, target)
-                        showLanguageDialog =false
+                    onClick ={
+viewModel.updateLanguages(source, target)
+showLanguageDialog = false
 }
 ) { Text("Save") }
 },
