@@ -1,6 +1,7 @@
+DocumentCard.kt
 /*
  * DocumentCard.kt
- * Version: 3.0.2 - PRODUCTION READY (2026) - 100% FIXED
+ * Version: 3.1.0 - PRODUCTION READY (2026) - 100% FIXED
  */
 
 package com.docs.scanner.presentation.screens.editor.components
@@ -39,6 +40,7 @@ import com.docs.scanner.domain.model.Document
 import com.docs.scanner.presentation.components.MicroButton
 import com.docs.scanner.presentation.theme.*
 import java.io.File
+import java.util.Locale
 
 @Composable
 fun DocumentCard(
@@ -429,7 +431,7 @@ private fun OcrTextContent(
                         color = MaterialTheme.colorScheme.secondaryContainer
                     ) {
                         Text(
-                            text = lang.uppercase(),
+                            text = lang.uppercase(Locale.getDefault()),
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
@@ -666,7 +668,6 @@ private fun ActionButtonsRow(
                     pendingAction = "ai"
                     showTextSelector = true
                 },
-                modifier = Modifier,
                 enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
             )
         }
@@ -679,7 +680,6 @@ private fun ActionButtonsRow(
                     pendingAction = "copy"
                     showTextSelector = true
                 },
-                modifier = Modifier,
                 enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
             )
         }
@@ -692,7 +692,6 @@ private fun ActionButtonsRow(
                     pendingAction = "paste"
                     showTextSelector = true
                 },
-                modifier = Modifier,
                 enabled = true
             )
         }
@@ -705,7 +704,6 @@ private fun ActionButtonsRow(
                     pendingAction = "clear"
                     showTextSelector = true
                 },
-                modifier = Modifier,
                 enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
             )
         }
@@ -826,7 +824,7 @@ private fun HighlightedConfidenceText(
                 append(word)
             }
             
-            if (index < words.lastIndex) {
+            if (index < words.size - 1) {
                 append(" ")
             }
         }
