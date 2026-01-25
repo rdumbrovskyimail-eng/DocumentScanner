@@ -746,7 +746,7 @@ fun EditorScreen(
                     if (success.record.tags.isEmpty()) {
                         Text("No tags yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
-                        success.record.tags.forEach { tagsuccess.record.tags.forEach { tag ->
+                        success.record.tags.forEach { tag ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
