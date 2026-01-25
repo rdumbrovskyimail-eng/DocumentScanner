@@ -815,272 +815,287 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = useCases.documents.move(
                 DocumentId(documentId),
-                RecordId(targetRecordId)
-            )) {
-                is DomainResult.Success -> { /* Auto-refresh */ }
-                is DomainResult.Failure -> updateErrorMessage("Failed to move: ${result.error.message}")
-            }
-        }
-    }
+RecordId(targetRecordId)
+)) {
+is DomainResult.Success -> { /* Auto-refresh */ }
+is DomainResult.Failure -> updateErrorMessage("Failed to move: ${result.error.message}")
+}
+}
+}
+fun enterSelectionMode() {
+    _isSelectionMode.value = true
+}
 
-    fun enterSelectionMode() {
-        _isSelectionMode.value = true
-    }
+fun exitSelectionMode() {
+    _isSelectionMode.value = false
+    _selectedDocIds.value = emptySet()
+}
 
-    fun exitSelectionMode() {
+fun toggleDocumentSelection(documentId: Long) {
+    val current = _selectedDocIds.value.toMutableSet()
+    if (current.contains(documentId)) {
+        current.remove(documentId)
+    } else {
+        current.add(documentId)
+    }
+    _selectedDocIds.value = current
+    
+    if (current.isEmpty()) {
         _isSelectionMode.value = false
-        _selectedDocIds.value = emptySet()
     }
+}
 
-    fun toggleDocumentSelection(documentId: Long) {
-        val current = _selectedDocIds.value.toMutableSet()
-        if (current.contains(documentId)) {
-            current.remove(documentId)
-        } else {
-            current.add(documentId)
-        }
-        _selectedDocIds.value = current
-        
-        if (current.isEmpty()) {
-            _isSelectionMode.value = false
-        }
+fun selectAll() {
+    val currentState = _uiState.value
+    if (currentState is EditorUiState.Success) {
+        _selectedDocIds.value = currentState.documents.map { it.id.value }.toSet()
     }
+}
 
-    fun selectAll() {
+fun deselectAll() {
+    _selectedDocIds.value = emptySet()
+}
+
+fun deleteSelectedDocuments() {
+    val docIds = _selectedDocIds.value.toList()
+    if (docIds.isEmpty()) return
+    
+    viewModelScope.launch {
         val currentState = _uiState.value
-        if (currentState is EditorUiState.Success) {
-            _selectedDocIds.value = currentState.documents.map { it.id.value }.toSet()
-        }
-    }
-
-    fun deselectAll() {
-        _selectedDocIds.value = emptySet()
-    }
-
-    fun deleteSelectedDocuments() {
-        val docIds = _selectedDocIds.value.toList()
-        if (docIds.isEmpty()) return
+        if (currentState !is EditorUiState.Success) return@launch
         
-        viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
-            
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Deleting ${docIds.size} pages...",
-                processingProgress = 0
-            )
-            
-            useCases.batch.deleteDocuments(
-                docIds = docIds.map { DocumentId(it) },
-                onProgress = { done, total ->
-                    _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                        processingProgress = (done * 100) / total
-                    ) ?: return@deleteDocuments
-                }
-            )
-            
-            _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                isProcessing = false
-            ) ?: return@launch
-            
-            exitSelectionMode()
-        }
-    }
-
-    fun exportSelectedDocuments(asPdf: Boolean) {
-        val docIds = _selectedDocIds.value.toList()
-        if (docIds.isEmpty()) return
+        _uiState.value = currentState.copy(
+            isProcessing = true,
+            processingMessage = "Deleting ${docIds.size} pages...",
+            processingProgress = 0
+        )
         
-        viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
-            
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = if (asPdf) "Generating PDF..." else "Creating ZIP...",
-                processingProgress = 20
-            )
-            
-            when (val result = useCases.export.shareDocuments(
-                docIds = docIds.map { DocumentId(it) },
-                asPdf = asPdf
-            )) {
-                is DomainResult.Success -> {
-                    _uiState.value = currentState.copy(isProcessing = false)
-                    _shareEvent.emit(ShareEvent.File(
-                        result.data, 
-                        if (asPdf) "application/pdf" else "application/zip"
-                    ))
-                    exitSelectionMode()
-                }
-                is DomainResult.Failure -> {
-                    _uiState.value = currentState.copy(
-                        isProcessing = false,
-                        errorMessage = "Export failed: ${result.error.message}"
-                    )
-                }
-            }
-        }
-    }
-
-    fun moveSelectedToRecord(targetRecordId: Long) {
-        val docIds = _selectedDocIds.value.toList()
-        if (docIds.isEmpty()) return
-        
-        viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
-            
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Moving ${docIds.size} pages...",
-                processingProgress = 0
-            )
-            
-            var done = 0
-            docIds.forEach { docId ->
-                useCases.documents.move(DocumentId(docId), RecordId(targetRecordId))
-                    .onSuccess { done++ }
-                
+        useCases.batch.deleteDocuments(
+            docIds = docIds.map { DocumentId(it) },
+            onProgress = { done, total ->
                 _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                    processingProgress = (done * 100) / docIds.size
-                ) ?: return@launch
+                    processingProgress = (done * 100) / total
+                ) ?: return@deleteDocuments
             }
-            
-            _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                isProcessing = false
-            ) ?: return@launch
-            
-            exitSelectionMode()
-        }
+        )
+        
+        _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
+            isProcessing = false
+        ) ?: return@launch
+        
+        exitSelectionMode()
     }
+}
 
-    fun pasteText(documentId: Long, pastedText: String, isOcrText: Boolean) {
-        viewModelScope.launch {
-            val doc = useCases.getDocumentById(documentId) ?: return@launch
-            
-            val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
-            val previousValue = if (isOcrText) doc.originalText else doc.translatedText
-            addToHistory(documentId, field, previousValue, pastedText)
-            
-            val updated = if (isOcrText) {
-                doc.copy(originalText = pastedText)
-            } else {
-                doc.copy(translatedText = pastedText)
-            }
-            
-            useCases.updateDocument(updated)
-        }
-    }
-
-    fun aiRewriteText(documentId: Long, text: String, isOcrText: Boolean) {
-        viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
-            
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "AI is rewriting...",
-                processingProgress = 50
-            )
-            
-            try {
-                val rewrittenText = geminiApi.rewriteText(text)
-                
-                val doc = useCases.getDocumentById(documentId) ?: return@launch
-                
-                val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
-                val previousValue = if (isOcrText) doc.originalText else doc.translatedText
-                addToHistory(documentId, field, previousValue, rewrittenText)
-                
-                val updated = if (isOcrText) {
-                    doc.copy(originalText = rewrittenText)
-                } else {
-                    doc.copy(translatedText = rewrittenText)
-                }
-                
-                useCases.updateDocument(updated)
-                
+fun exportSelectedDocuments(asPdf: Boolean) {
+    val docIds = _selectedDocIds.value.toList()
+    if (docIds.isEmpty()) return
+    
+    viewModelScope.launch {
+        val currentState = _uiState.value
+        if (currentState !is EditorUiState.Success) return@launch
+        
+        _uiState.value = currentState.copy(
+            isProcessing = true,
+            processingMessage = if (asPdf) "Generating PDF..." else "Creating ZIP...",
+            processingProgress = 20
+        )
+        
+        when (val result = useCases.export.shareDocuments(
+            docIds = docIds.map { DocumentId(it) },
+            asPdf = asPdf
+        )) {
+            is DomainResult.Success -> {
                 _uiState.value = currentState.copy(isProcessing = false)
-                
-            } catch (e: Exception) {
+                _shareEvent.emit(ShareEvent.File(
+                    result.data, 
+                    if (asPdf) "application/pdf" else "application/zip"
+                ))
+                exitSelectionMode()
+            }
+            is DomainResult.Failure -> {
                 _uiState.value = currentState.copy(
                     isProcessing = false,
-                    errorMessage = "AI rewrite failed: ${e.message}"
+                    errorMessage = "Export failed: ${result.error.message}"
                 )
             }
         }
     }
+}
 
-    fun clearFormatting(documentId: Long, isOcrText: Boolean) {
-        viewModelScope.launch {
+fun moveSelectedToRecord(targetRecordId: Long) {
+    val docIds = _selectedDocIds.value.toList()
+    if (docIds.isEmpty()) return
+    
+    viewModelScope.launch {
+        val currentState = _uiState.value
+        if (currentState !is EditorUiState.Success) return@launch
+        
+        _uiState.value = currentState.copy(
+            isProcessing = true,
+            processingMessage = "Moving ${docIds.size} pages...",
+            processingProgress = 0
+        )
+        
+        var done = 0
+        docIds.forEach { docId ->
+            useCases.documents.move(DocumentId(docId), RecordId(targetRecordId))
+                .onSuccess { done++ }
+            
+            _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
+                processingProgress = (done * 100) / docIds.size
+            ) ?: return@launch
+        }
+        
+        _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
+            isProcessing = false
+        ) ?: return@launch
+        
+        exitSelectionMode()
+    }
+}
+
+fun pasteText(documentId: Long, pastedText: String, isOcrText: Boolean) {
+    viewModelScope.launch {
+        val doc = useCases.getDocumentById(documentId) ?: return@launch
+        
+        val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
+        val previousValue = if (isOcrText) doc.originalText else doc.translatedText
+        addToHistory(documentId, field, previousValue, pastedText)
+        
+        val updated = if (isOcrText) {
+            doc.copy(originalText = pastedText)
+        } else {
+            doc.copy(translatedText = pastedText)
+        }
+        
+        useCases.updateDocument(updated)
+    }
+}
+
+fun aiRewriteText(documentId: Long, text: String, isOcrText: Boolean) {
+    viewModelScope.launch {
+        val currentState = _uiState.value
+        if (currentState !is EditorUiState.Success) return@launch
+        
+        _uiState.value = currentState.copy(
+            isProcessing = true,
+            processingMessage = "AI is rewriting...",
+            processingProgress = 50
+        )
+        
+        try {
+            // Берем модель из настроек (реактивно)
+            val model = translationModel.value
+
+            Timber.d("🤖 AI Rewrite using model: $model")
+
+            val result = geminiApi.generateText(
+                prompt = "Rewrite and improve this text, keeping the same meaning but making it clearer and more professional:\n\n$text",
+                model = model
+            )
+
+            val rewrittenText = when (result) {
+                is DomainResult.Success -> result.data
+                is DomainResult.Failure -> {
+                    _uiState.value = currentState.copy(
+                        isProcessing = false,
+                        errorMessage = "AI rewrite failed: ${result.error.message}"
+                    )
+                    return@launch
+                }
+            }
+            
             val doc = useCases.getDocumentById(documentId) ?: return@launch
             
-            val originalValue = if (isOcrText) doc.originalText else doc.translatedText
-            if (originalValue == null) return@launch
-            
-            val cleanedText = originalValue
-                .replace(Regex("\\s+"), " ")
-                .replace(Regex("\\n{3,}"), "\n\n")
-                .replace(Regex("^\\s+|\\s+$"), "")
-                .replace(Regex("\\t"), " ")
-            
             val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
-            addToHistory(documentId, field, originalValue, cleanedText)
+            val previousValue = if (isOcrText) doc.originalText else doc.translatedText
+            addToHistory(documentId, field, previousValue, rewrittenText)
             
             val updated = if (isOcrText) {
-                doc.copy(originalText = cleanedText)
+                doc.copy(originalText = rewrittenText)
             } else {
-                doc.copy(translatedText = cleanedText)
+                doc.copy(translatedText = rewrittenText)
             }
             
             useCases.updateDocument(updated)
+            
+            _uiState.value = currentState.copy(isProcessing = false)
+            
+        } catch (e: Exception) {
+            _uiState.value = currentState.copy(
+                isProcessing = false,
+                errorMessage = "AI rewrite failed: ${e.message}"
+            )
         }
-    }
-
-    fun showConfidenceTooltip(word: String, confidence: Float) {
-        _confidenceTooltip.value = word to confidence
-    }
-
-    fun hideConfidenceTooltip() {
-        _confidenceTooltip.value = null
-    }
-
-    fun clearError() {
-        val currentState = _uiState.value
-        if (currentState is EditorUiState.Success) {
-            _uiState.value = currentState.copy(errorMessage = null)
-        }
-    }
-
-    private fun updateErrorMessage(message: String) {
-        val currentState = _uiState.value
-        if (currentState is EditorUiState.Success) {
-            _uiState.value = currentState.copy(errorMessage = message)
-        }
-    }
-
-    fun refreshOcrSettings() {
-        loadOcrSettings()
     }
 }
 
+fun clearFormatting(documentId: Long, isOcrText: Boolean) {
+    viewModelScope.launch {
+        val doc = useCases.getDocumentById(documentId) ?: return@launch
+        
+        val originalValue = if (isOcrText) doc.originalText else doc.translatedText
+        if (originalValue == null) return@launch
+        
+        val cleanedText = originalValue
+            .replace(Regex("\\s+"), " ")
+            .replace(Regex("\\n{3,}"), "\n\n")
+            .replace(Regex("^\\s+|\\s+$"), "")
+            .replace(Regex("\\t"), " ")
+        
+        val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
+        addToHistory(documentId, field, originalValue, cleanedText)
+        
+        val updated = if (isOcrText) {
+            doc.copy(originalText = cleanedText)
+        } else {
+            doc.copy(translatedText = cleanedText)
+        }
+        
+        useCases.updateDocument(updated)
+    }
+}
+
+fun showConfidenceTooltip(word: String, confidence: Float) {
+    _confidenceTooltip.value = word to confidence
+}
+
+fun hideConfidenceTooltip() {
+    _confidenceTooltip.value = null
+}
+
+fun clearError() {
+    val currentState = _uiState.value
+    if (currentState is EditorUiState.Success) {
+        _uiState.value = currentState.copy(errorMessage = null)
+    }
+}
+
+private fun updateErrorMessage(message: String) {
+    val currentState = _uiState.value
+    if (currentState is EditorUiState.Success) {
+        _uiState.value = currentState.copy(errorMessage = message)
+    }
+}
+
+fun refreshOcrSettings() {
+    loadOcrSettings()
+}
+}
 sealed interface EditorUiState {
-    data object Loading : EditorUiState
-    data class Success(
-        val record: Record,
-        val folderName: String,
-        val documents: List<Document>,
-        val isProcessing: Boolean = false,
-        val processingMessage: String = "",
-        val processingProgress: Int = 0,
-        val errorMessage: String? = null
-    ) : EditorUiState
-
-    data class Error(val message: String) : EditorUiState
+data object Loading : EditorUiState
+data class Success(
+val record: Record,
+val folderName: String,
+val documents: List,
+val isProcessing: Boolean = false,
+val processingMessage: String = "",
+val processingProgress: Int = 0,
+val errorMessage: String? = null
+) : EditorUiState
+data class Error(val message: String) : EditorUiState
 }
-
 sealed interface ShareEvent {
-    data class File(val path: String, val mimeType: String) : ShareEvent
+data class File(val path: String, val mimeType: String) : ShareEvent
 }
