@@ -534,6 +534,7 @@ data class Document(
     val position: Int = 0,
     val processingStatus: ProcessingStatus = ProcessingStatus.Pending,
     val ocrConfidence: Float? = null,
+    val wordConfidences: Map<String, Float>? = null,
     val fileSize: Long = 0L,
     val width: Int = 0,
     val height: Int = 0,
@@ -542,7 +543,8 @@ data class Document(
     // Denormalized for UI
     val recordName: String? = null,
     val folderName: String? = null
-) {
+)
+     {
     val hasOcrText: Boolean get() = !originalText.isNullOrBlank()
     val hasTranslation: Boolean get() = !translatedText.isNullOrBlank()
     val aspectRatio: Float get() = if (height > 0) width.toFloat() / height else 1f
