@@ -1,4 +1,3 @@
-DocumentCard.kt
 /*
  * DocumentCard.kt
  * Version: 3.1.0 - PRODUCTION READY (2026) - 100% FIXED
