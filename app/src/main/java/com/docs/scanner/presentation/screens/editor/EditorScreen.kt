@@ -114,7 +114,7 @@ fun EditorScreen(
         uri?.let { 
             viewModel.addDocument(it)
             if (BuildConfig.DEBUG) {
-                timber.log.Timber.d("📷 Single image selected: $it")
+                Timber.d("📷 Single image selected: $it")
             }
         }
     }
@@ -125,7 +125,7 @@ fun EditorScreen(
         if (uris.isNotEmpty()) {
             viewModel.addDocuments(uris)
             if (BuildConfig.DEBUG) {
-                timber.log.Timber.d("📷 Multiple images selected: ${uris.size}")
+                Timber.d("📷 Multiple images selected: ${uris.size}")
             }
         }
     }
