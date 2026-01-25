@@ -920,7 +920,9 @@ private fun HighlightedConfidenceText(
     val annotatedString = buildAnnotatedString {
         val words = text.split(Regex("\\s+"))
         words.forEachIndexed { index, word ->
-            val confidence = wordConfidences[word] ?: 1f
+            // ✅ ИСПРАВЛЕНО: Убираем пунктуацию перед поиском в Map
+            val cleanWord = word.replace(Regex("[^\\w]"), "")
+            val confidence = wordConfidences[cleanWord] ?: wordConfidences[word] ?: 1f
             
             if (confidence < threshold) {
                 // Low confidence - highlight
@@ -930,9 +932,9 @@ private fun HighlightedConfidenceText(
                     else -> Color(0xFFFFC107).copy(alpha = 0.3f)
                 }
                 
-                pushStringAnnotation("word", "$word|$confidence")
+                pushStringAnnotation("word", "$cleanWord|$confidence")
                 withStyle(SpanStyle(background = bgColor)) {
-                    append(word)
+                    append(word)  // ✅ Выводим оригинальное слово с пунктуацией
                 }
                 pop()
             } else {
@@ -944,6 +946,24 @@ private fun HighlightedConfidenceText(
             }
         }
     }
+    
+    ClickableText(
+        text = annotatedString,
+        style = MaterialTheme.typography.bodySmall.copy(
+            color = GoogleDocsTextPrimary,
+            textAlign = TextAlign.Justify
+        ),
+        onClick = { offset ->
+            annotatedString.getStringAnnotations("word", offset, offset)
+                .firstOrNull()?.let { annotation ->
+                    val parts = annotation.item.split("|")
+                    if (parts.size == 2) {
+                        onWordTap(parts[0], parts[1].toFloatOrNull() ?: 1f)
+                    }
+                }
+        }
+    )
+}
     
     ClickableText(
         text = annotatedString,
