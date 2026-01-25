@@ -805,16 +805,16 @@ private fun ActionButtonsRow(
         
         // Clear
         if (onClearFormatting != null) {
-            MicroButton(
-                text = "Clear",
-                icon = Icons.Default.FormatClear,
-                onClick = {
-                    pendingAction = "clear"
-                    showTextSelector = true
-                },
-                enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
-)
-        }
+    MicroButton(
+        text = "Clear",
+        icon = Icons.Default.FormatClear,
+        onClick = {
+            pendingAction = "clear"
+            showTextSelector = true
+        },
+        enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
+    )
+}
         
         Spacer(modifier = Modifier.weight(1f))
         
