@@ -1,13 +1,14 @@
 /*
  * EditorViewModel.kt
- * Version: 6.1.0 - PRODUCTION READY (2026) - 100% FIXED
+ * Version: 6.2.0 - PRODUCTION READY (2026) - 100% FIXED
  * 
- * ✅ КРИТИЧЕСКИЕ ИСПРАВЛЕНИЯ (Session 15):
+ * ✅ КРИТИЧЕСКИЕ ИСПРАВЛЕНИЯ:
  * - translationModel читается из settingsDataStore.translationModel (реактивно!)
  * - Удалены дублирующие импорты reorderable
  * - Добавлена валидация originalText перед retryTranslation
  * - Добавлена обработка ошибок в retryAllTranslation
  * - Drag & Drop отключен в Selection Mode
+ * - Исправлен импорт для reorderDocuments
  */
 
 package com.docs.scanner.presentation.screens.editor
@@ -31,8 +32,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @HiltViewModel
 class EditorViewModel @Inject constructor(
@@ -194,19 +193,19 @@ class EditorViewModel @Inject constructor(
             _uiState.value = EditorUiState.Error("Invalid record ID")
         }
     }
+
     private fun loadOcrSettings() {
-    viewModelScope.launch {
-        settingsDataStore.confidenceThreshold.collect { threshold ->
-            _ocrSettings.value = _ocrSettings.value.copy(confidenceThreshold = threshold)
+        viewModelScope.launch {
+            settingsDataStore.confidenceThreshold.collect { threshold ->
+                _ocrSettings.value = _ocrSettings.value.copy(confidenceThreshold = threshold)
+            }
+        }
+        viewModelScope.launch {
+            settingsDataStore.geminiOcrEnabled.collect { enabled ->
+                _ocrSettings.value = _ocrSettings.value.copy(geminiEnabled = enabled)
+            }
         }
     }
-    viewModelScope.launch {
-        // ✅ ИСПРАВЛЕНО: используем geminiOcrEnabled вместо geminiEnabled
-        settingsDataStore.geminiOcrEnabled.collect { enabled ->
-            _ocrSettings.value = _ocrSettings.value.copy(geminiEnabled = enabled)
-        }
-    }
-}
 
     private fun loadData() {
         viewModelScope.launch {
@@ -549,231 +548,230 @@ class EditorViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 _uiState.value = currentState.copy(
-                    isProcessing = false,errorMessage = "Error: ${e.message}"
-)
-}
-}
-}
-fun shareRecordImagesZip() {
-    viewModelScope.launch {
-        val currentState = _uiState.value
-        if (currentState !is EditorUiState.Success) return@launch
-
-        _uiState.value = currentState.copy(
-            isProcessing = true,
-            processingMessage = "Creating ZIP...",
-            processingProgress = 20
-        )
-
-        try {
-            val docIds = currentState.documents.map { it.id }
-            
-            when (val result = useCases.export.shareDocuments(docIds, asPdf = false)) {
-                is DomainResult.Success -> {
-                    _uiState.value = currentState.copy(isProcessing = false)
-                    _shareEvent.emit(ShareEvent.File(result.data, "application/zip"))
-                }
-                is DomainResult.Failure -> {
-                    _uiState.value = currentState.copy(
-                        isProcessing = false,
-                        errorMessage = "ZIP creation failed: ${result.error.message}"
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            _uiState.value = currentState.copy(
-                isProcessing = false,
-                errorMessage = "Error: ${e.message}"
-            )
-        }
-    }
-}
-
-fun shareSingleImage(imagePath: String) {
-    viewModelScope.launch {
-        _shareEvent.emit(ShareEvent.File(imagePath, "image/*"))
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// TEXT EDITING
-// ═══════════════════════════════════════════════════════════════════════════
-
-fun updateDocumentText(documentId: Long, originalText: String?, translatedText: String?) {
-    viewModelScope.launch {
-        val doc = useCases.getDocumentById(documentId) ?: return@launch
-        
-        val finalOriginalText = originalText ?: doc.originalText
-        val finalTranslatedText = translatedText ?: doc.translatedText
-        
-        if (originalText != null && originalText != doc.originalText) {
-            addToHistory(documentId, TextEditField.OCR_TEXT, doc.originalText, originalText)
-        }
-        if (translatedText != null && translatedText != doc.translatedText) {
-            addToHistory(documentId, TextEditField.TRANSLATED_TEXT, doc.translatedText, translatedText)
-        }
-        
-        val updated = doc.copy(
-            originalText = finalOriginalText,
-            translatedText = finalTranslatedText
-        )
-        
-        when (val result = useCases.updateDocument(updated)) {
-            is com.docs.scanner.domain.model.Result.Success -> { /* Auto-refresh */ }
-            is com.docs.scanner.domain.model.Result.Error -> 
-                updateErrorMessage("Failed to update text: ${result.exception.message}")
-            else -> {}
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// INLINE EDITING & UNDO
-// ═══════════════════════════════════════════════════════════════════════════
-
-fun startInlineEditOcr(documentId: Long) {
-    _inlineEditingDocId.value = documentId
-    _inlineEditingField.value = TextEditField.OCR_TEXT
-}
-
-fun startInlineEditTranslation(documentId: Long) {
-    _inlineEditingDocId.value = documentId
-    _inlineEditingField.value = TextEditField.TRANSLATED_TEXT
-}
-
-fun updateInlineText(text: String) {
-    val docId = _inlineEditingDocId.value ?: return
-    pendingInlineChanges = docId to text
-    
-    autoSaveJob?.cancel()
-    autoSaveJob = viewModelScope.launch {
-        delay(1500)
-        saveInlineChanges()
-    }
-}
-
-fun saveInlineChanges() {
-    val (docId, text) = pendingInlineChanges ?: return
-    val field = _inlineEditingField.value ?: return
-    
-    viewModelScope.launch {
-        val doc = useCases.getDocumentById(docId) ?: return@launch
-        
-        val previousValue = when (field) {
-            TextEditField.OCR_TEXT -> doc.originalText
-            TextEditField.TRANSLATED_TEXT -> doc.translatedText
-        }
-        addToHistory(docId, field, previousValue, text)
-        
-        val updated = when (field) {
-            TextEditField.OCR_TEXT -> doc.copy(originalText = text)
-            TextEditField.TRANSLATED_TEXT -> doc.copy(translatedText = text)
-        }
-        
-        useCases.updateDocument(updated)
-    }
-    
-    pendingInlineChanges = null
-    _inlineEditingDocId.value = null
-    _inlineEditingField.value = null
-}
-
-fun undoLastEdit() {
-    val history = _editHistory.value.toMutableList()
-    if (history.isEmpty()) return
-    
-    val lastEdit = history.removeAt(history.lastIndex)
-    _editHistory.value = history
-    
-    viewModelScope.launch {
-        val doc = useCases.getDocumentById(lastEdit.documentId) ?: return@launch
-        
-        val restored = when (lastEdit.field) {
-            TextEditField.OCR_TEXT -> doc.copy(originalText = lastEdit.previousValue)
-            TextEditField.TRANSLATED_TEXT -> doc.copy(translatedText = lastEdit.previousValue)
-        }
-        
-        useCases.updateDocument(restored)
-    }
-}
-
-private fun addToHistory(
-    documentId: Long, 
-    field: TextEditField, 
-    previousValue: String?, 
-    newValue: String?
-) {
-    val history = _editHistory.value.toMutableList()
-    history.add(TextEditHistoryItem(documentId, field, previousValue, newValue))
-    
-    while (history.size > maxHistorySize) {
-        history.removeAt(0)
-    }
-    
-    _editHistory.value = history
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ✅ ИСПРАВЛЕНО: RETRY OCR/TRANSLATION
-// ═══════════════════════════════════════════════════════════════════════════
-
-fun retryOcr(documentId: Long) {
-    viewModelScope.launch {
-        val currentState = _uiState.value
-        if (currentState !is EditorUiState.Success) return@launch
-
-        _uiState.value = currentState.copy(
-            isProcessing = true,
-            processingMessage = "Retrying OCR...",
-            processingProgress = 30
-        )
-
-        when (val result = useCases.fixOcr(documentId)) {
-            is com.docs.scanner.domain.model.Result.Success -> {
-                _uiState.value = currentState.copy(isProcessing = false)
-            }
-            is com.docs.scanner.domain.model.Result.Error -> {
-                _uiState.value = currentState.copy(
                     isProcessing = false,
-                    errorMessage = "OCR failed: ${result.exception.message}"
+                    errorMessage = "Error: ${e.message}"
                 )
             }
-            else -> {}
         }
     }
-}
 
-// ✅ ИСПРАВЛЕНО: Проверка originalText + использование правильного API
-fun retryTranslation(documentId: Long) {
-    viewModelScope.launch {
-        val currentState = _uiState.value
-        if (currentState !is EditorUiState.Success) return@launch
+    fun shareRecordImagesZip() {
+        viewModelScope.launch {
+            val currentState = _uiState.value
+            if (currentState !is EditorUiState.Success) return@launch
 
-        // ✅ ДОБАВЛЕНО: Проверка наличия originalText
-        val doc = useCases.getDocumentById(documentId)
-        if (doc == null) {
-            updateErrorMessage("Document not found")
-            return@launch
+            _uiState.value = currentState.copy(
+                isProcessing = true,
+                processingMessage = "Creating ZIP...",
+                processingProgress = 20
+            )
+
+            try {
+                val docIds = currentState.documents.map { it.id }
+                
+                when (val result = useCases.export.shareDocuments(docIds, asPdf = false)) {
+                    is DomainResult.Success -> {
+                        _uiState.value = currentState.copy(isProcessing = false)
+                        _shareEvent.emit(ShareEvent.File(result.data, "application/zip"))
+                    }
+                    is DomainResult.Failure -> {
+                        _uiState.value = currentState.copy(
+                            isProcessing = false,
+                            errorMessage = "ZIP creation failed: ${result.error.message}"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.value = currentState.copy(
+                    isProcessing = false,
+                    errorMessage = "Error: ${e.message}"
+                )
+            }
         }
-        if (doc.originalText.isNullOrBlank()) {
-            updateErrorMessage("No OCR text to translate")
-            return@launch
+    }
+
+    fun shareSingleImage(imagePath: String) {
+        viewModelScope.launch {
+            _shareEvent.emit(ShareEvent.File(imagePath, "image/*"))
         }
+    }
 
-        _uiState.value = currentState.copy(
-            isProcessing = true,
-            processingMessage = "Retrying translation...",
-            processingProgress = 30
-        )
+    // ═══════════════════════════════════════════════════════════════════════════
+    // TEXT EDITING
+    // ═══════════════════════════════════════════════════════════════════════════
 
-        val target = targetLanguage.value
-        val model = translationModel.value
+    fun updateDocumentText(documentId: Long, originalText: String?, translatedText: String?) {
+        viewModelScope.launch {
+            val doc = useCases.getDocumentById(documentId) ?: return@launch
+            
+            val finalOriginalText = originalText ?: doc.originalText
+            val finalTranslatedText = translatedText ?: doc.translatedText
+            
+            if (originalText != null && originalText != doc.originalText) {
+                addToHistory(documentId, TextEditField.OCR_TEXT, doc.originalText, originalText)
+            }
+            if (translatedText != null && translatedText != doc.translatedText) {
+                addToHistory(documentId, TextEditField.TRANSLATED_TEXT, doc.translatedText, translatedText)
+            }
+            
+            val updated = doc.copy(
+                originalText = finalOriginalText,
+                translatedText = finalTranslatedText
+            )
+            
+            when (val result = useCases.updateDocument(updated)) {
+                is com.docs.scanner.domain.model.Result.Success -> { /* Auto-refresh */ }
+                is com.docs.scanner.domain.model.Result.Error -> 
+                    updateErrorMessage("Failed to update text: ${result.exception.message}")
+                else -> {}
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // INLINE EDITING & UNDO
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    fun startInlineEditOcr(documentId: Long) {
+        _inlineEditingDocId.value = documentId
+        _inlineEditingField.value = TextEditField.OCR_TEXT
+    }
+
+    fun startInlineEditTranslation(documentId: Long) {
+        _inlineEditingDocId.value = documentId
+        _inlineEditingField.value = TextEditField.TRANSLATED_TEXT
+    }
+
+    fun updateInlineText(text: String) {
+        val docId = _inlineEditingDocId.value ?: return
+        pendingInlineChanges = docId to text
         
-        Timber.d("🌐 Retrying translation:")
-        Timber.d("   ├─ Target: ${target.displayName} (${target.code})")
-        Timber.d("   └─ Model: $model")
+        autoSaveJob?.cancel()
+        autoSaveJob = viewModelScope.launch {
+            delay(1500)
+            saveInlineChanges()
+        }
+    }
 
-        when (val result = useCases.translation.translateDocument(
+    fun saveInlineChanges() {
+        val (docId, text) = pendingInlineChanges ?: return
+        val field = _inlineEditingField.value ?: return
+        
+        viewModelScope.launch {
+            val doc = useCases.getDocumentById(docId) ?: return@launch
+            
+            val previousValue = when (field) {
+                TextEditField.OCR_TEXT -> doc.originalText
+                TextEditField.TRANSLATED_TEXT -> doc.translatedText
+            }
+            addToHistory(docId, field, previousValue, text)
+            
+            val updated = when (field) {
+                TextEditField.OCR_TEXT -> doc.copy(originalText = text)
+                TextEditField.TRANSLATED_TEXT -> doc.copy(translatedText = text)
+            }
+            
+            useCases.updateDocument(updated)
+        }
+        
+        pendingInlineChanges = null
+        _inlineEditingDocId.value = null
+        _inlineEditingField.value = null
+    }
+
+    fun undoLastEdit() {
+        val history = _editHistory.value.toMutableList()
+        if (history.isEmpty()) return
+        
+        val lastEdit = history.removeAt(history.lastIndex)
+        _editHistory.value = history
+        
+        viewModelScope.launch {
+            val doc = useCases.getDocumentById(lastEdit.documentId) ?: return@launch
+            
+            val restored = when (lastEdit.field) {
+                TextEditField.OCR_TEXT -> doc.copy(originalText = lastEdit.previousValue)
+                TextEditField.TRANSLATED_TEXT -> doc.copy(translatedText = lastEdit.previousValue)
+            }
+            
+            useCases.updateDocument(restored)
+        }
+    }
+
+    private fun addToHistory(
+        documentId: Long, 
+        field: TextEditField, 
+        previousValue: String?, 
+        newValue: String?
+    ) {
+        val history = _editHistory.value.toMutableList()
+        history.add(TextEditHistoryItem(documentId, field, previousValue, newValue))
+        
+        while (history.size > maxHistorySize) {
+            history.removeAt(0)
+        }
+        
+        _editHistory.value = history
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ✅ ИСПРАВЛЕНО: RETRY OCR/TRANSLATION
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    fun retryOcr(documentId: Long) {
+        viewModelScope.launch {
+            val currentState = _uiState.value
+            if (currentState !is EditorUiState.Success) return@launch
+
+            _uiState.value = currentState.copy(
+                isProcessing = true,
+                processingMessage = "Retrying OCR...",
+                processingProgress = 30
+            )
+
+            when (val result = useCases.fixOcr(documentId)) {
+                is com.docs.scanner.domain.model.Result.Success -> {
+                    _uiState.value = currentState.copy(isProcessing = false)
+                }
+                is com.docs.scanner.domain.model.Result.Error -> {
+                    _uiState.value = currentState.copy(
+                        isProcessing = false,
+                        errorMessage = "OCR failed: ${result.exception.message}"
+                    )
+                }
+                else -> {}
+            }
+        }
+    }
+
+    fun retryTranslation(documentId: Long) {
+        viewModelScope.launch {
+            val currentState = _uiState.value
+            if (currentState !is EditorUiState.Success) return@launch
+
+            val doc = useCases.getDocumentById(documentId)
+            if (doc == null) {
+                updateErrorMessage("Document not found")
+                return@launch
+            }
+            if (doc.originalText.isNullOrBlank()) {
+                updateErrorMessage("No OCR text to translate")
+                return@launch
+            }
+
+            _uiState.value = currentState.copy(
+                isProcessing = true,
+                processingMessage = "Retrying translation...",
+                processingProgress = 30
+            )
+
+            val target = targetLanguage.value
+            val model = translationModel.value
+            
+            Timber.d("🌐 Retrying translation:")
+            Timber.d("   ├─ Target: ${target.displayName} (${target.code})")
+Timber.d("   └─ Model: $model")
+when (val result = useCases.translation.translateDocument(
             docId = DocumentId(documentId),
             targetLang = target
         )) {
@@ -850,7 +848,6 @@ fun retryAllOcr() {
     }
 }
 
-// ✅ ИСПРАВЛЕНО: Обработка ошибок в retryAllTranslation
 fun retryAllTranslation() {
     val currentState = _uiState.value
     if (currentState !is EditorUiState.Success) return
@@ -865,14 +862,11 @@ fun retryAllTranslation() {
         
         val target = targetLanguage.value
         val total = currentState.documents.size
-        
-        // ✅ ДОБАВЛЕНО: Счетчик ошибок
         var failedCount = 0
         
         Timber.d("🌐 Retrying all translations to: ${target.displayName}")
         
         currentState.documents.forEachIndexed { index, doc ->
-            // ✅ ДОБАВЛЕНО: Обработка результата
             when (useCases.translation.translateDocument(
                 docId = doc.id,
                 targetLang = target
@@ -886,7 +880,6 @@ fun retryAllTranslation() {
             ) ?: return@launch
         }
         
-        // ✅ ДОБАВЛЕНО: Сообщение об ошибках
         _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
             isProcessing = false,
             errorMessage = if (failedCount > 0) "$failedCount translations failed" else null
@@ -898,7 +891,6 @@ fun retryAllTranslation() {
 // MOVE DOCUMENT
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ✅ ДОБАВЛЕНО: Проверка target != current
 fun moveDocument(documentId: Long, targetRecordId: Long) {
     if (targetRecordId == recordId) {
         updateErrorMessage("Document is already in this record")
