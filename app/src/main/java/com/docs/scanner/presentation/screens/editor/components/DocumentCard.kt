@@ -1,6 +1,6 @@
 /*
  * DocumentCard.kt
- * Version: 3.0.1 - PRODUCTION READY (2026) - 100% FIXED
+ * Version: 3.0.2 - PRODUCTION READY (2026) - 100% FIXED
  */
 
 package com.docs.scanner.presentation.screens.editor.components
@@ -39,7 +39,6 @@ import com.docs.scanner.domain.model.Document
 import com.docs.scanner.presentation.components.MicroButton
 import com.docs.scanner.presentation.theme.*
 import java.io.File
-import java.util.Locale
 
 @Composable
 fun DocumentCard(
@@ -324,192 +323,91 @@ private fun LoadingOcrState() {
         CircularProgressIndicator(
             modifier = Modifier.size(32.dp),
             color = GoogleDocsPrimary,
-            strokeWidth = 2.dp)
-Spacer(modifier = Modifier.height(8.dp))
-Text(
-text = "Scanning...",
-style = MaterialTheme.typography.labelMedium,
-color = GoogleDocsTextSecondary
-)
+            strokeWidth = 2.dp
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Scanning...",
+            style = MaterialTheme.typography.labelMedium,
+            color = GoogleDocsTextSecondary
+        )
+    }
 }
-}
+
 @Composable
 private fun ErrorOcrState(onRetry: () -> Unit) {
-Column(
-modifier = Modifier
-.fillMaxSize()
-.padding(12.dp),
-horizontalAlignment = Alignment.CenterHorizontally,
-verticalArrangement = Arrangement.Center
-) {
-Icon(
-imageVector = Icons.Default.ErrorOutline,
-contentDescription = null,
-modifier = Modifier.size(32.dp),
-tint = GoogleDocsError
-)
-Spacer(modifier = Modifier.height(8.dp))
-Text(
-text = "OCR Failed",
-style = MaterialTheme.typography.labelMedium,
-color = GoogleDocsError
-)
-Spacer(modifier = Modifier.height(8.dp))
-TextButton(onClick = onRetry) {
-Icon(
-imageVector = Icons.Default.Refresh,
-contentDescription = null,
-modifier = Modifier.size(16.dp)
-)
-Spacer(modifier = Modifier.width(4.dp))
-Text("Retry")
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.ErrorOutline,
+            contentDescription = null,
+            modifier = Modifier.size(32.dp),
+            tint = GoogleDocsError
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "OCR Failed",
+            style = MaterialTheme.typography.labelMedium,
+            color = GoogleDocsError
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        TextButton(onClick = onRetry) {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Retry")
+        }
+    }
 }
-}
-}
+
 @Composable
 private fun EmptyOcrState() {
-Column(
-modifier = Modifier
-.fillMaxSize()
-.padding(12.dp),
-horizontalAlignment = Alignment.CenterHorizontally,
-verticalArrangement = Arrangement.Center
-) {
-Icon(
-imageVector = Icons.Default.TextFields,
-contentDescription = null,
-modifier = Modifier.size(32.dp),
-tint = GoogleDocsTextTertiary
-)
-Spacer(modifier = Modifier.height(8.dp))
-Text(
-text = "No text detected",
-style = MaterialTheme.typography.labelMedium,
-color = GoogleDocsTextTertiary,
-textAlign = TextAlign.Center
-)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.TextFields,
+            contentDescription = null,
+            modifier = Modifier.size(32.dp),
+            tint = GoogleDocsTextTertiary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "No text detected",
+            style = MaterialTheme.typography.labelMedium,
+            color = GoogleDocsTextTertiary,
+            textAlign = TextAlign.Center
+        )
+    }
 }
-}
+
 @Composable
 private fun OcrTextContent(
-document: Document,
-isInlineEditing: Boolean,
-inlineText: String,
-onInlineTextChange: (String) -> Unit,
-onStartInlineEdit: () -> Unit,
-confidenceThreshold: Float,
-onWordTap: ((String, Float) -> Unit)?,
-hasInlineEditing: Boolean
-) {
-Column(
-modifier = Modifier
-.fillMaxSize()
-.padding(12.dp)
-) {
-Row(
-modifier = Modifier.fillMaxWidth(),
-horizontalArrangement = Arrangement.SpaceBetween,
-verticalAlignment = Alignment.CenterVertically
-) {
-Row(
-verticalAlignment = Alignment.CenterVertically,
-horizontalArrangement = Arrangement.spacedBy(8.dp)
-) {
-Text(
-text = "OCR Text",
-style = MaterialTheme.typography.labelSmall,
-color = GoogleDocsTextTertiary
-)
-document.detectedLanguage?.let { lang ->
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer
-                ) {
-                    Text(
-                        text = lang.uppercase(Locale.getDefault()),
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
-        
-        if (hasInlineEditing) {
-            IconButton(
-                onClick = onStartInlineEdit,
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    if (isInlineEditing) Icons.Default.Check else Icons.Default.Edit,
-                    contentDescription = if (isInlineEditing) "Save" else "Edit inline",
-                    modifier = Modifier.size(16.dp),
-                    tint = GoogleDocsPrimary
-                )
-            }
-        }
-    }
-    
-    Spacer(modifier = Modifier.height(8.dp))
-    
-    Box(
-        modifier = Modifier
-            .weight(1f)
-            .verticalScroll(rememberScrollState())
-    ) {
-        if (isInlineEditing) {
-            OutlinedTextField(
-                value = inlineText,
-                onValueChange = onInlineTextChange,
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = MaterialTheme.typography.bodySmall,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = GoogleDocsPrimary,
-                    unfocusedBorderColor = GoogleDocsBorderLight
-                )
-            )
-        } else if (document.wordConfidences != null && onWordTap != null) {
-            HighlightedConfidenceText(
-                text = document.originalText ?: "",
-                wordConfidences = document.wordConfidences,
-                threshold = confidenceThreshold,
-                onWordTap = onWordTap
-            )
-        } else {
-            Text(
-                text = document.originalText ?: "",
-                style = MaterialTheme.typography.bodySmall,
-                color = GoogleDocsTextPrimary,
-                textAlign = TextAlign.Justify
-            )
-        }
-    }
-}
-}
-@Composable
-private fun TranslationSection(
-document: Document,
-isInlineEditing: Boolean,
-inlineText: String,
-onInlineTextChange: (String) -> Unit,
-onStartInlineEdit: () -> Unit,
-onClick: () -> Unit,
-onRetryTranslation: () -> Unit,
-hasInlineEditing: Boolean
-) {
-if (document.translatedText.isNullOrBlank() &&
-document.processingStatus !is ProcessingStatus.Translation.InProgress &&
-document.processingStatus !is ProcessingStatus.Translation.Failed) {
-return
-}
-Surface(
-    modifier = Modifier
-        .fillMaxWidth()
-        .clip(RoundedCornerShape(12.dp)),
-    color = GoogleDocsTranslationBackground
+    document: Document,
+    isInlineEditing: Boolean,
+    inlineText: String,
+    onInlineTextChange: (String) -> Unit,
+    onStartInlineEdit: () -> Unit,
+    confidenceThreshold: Float,
+    onWordTap: ((String, Float) -> Unit)?,
+    hasInlineEditing: Boolean
 ) {
     Column(
-        modifier = Modifier.padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -517,23 +415,29 @@ Surface(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Translate,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = GoogleDocsTranslationIcon
-                )
                 Text(
-                    text = "Translation",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = GoogleDocsTranslationTitle
+                    text = "OCR Text",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = GoogleDocsTextTertiary
                 )
+                document.detectedLanguage?.let { lang ->
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Text(
+                            text = lang.uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
             }
             
-            if (hasInlineEditing && !document.translatedText.isNullOrBlank()) {
+            if (hasInlineEditing) {
                 IconButton(
                     onClick = onStartInlineEdit,
                     modifier = Modifier.size(28.dp)
@@ -542,322 +446,432 @@ Surface(
                         if (isInlineEditing) Icons.Default.Check else Icons.Default.Edit,
                         contentDescription = if (isInlineEditing) "Save" else "Edit inline",
                         modifier = Modifier.size(16.dp),
-                        tint = GoogleDocsTranslationIcon
+                        tint = GoogleDocsPrimary
                     )
                 }
-            } else if (!hasInlineEditing && !document.translatedText.isNullOrBlank()) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "Edit",
-                    modifier = Modifier.size(14.dp),
-                    tint = GoogleDocsTranslationIcon.copy(alpha = 0.6f)
-                )
             }
         }
         
-        when {
-            document.processingStatus is ProcessingStatus.Translation.InProgress -> {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = GoogleDocsTranslationIcon
-                    )
-                    Text(
-                        text = "Translating...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = GoogleDocsTranslationText
-                    )
-                }
-            }
-            
-            document.processingStatus is ProcessingStatus.Translation.Failed -> {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.ErrorOutline,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = GoogleDocsError
-                        )
-                        Text(
-                            text = "Translation failed",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = GoogleDocsError
-                        )
-                    }
-                    TextButton(
-                        onClick = onRetryTranslation,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                    ) {
-                        Text("Retry", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            }
-            
-            isInlineEditing -> {
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+        ) {
+            if (isInlineEditing) {
                 OutlinedTextField(
                     value = inlineText,
                     onValueChange = onInlineTextChange,
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = MaterialTheme.typography.bodySmall,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = GoogleDocsTranslationIcon,
-                        unfocusedBorderColor = GoogleDocsTranslationBorder
+                        focusedBorderColor = GoogleDocsPrimary,
+                        unfocusedBorderColor = GoogleDocsBorderLight
                     )
                 )
-            }
-            
-            else -> {
+            } else if (document.wordConfidences != null && onWordTap != null) {
+                HighlightedConfidenceText(
+                    text = document.originalText ?: "",
+                    wordConfidences = document.wordConfidences,
+                    threshold = confidenceThreshold,
+                    onWordTap = onWordTap
+                )
+            } else {
                 Text(
-                    text = document.translatedText ?: "",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = GoogleDocsTranslationText,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onClick() }
+                    text = document.originalText ?: "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GoogleDocsTextPrimary,
+                    textAlign = TextAlign.Justify
                 )
             }
         }
     }
 }
+
+@Composable
+private fun TranslationSection(
+    document: Document,
+    isInlineEditing: Boolean,
+    inlineText: String,
+    onInlineTextChange: (String) -> Unit,
+    onStartInlineEdit: () -> Unit,
+    onClick: () -> Unit,
+    onRetryTranslation: () -> Unit,
+    hasInlineEditing: Boolean
+) {
+    if (document.translatedText.isNullOrBlank() &&
+        document.processingStatus !is ProcessingStatus.Translation.InProgress &&
+        document.processingStatus !is ProcessingStatus.Translation.Failed) {
+        return
+    }
+    
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp)),
+        color = GoogleDocsTranslationBackground
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Translate,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = GoogleDocsTranslationIcon
+                    )
+                    Text(
+                        text = "Translation",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = GoogleDocsTranslationTitle
+                    )
+                }
+                
+                if (hasInlineEditing && !document.translatedText.isNullOrBlank()) {
+                    IconButton(
+                        onClick = onStartInlineEdit,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            if (isInlineEditing) Icons.Default.Check else Icons.Default.Edit,
+                            contentDescription = if (isInlineEditing) "Save" else "Edit inline",
+                            modifier = Modifier.size(16.dp),
+                            tint = GoogleDocsTranslationIcon
+                        )
+                    }
+                } else if (!hasInlineEditing && !document.translatedText.isNullOrBlank()) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit",
+                        modifier = Modifier.size(14.dp),
+                        tint = GoogleDocsTranslationIcon.copy(alpha = 0.6f)
+                    )
+                }
+            }
+            
+            when {
+                document.processingStatus is ProcessingStatus.Translation.InProgress -> {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = GoogleDocsTranslationIcon
+                        )
+                        Text(
+                            text = "Translating...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GoogleDocsTranslationText
+                        )
+                    }
+                }
+                
+                document.processingStatus is ProcessingStatus.Translation.Failed -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.ErrorOutline,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = GoogleDocsError
+                            )
+                            Text(
+                                text = "Translation failed",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = GoogleDocsError
+                            )
+                        }
+                        TextButton(
+                            onClick = onRetryTranslation,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Text("Retry", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+                
+                isInlineEditing -> {
+                    OutlinedTextField(
+                        value = inlineText,
+                        onValueChange = onInlineTextChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = GoogleDocsTranslationIcon,
+                            unfocusedBorderColor = GoogleDocsTranslationBorder
+                        )
+                    )
+                }
+                
+                else -> {
+                    Text(
+                        text = document.translatedText ?: "",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = GoogleDocsTranslationText,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onClick() }
+                    )
+                }
+            }
+        }
+    }
 }
+
 @Composable
 private fun ActionButtonsRow(
-document: Document,
-onMenuClick: () -> Unit,
-onCopyText: ((String) -> Unit)?,
-onPasteText: ((Boolean) -> Unit)?,
-onAiRewrite: ((Boolean) -> Unit)?,
-onClearFormatting: ((Boolean) -> Unit)?,
-onSharePage: (() -> Unit)?
+    document: Document,
+    onMenuClick: () -> Unit,
+    onCopyText: ((String) -> Unit)?,
+    onPasteText: ((Boolean) -> Unit)?,
+    onAiRewrite: ((Boolean) -> Unit)?,
+    onClearFormatting: ((Boolean) -> Unit)?,
+    onSharePage: (() -> Unit)?
 ) {
-var showTextSelector by remember { mutableStateOf(false) }
-var pendingAction by remember { mutableStateOf<String?>(null) }
-val ocrText = document.originalText ?: ""
-val translatedText = document.translatedText ?: ""
+    var showTextSelector by remember { mutableStateOf(false) }
+    var pendingAction by remember { mutableStateOf<String?>(null) }
+    val ocrText = document.originalText ?: ""
+    val translatedText = document.translatedText ?: ""
 
-Row(
-    modifier = Modifier.fillMaxWidth(),
-    horizontalArrangement = Arrangement.spacedBy(4.dp),
-    verticalAlignment = Alignment.CenterVertically
-) {
-    if (onAiRewrite != null) {
-        MicroButton(
-            text = "AI",
-            icon = Icons.Default.AutoAwesome,
-            onClick = {
-                pendingAction = "ai"
-                showTextSelector = true
-            },
-            enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
-        )
-    }
-    
-    if (onCopyText != null) {
-        MicroButton(
-            text = "Copy",
-            icon = Icons.Default.ContentCopy,
-            onClick = {
-                pendingAction = "copy"
-                showTextSelector = true
-            },
-            enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
-        )
-    }
-    
-    if (onPasteText != null) {
-        MicroButton(
-            text = "Paste",
-            icon = Icons.Default.ContentPaste,
-            onClick = {
-                pendingAction = "paste"
-                showTextSelector = true
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (onAiRewrite != null) {
+            MicroButton(
+                text = "AI",
+                icon = Icons.Default.AutoAwesome,
+                onClick = {
+                    pendingAction = "ai"
+                    showTextSelector = true
+                },
+                modifier = Modifier,
+                enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
+            )
+        }
+        
+        if (onCopyText != null) {
+            MicroButton(
+                text = "Copy",
+                icon = Icons.Default.ContentCopy,
+                onClick = {
+                    pendingAction = "copy"
+                    showTextSelector = true
+                },
+                modifier = Modifier,
+                enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
+            )
+        }
+        
+        if (onPasteText != null) {
+            MicroButton(
+                text = "Paste",
+                icon = Icons.Default.ContentPaste,
+                onClick = {
+                    pendingAction = "paste"
+                    showTextSelector = true
+                },
+                modifier = Modifier,
+                enabled = true
+            )
+        }
+        
+        if (onClearFormatting != null) {
+            MicroButton(
+                text = "Clear",
+                icon = Icons.Default.FormatClear,
+                onClick = {
+                    pendingAction = "clear"
+                    showTextSelector = true
+                },
+                modifier = Modifier,
+                enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
+            )
+        }
+        
+        Spacer(modifier = Modifier.weight(1f))
+        
+        if (onSharePage != null) {
+            IconButton(
+                onClick = onSharePage,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.Share,
+                    contentDescription = "Share page",
+                    modifier = Modifier.size(18.dp),
+                    tint = GoogleDocsTextSecondary
+                )
             }
-        )
-    }
-    
-    if (onClearFormatting != null) {
-        MicroButton(
-            text = "Clear",
-            icon = Icons.Default.FormatClear,
-            onClick = {
-                pendingAction = "clear"
-                showTextSelector = true
-            },
-            enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
-        )
-    }
-    
-    Spacer(modifier = Modifier.weight(1f))
-    
-    if (onSharePage != null) {
+        }
+        
         IconButton(
-            onClick = onSharePage,
+            onClick = onMenuClick,
             modifier = Modifier.size(36.dp)
         ) {
             Icon(
-                Icons.Default.Share,
-                contentDescription = "Share page",
+                Icons.Default.MoreVert,
+                contentDescription = "More options",
                 modifier = Modifier.size(18.dp),
                 tint = GoogleDocsTextSecondary
             )
         }
     }
-    
-    IconButton(
-        onClick = onMenuClick,
-        modifier = Modifier.size(36.dp)
-    ) {
-        Icon(
-            Icons.Default.MoreVert,
-            contentDescription = "More options",
-            modifier = Modifier.size(18.dp),
-            tint = GoogleDocsTextSecondary
+
+    if (showTextSelector) {
+        AlertDialog(
+            onDismissRequest = { 
+                showTextSelector = false 
+                pendingAction = null
+            },
+            title = { Text("Select text") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (ocrText.isNotBlank()) {
+                        OutlinedButton(
+                            onClick = {
+                                when (pendingAction) {
+                                    "ai" -> onAiRewrite?.invoke(true)
+                                    "copy" -> onCopyText?.invoke(ocrText)
+                                    "paste" -> onPasteText?.invoke(true)
+                                    "clear" -> onClearFormatting?.invoke(true)
+                                }
+                                showTextSelector = false
+                                pendingAction = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("OCR Text")
+                        }
+                    }
+                    if (translatedText.isNotBlank()) {
+                        OutlinedButton(
+                            onClick = {
+                                when (pendingAction) {
+                                    "ai" -> onAiRewrite?.invoke(false)
+                                    "copy" -> onCopyText?.invoke(translatedText)
+                                    "paste" -> onPasteText?.invoke(false)
+                                    "clear" -> onClearFormatting?.invoke(false)
+                                }
+                                showTextSelector = false
+                                pendingAction = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Translation")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { 
+                    showTextSelector = false 
+                    pendingAction = null
+                }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 }
 
-if (showTextSelector) {
-    AlertDialog(
-        onDismissRequest = { 
-            showTextSelector = false 
-            pendingAction = null
-        },
-        title = { Text("Select text") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (ocrText.isNotBlank()) {
-                    OutlinedButton(
-                        onClick = {
-                            when (pendingAction) {
-                                "ai" -> onAiRewrite?.invoke(true)
-                                "copy" -> onCopyText?.invoke(ocrText)
-                                "paste" -> onPasteText?.invoke(true)
-                                "clear" -> onClearFormatting?.invoke(true)
-                            }
-                            showTextSelector = false
-                            pendingAction = null
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("OCR Text")
+@Composable
+private fun HighlightedConfidenceText(
+    text: String,
+    wordConfidences: Map<String, Float>,
+    threshold: Float,
+    onWordTap: (String, Float) -> Unit
+) {
+    val annotatedString = buildAnnotatedString {
+        val words = text.split(Regex("\\s+"))
+        words.forEachIndexed { index, word ->
+            val cleanWord = word.replace(Regex("[^\\w]"), "")
+            val confidence = wordConfidences[cleanWord] ?: wordConfidences[word] ?: 1f
+            
+            if (confidence < threshold) {
+                val bgColor = when {
+                    confidence < 0.5f -> Color(0xFFF44336).copy(alpha = 0.3f)
+                    confidence < 0.7f -> Color(0xFFFF9800).copy(alpha = 0.3f)
+                    else -> Color(0xFFFFC107).copy(alpha = 0.3f)
+                }
+                
+                pushStringAnnotation("word", "$cleanWord|$confidence")
+                withStyle(SpanStyle(background = bgColor)) {
+                    append(word)
+                }
+                pop()
+            } else {
+                append(word)
+            }
+            
+            if (index < words.lastIndex) {
+                append(" ")
+            }
+        }
+    }
+
+    ClickableText(
+        text = annotatedString,
+        style = MaterialTheme.typography.bodySmall.copy(
+            color = GoogleDocsTextPrimary,
+            textAlign = TextAlign.Justify
+        ),
+        onClick = { offset ->
+            annotatedString.getStringAnnotations("word", offset, offset)
+                .firstOrNull()?.let { annotation ->
+                    val parts = annotation.item.split("|")
+                    if (parts.size == 2) {
+                        onWordTap(parts[0], parts[1].toFloatOrNull() ?: 1f)
                     }
                 }
-                if (translatedText.isNotBlank()) {
-                    OutlinedButton(
-                        onClick = {
-                            when (pendingAction) {
-                                "ai" -> onAiRewrite?.invoke(false)
-                                "copy" -> onCopyText?.invoke(translatedText)
-                                "paste" -> onPasteText?.invoke(false)
-                                "clear" -> onClearFormatting?.invoke(false)
-                            }
-                            showTextSelector = false
-                            pendingAction = null
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Translation")
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = { 
-                showTextSelector = false 
-                pendingAction = null
-            }) {
-                Text("Cancel")
-            }
         }
     )
 }
-}
-@Composable
-private fun HighlightedConfidenceText(
-text: String,
-wordConfidences: Map<String, Float>,
-threshold: Float,
-onWordTap: (String, Float) -> Unit
-) {
-val annotatedString = buildAnnotatedString {
-val words = text.split(Regex("\s+"))
-words.forEachIndexed { index, word ->
-val cleanWord = word.replace(Regex("[^\w]"), "")
-val confidence = wordConfidences[cleanWord] ?: wordConfidences[word] ?: 1f
-if (confidence < threshold) {
-            val bgColor = when {
-                confidence < 0.5f -> Color(0xFFF44336).copy(alpha = 0.3f)
-                confidence < 0.7f -> Color(0xFFFF9800).copy(alpha = 0.3f)
-                else -> Color(0xFFFFC107).copy(alpha = 0.3f)
-            }
-            
-            pushStringAnnotation("word", "$cleanWord|$confidence")
-            withStyle(SpanStyle(background = bgColor)) {
-                append(word)
-            }
-            pop()
-        } else {
-            append(word)
-        }
-        
-        if (index < words.lastIndex) {
-            append(" ")
-        }
-    }
-}
 
-ClickableText(
-    text = annotatedString,
-    style = MaterialTheme.typography.bodySmall.copy(
-        color = GoogleDocsTextPrimary,
-        textAlign = TextAlign.Justify
-    ),
-    onClick = { offset ->
-        annotatedString.getStringAnnotations("word", offset, offset)
-            .firstOrNull()?.let { annotation ->
-                val parts = annotation.item.split("|")
-                if (parts.size == 2) {
-                    onWordTap(parts[0], parts[1].toFloatOrNull() ?: 1f)
-                }
-            }
-    }
-)
-}
 @Composable
 private fun SmallIconButton(
-icon: ImageVector,
-contentDescription: String,
-onClick: () -> Unit
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit
 ) {
-Surface(
-onClick = onClick,
-modifier = Modifier.size(28.dp),
-shape = RoundedCornerShape(8.dp),
-color = Color.Black.copy(alpha = 0.5f)
-) {
-Box(
-contentAlignment = Alignment.Center,
-modifier = Modifier.fillMaxSize()
-) {
-Icon(
-imageVector = icon,
-contentDescription = contentDescription,
-tint = Color.White,
-modifier = Modifier.size(16.dp)
-)
-}
-}
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(28.dp),
+        shape = RoundedCornerShape(8.dp),
+        color = Color.Black.copy(alpha = 0.5f)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = Color.White,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
 }
