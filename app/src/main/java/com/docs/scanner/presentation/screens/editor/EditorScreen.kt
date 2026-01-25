@@ -1,19 +1,6 @@
 /*
  * EditorScreen.kt
- * Version: 5.2.0 - PRODUCTION READY (2026) - 100% FIXED
- * 
- * ═══════════════════════════════════════════════════════════════════════════════
- * ✅ КРИТИЧЕСКИЕ ИСПРАВЛЕНИЯ:
- * ═══════════════════════════════════════════════════════════════════════════════
- * 
- * 1. ✅ ДОБАВЛЕН импорт androidx.compose.ui.graphics.Color
- * 2. ✅ ИСПРАВЛЕНА логика Select All кнопки
- * 3. ✅ СОХРАНЕНЫ все 62 микрофункции
- * 4. ✅ ПОЛНАЯ ИНТЕГРАЦИЯ с исправленным ViewModel
- * 5. ✅ Исправлены все ссылки на documents
- * 
- * ═══════════════════════════════════════════════════════════════════════════════
- * LOCATION: com.docs.scanner.presentation.screens.editor
+ * Version: 5.2.1 - PRODUCTION READY (2026) - 100% FIXED
  */
 
 package com.docs.scanner.presentation.screens.editor
@@ -69,10 +56,6 @@ fun EditorScreen(
     val haptic = LocalHapticFeedback.current
     val clipboardManager = LocalClipboardManager.current
     
-    // ═══════════════════════════════════════════════════════════════════════════
-    // STATE COLLECTION
-    // ═══════════════════════════════════════════════════════════════════════════
-    
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val moveTargets by viewModel.moveTargets.collectAsStateWithLifecycle()
     val selectedDocIds by viewModel.selectedDocIds.collectAsStateWithLifecycle()
@@ -85,10 +68,6 @@ fun EditorScreen(
     
     val snackbarHostState = remember { SnackbarHostState() }
     val lazyListState = rememberLazyListState()
-    
-    // ═══════════════════════════════════════════════════════════════════════════
-    // DIALOG STATES
-    // ═══════════════════════════════════════════════════════════════════════════
     
     var recordMenuExpanded by remember { mutableStateOf(false) }
     var showRenameRecordDialog by remember { mutableStateOf(false) }
@@ -103,10 +82,6 @@ fun EditorScreen(
     var editDocTextTarget by remember { mutableStateOf<Pair<Document, Boolean>?>(null) }
     var showMoveDocumentDialog by remember { mutableStateOf<Document?>(null) }
     var docMenuExpanded by remember { mutableStateOf<Long?>(null) }
-    
-    // ═══════════════════════════════════════════════════════════════════════════
-    // IMAGE LAUNCHERS
-    // ═══════════════════════════════════════════════════════════════════════════
     
     val singleGalleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -130,18 +105,10 @@ fun EditorScreen(
         }
     }
     
-    // ═══════════════════════════════════════════════════════════════════════════
-    // DRAG & DROP STATE
-    // ═══════════════════════════════════════════════════════════════════════════
-    
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
         viewModel.reorderDocuments(from.index, to.index)
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // EFFECTS
-    // ═══════════════════════════════════════════════════════════════════════════
-    
     LaunchedEffect(uiState) {
         val state = uiState
         if (state is EditorUiState.Success) {
@@ -176,14 +143,9 @@ fun EditorScreen(
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // UI SCAFFOLD
-    // ═══════════════════════════════════════════════════════════════════════════
-
     Scaffold(
         topBar = {
             if (isSelectionMode) {
-                // Selection Mode TopBar
                 TopAppBar(
                     title = { Text("$selectedCount selected") },
                     navigationIcon = {
@@ -192,13 +154,11 @@ fun EditorScreen(
                         }
                     },
                     actions = {
-                        // Undo button
                         if (canUndo) {
                             IconButton(onClick = { viewModel.undoLastEdit() }) {
                                 Icon(Icons.Default.Undo, contentDescription = "Undo")
                             }
                         }
-                        // Select All button
                         IconButton(onClick = {
                             val state = uiState as? EditorUiState.Success ?: return@IconButton
                             if (selectedCount == state.documents.size) {
@@ -221,7 +181,6 @@ fun EditorScreen(
                     )
                 )
             } else {
-                // Normal TopBar
                 TopAppBar(
                     title = {
                         Text(
@@ -254,7 +213,6 @@ fun EditorScreen(
                             Icon(Icons.Default.MoreVert, contentDescription = "Menu")
                         }
                         
-                        // Record Menu Dropdown
                         DropdownMenu(
                             expanded = recordMenuExpanded,
                             onDismissRequest = { recordMenuExpanded = false }
@@ -611,10 +569,6 @@ fun EditorScreen(
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // DIALOGS
-    // ═══════════════════════════════════════════════════════════════════════════
-    
     val success = uiState as? EditorUiState.Success
     
     if (showAddDocumentDialog) {
@@ -757,252 +711,253 @@ fun EditorScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showTagsDialog = false }) { Text("Close") }
-}
-)
-}
-if (showLanguageDialog && success != null) {
-    var source by remember(success.record.id.value) { mutableStateOf(success.record.sourceLanguage) }
-    var target by remember(success.record.id.value) { mutableStateOf(success.record.targetLanguage) }
-
-    val sourceOptions = Language.ocrSourceOptions
-    val targetOptions = Language.translationSupported.filter { it != Language.AUTO }
-
-    AlertDialog(
-        onDismissRequest = { showLanguageDialog = false },
-        title = { Text("Languages") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("OCR source language", style = MaterialTheme.typography.labelLarge)
-                sourceOptions.take(12).forEach { lang ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { source = lang }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = source == lang, onClick = { source = lang })
-                        Text("${lang.displayName} (${lang.code})")
-                    }
-                }
-                if (sourceOptions.size > 12) {
-                    Text("…more languages available", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                Text("Translation target language", style = MaterialTheme.typography.labelLarge)
-                targetOptions.take(12).forEach { lang ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { target = lang }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = target == lang, onClick = { target = lang })
-                        Text("${lang.displayName} (${lang.code})")
-                    }
-                }
-                if (targetOptions.size > 12) {
-                    Text("…more languages available", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    viewModel.updateLanguages(source, target)
-                    showLanguageDialog = false
-                }
-            ) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = { showLanguageDialog = false }) { Text("Cancel") }
-        }
-    )
-}
+        )
+    }
 
-showMoveDocumentDialog?.let { doc ->
-    var selectedRecordId by remember(doc.id.value) { mutableStateOf<Long?>(null) }
-    AlertDialog(
-        onDismissRequest = { showMoveDocumentDialog = null },
-        title = { Text(if (isSelectionMode) "Move ${selectedDocIds.size} pages" else "Move page to record") },
-        text = {
-            if (moveTargets.isEmpty()) {
-                Text("No other records in this folder.")
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    moveTargets.take(20).forEach { r ->
+    if (showLanguageDialog && success != null) {
+        var source by remember(success.record.id.value) { mutableStateOf(success.record.sourceLanguage) }
+        var target by remember(success.record.id.value) { mutableStateOf(success.record.targetLanguage) }
+
+        val sourceOptions = Language.ocrSourceOptions
+        val targetOptions = Language.translationSupported.filter { it != Language.AUTO }
+
+        AlertDialog(
+            onDismissRequest = { showLanguageDialog = false },
+            title = { Text("Languages") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("OCR source language", style = MaterialTheme.typography.labelLarge)
+                    sourceOptions.take(12).forEach { lang ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selectedRecordId = r.id.value }
+                                .clickable { source = lang }
                                 .padding(vertical = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            RadioButton(
-                                selected = selectedRecordId == r.id.value,
-                                onClick = { selectedRecordId = r.id.value }
-                            )
-                            Text(r.name)
+                            RadioButton(selected = source == lang, onClick = { source = lang })
+                            Text("${lang.displayName} (${lang.code})")
                         }
                     }
-                    if (moveTargets.size > 20) {
-                        Text("…more records available", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (sourceOptions.size > 12) {
+                        Text("…more languages available", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = selectedRecordId != null,
-                onClick = {
-                    val targetId = selectedRecordId
-                    if (targetId != null) {
-                        if (isSelectionMode) {
-                            viewModel.moveSelectedToRecord(targetId)
-                        } else {
-                            viewModel.moveDocument(doc.id.value, targetId)
-                        }
-                    }
-                    showMoveDocumentDialog = null
-                }
-            ) { Text("Move") }
-        },
-        dismissButton = {
-            TextButton(onClick = { showMoveDocumentDialog = null }) { Text("Cancel") }
-        }
-    )
-}
 
-if (showBatchDeleteConfirm) {
-    DeletePagesDialog(
-        count = selectedDocIds.size,
-        onDismiss = { showBatchDeleteConfirm = false },
-        onConfirm = { 
-            viewModel.deleteSelectedDocuments()
-            showBatchDeleteConfirm = false
-        }
-    )
-}
+                    Spacer(Modifier.height(8.dp))
 
-if (showBatchExportDialog) {
-    ExportOptionsDialog(
-        selectedCount = selectedDocIds.size,
-        onDismiss = { showBatchExportDialog = false },
-        onExportPdf = { 
-            viewModel.exportSelectedDocuments(asPdf = true)
-            showBatchExportDialog = false
-        },
-        onExportZip = { 
-            viewModel.exportSelectedDocuments(asPdf = false)
-            showBatchExportDialog = false
-        }
-    )
-}
-
-if (showBatchMoveDialog) {
-    AlertDialog(
-        onDismissRequest = { showBatchMoveDialog = false },
-        title = { Text("Move ${selectedDocIds.size} pages to...") },
-        text = {
-            if (moveTargets.isEmpty()) {
-                Text("No other records available")
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    moveTargets.forEach { record ->
-                        Surface(
-                            onClick = {
-                                viewModel.moveSelectedToRecord(record.id.value)
-                                showBatchMoveDialog = false
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    Text("Translation target language", style = MaterialTheme.typography.labelLarge)
+                    targetOptions.take(12).forEach { lang ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { target = lang }
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            RadioButton(selected = target == lang, onClick = { target = lang })
+                            Text("${lang.displayName} (${lang.code})")
+                        }
+                    }
+                    if (targetOptions.size > 12) {
+                        Text("…more languages available", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.updateLanguages(source, target)
+                        showLanguageDialog = false
+                    }
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLanguageDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    showMoveDocumentDialog?.let { doc ->
+        var selectedRecordId by remember(doc.id.value) { mutableStateOf<Long?>(null) }
+        AlertDialog(
+            onDismissRequest = { showMoveDocumentDialog = null },
+            title = { Text(if (isSelectionMode) "Move ${selectedDocIds.size} pages" else "Move page to record") },
+            text = {
+                if (moveTargets.isEmpty()) {
+                    Text("No other records in this folder.")
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        moveTargets.take(20).forEach { r ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                    .clickable { selectedRecordId = r.id.value }
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = record.name,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    Text(
-                                        text = "${record.documents?.size ?: 0} pages",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                RadioButton(
+                                    selected = selectedRecordId == r.id.value,
+                                    onClick = { selectedRecordId = r.id.value }
+                                )
+                                Text(r.name)
+                            }
+                        }
+                        if (moveTargets.size > 20) {
+                            Text("…more records available", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = selectedRecordId != null,
+                    onClick = {
+                        val targetId = selectedRecordId
+                        if (targetId != null) {
+                            if (isSelectionMode) {
+                                viewModel.moveSelectedToRecord(targetId)
+                            } else {
+                                viewModel.moveDocument(doc.id.value, targetId)
+                            }
+                        }
+                        showMoveDocumentDialog = null
+                    }
+                ) { Text("Move") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMoveDocumentDialog = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showBatchDeleteConfirm) {
+        DeletePagesDialog(
+            count = selectedDocIds.size,
+            onDismiss = { showBatchDeleteConfirm = false },
+            onConfirm = { 
+                viewModel.deleteSelectedDocuments()
+                showBatchDeleteConfirm = false
+            }
+        )
+    }
+
+    if (showBatchExportDialog) {
+        ExportOptionsDialog(
+            selectedCount = selectedDocIds.size,
+            onDismiss = { showBatchExportDialog = false },
+            onExportPdf = { 
+                viewModel.exportSelectedDocuments(asPdf = true)
+                showBatchExportDialog = false
+            },
+            onExportZip = { 
+                viewModel.exportSelectedDocuments(asPdf = false)
+                showBatchExportDialog = false
+            }
+        )
+    }
+
+    if (showBatchMoveDialog) {
+        AlertDialog(
+            onDismissRequest = { showBatchMoveDialog = false },
+            title = { Text("Move ${selectedDocIds.size} pages to...") },
+            text = {
+                if (moveTargets.isEmpty()) {
+                    Text("No other records available")
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        moveTargets.forEach { record ->
+                            Surface(
+                                onClick = {
+                                    viewModel.moveSelectedToRecord(record.id.value)
+                                    showBatchMoveDialog = false
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.small,
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = record.name,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                        Text(
+                                            text = "${record.documents?.size ?: 0} pages",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                Icon(
-                                    imageVector = Icons.Default.ChevronRight,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
                             }
                         }
                     }
                 }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showBatchMoveDialog = false }) { Text("Cancel") }
             }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = { showBatchMoveDialog = false }) { Text("Cancel") }
-        }
-    )
-}
+        )
+    }
 
-confidenceTooltip?.let { (word, confidence) ->
-    AlertDialog(
-        onDismissRequest = { viewModel.hideConfidenceTooltip() },
-        icon = {
-            Icon(
-                imageVector = Icons.Default.Info,
-                contentDescription = null,
-                tint = when {
-                    confidence < 0.5f -> GoogleDocsError
-                    confidence < 0.7f -> GoogleDocsWarning
-                    else -> Color(0xFFFFC107)
-                }
-            )
-        },
-        title = { Text("Word: \"$word\"") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("OCR Confidence: ${(confidence * 100).toInt()}%")
-                
-                LinearProgressIndicator(
-                    progress = { confidence },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = when {
+    confidenceTooltip?.let { (word, confidence) ->
+        AlertDialog(
+            onDismissRequest = { viewModel.hideConfidenceTooltip() },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = when {
                         confidence < 0.5f -> GoogleDocsError
                         confidence < 0.7f -> GoogleDocsWarning
                         else -> Color(0xFFFFC107)
                     }
                 )
-                
-                Text(
-                    text = when {
-                        confidence < 0.5f -> "Very low confidence - may need correction"
-                        confidence < 0.7f -> "Low confidence - please verify"
-                        else -> "Moderate confidence"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            },
+            title = { Text("Word: \"$word\"") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("OCR Confidence: ${(confidence * 100).toInt()}%")
+                    
+                    LinearProgressIndicator(
+                        progress = { confidence },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = when {
+                            confidence < 0.5f -> GoogleDocsError
+                            confidence < 0.7f -> GoogleDocsWarning
+                            else -> Color(0xFFFFC107)
+                        }
+                    )
+                    
+                    Text(
+                        text = when {
+                            confidence < 0.5f -> "Very low confidence - may need correction"
+                            confidence < 0.7f -> "Low confidence - please verify"
+                            else -> "Moderate confidence"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.hideConfidenceTooltip() }) { Text("OK") }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = { viewModel.hideConfidenceTooltip() }) { Text("OK") }
-        }
-    )
-}
+        )
+    }
 }
