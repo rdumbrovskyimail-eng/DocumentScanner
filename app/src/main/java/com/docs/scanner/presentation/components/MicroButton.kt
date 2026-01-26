@@ -1,3 +1,11 @@
+/*
+ * MicroButton.kt
+ * Version: 2.0.0 - PRODUCTION READY
+ * 
+ * ВАЖНО: Это ЕДИНСТВЕННАЯ версия MicroButton!
+ * Удалите дубликат из GoogleDocsButton.kt
+ */
+
 package com.docs.scanner.presentation.components
 
 import androidx.compose.foundation.layout.*
@@ -15,8 +23,8 @@ fun MicroButton(
     text: String,
     icon: ImageVector,
     onClick: () -> Unit,
-    enabled: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     TextButton(
         onClick = onClick,
