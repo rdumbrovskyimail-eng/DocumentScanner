@@ -443,7 +443,7 @@ private fun OcrTextContent(
                         color = MaterialTheme.colorScheme.secondaryContainer
                     ) {
                         Text(
-                            text = lang.uppercase(Locale.getDefault()),
+                            text = lang.uppercase(Locale.ROOT),
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
