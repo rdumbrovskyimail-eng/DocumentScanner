@@ -1,6 +1,6 @@
 /*
  * DocumentCard.kt
- * Version: 3.1.0 - PRODUCTION READY (2026) - 100% FIXED
+ * Version: 4.0.0 - PRODUCTION READY (2026) - 100% FIXED
  */
 
 package com.docs.scanner.presentation.screens.editor.components
@@ -55,31 +55,24 @@ fun DocumentCard(
     onMenuClick: () -> Unit,
     onRetryOcr: () -> Unit,
     onRetryTranslation: () -> Unit,
-    
     onMoveUp: (() -> Unit)? = null,
     onMoveDown: (() -> Unit)? = null,
     isFirst: Boolean = false,
     isLast: Boolean = false,
-    
     onSharePage: (() -> Unit)? = null,
     onDeletePage: (() -> Unit)? = null,
     onMoveToRecord: (() -> Unit)? = null,
-    
     onCopyText: ((String) -> Unit)? = null,
     onPasteText: ((Boolean) -> Unit)? = null,
     onAiRewrite: ((Boolean) -> Unit)? = null,
     onClearFormatting: ((Boolean) -> Unit)? = null,
-    
     confidenceThreshold: Float = 0.7f,
     onWordTap: ((String, Float) -> Unit)? = null,
-    
     onStartInlineEditOcr: (() -> Unit)? = null,
     onStartInlineEditTranslation: (() -> Unit)? = null,
     onInlineTextChange: ((String) -> Unit)? = null,
     onInlineEditComplete: (() -> Unit)? = null,
-    
     dragModifier: Modifier = Modifier,
-    
     modifier: Modifier = Modifier
 ) {
     var isInlineEditingOcr by remember { mutableStateOf(false) }
@@ -133,12 +126,16 @@ fun DocumentCard(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // ═══════════════════════════════════════════════════════════════
+            // TOP ROW: Image + OCR Text
+            // ═══════════════════════════════════════════════════════════════
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Image Preview
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -159,6 +156,7 @@ fun DocumentCard(
                         contentScale = ContentScale.Crop
                     )
                     
+                    // Selection overlay
                     if (isSelectionMode) {
                         Box(
                             modifier = Modifier
@@ -178,6 +176,7 @@ fun DocumentCard(
                         }
                     }
                     
+                    // Status badge
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
@@ -189,6 +188,7 @@ fun DocumentCard(
                         )
                     }
                     
+                    // Page number
                     Surface(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
@@ -204,6 +204,7 @@ fun DocumentCard(
                         )
                     }
                     
+                    // Move buttons
                     if ((onMoveUp != null || onMoveDown != null) && !isSelectionMode) {
                         Column(
                             modifier = Modifier
@@ -228,6 +229,7 @@ fun DocumentCard(
                     }
                 }
                 
+                // OCR Text Panel
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -277,6 +279,9 @@ fun DocumentCard(
                 }
             }
             
+            // ═══════════════════════════════════════════════════════════════
+            // TRANSLATION SECTION
+            // ═══════════════════════════════════════════════════════════════
             TranslationSection(
                 document = document,
                 isInlineEditing = isInlineEditingTranslation,
@@ -299,6 +304,9 @@ fun DocumentCard(
                 hasInlineEditing = onStartInlineEditTranslation != null
             )
             
+            // ═══════════════════════════════════════════════════════════════
+            // ACTION BUTTONS ROW
+            // ═══════════════════════════════════════════════════════════════
             ActionButtonsRow(
                 document = document,
                 onMenuClick = onMenuClick,
@@ -311,6 +319,10 @@ fun DocumentCard(
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INTERNAL COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun LoadingOcrState() {
@@ -410,6 +422,7 @@ private fun OcrTextContent(
             .fillMaxSize()
             .padding(12.dp)
     ) {
+        // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -455,6 +468,7 @@ private fun OcrTextContent(
         
         Spacer(modifier = Modifier.height(8.dp))
         
+        // Content
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -501,6 +515,7 @@ private fun TranslationSection(
     onRetryTranslation: () -> Unit,
     hasInlineEditing: Boolean
 ) {
+    // Don't show if no translation content and not processing
     if (document.translatedText.isNullOrBlank() &&
         document.processingStatus !is ProcessingStatus.Translation.InProgress &&
         document.processingStatus !is ProcessingStatus.Translation.Failed) {
@@ -517,6 +532,7 @@ private fun TranslationSection(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -561,6 +577,7 @@ private fun TranslationSection(
                 }
             }
             
+            // Content
             when {
                 document.processingStatus is ProcessingStatus.Translation.InProgress -> {
                     Row(
@@ -736,6 +753,7 @@ private fun ActionButtonsRow(
         }
     }
 
+    // Text Selector Dialog
     if (showTextSelector) {
         AlertDialog(
             onDismissRequest = { 
