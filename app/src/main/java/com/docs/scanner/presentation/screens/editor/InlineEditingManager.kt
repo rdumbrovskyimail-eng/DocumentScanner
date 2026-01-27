@@ -1,11 +1,21 @@
 package com.docs.scanner.presentation.screens.editor
 
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
-import java.util.concurrent.ConcurrentHashMap
+import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.concurrent.ConcurrentHashMap
 
 /**
+ * InlineEditingManager.kt
+ * Version: 8.0.0 - PRODUCTION READY (2026)
+ *
  * КРИТИЧЕСКИ ВАЖНО:
  * Использует ConcurrentHashMap для thread-safe операций
  * Каждый документ имеет свой Job для auto-save
@@ -201,7 +211,11 @@ class InlineEditingManager(
             if (parts.size != 2) continue
             
             val docId = parts[0].toLongOrNull() ?: continue
-            val field = TextEditField.valueOf(parts[1])
+            val field = try {
+                TextEditField.valueOf(parts[1])
+            } catch (e: IllegalArgumentException) {
+                continue
+            }
             
             saveEdit(docId, field)
         }
@@ -240,7 +254,7 @@ fun InlineEditingManager.rememberEditState(
     documentId: Long,
     field: TextEditField
 ): InlineEditState? {
-    val states by editingStates.collectAsStateWithLifecycle()
+    val states = editingStates.collectAsStateWithLifecycle()
     val key = "$documentId:${field.name}"
-    return states[key]
+    return states.value[key]
 }
