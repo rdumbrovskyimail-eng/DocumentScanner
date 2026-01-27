@@ -39,7 +39,6 @@ import com.docs.scanner.domain.model.Document
 import com.docs.scanner.presentation.components.MicroButton
 import com.docs.scanner.presentation.theme.*
 import java.io.File
-import java.util.Locale
 
 @Composable
 fun DocumentCard(
@@ -428,28 +427,11 @@ private fun OcrTextContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "OCR Text",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = GoogleDocsTextTertiary
-                )
-                document.detectedLanguage?.let { lang ->
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer
-                    ) {
-                        Text(
-                            text = lang.toUpperCase(Locale.ROOT),
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-            }
+            Text(
+                text = "OCR Text",
+                style = MaterialTheme.typography.labelSmall,
+                color = GoogleDocsTextTertiary
+            )
             
             if (hasInlineEditing) {
                 IconButton(
