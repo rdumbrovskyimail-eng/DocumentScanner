@@ -1,7 +1,7 @@
 /*
  * EditorScreen.kt
- * Version: 7.0.0 - REFACTORED (2026)
- * 
+ * Version: 8.0.0 - REFACTORED (2026)
+ *
  * КРИТИЧЕСКИЕ ИЗМЕНЕНИЯ:
  * ✅ DocumentAction вместо 21 callback
  * ✅ Безопасная работа с drag & drop в selection mode
@@ -11,21 +11,69 @@
 
 package com.docs.scanner.presentation.screens.editor
 
-import androidx.compose.foundation.clickable
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
-import androidx.compose.foundation.layout.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -41,12 +89,28 @@ import com.docs.scanner.BuildConfig
 import com.docs.scanner.domain.core.Document
 import com.docs.scanner.domain.core.Language
 import com.docs.scanner.presentation.components.SmartDivider
-import com.docs.scanner.presentation.screens.editor.components.*
-import com.docs.scanner.presentation.theme.*
+import com.docs.scanner.presentation.screens.editor.components.AddDocumentDialog
+import com.docs.scanner.presentation.screens.editor.components.BatchActionsBar
+import com.docs.scanner.presentation.screens.editor.components.BatchProgressBanner
+import com.docs.scanner.presentation.screens.editor.components.DeletePagesDialog
+import com.docs.scanner.presentation.screens.editor.components.DocumentCard
+import com.docs.scanner.presentation.screens.editor.components.EmptyRecordState
+import com.docs.scanner.presentation.screens.editor.components.ExportOptionsDialog
+import com.docs.scanner.presentation.screens.editor.components.FloatingActionButtons
+import com.docs.scanner.presentation.screens.editor.components.LanguageDialog
+import com.docs.scanner.presentation.screens.editor.components.RecordMenu
+import com.docs.scanner.presentation.screens.editor.components.SelectionTopBar
+import com.docs.scanner.presentation.screens.editor.components.SmartRetryBanner
+import com.docs.scanner.presentation.screens.editor.components.TagsDialog
+import com.docs.scanner.presentation.screens.editor.components.TextEditorSheet
+import com.docs.scanner.presentation.theme.GoogleDocsError
+import com.docs.scanner.presentation.theme.GoogleDocsPrimary
+import com.docs.scanner.presentation.theme.GoogleDocsWarning
 import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.longPressDraggableHandle
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import java.io.File
 import timber.log.Timber
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,11 +124,11 @@ fun EditorScreen(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val clipboardManager = LocalClipboardManager.current
-    
+
     // ════════════════════════════════════════════════════════════════════
     // STATES - Собираем все states из ViewModel
     // ════════════════════════════════════════════════════════════════════
-    
+
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val processingState by viewModel.processingState.collectAsStateWithLifecycle()
     val selectionState by viewModel.selectionState.collectAsStateWithLifecycle()
@@ -76,14 +140,14 @@ fun EditorScreen(
     val confidenceTooltip by viewModel.confidenceTooltip.collectAsStateWithLifecycle()
     val ocrSettings by viewModel.ocrSettings.collectAsStateWithLifecycle()
     val inlineEditingStates by viewModel.inlineEditingStates.collectAsStateWithLifecycle()
-    
+
     val snackbarHostState = remember { SnackbarHostState() }
     val lazyListState = rememberLazyListState()
-    
+
     // ════════════════════════════════════════════════════════════════════
     // DIALOG STATES
     // ════════════════════════════════════════════════════════════════════
-    
+
     var recordMenuExpanded by remember { mutableStateOf(false) }
     var showRenameRecordDialog by remember { mutableStateOf(false) }
     var showEditDescriptionDialog by remember { mutableStateOf(false) }
@@ -94,27 +158,27 @@ fun EditorScreen(
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
     var showBatchExportDialog by remember { mutableStateOf(false) }
     var showBatchMoveDialog by remember { mutableStateOf(false) }
-    
+
     var editingTextDocId by remember { mutableStateOf<Long?>(null) }
     var editingTextIsOcr by remember { mutableStateOf(true) }
     var showMoveDocumentDialogForId by remember { mutableStateOf<Long?>(null) }
     var docMenuExpandedId by remember { mutableStateOf<Long?>(null) }
-    
+
     // ════════════════════════════════════════════════════════════════════
     // GALLERY LAUNCHERS
     // ════════════════════════════════════════════════════════════════════
-    
+
     val singleGalleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
-        uri?.let { 
+        uri?.let {
             viewModel.addDocument(it)
             if (BuildConfig.DEBUG) {
                 Timber.d("📷 Single image selected: $it")
             }
         }
     }
-    
+
     val multiGalleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 50)
     ) { uris: List<Uri> ->
@@ -125,11 +189,11 @@ fun EditorScreen(
             }
         }
     }
-    
+
     // ════════════════════════════════════════════════════════════════════
     // REORDERABLE STATE - ✅ Отключается в selection mode
     // ════════════════════════════════════════════════════════════════════
-    
+
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
         if (!selectionState.isActive) {
             viewModel.reorderDocuments(from.index, to.index)
@@ -139,7 +203,7 @@ fun EditorScreen(
     // ════════════════════════════════════════════════════════════════════
     // EFFECTS
     // ════════════════════════════════════════════════════════════════════
-    
+
     LaunchedEffect(uiState) {
         val state = uiState
         if (state is EditorUiState.Success) {
@@ -148,29 +212,29 @@ fun EditorScreen(
             }
         }
     }
-    
+
     LaunchedEffect(Unit) {
         viewModel.shareEvent.collect { event ->
             when (event) {
                 is ShareEvent.File -> {
                     try {
                         val file = File(event.path)
-                        
+
                         if (!file.exists()) {
                             snackbarHostState.showSnackbar("File not found")
                             return@collect
                         }
-                        
+
                         if (file.length() == 0L) {
                             snackbarHostState.showSnackbar("File is empty")
                             return@collect
                         }
-                        
+
                         if (!file.canRead()) {
                             snackbarHostState.showSnackbar("Cannot read file")
                             return@collect
                         }
-                        
+
                         val uri = try {
                             FileProvider.getUriForFile(
                                 context,
@@ -182,23 +246,23 @@ fun EditorScreen(
                             snackbarHostState.showSnackbar("Cannot share file: path not allowed")
                             return@collect
                         }
-                        
+
                         val intent = Intent(Intent.ACTION_SEND).apply {
                             type = event.mimeType
                             putExtra(Intent.EXTRA_STREAM, uri)
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            
+
                             event.fileName?.let { name ->
                                 putExtra(Intent.EXTRA_TITLE, name)
                             }
                         }
-                        
+
                         if (intent.resolveActivity(context.packageManager) != null) {
                             context.startActivity(Intent.createChooser(intent, "Share"))
                         } else {
                             snackbarHostState.showSnackbar("No apps to share with")
                         }
-                        
+
                     } catch (e: Exception) {
                         Timber.e(e, "Share failed")
                         snackbarHostState.showSnackbar("Share failed: ${e.message}")
@@ -207,7 +271,7 @@ fun EditorScreen(
             }
         }
     }
-    
+
     LaunchedEffect(Unit) {
         viewModel.errorEvent.collect { event ->
             val result = snackbarHostState.showSnackbar(
@@ -215,7 +279,7 @@ fun EditorScreen(
                 actionLabel = event.actionLabel,
                 duration = SnackbarDuration.Long
             )
-            
+
             if (result == SnackbarResult.ActionPerformed && event.action != null) {
                 event.action.invoke()
             }
@@ -225,59 +289,59 @@ fun EditorScreen(
     // ════════════════════════════════════════════════════════════════════
     // ACTION HANDLER - Один обработчик вместо 21 callback
     // ════════════════════════════════════════════════════════════════════
-    
+
     fun handleDocumentAction(action: DocumentAction) {
         when (action) {
             is DocumentAction.ImageClick -> onImageClick(action.documentId)
-            
+
             is DocumentAction.OcrTextClick -> {
                 editingTextDocId = action.documentId
                 editingTextIsOcr = true
             }
-            
+
             is DocumentAction.TranslationClick -> {
                 editingTextDocId = action.documentId
                 editingTextIsOcr = false
             }
-            
+
             is DocumentAction.ToggleSelection -> {
                 if (!selectionState.isActive) {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
                 viewModel.toggleDocumentSelection(action.documentId)
             }
-            
+
             is DocumentAction.MenuClick -> {
                 docMenuExpandedId = action.documentId
             }
-            
+
             is DocumentAction.RetryOcr -> viewModel.retryOcr(action.documentId)
             is DocumentAction.RetryTranslation -> viewModel.retryTranslation(action.documentId)
             is DocumentAction.MoveUp -> viewModel.moveDocumentUp(action.documentId)
             is DocumentAction.MoveDown -> viewModel.moveDocumentDown(action.documentId)
-            
+
             is DocumentAction.SharePage -> viewModel.shareSingleImage(action.imagePath)
             is DocumentAction.DeletePage -> viewModel.deleteDocument(action.documentId)
             is DocumentAction.MoveToRecord -> showMoveDocumentDialogForId = action.documentId
-            
+
             is DocumentAction.CopyText -> {
                 clipboardManager.setText(AnnotatedString(action.text))
             }
-            
+
             is DocumentAction.PasteText -> {
                 clipboardManager.getText()?.text?.let { clipText ->
-                    viewModel.pasteText(action.documentId, clipText, action.isOcr)
+                    viewModel.pasteText(action.documentId, clipText, action.isOcrText)
                 }
             }
-            
+
             is DocumentAction.AiRewrite -> {
-                viewModel.aiRewriteText(action.documentId, action.text, action.isOcr)
+                viewModel.aiRewriteText(action.documentId, action.text, action.isOcrText)
             }
-            
+
             is DocumentAction.ClearFormatting -> {
-                viewModel.clearFormatting(action.documentId, action.isOcr)
+                viewModel.clearFormatting(action.documentId, action.isOcrText)
             }
-            
+
             is DocumentAction.StartInlineEdit -> {
                 if (action.field == TextEditField.OCR_TEXT) {
                     viewModel.startInlineEditOcr(action.documentId)
@@ -285,19 +349,19 @@ fun EditorScreen(
                     viewModel.startInlineEditTranslation(action.documentId)
                 }
             }
-            
+
             is DocumentAction.UpdateInlineText -> {
                 viewModel.updateInlineText(action.documentId, action.field, action.text)
             }
-            
+
             is DocumentAction.SaveInlineEdit -> {
                 viewModel.finishInlineEdit(action.documentId, action.field)
             }
-            
+
             is DocumentAction.CancelInlineEdit -> {
                 viewModel.cancelInlineEdit(action.documentId, action.field)
             }
-            
+
             is DocumentAction.WordTap -> {
                 viewModel.showConfidenceTooltip(action.word, action.confidence)
             }
@@ -329,8 +393,8 @@ fun EditorScreen(
                     title = {
                         Text(
                             text = when (val state = uiState) {
-                                is EditorUiState.Success -> state.record.name.ifBlank { 
-                                    state.folderName.ifBlank { "Documents" } 
+                                is EditorUiState.Success -> state.record.name.ifBlank {
+                                    state.folderName.ifBlank { "Documents" }
                                 }
                                 else -> "Documents"
                             }
@@ -356,7 +420,7 @@ fun EditorScreen(
                         IconButton(onClick = { recordMenuExpanded = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "Menu")
                         }
-                        
+
                         RecordMenu(
                             expanded = recordMenuExpanded,
                             onDismiss = { recordMenuExpanded = false },
@@ -424,11 +488,11 @@ fun EditorScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        
+
         // ════════════════════════════════════════════════════════════════
         // CONTENT
         // ════════════════════════════════════════════════════════════════
-        
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -481,7 +545,7 @@ fun EditorScreen(
                             } else null
                         )
                     }
-                    
+
                     batchOperation?.let { operation ->
                         BatchProgressBanner(
                             processedCount = operation.progress,
@@ -496,7 +560,7 @@ fun EditorScreen(
                             onCancelClick = { viewModel.cancelBatchOperation() }
                         )
                     }
-                    
+
                     if (failedCount > 0 && showSmartRetryBanner && !processingState.isActive && batchOperation == null) {
                         SmartRetryBanner(
                             failedCount = failedCount,
@@ -521,7 +585,7 @@ fun EditorScreen(
                                 key = { it.id.value }
                             ) { document ->
                                 val index = state.documents.indexOf(document)
-                                
+
                                 if (selectionState.isActive) {
                                     DocumentCardItem(
                                         document = document,
@@ -558,7 +622,7 @@ fun EditorScreen(
                                         )
                                     }
                                 }
-                                
+
                                 if (index < state.documents.lastIndex) {
                                     SmartDivider()
                                 }
@@ -575,7 +639,7 @@ fun EditorScreen(
     // ════════════════════════════════════════════════════════════════════
 
     val success = uiState as? EditorUiState.Success
-    
+
     if (showAddDocumentDialog) {
         AddDocumentDialog(
             onDismiss = { showAddDocumentDialog = false },
@@ -598,7 +662,7 @@ fun EditorScreen(
             isFirstTime = success?.documents?.isEmpty() == true
         )
     }
-    
+
     editingTextDocId?.let { docId ->
         val doc = success?.documents?.find { it.id.value == docId }
         if (doc != null) {
@@ -617,7 +681,7 @@ fun EditorScreen(
             )
         }
     }
-    
+
     if (showRenameRecordDialog && success != null) {
         var name by remember(success.record.id.value) { mutableStateOf(success.record.name) }
         AlertDialog(
@@ -676,189 +740,86 @@ fun EditorScreen(
     }
 
     if (showTagsDialog && success != null) {
-        var newTag by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { showTagsDialog = false },
-            title = { Text("Tags") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (success.record.tags.isEmpty()) {
-                        Text("No tags yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        success.record.tags.forEach { tag ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("#$tag")
-                                IconButton(onClick = { viewModel.removeTag(tag) }) {
-                                    Icon(Icons.Default.Delete, "Remove tag")
-                                }
-                            }
-                        }
-                    }
-                    
-                    OutlinedTextField(
-                        value = newTag,
-                        onValueChange = { newTag = it },
-                        label = { Text("Add tag (a-z, 0-9, _, -)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = newTag.isNotBlank(),
-                    onClick = {
-                        viewModel.addTag(newTag)
-                        newTag = ""
-                    }
-                ) { Text("Add") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTagsDialog = false }) { Text("Close") }
-            }
+        TagsDialog(
+            currentTags = success.record.tags,
+            onDismiss = { showTagsDialog = false },
+            onAddTag = { viewModel.addTag(it) },
+            onRemoveTag = { viewModel.removeTag(it) }
         )
     }
 
     if (showLanguageDialog && success != null) {
-        var source by remember(success.record.id.value) { mutableStateOf(success.record.sourceLanguage) }
-        var target by remember(success.record.id.value) { mutableStateOf(success.record.targetLanguage) }
-
-        val sourceOptions = Language.ocrSourceOptions  // ✅ ИСПРАВЛЕНО
-        val targetOptions = Language.translationSupported.filter {  // ✅ ИСПРАВЛЕНО
-            it != Language.AUTO  // ✅ ИСПРАВЛЕНО
-        }
-
-        AlertDialog(
-            onDismissRequest = { showLanguageDialog = false },
-            title = { Text("Languages") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("OCR source language", style = MaterialTheme.typography.labelLarge)
-                    sourceOptions.take(12).forEach { lang ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { source = lang }
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = source == lang, onClick = { source = lang })
-                            Text("${lang.displayName} (${lang.code})")
-                        }
-                    }
-                    if (sourceOptions.size > 12) {
-                        Text("…more languages available", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    Text("Translation target language", style = MaterialTheme.typography.labelLarge)
-                    targetOptions.take(12).forEach { lang ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { target = lang }
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = target == lang, onClick = { target = lang })
-                            Text("${lang.displayName} (${lang.code})")
-                        }
-                    }
-                    if (targetOptions.size > 12) {
-                        Text("…more languages available", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.updateLanguages(source, target)
-                        showLanguageDialog = false
-                    }
-                ) { Text("Save") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLanguageDialog = false }) { Text("Cancel") }
+        LanguageDialog(
+            currentSource = success.record.sourceLanguage,
+            currentTarget = success.record.targetLanguage,
+            onDismiss = { showLanguageDialog = false },
+            onConfirm = { source, target ->
+                viewModel.updateLanguages(source, target)
+                showLanguageDialog = false
             }
         )
     }
 
     showMoveDocumentDialogForId?.let { docId ->
-        val doc = success?.documents?.find { it.id.value == docId }
-        if (doc != null) {
-            var selectedRecordId by remember(docId) { mutableStateOf<Long?>(null) }
-            AlertDialog(
-                onDismissRequest = { showMoveDocumentDialogForId = null },
-                title = { 
-                    Text(
-                        if (selectionState.isActive) 
-                            "Move ${selectedCount} pages" 
-                        else 
-                            "Move page to record"
-                    ) 
-                },
-                text = {
-                    if (moveTargets.isEmpty()) {
-                        Text("No other records in this folder.")
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            moveTargets.take(20).forEach { r ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { selectedRecordId = r.id.value }
-                                        .padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = selectedRecordId == r.id.value,
-                                        onClick = { selectedRecordId = r.id.value }
-                                    )
-                                    Text(r.name)
-                                }
+        var selectedRecordId by remember { mutableStateOf<Long?>(null) }
+
+        AlertDialog(
+            onDismissRequest = { showMoveDocumentDialogForId = null },
+            title = { Text("Move to...") },
+            text = {
+                if (moveTargets.isEmpty()) {
+                    Text("No other records available")
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        moveTargets.take(20).forEach { r ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedRecordId = r.id.value }
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = selectedRecordId == r.id.value,
+                                    onClick = { selectedRecordId = r.id.value }
+                                )
+                                Text(r.name)
                             }
-                            if (moveTargets.size > 20) {
-                                Text("…more records available", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                        }
+                        if (moveTargets.size > 20) {
+                            Text("…more records available", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                },
-                confirmButton = {
-                    TextButton(
-                        enabled = selectedRecordId != null,
-                        onClick = {
-                            val targetId = selectedRecordId
-                            if (targetId != null) {
-                                if (selectionState.isActive) {
-                                    viewModel.moveSelectedToRecord(targetId)
-                                } else {
-                                    viewModel.moveDocument(docId, targetId)
-                                }
-                            }
-                            showMoveDocumentDialogForId = null
-                        }
-                    ) { Text("Move") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showMoveDocumentDialogForId = null }) { Text("Cancel") }
                 }
-            )
-        }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = selectedRecordId != null,
+                    onClick = {
+                        val targetId = selectedRecordId
+                        if (targetId != null) {
+                            if (selectionState.isActive) {
+                                viewModel.moveSelectedToRecord(targetId)
+                            } else {
+                                viewModel.moveDocument(docId, targetId)
+                            }
+                        }
+                        showMoveDocumentDialogForId = null
+                    }
+                ) { Text("Move") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMoveDocumentDialogForId = null }) { Text("Cancel") }
+            }
+        )
     }
 
     if (showBatchDeleteConfirm) {
         DeletePagesDialog(
             count = selectedCount,
             onDismiss = { showBatchDeleteConfirm = false },
-            onConfirm = { 
+            onConfirm = {
                 viewModel.deleteSelectedDocuments()
                 showBatchDeleteConfirm = false
             }
@@ -869,11 +830,11 @@ fun EditorScreen(
         ExportOptionsDialog(
             selectedCount = selectedCount,
             onDismiss = { showBatchExportDialog = false },
-            onExportPdf = { 
+            onExportPdf = {
                 viewModel.exportSelectedDocuments(asPdf = true)
                 showBatchExportDialog = false
             },
-            onExportZip = { 
+            onExportZip = {
                 viewModel.exportSelectedDocuments(asPdf = false)
                 showBatchExportDialog = false
             }
@@ -883,7 +844,7 @@ fun EditorScreen(
     if (showBatchMoveDialog) {
         AlertDialog(
             onDismissRequest = { showBatchMoveDialog = false },
-            title = { Text("Move ${selectedCount} pages to...") },
+            title = { Text("Move $selectedCount pages to...") },
             text = {
                 if (moveTargets.isEmpty()) {
                     Text("No other records available")
@@ -948,7 +909,7 @@ fun EditorScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("OCR Confidence: ${(confidence * 100).toInt()}%")
-                    
+
                     LinearProgressIndicator(
                         progress = { confidence },
                         modifier = Modifier.fillMaxWidth(),
@@ -958,7 +919,7 @@ fun EditorScreen(
                             else -> GoogleDocsPrimary
                         }
                     )
-                    
+
                     Text(
                         text = when {
                             confidence < 0.5f -> "Very low confidence - may need correction"
@@ -993,50 +954,50 @@ private fun DocumentCardItem(
 ) {
     val ocrEditKey = "${document.id.value}:${TextEditField.OCR_TEXT.name}"
     val translationEditKey = "${document.id.value}:${TextEditField.TRANSLATED_TEXT.name}"
-    
+
     val ocrEditState = inlineEditingStates[ocrEditKey]
     val translationEditState = inlineEditingStates[translationEditKey]
-    
+
     val isInlineEditingOcr = ocrEditState != null
     val isInlineEditingTranslation = translationEditState != null
-    
+
     val inlineOcrText = ocrEditState?.currentText ?: document.originalText ?: ""
     val inlineTranslationText = translationEditState?.currentText ?: document.translatedText ?: ""
-    
+
     DocumentCard(
         document = document,
         index = index,
         isSelected = selectionState.selectedIds.contains(document.id.value),
         isSelectionMode = selectionState.isActive,
         isDragging = isDragging,
-        
+
         isInlineEditingOcr = isInlineEditingOcr,
         isInlineEditingTranslation = isInlineEditingTranslation,
         inlineOcrText = inlineOcrText,
         inlineTranslationText = inlineTranslationText,
-        
-        onImageClick = { 
-            onAction(DocumentAction.ImageClick(document.id.value)) 
+
+        onImageClick = {
+            onAction(DocumentAction.ImageClick(document.id.value))
         },
-        onOcrTextClick = { 
-            onAction(DocumentAction.OcrTextClick(document.id.value)) 
+        onOcrTextClick = {
+            onAction(DocumentAction.OcrTextClick(document.id.value))
         },
-        onTranslationClick = { 
-            onAction(DocumentAction.TranslationClick(document.id.value)) 
+        onTranslationClick = {
+            onAction(DocumentAction.TranslationClick(document.id.value))
         },
         onSelectionToggle = {
             onAction(DocumentAction.ToggleSelection(document.id.value))
         },
-        onMenuClick = { 
-            onAction(DocumentAction.MenuClick(document.id.value)) 
+        onMenuClick = {
+            onAction(DocumentAction.MenuClick(document.id.value))
         },
-        onRetryOcr = { 
-            onAction(DocumentAction.RetryOcr(document.id.value)) 
+        onRetryOcr = {
+            onAction(DocumentAction.RetryOcr(document.id.value))
         },
-        onRetryTranslation = { 
-            onAction(DocumentAction.RetryTranslation(document.id.value)) 
+        onRetryTranslation = {
+            onAction(DocumentAction.RetryTranslation(document.id.value))
         },
-        
+
         onMoveUp = if (!selectionState.isActive && index > 0) {
             { onAction(DocumentAction.MoveUp(document.id.value)) }
         } else null,
@@ -1045,17 +1006,17 @@ private fun DocumentCardItem(
         } else null,
         isFirst = index == 0,
         isLast = index == state.documents.lastIndex,
-        
-        onSharePage = { 
-            onAction(DocumentAction.SharePage(document.id.value, document.imagePath)) 
+
+        onSharePage = {
+            onAction(DocumentAction.SharePage(document.id.value, document.imagePath))
         },
-        onDeletePage = { 
-            onAction(DocumentAction.DeletePage(document.id.value)) 
+        onDeletePage = {
+            onAction(DocumentAction.DeletePage(document.id.value))
         },
-        onMoveToRecord = { 
-            onAction(DocumentAction.MoveToRecord(document.id.value, 0L)) 
+        onMoveToRecord = {
+            onAction(DocumentAction.MoveToRecord(document.id.value, 0L))
         },
-        
+
         onCopyText = { text ->
             onAction(DocumentAction.CopyText(document.id.value, text, true))
         },
@@ -1064,32 +1025,36 @@ private fun DocumentCardItem(
         },
         onAiRewrite = { isOcr ->
             val text = if (isOcr) document.originalText else document.translatedText
-            text?.let { 
-                onAction(DocumentAction.AiRewrite(document.id.value, it, isOcr)) 
+            text?.let {
+                onAction(DocumentAction.AiRewrite(document.id.value, it, isOcr))
             }
         },
         onClearFormatting = { isOcr ->
             onAction(DocumentAction.ClearFormatting(document.id.value, isOcr))
         },
-        
+
         confidenceThreshold = ocrSettings.confidenceThreshold,
         onWordTap = { word, confidence ->
             onAction(DocumentAction.WordTap(word, confidence))
         },
-        
+
         onStartInlineEditOcr = {
-            onAction(DocumentAction.StartInlineEdit(
-                document.id.value, 
-                TextEditField.OCR_TEXT,
-                document.originalText ?: ""
-            ))
+            onAction(
+                DocumentAction.StartInlineEdit(
+                    document.id.value,
+                    TextEditField.OCR_TEXT,
+                    document.originalText ?: ""
+                )
+            )
         },
         onStartInlineEditTranslation = {
-            onAction(DocumentAction.StartInlineEdit(
-                document.id.value,
-                TextEditField.TRANSLATED_TEXT,
-                document.translatedText ?: ""
-            ))
+            onAction(
+                DocumentAction.StartInlineEdit(
+                    document.id.value,
+                    TextEditField.TRANSLATED_TEXT,
+                    document.translatedText ?: ""
+                )
+            )
         },
         onInlineTextChange = { text ->
             if (isInlineEditingOcr) {
@@ -1105,10 +1070,10 @@ private fun DocumentCardItem(
                 onAction(DocumentAction.SaveInlineEdit(document.id.value, TextEditField.TRANSLATED_TEXT))
             }
         },
-        
+
         dragModifier = dragModifier
     )
-    
+
     DropdownMenu(
         expanded = docMenuExpandedId == document.id.value,
         onDismissRequest = { onDocMenuExpandedChange(null) }
@@ -1145,7 +1110,7 @@ private fun DocumentCardItem(
             },
             leadingIcon = { Icon(Icons.Default.DriveFileMove, null) }
         )
-        
+
         if (document.processingStatus.isFailed) {
             HorizontalDivider()
             DropdownMenuItem(
@@ -1165,9 +1130,9 @@ private fun DocumentCardItem(
                 leadingIcon = { Icon(Icons.Default.Translate, null) }
             )
         }
-        
+
         HorizontalDivider()
-        
+
         DropdownMenuItem(
             text = { Text("Delete page") },
             onClick = {
