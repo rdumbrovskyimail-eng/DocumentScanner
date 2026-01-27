@@ -26,7 +26,7 @@ import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.core.ModelConstants
 import com.docs.scanner.domain.core.Record
 import com.docs.scanner.domain.core.RecordId
-import com.docs.scanner.domain.core.Result
+// import com.docs.scanner.domain.core.Result  ← УДАЛЕНО
 import com.docs.scanner.domain.usecase.AddDocumentState
 import com.docs.scanner.domain.usecase.AllUseCases
 import dagger.hilt.android.lifecycle.HiltViewModel
