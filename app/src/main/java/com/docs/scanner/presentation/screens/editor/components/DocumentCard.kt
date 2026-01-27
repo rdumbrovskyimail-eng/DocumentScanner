@@ -39,6 +39,7 @@ import com.docs.scanner.domain.model.Document
 import com.docs.scanner.presentation.components.MicroButton
 import com.docs.scanner.presentation.theme.*
 import java.io.File
+import java.util.Locale
 
 @Composable
 fun DocumentCard(
@@ -442,7 +443,7 @@ private fun OcrTextContent(
                         color = MaterialTheme.colorScheme.secondaryContainer
                     ) {
                         Text(
-                            text = lang.uppercase(),
+                            text = lang.uppercase(Locale.getDefault()),
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
