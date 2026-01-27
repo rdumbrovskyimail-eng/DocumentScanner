@@ -37,7 +37,8 @@ import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.BuildConfig
-import com.docs.scanner.domain.model.Document
+import com.docs.scanner.domain.core.Document
+import com.docs.scanner.domain.core.Language
 import com.docs.scanner.presentation.components.SmartDivider
 import com.docs.scanner.presentation.screens.editor.components.*
 import com.docs.scanner.presentation.theme.*
