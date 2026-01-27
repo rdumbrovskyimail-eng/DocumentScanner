@@ -37,7 +37,7 @@ import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.BuildConfig
-import com.docs.scanner.domain.core.Language
+import com.docs.scanner.domain.model.Document
 import com.docs.scanner.presentation.components.SmartDivider
 import com.docs.scanner.presentation.screens.editor.components.*
 import com.docs.scanner.presentation.theme.*
@@ -72,8 +72,6 @@ fun EditorScreen(
     val canUndo by viewModel.canUndo.collectAsStateWithLifecycle()
     val failedCount by viewModel.failedDocumentsCount.collectAsStateWithLifecycle()
     val confidenceTooltip by viewModel.confidenceTooltip.collectAsStateWithLifecycle()
-    
-    // ✅ БЛОК 1: ДОБАВИТЬ ЭТИ 2 СТРОКИ
     val ocrSettings by viewModel.ocrSettings.collectAsStateWithLifecycle()
     val inlineEditingStates by viewModel.inlineEditingStates.collectAsStateWithLifecycle()
     
@@ -95,7 +93,6 @@ fun EditorScreen(
     var showBatchExportDialog by remember { mutableStateOf(false) }
     var showBatchMoveDialog by remember { mutableStateOf(false) }
     
-    // ✅ Храним только ID вместо Document objects
     var editingTextDocId by remember { mutableStateOf<Long?>(null) }
     var editingTextIsOcr by remember { mutableStateOf(true) }
     var showMoveDocumentDialogForId by remember { mutableStateOf<Long?>(null) }
@@ -132,7 +129,6 @@ fun EditorScreen(
     // ════════════════════════════════════════════════════════════════════
     
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        // ✅ Проверка ПЕРЕД вызовом ViewModel
         if (!selectionState.isActive) {
             viewModel.reorderDocuments(from.index, to.index)
         }
@@ -145,14 +141,12 @@ fun EditorScreen(
     LaunchedEffect(uiState) {
         val state = uiState
         if (state is EditorUiState.Success) {
-            // ✅ Показываем диалог только если документов нет И диалог ещё не показан
             if (state.documents.isEmpty() && !showAddDocumentDialog) {
                 showAddDocumentDialog = true
             }
         }
     }
     
-    // ✅ Share events через Channel - не пропадают
     LaunchedEffect(Unit) {
         viewModel.shareEvent.collect { event ->
             when (event) {
@@ -160,7 +154,6 @@ fun EditorScreen(
                     try {
                         val file = File(event.path)
                         
-                        // ✅ Полная проверка файла
                         if (!file.exists()) {
                             snackbarHostState.showSnackbar("File not found")
                             return@collect
@@ -176,7 +169,6 @@ fun EditorScreen(
                             return@collect
                         }
                         
-                        // ✅ FileProvider с error handling
                         val uri = try {
                             FileProvider.getUriForFile(
                                 context,
@@ -194,13 +186,11 @@ fun EditorScreen(
                             putExtra(Intent.EXTRA_STREAM, uri)
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             
-                            // ✅ Добавляем имя файла если есть
                             event.fileName?.let { name ->
                                 putExtra(Intent.EXTRA_TITLE, name)
                             }
                         }
                         
-                        // ✅ Проверяем наличие приложений
                         if (intent.resolveActivity(context.packageManager) != null) {
                             context.startActivity(Intent.createChooser(intent, "Share"))
                         } else {
@@ -216,7 +206,6 @@ fun EditorScreen(
         }
     }
     
-    // ✅ Error events
     LaunchedEffect(Unit) {
         viewModel.errorEvent.collect { event ->
             val result = snackbarHostState.showSnackbar(
@@ -480,7 +469,6 @@ fun EditorScreen(
                 }
 
                 is EditorUiState.Success -> {
-                    // ✅ Processing banner - отдельный state
                     if (processingState.isActive) {
                         BatchProgressBanner(
                             processedCount = processingState.progress,
@@ -492,23 +480,21 @@ fun EditorScreen(
                         )
                     }
                     
-                    // ✅ Batch operation banner - показываем batch progress
-                    if (batchOperation != null) {
+                    batchOperation?.let { operation ->
                         BatchProgressBanner(
-                            processedCount = batchOperation.progress,
-                            totalCount = batchOperation.total,
-                            currentStage = when (batchOperation) {
-                                is BatchOperation.Delete -> "Deleting ${batchOperation.progress}/${batchOperation.total}..."
-                                is BatchOperation.Export -> "Exporting ${batchOperation.progress}/${batchOperation.total}..."
-                                is BatchOperation.Move -> "Moving ${batchOperation.progress}/${batchOperation.total}..."
-                                is BatchOperation.RetryOcr -> "Retrying OCR ${batchOperation.progress}/${batchOperation.total}..."
-                                is BatchOperation.RetryTranslation -> "Retrying translation ${batchOperation.progress}/${batchOperation.total}..."
+                            processedCount = operation.progress,
+                            totalCount = operation.total,
+                            currentStage = when (operation) {
+                                is BatchOperation.Delete -> "Deleting ${operation.progress}/${operation.total}..."
+                                is BatchOperation.Export -> "Exporting ${operation.progress}/${operation.total}..."
+                                is BatchOperation.Move -> "Moving ${operation.progress}/${operation.total}..."
+                                is BatchOperation.RetryOcr -> "Retrying OCR ${operation.progress}/${operation.total}..."
+                                is BatchOperation.RetryTranslation -> "Retrying translation ${operation.progress}/${operation.total}..."
                             },
                             onCancelClick = { viewModel.cancelBatchOperation() }
                         )
                     }
                     
-                    // ✅ Smart retry banner для failed документов
                     if (failedCount > 0 && showSmartRetryBanner && !processingState.isActive && batchOperation == null) {
                         SmartRetryBanner(
                             failedCount = failedCount,
@@ -534,16 +520,14 @@ fun EditorScreen(
                             ) { document ->
                                 val index = state.documents.indexOf(document)
                                 
-                                // ✅ Условный рендеринг: reorderable только если НЕ selection mode
                                 if (selectionState.isActive) {
-                                    // Обычный item БЕЗ drag & drop
                                     DocumentCardItem(
                                         document = document,
                                         index = index,
                                         state = state,
                                         selectionState = selectionState,
-                                        ocrSettings = ocrSettings, // ✅ БЛОК 5: ДОБАВИТЬ
-                                        inlineEditingStates = inlineEditingStates, // ✅ БЛОК 5: ДОБАВИТЬ
+                                        ocrSettings = ocrSettings,
+                                        inlineEditingStates = inlineEditingStates,
                                         onAction = ::handleDocumentAction,
                                         docMenuExpandedId = docMenuExpandedId,
                                         onDocMenuExpandedChange = { docMenuExpandedId = it },
@@ -551,15 +535,14 @@ fun EditorScreen(
                                         dragModifier = Modifier
                                     )
                                 } else {
-                                    // Item С drag & drop
                                     ReorderableItem(reorderableState, key = document.id.value) { isDragging ->
                                         DocumentCardItem(
                                             document = document,
                                             index = index,
                                             state = state,
                                             selectionState = selectionState,
-                                            ocrSettings = ocrSettings, // ✅ БЛОК 5: ДОБАВИТЬ
-                                            inlineEditingStates = inlineEditingStates, // ✅ БЛОК 5: ДОБАВИТЬ
+                                            ocrSettings = ocrSettings,
+                                            inlineEditingStates = inlineEditingStates,
                                             onAction = ::handleDocumentAction,
                                             docMenuExpandedId = docMenuExpandedId,
                                             onDocMenuExpandedChange = { docMenuExpandedId = it },
@@ -591,7 +574,6 @@ fun EditorScreen(
 
     val success = uiState as? EditorUiState.Success
     
-    // Add Document Dialog
     if (showAddDocumentDialog) {
         AddDocumentDialog(
             onDismiss = { showAddDocumentDialog = false },
@@ -615,7 +597,6 @@ fun EditorScreen(
         )
     }
     
-    // ✅ Text Editor Sheet - получаем документ по ID
     editingTextDocId?.let { docId ->
         val doc = success?.documents?.find { it.id.value == docId }
         if (doc != null) {
@@ -635,7 +616,6 @@ fun EditorScreen(
         }
     }
     
-    // Rename Record Dialog
     if (showRenameRecordDialog && success != null) {
         var name by remember(success.record.id.value) { mutableStateOf(success.record.name) }
         AlertDialog(
@@ -665,7 +645,6 @@ fun EditorScreen(
         )
     }
 
-    // Edit Description Dialog
     if (showEditDescriptionDialog && success != null) {
         var desc by remember(success.record.id.value) { mutableStateOf(success.record.description.orEmpty()) }
         AlertDialog(
@@ -694,7 +673,6 @@ fun EditorScreen(
         )
     }
 
-    // Tags Dialog
     if (showTagsDialog && success != null) {
         var newTag by remember { mutableStateOf("") }
         AlertDialog(
@@ -743,13 +721,14 @@ fun EditorScreen(
         )
     }
 
-    // Language Dialog
     if (showLanguageDialog && success != null) {
         var source by remember(success.record.id.value) { mutableStateOf(success.record.sourceLanguage) }
         var target by remember(success.record.id.value) { mutableStateOf(success.record.targetLanguage) }
 
-        val sourceOptions = Language.ocrSourceOptions
-        val targetOptions = Language.translationSupported.filter { it != Language.AUTO }
+        val sourceOptions = com.docs.scanner.domain.model.Language.ocrSourceOptions
+        val targetOptions = com.docs.scanner.domain.model.Language.translationSupported.filter { 
+            it != com.docs.scanner.domain.model.Language.AUTO 
+        }
 
         AlertDialog(
             onDismissRequest = { showLanguageDialog = false },
@@ -809,7 +788,6 @@ fun EditorScreen(
         )
     }
 
-    // ✅ Move Document Dialog - получаем документ по ID
     showMoveDocumentDialogForId?.let { docId ->
         val doc = success?.documents?.find { it.id.value == docId }
         if (doc != null) {
@@ -874,7 +852,6 @@ fun EditorScreen(
         }
     }
 
-    // Batch Delete Confirm Dialog
     if (showBatchDeleteConfirm) {
         DeletePagesDialog(
             count = selectedCount,
@@ -886,7 +863,6 @@ fun EditorScreen(
         )
     }
 
-    // Batch Export Dialog
     if (showBatchExportDialog) {
         ExportOptionsDialog(
             selectedCount = selectedCount,
@@ -902,7 +878,6 @@ fun EditorScreen(
         )
     }
 
-    // Batch Move Dialog
     if (showBatchMoveDialog) {
         AlertDialog(
             onDismissRequest = { showBatchMoveDialog = false },
@@ -953,7 +928,6 @@ fun EditorScreen(
         )
     }
 
-    // Confidence Tooltip Dialog
     confidenceTooltip?.let { (word, confidence) ->
         AlertDialog(
             onDismissRequest = { viewModel.hideConfidenceTooltip() },
@@ -1001,27 +975,20 @@ fun EditorScreen(
     }
 }
 
-// ════════════════════════════════════════════════════════════════════
-// HELPER COMPOSABLE - Document Card Item
-// ════════════════════════════════════════════════════════════════════
-
-// ✅ БЛОК 2: Обновить signature
 @Composable
 private fun DocumentCardItem(
     document: Document,
     index: Int,
     state: EditorUiState.Success,
     selectionState: SelectionState,
-    ocrSettings: OcrSettingsSnapshot, // ✅ ДОБАВИТЬ
-    inlineEditingStates: Map<String, InlineEditState>, // ✅ ДОБАВИТЬ
+    ocrSettings: OcrSettingsSnapshot,
+    inlineEditingStates: Map<String, InlineEditState>,
     onAction: (DocumentAction) -> Unit,
     docMenuExpandedId: Long?,
     onDocMenuExpandedChange: (Long?) -> Unit,
     isDragging: Boolean,
     dragModifier: Modifier
 ) {
-    // ✅ БЛОК 3: Добавить вычисление inline states
-    // Вычисляем состояния inline editing
     val ocrEditKey = "${document.id.value}:${TextEditField.OCR_TEXT.name}"
     val translationEditKey = "${document.id.value}:${TextEditField.TRANSLATED_TEXT.name}"
     
@@ -1034,7 +1001,6 @@ private fun DocumentCardItem(
     val inlineOcrText = ocrEditState?.currentText ?: document.originalText ?: ""
     val inlineTranslationText = translationEditState?.currentText ?: document.translatedText ?: ""
     
-    // ✅ БЛОК 4: Обновить вызов DocumentCard
     DocumentCard(
         document = document,
         index = index,
@@ -1042,7 +1008,6 @@ private fun DocumentCardItem(
         isSelectionMode = selectionState.isActive,
         isDragging = isDragging,
         
-        // ✅ ДОБАВИТЬ inline editing states:
         isInlineEditingOcr = isInlineEditingOcr,
         isInlineEditingTranslation = isInlineEditingTranslation,
         inlineOcrText = inlineOcrText,
@@ -1105,7 +1070,6 @@ private fun DocumentCardItem(
             onAction(DocumentAction.ClearFormatting(document.id.value, isOcr))
         },
         
-        // ✅ ИСПРАВИТЬ: использовать настройки из ocrSettings
         confidenceThreshold = ocrSettings.confidenceThreshold,
         onWordTap = { word, confidence ->
             onAction(DocumentAction.WordTap(word, confidence))
@@ -1126,7 +1090,6 @@ private fun DocumentCardItem(
             ))
         },
         onInlineTextChange = { text ->
-            // Determine field from inline editing states
             if (isInlineEditingOcr) {
                 onAction(DocumentAction.UpdateInlineText(document.id.value, TextEditField.OCR_TEXT, text))
             } else if (isInlineEditingTranslation) {
@@ -1134,7 +1097,6 @@ private fun DocumentCardItem(
             }
         },
         onInlineEditComplete = {
-            // Determine field and save
             if (isInlineEditingOcr) {
                 onAction(DocumentAction.SaveInlineEdit(document.id.value, TextEditField.OCR_TEXT))
             } else if (isInlineEditingTranslation) {
@@ -1145,7 +1107,6 @@ private fun DocumentCardItem(
         dragModifier = dragModifier
     )
     
-    // Document menu dropdown
     DropdownMenu(
         expanded = docMenuExpandedId == document.id.value,
         onDismissRequest = { onDocMenuExpandedChange(null) }
