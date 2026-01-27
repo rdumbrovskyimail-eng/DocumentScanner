@@ -97,17 +97,14 @@ import com.docs.scanner.presentation.screens.editor.components.DocumentCard
 import com.docs.scanner.presentation.screens.editor.components.EmptyRecordState
 import com.docs.scanner.presentation.screens.editor.components.ExportOptionsDialog
 import com.docs.scanner.presentation.screens.editor.components.FloatingActionButtons
-import com.docs.scanner.presentation.screens.editor.components.LanguageDialog
 import com.docs.scanner.presentation.screens.editor.components.RecordMenu
 import com.docs.scanner.presentation.screens.editor.components.SelectionTopBar
 import com.docs.scanner.presentation.screens.editor.components.SmartRetryBanner
-import com.docs.scanner.presentation.screens.editor.components.TagsDialog
 import com.docs.scanner.presentation.screens.editor.components.TextEditorSheet
 import com.docs.scanner.presentation.theme.GoogleDocsError
 import com.docs.scanner.presentation.theme.GoogleDocsPrimary
 import com.docs.scanner.presentation.theme.GoogleDocsWarning
 import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.longPressDraggableHandle
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import timber.log.Timber
 import java.io.File
@@ -611,9 +608,9 @@ fun EditorScreen(
                                             inlineEditingStates = inlineEditingStates,
                                             onAction = ::handleDocumentAction,
                                             docMenuExpandedId = docMenuExpandedId,
-                                            onDocMenuExpandedChange = { docMenuExpandedId = it },
+                                            onDocMenuExpandedChange = { id -> docMenuExpandedId = id },
                                             isDragging = isDragging,
-                                            dragModifier = Modifier.longPressDraggableHandle(
+                                            dragModifier = Modifier.draggableHandle(
                                                 onDragStarted = {
                                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 },
@@ -739,23 +736,121 @@ fun EditorScreen(
         )
     }
 
+    // Tags Dialog - inline implementation
     if (showTagsDialog && success != null) {
-        TagsDialog(
-            currentTags = success.record.tags,
-            onDismiss = { showTagsDialog = false },
-            onAddTag = { viewModel.addTag(it) },
-            onRemoveTag = { viewModel.removeTag(it) }
+        var newTag by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showTagsDialog = false },
+            title = { Text("Tags") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (success.record.tags.isEmpty()) {
+                        Text("No tags yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        success.record.tags.forEach { tag ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("#$tag")
+                                IconButton(onClick = { viewModel.removeTag(tag) }) {
+                                    Icon(Icons.Default.Delete, "Remove tag")
+                                }
+                            }
+                        }
+                    }
+                    
+                    OutlinedTextField(
+                        value = newTag,
+                        onValueChange = { newTag = it },
+                        label = { Text("Add tag") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = newTag.isNotBlank(),
+                    onClick = {
+                        viewModel.addTag(newTag)
+                        newTag = ""
+                    }
+                ) { Text("Add") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTagsDialog = false }) { Text("Close") }
+            }
         )
     }
 
+    // Language Dialog - inline implementation
     if (showLanguageDialog && success != null) {
-        LanguageDialog(
-            currentSource = success.record.sourceLanguage,
-            currentTarget = success.record.targetLanguage,
-            onDismiss = { showLanguageDialog = false },
-            onConfirm = { source, target ->
-                viewModel.updateLanguages(source, target)
-                showLanguageDialog = false
+        var source by remember(success.record.id.value) { mutableStateOf(success.record.sourceLanguage) }
+        var target by remember(success.record.id.value) { mutableStateOf(success.record.targetLanguage) }
+
+        val sourceOptions = Language.ocrSourceOptions
+        val targetOptions = Language.translationSupported.filter { it != Language.AUTO }
+
+        AlertDialog(
+            onDismissRequest = { showLanguageDialog = false },
+            title = { Text("Languages") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    // Source language
+                    Column {
+                        Text("Source (OCR)", style = MaterialTheme.typography.labelMedium)
+                        sourceOptions.forEach { lang ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { source = lang }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = source == lang,
+                                    onClick = { source = lang }
+                                )
+                                Text(lang.displayName)
+                            }
+                        }
+                    }
+                    
+                    HorizontalDivider()
+                    
+                    // Target language
+                    Column {
+                        Text("Target (Translation)", style = MaterialTheme.typography.labelMedium)
+                        targetOptions.forEach { lang ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { target = lang }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = target == lang,
+                                    onClick = { target = lang }
+                                )
+                                Text(lang.displayName)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.updateLanguages(source, target)
+                        showLanguageDialog = false
+                    }
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLanguageDialog = false }) { Text("Cancel") }
             }
         )
     }
