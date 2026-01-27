@@ -13,6 +13,7 @@
 package com.docs.scanner.presentation.screens.editor
 
 import android.net.Uri
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -21,8 +22,8 @@ import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.data.remote.gemini.GeminiApi
 import com.docs.scanner.domain.core.*
 import com.docs.scanner.domain.core.Language
-import com.docs.scanner.domain.model.Document
-import com.docs.scanner.domain.model.Record
+import com.docs.scanner.domain.core.Document  // ✅ ИСПРАВЛЕНО
+import com.docs.scanner.domain.core.Record    // ✅ ИСПРАВЛЕНО
 import com.docs.scanner.domain.usecase.AllUseCases
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
@@ -302,32 +303,48 @@ class EditorViewModel @Inject constructor(
             val autoTranslate = autoTranslateEnabled.value
             
             setProcessing(
-                ProcessingOperation.AddingDocument,
-                message = "Adding document...",
-                progress = 0
-            )
+    ProcessingOperation.AddingDocument,
+    message = "Adding document...",
+    progress = 0
+)
 
-            useCases.addDocument(recordId, uri)
-                .collect { state ->
-                    when (state) {
-                        is AddDocumentState.Creating -> {
-                            updateProcessing(
-                                message = state.message,
-                                progress = state.progress
-                            )
-                        }
-                        is AddDocumentState.ProcessingOcr -> {
-                            updateProcessing(
-                                message = state.message,
-                                progress = state.progress
-                            )
-                        }
-                        is AddDocumentState.Translating -> {
-                            updateProcessing(
-                                message = state.message,
-                                progress = state.progress
-                            )
-                        }
+useCases.addDocument(recordId, uri)
+    .collect { state ->
+        when (state) {
+            is AddDocumentState.Creating -> {
+                updateProcessing(
+                    message = state.message,
+                    progress = state.progress
+                )
+            }
+            is AddDocumentState.ProcessingOcr -> {
+                updateProcessing(
+                    message = state.message,
+                    progress = state.progress
+                )
+            }
+            is AddDocumentState.Translating -> {
+                updateProcessing(
+                    message = state.message,
+                    progress = state.progress
+                )
+            }
+            is AddDocumentState.Success -> {
+                clearProcessing()
+                loadRecord()
+            }
+            is AddDocumentState.Error -> {
+                clearProcessing()
+                _errorEvent.emit(
+                    ErrorEvent(
+                        message = state.message,
+                        actionLabel = "Retry",
+                        action = { addDocument(uri) }
+                    )
+                )
+            }
+        }
+    }
                         is AddDocumentState.Success -> {
                             clearProcessing()
                         }
