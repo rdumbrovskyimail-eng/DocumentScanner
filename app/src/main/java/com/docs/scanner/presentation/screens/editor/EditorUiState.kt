@@ -1,7 +1,7 @@
 package com.docs.scanner.presentation.screens.editor
 
-import com.docs.scanner.domain.model.Document
-import com.docs.scanner.domain.model.Record
+import com.docs.scanner.domain.core.Document
+import com.docs.scanner.domain.core.Record
 
 /**
  * КРИТИЧЕСКИ ВАЖНО: 
