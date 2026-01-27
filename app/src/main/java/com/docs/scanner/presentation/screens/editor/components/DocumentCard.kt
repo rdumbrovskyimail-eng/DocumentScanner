@@ -39,6 +39,7 @@ import com.docs.scanner.domain.model.Document
 import com.docs.scanner.presentation.components.MicroButton
 import com.docs.scanner.presentation.theme.*
 import java.io.File
+import java.util.Locale
 
 @Composable
 fun DocumentCard(
@@ -58,7 +59,7 @@ fun DocumentCard(
     onMoveDown: (() -> Unit)? = null,
     isFirst: Boolean = false,
     isLast: Boolean = false,
-onSharePage: (() -> Unit)? = null,
+    onSharePage: (() -> Unit)? = null,
     onDeletePage: (() -> Unit)? = null,
     onMoveToRecord: (() -> Unit)? = null,
     onCopyText: ((String) -> Unit)? = null,
@@ -442,7 +443,7 @@ private fun OcrTextContent(
                         color = MaterialTheme.colorScheme.secondaryContainer
                     ) {
                         Text(
-                            text = lang.toUpperCase(),
+                            text = lang.toUpperCase(Locale.ROOT),
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
