@@ -1,7 +1,7 @@
 /*
  * DocumentCard.kt
- * Version: 5.0.0 - REFACTORED (2026)
- * 
+ * Version: 8.0.0 - REFACTORED (2026)
+ *
  * КРИТИЧЕСКИЕ ИЗМЕНЕНИЯ:
  * ✅ Убраны все local states - всё через ViewModel
  * ✅ Inline editing через InlineEditingManager
@@ -10,21 +10,64 @@
 
 package com.docs.scanner.presentation.screens.editor.components
 
-import androidx.compose.animation.*
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.FormatClear
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,14 +78,29 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.*
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.docs.scanner.domain.core.ProcessingStatus
 import com.docs.scanner.domain.core.Document
+import com.docs.scanner.domain.core.ProcessingStatus
 import com.docs.scanner.presentation.components.MicroButton
-import com.docs.scanner.presentation.theme.*
+import com.docs.scanner.presentation.components.StatusBadge
+import com.docs.scanner.presentation.theme.GoogleDocsBackground
+import com.docs.scanner.presentation.theme.GoogleDocsBorderLight
+import com.docs.scanner.presentation.theme.GoogleDocsError
+import com.docs.scanner.presentation.theme.GoogleDocsPrimary
+import com.docs.scanner.presentation.theme.GoogleDocsSurfaceVariant
+import com.docs.scanner.presentation.theme.GoogleDocsTextPrimary
+import com.docs.scanner.presentation.theme.GoogleDocsTextSecondary
+import com.docs.scanner.presentation.theme.GoogleDocsTextTertiary
+import com.docs.scanner.presentation.theme.GoogleDocsTranslationBackground
+import com.docs.scanner.presentation.theme.GoogleDocsTranslationBorder
+import com.docs.scanner.presentation.theme.GoogleDocsTranslationIcon
+import com.docs.scanner.presentation.theme.GoogleDocsTranslationText
+import com.docs.scanner.presentation.theme.GoogleDocsTranslationTitle
 import java.io.File
 
 @Composable
@@ -52,74 +110,74 @@ fun DocumentCard(
     isSelected: Boolean,
     isSelectionMode: Boolean,
     isDragging: Boolean,
-    
+
     // Inline editing state (управляется извне через ViewModel)
     isInlineEditingOcr: Boolean = false,
     isInlineEditingTranslation: Boolean = false,
     inlineOcrText: String = "",
     inlineTranslationText: String = "",
-    
+
     // Basic actions
     onImageClick: () -> Unit,
     onOcrTextClick: () -> Unit,
     onTranslationClick: () -> Unit,
     onSelectionToggle: () -> Unit,
     onMenuClick: () -> Unit,
-    
+
     // Retry actions
     onRetryOcr: () -> Unit,
     onRetryTranslation: () -> Unit,
-    
+
     // Reorder actions
     onMoveUp: (() -> Unit)? = null,
     onMoveDown: (() -> Unit)? = null,
     isFirst: Boolean = false,
     isLast: Boolean = false,
-    
+
     // Single actions
     onSharePage: (() -> Unit)? = null,
     onDeletePage: (() -> Unit)? = null,
     onMoveToRecord: (() -> Unit)? = null,
-    
+
     // Text actions
     onCopyText: ((String) -> Unit)? = null,
     onPasteText: ((Boolean) -> Unit)? = null,
     onAiRewrite: ((Boolean) -> Unit)? = null,
     onClearFormatting: ((Boolean) -> Unit)? = null,
-    
+
     // Confidence
     confidenceThreshold: Float = 0.7f,
     onWordTap: ((String, Float) -> Unit)? = null,
-    
+
     // Inline editing callbacks
     onStartInlineEditOcr: (() -> Unit)? = null,
     onStartInlineEditTranslation: (() -> Unit)? = null,
     onInlineTextChange: ((String) -> Unit)? = null,
     onInlineEditComplete: (() -> Unit)? = null,
-    
+
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
     var photoHeight by remember { mutableStateOf(200.dp) }
-    
+
     val cardScale by animateFloatAsState(
         targetValue = if (isDragging) 1.02f else 1f,
         animationSpec = spring(),
         label = "card_scale"
     )
-    
+
     val cardElevation by animateFloatAsState(
         targetValue = if (isDragging) 12f else 2f,
         animationSpec = spring(),
         label = "card_elevation"
     )
-    
+
     val selectionBorderColor by animateColorAsState(
         targetValue = if (isSelected) GoogleDocsPrimary else Color.Transparent,
         label = "selection_border"
     )
-    
+
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -175,7 +233,7 @@ fun DocumentCard(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
-                    
+
                     // Selection overlay
                     if (isSelectionMode) {
                         Box(
@@ -195,7 +253,7 @@ fun DocumentCard(
                             )
                         }
                     }
-                    
+
                     // Status badge
                     Box(
                         modifier = Modifier
@@ -207,7 +265,7 @@ fun DocumentCard(
                             showLabel = false
                         )
                     }
-                    
+
                     // Page number
                     Surface(
                         modifier = Modifier
@@ -223,7 +281,7 @@ fun DocumentCard(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
-                    
+
                     // Move buttons
                     if ((onMoveUp != null || onMoveDown != null) && !isSelectionMode) {
                         Column(
@@ -248,7 +306,7 @@ fun DocumentCard(
                         }
                     }
                 }
-                
+
                 // OCR Text Panel
                 Box(
                     modifier = Modifier
@@ -263,15 +321,15 @@ fun DocumentCard(
                         document.processingStatus is ProcessingStatus.Ocr.InProgress -> {
                             LoadingOcrState()
                         }
-                        
+
                         document.processingStatus is ProcessingStatus.Ocr.Failed -> {
                             ErrorOcrState(onRetry = onRetryOcr)
                         }
-                        
+
                         document.originalText.isNullOrBlank() -> {
                             EmptyOcrState()
                         }
-                        
+
                         else -> {
                             OcrTextContent(
                                 document = document,
@@ -295,7 +353,7 @@ fun DocumentCard(
                     }
                 }
             }
-            
+
             // ═══════════════════════════════════════════════════════════════
             // TRANSLATION SECTION
             // ═══════════════════════════════════════════════════════════════
@@ -317,7 +375,7 @@ fun DocumentCard(
                 onRetryTranslation = onRetryTranslation,
                 hasInlineEditing = onStartInlineEditTranslation != null
             )
-            
+
             // ═══════════════════════════════════════════════════════════════
             // ACTION BUTTONS ROW
             // ═══════════════════════════════════════════════════════════════
@@ -447,7 +505,7 @@ private fun OcrTextContent(
                 style = MaterialTheme.typography.labelSmall,
                 color = GoogleDocsTextTertiary
             )
-            
+
             if (hasInlineEditing) {
                 IconButton(
                     onClick = onStartInlineEdit,
@@ -462,9 +520,9 @@ private fun OcrTextContent(
                 }
             }
         }
-        
+
         Spacer(modifier = Modifier.height(8.dp))
-        
+
         // Content
         Box(
             modifier = Modifier
@@ -518,7 +576,7 @@ private fun TranslationSection(
         document.processingStatus !is ProcessingStatus.Translation.Failed) {
         return
     }
-    
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -551,7 +609,7 @@ private fun TranslationSection(
                         color = GoogleDocsTranslationTitle
                     )
                 }
-                
+
                 if (hasInlineEditing && !document.translatedText.isNullOrBlank()) {
                     IconButton(
                         onClick = onStartInlineEdit,
@@ -573,7 +631,7 @@ private fun TranslationSection(
                     )
                 }
             }
-            
+
             // Content
             when {
                 document.processingStatus is ProcessingStatus.Translation.InProgress -> {
@@ -593,51 +651,43 @@ private fun TranslationSection(
                         )
                     }
                 }
-                
+
                 document.processingStatus is ProcessingStatus.Translation.Failed -> {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Text(
+                            text = "Translation failed",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GoogleDocsError
+                        )
+                        TextButton(onClick = onRetryTranslation) {
                             Icon(
-                                Icons.Default.ErrorOutline,
+                                Icons.Default.Refresh,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = GoogleDocsError
+                                modifier = Modifier.size(14.dp)
                             )
-                            Text(
-                                text = "Translation failed",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = GoogleDocsError
-                            )
-                        }
-                        TextButton(
-                            onClick = onRetryTranslation,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                        ) {
-                            Text("Retry", style = MaterialTheme.typography.labelSmall)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Retry")
                         }
                     }
                 }
-                
+
                 isInlineEditing -> {
                     OutlinedTextField(
                         value = inlineText,
                         onValueChange = onInlineTextChange,
                         modifier = Modifier.fillMaxWidth(),
-                        textStyle = MaterialTheme.typography.bodySmall,
+                        textStyle = MaterialTheme.typography.bodyMedium,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = GoogleDocsTranslationIcon,
                             unfocusedBorderColor = GoogleDocsTranslationBorder
                         )
                     )
                 }
-                
+
                 else -> {
                     Text(
                         text = document.translatedText ?: "",
@@ -684,7 +734,7 @@ private fun ActionButtonsRow(
                 enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
             )
         }
-        
+
         if (onCopyText != null) {
             MicroButton(
                 text = "Copy",
@@ -696,7 +746,7 @@ private fun ActionButtonsRow(
                 enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
             )
         }
-        
+
         if (onPasteText != null) {
             MicroButton(
                 text = "Paste",
@@ -708,7 +758,7 @@ private fun ActionButtonsRow(
                 enabled = true
             )
         }
-        
+
         if (onClearFormatting != null) {
             MicroButton(
                 text = "Clear",
@@ -720,9 +770,9 @@ private fun ActionButtonsRow(
                 enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
             )
         }
-        
+
         Spacer(modifier = Modifier.weight(1f))
-        
+
         if (onSharePage != null) {
             IconButton(
                 onClick = onSharePage,
@@ -736,7 +786,7 @@ private fun ActionButtonsRow(
                 )
             }
         }
-        
+
         IconButton(
             onClick = onMenuClick,
             modifier = Modifier.size(36.dp)
@@ -753,8 +803,8 @@ private fun ActionButtonsRow(
     // Text Selector Dialog
     if (showTextSelector) {
         AlertDialog(
-            onDismissRequest = { 
-                showTextSelector = false 
+            onDismissRequest = {
+                showTextSelector = false
                 pendingAction = null
             },
             title = { Text("Select text") },
@@ -798,8 +848,8 @@ private fun ActionButtonsRow(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { 
-                    showTextSelector = false 
+                TextButton(onClick = {
+                    showTextSelector = false
                     pendingAction = null
                 }) {
                     Text("Cancel")
@@ -821,14 +871,14 @@ private fun HighlightedConfidenceText(
         words.forEachIndexed { index, word ->
             val cleanWord = word.replace(Regex("[^\\w]"), "")
             val confidence = wordConfidences[cleanWord] ?: wordConfidences[word] ?: 1f
-            
+
             if (confidence < threshold) {
                 val bgColor = when {
                     confidence < 0.5f -> Color(0xFFF44336).copy(alpha = 0.3f)
                     confidence < 0.7f -> Color(0xFFFF9800).copy(alpha = 0.3f)
                     else -> Color(0xFFFFC107).copy(alpha = 0.3f)
                 }
-                
+
                 pushStringAnnotation("word", "$cleanWord|$confidence")
                 withStyle(SpanStyle(background = bgColor)) {
                     append(word)
@@ -837,7 +887,7 @@ private fun HighlightedConfidenceText(
             } else {
                 append(word)
             }
-            
+
             if (index < words.size - 1) {
                 append(" ")
             }
