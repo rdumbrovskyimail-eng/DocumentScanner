@@ -5,6 +5,7 @@
  * ✅ ADDED: Coil 3.x image loading library
  * ✅ ADDED: room-testing for MigrationTest support
  * ✅ ADDED: sh.calvin.reorderable for Drag & Drop functionality
+ * ✅ UPDATED: sh.calvin.reorderable to 2.4.3 (Compose 1.7+ compatible)
  */
 
 import java.util.Properties
@@ -242,8 +243,8 @@ dependencies {
 
     implementation(libs.androidx.profileinstaller)
 
-    // ✅ DRAG & DROP LIBRARY - sh.calvin.reorderable
-    implementation("sh.calvin.reorderable:reorderable:2.3.0")
+    // ✅ DRAG & DROP LIBRARY - sh.calvin.reorderable (Compose 1.7+ compatible)
+    implementation("sh.calvin.reorderable:reorderable:2.4.3")
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
