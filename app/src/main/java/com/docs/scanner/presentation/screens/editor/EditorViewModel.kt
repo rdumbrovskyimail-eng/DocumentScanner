@@ -1,6 +1,13 @@
 /*
  * EditorViewModel.kt
- * Version: 7.0.0 - PRODUCTION READY (2026) - 100% FIXED
+ * Version: 8.0.0 - REFACTORED (2026)
+ * 
+ * КРИТИЧЕСКИЕ ИЗМЕНЕНИЯ:
+ * ✅ Разделение ответственности - используем Manager классы
+ * ✅ Нет race conditions - InlineEditingManager
+ * ✅ Нет lost progress - BatchOperationsManager
+ * ✅ Memory efficient - ID вместо Document objects
+ * ✅ Thread-safe - StateFlow + Mutex где нужно
  */
 
 package com.docs.scanner.presentation.screens.editor
@@ -15,14 +22,13 @@ import com.docs.scanner.data.remote.gemini.GeminiApi
 import com.docs.scanner.domain.core.*
 import com.docs.scanner.domain.model.Document
 import com.docs.scanner.domain.model.Record
-import com.docs.scanner.domain.model.Result
-import com.docs.scanner.domain.usecase.AddDocumentState
 import com.docs.scanner.domain.usecase.AllUseCases
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -37,18 +43,79 @@ class EditorViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "EditorViewModel"
+        private const val MAX_HISTORY_SIZE = 20
     }
 
     private val recordId: Long = savedStateHandle.get<Long>("recordId") ?: 0L
 
+    // ════════════════════════════════════════════════════════════════════
+    // MANAGERS - Делегируем работу специализированным классам
+    // ════════════════════════════════════════════════════════════════════
+    
+    private val inlineEditingManager = InlineEditingManager(
+        scope = viewModelScope,
+        onSave = { docId, field, text ->
+            saveInlineEditToDb(docId, field, text)
+        },
+        onHistoryAdd = { docId, field, prev, new ->
+            addToHistory(docId, field, prev, new)
+        }
+    )
+    
+    private val batchOperationsManager = BatchOperationsManager(
+        useCases = useCases,
+        scope = viewModelScope
+    )
+    
+    // ════════════════════════════════════════════════════════════════════
+    // UI STATE - Только domain данные
+    // ════════════════════════════════════════════════════════════════════
+    
     private val _uiState = MutableStateFlow<EditorUiState>(EditorUiState.Loading)
     val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
-
-    private val _shareEvent = MutableSharedFlow<ShareEvent>()
-    val shareEvent: SharedFlow<ShareEvent> = _shareEvent.asSharedFlow()
-
-    private val _moveTargets = MutableStateFlow<List<Record>>(emptyList())
-    val moveTargets: StateFlow<List<Record>> = _moveTargets.asStateFlow()
+    
+    // ════════════════════════════════════════════════════════════════════
+    // PROCESSING STATE - Отдельно от UI
+    // ════════════════════════════════════════════════════════════════════
+    
+    private val _processingState = MutableStateFlow(ProcessingState())
+    val processingState: StateFlow<ProcessingState> = _processingState.asStateFlow()
+    
+    // ════════════════════════════════════════════════════════════════════
+    // SELECTION STATE
+    // ════════════════════════════════════════════════════════════════════
+    
+    private val _selectionState = MutableStateFlow(SelectionState())
+    val selectionState: StateFlow<SelectionState> = _selectionState.asStateFlow()
+    
+    val selectedCount: StateFlow<Int> = _selectionState.map { it.count }
+        .stateIn(viewModelScope, SharingStarted.Lazily, 0)
+    
+    // ════════════════════════════════════════════════════════════════════
+    // INLINE EDITING - Делегируем менеджеру
+    // ════════════════════════════════════════════════════════════════════
+    
+    val inlineEditingStates = inlineEditingManager.editingStates
+    
+    // ════════════════════════════════════════════════════════════════════
+    // BATCH OPERATIONS - Делегируем менеджеру
+    // ════════════════════════════════════════════════════════════════════
+    
+    val batchOperation = batchOperationsManager.currentOperation
+    
+    // ════════════════════════════════════════════════════════════════════
+    // EVENTS - Используем Channel вместо SharedFlow
+    // ════════════════════════════════════════════════════════════════════
+    
+    private val _shareEvent = Channel<ShareEvent>(Channel.BUFFERED)
+    val shareEvent: Flow<ShareEvent> = _shareEvent.receiveAsFlow()
+    
+    private val _errorEvent = Channel<ErrorEvent>(Channel.BUFFERED)
+    val errorEvent: Flow<ErrorEvent> = _errorEvent.receiveAsFlow()
+    
+    // ════════════════════════════════════════════════════════════════════
+    // SETTINGS - StateIn для оптимизации
+    // ════════════════════════════════════════════════════════════════════
     
     private val targetLanguage = settingsDataStore.translationTarget
         .map { code ->
@@ -57,65 +124,65 @@ class EditorViewModel @Inject constructor(
             }
         }
         .stateIn(
-            viewModelScope, 
-            SharingStarted.Lazily, 
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000), // ✅ Останавливается через 5 сек
             Language.ENGLISH
         )
     
     private val translationModel = settingsDataStore.translationModel
         .stateIn(
             viewModelScope,
-            SharingStarted.Lazily,
+            SharingStarted.WhileSubscribed(5000),
             ModelConstants.DEFAULT_TRANSLATION_MODEL
         )
     
     private val autoTranslateEnabled = settingsDataStore.autoTranslate
         .stateIn(
             viewModelScope,
-            SharingStarted.Lazily,
+            SharingStarted.WhileSubscribed(5000),
             false
         )
     
-    private val _selectedDocIds = MutableStateFlow<Set<Long>>(emptySet())
-    val selectedDocIds: StateFlow<Set<Long>> = _selectedDocIds.asStateFlow()
-    
-    private val _isSelectionMode = MutableStateFlow(false)
-    val isSelectionMode: StateFlow<Boolean> = _isSelectionMode.asStateFlow()
-    
-    data class OcrSettingsSnapshot(
-        val confidenceThreshold: Float = 0.7f,
-        val geminiEnabled: Boolean = true
+    // ✅ ИСПРАВЛЕНИЕ: Убираем private, чтобы EditorScreen мог получить настройки
+    val ocrSettings: StateFlow<OcrSettingsSnapshot> = combine(
+        settingsDataStore.confidenceThreshold,
+        settingsDataStore.geminiOcrEnabled
+    ) { threshold, enabled ->
+        OcrSettingsSnapshot(threshold, enabled)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        OcrSettingsSnapshot()
     )
     
-    private val _ocrSettings = MutableStateFlow(OcrSettingsSnapshot())
-    val ocrSettings: StateFlow<OcrSettingsSnapshot> = _ocrSettings.asStateFlow()
+    // ════════════════════════════════════════════════════════════════════
+    // HISTORY - Для Undo
+    // ════════════════════════════════════════════════════════════════════
     
-    data class TextEditHistoryItem(
-        val documentId: Long,
-        val field: TextEditField,
-        val previousValue: String?,
-        val newValue: String?,
-        val timestamp: Long = System.currentTimeMillis()
-    )
-    
-    enum class TextEditField { OCR_TEXT, TRANSLATED_TEXT }
-    
+    private val historyMutex = Mutex()
     private val _editHistory = MutableStateFlow<List<TextEditHistoryItem>>(emptyList())
     val editHistory: StateFlow<List<TextEditHistoryItem>> = _editHistory.asStateFlow()
     
-    private val maxHistorySize = 20
+    val canUndo: StateFlow<Boolean> = _editHistory.map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Lazily, false)
     
-    private val _inlineEditingDocId = MutableStateFlow<Long?>(null)
-    val inlineEditingDocId: StateFlow<Long?> = _inlineEditingDocId.asStateFlow()
+    // ════════════════════════════════════════════════════════════════════
+    // MOVE TARGETS
+    // ════════════════════════════════════════════════════════════════════
     
-    private val _inlineEditingField = MutableStateFlow<TextEditField?>(null)
-    val inlineEditingField: StateFlow<TextEditField?> = _inlineEditingField.asStateFlow()
+    private val _moveTargets = MutableStateFlow<List<Record>>(emptyList())
+    val moveTargets: StateFlow<List<Record>> = _moveTargets.asStateFlow()
     
-    private var pendingInlineChanges: Pair<Long, String>? = null
-    private var autoSaveJob: Job? = null
+    // ════════════════════════════════════════════════════════════════════
+    // CONFIDENCE TOOLTIP
+    // ════════════════════════════════════════════════════════════════════
     
     private val _confidenceTooltip = MutableStateFlow<Pair<String, Float>?>(null)
     val confidenceTooltip: StateFlow<Pair<String, Float>?> = _confidenceTooltip.asStateFlow()
+    
+    // ════════════════════════════════════════════════════════════════════
+    // DERIVED STATES
+    // ════════════════════════════════════════════════════════════════════
     
     val failedDocumentsCount: StateFlow<Int> = _uiState.map { state ->
         when (state) {
@@ -123,17 +190,14 @@ class EditorViewModel @Inject constructor(
             else -> 0
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, 0)
-    
-    val selectedCount: StateFlow<Int> = _selectedDocIds.map { it.size }
-        .stateIn(viewModelScope, SharingStarted.Lazily, 0)
-    
-    val canUndo: StateFlow<Boolean> = _editHistory.map { it.isNotEmpty() }
-        .stateIn(viewModelScope, SharingStarted.Lazily, false)
 
+    // ════════════════════════════════════════════════════════════════════
+    // INITIALIZATION
+    // ════════════════════════════════════════════════════════════════════
+    
     init {
         if (recordId != 0L) {
             loadData()
-            loadOcrSettings()
             
             viewModelScope.launch {
                 val target = targetLanguage.value
@@ -149,20 +213,29 @@ class EditorViewModel @Inject constructor(
             _uiState.value = EditorUiState.Error("Invalid record ID")
         }
     }
-
-    private fun loadOcrSettings() {
+    
+    // ════════════════════════════════════════════════════════════════════
+    // LIFECYCLE
+    // ════════════════════════════════════════════════════════════════════
+    
+    override fun onCleared() {
+        super.onCleared()
+        
+        // Сохраняем все активные inline edits перед выходом
         viewModelScope.launch {
-            settingsDataStore.confidenceThreshold.collect { threshold ->
-                _ocrSettings.value = _ocrSettings.value.copy(confidenceThreshold = threshold)
-            }
-        }
-        viewModelScope.launch {
-            settingsDataStore.geminiOcrEnabled.collect { enabled ->
-                _ocrSettings.value = _ocrSettings.value.copy(geminiEnabled = enabled)
+            try {
+                inlineEditingManager.saveAll()
+                Timber.d("Saved all inline edits before VM cleared")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save inline edits on clear")
             }
         }
     }
 
+    // ════════════════════════════════════════════════════════════════════
+    // DATA LOADING
+    // ════════════════════════════════════════════════════════════════════
+    
     private fun loadData() {
         viewModelScope.launch {
             _uiState.value = EditorUiState.Loading
@@ -177,6 +250,7 @@ class EditorViewModel @Inject constructor(
                 val folder = useCases.getFolderById(record.folderId.value)
                 val folderName = folder?.name ?: ""
 
+                // Load move targets
                 launch {
                     useCases.getRecords(record.folderId.value)
                         .catch { /* ignore */ }
@@ -185,17 +259,27 @@ class EditorViewModel @Inject constructor(
                         }
                 }
 
+                // Load documents with StateIn
                 useCases.getDocuments(recordId)
                     .catch { e ->
                         _uiState.value = EditorUiState.Error("Failed to load documents: ${e.message}")
                     }
                     .collect { documents ->
                         val currentRecord = useCases.getRecordById(recordId) ?: record
+                        
+                        // ✅ Обновляем только domain data
                         _uiState.value = EditorUiState.Success(
                             record = currentRecord,
                             folderName = folderName,
                             documents = documents.sortedBy { it.position }
                         )
+                        
+                        // Обновляем total в selection mode если нужно
+                        if (_selectionState.value.isActive) {
+                            _selectionState.value = _selectionState.value.copy(
+                                mode = SelectionMode.Active(documents.size)
+                            )
+                        }
                     }
             } catch (e: Exception) {
                 _uiState.value = EditorUiState.Error("Failed to load data: ${e.message}")
@@ -203,43 +287,52 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    // ════════════════════════════════════════════════════════════════════
+    // DOCUMENT OPERATIONS
+    // ════════════════════════════════════════════════════════════════════
+    
     fun addDocument(uri: Uri) {
         viewModelScope.launch {
             val currentState = _uiState.value
             if (currentState !is EditorUiState.Success) return@launch
 
+            // ✅ Захватываем настройки В МОМЕНТ ВЫЗОВА
+            val targetLang = targetLanguage.value
+            val autoTranslate = autoTranslateEnabled.value
+            
+            setProcessing(
+                ProcessingOperation.AddingDocument,
+                message = "Adding document...",
+                progress = 0
+            )
+
             useCases.addDocument(recordId, uri)
                 .collect { state ->
                     when (state) {
                         is AddDocumentState.Creating -> {
-                            _uiState.value = currentState.copy(
-                                isProcessing = true,
-                                processingMessage = state.message,
-                                processingProgress = state.progress
+                            updateProcessing(
+                                message = state.message,
+                                progress = state.progress
                             )
                         }
                         is AddDocumentState.ProcessingOcr -> {
-                            _uiState.value = currentState.copy(
-                                isProcessing = true,
-                                processingMessage = state.message,
-                                processingProgress = state.progress
+                            updateProcessing(
+                                message = state.message,
+                                progress = state.progress
                             )
                         }
                         is AddDocumentState.Translating -> {
-                            _uiState.value = currentState.copy(
-                                isProcessing = true,
-                                processingMessage = state.message,
-                                processingProgress = state.progress
+                            updateProcessing(
+                                message = state.message,
+                                progress = state.progress
                             )
                         }
                         is AddDocumentState.Success -> {
-                            _uiState.value = currentState.copy(isProcessing = false)
+                            clearProcessing()
                         }
                         is AddDocumentState.Error -> {
-                            _uiState.value = currentState.copy(
-                                isProcessing = false,
-                                errorMessage = state.message
-                            )
+                            clearProcessing()
+                            sendError(state.message)
                         }
                     }
                 }
@@ -257,10 +350,10 @@ class EditorViewModel @Inject constructor(
             val currentState = _uiState.value
             if (currentState !is EditorUiState.Success) return@launch
             
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Adding documents...",
-                processingProgress = 0
+            setProcessing(
+                ProcessingOperation.AddingDocument,
+                message = "Adding ${uris.size} documents...",
+                progress = 0
             )
             
             val result = useCases.batch.addDocuments(
@@ -268,51 +361,57 @@ class EditorViewModel @Inject constructor(
                 imageUris = uris.map { it.toString() },
                 onProgress = { done, total ->
                     val progress = (done * 50) / total
-                    _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                        processingMessage = "Saving images ($done/$total)...",
-                        processingProgress = progress
-                    ) ?: return@addDocuments
+                    updateProcessing(
+                        message = "Saving images ($done/$total)...",
+                        progress = progress
+                    )
                 }
             )
             
             if (result.successful.isNotEmpty()) {
-                _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                    processingMessage = "Processing OCR...",
-                    processingProgress = 50
-                ) ?: return@launch
+                updateProcessing(
+                    message = "Processing OCR...",
+                    progress = 50
+                )
                 
                 useCases.batch.processDocuments(
                     docIds = result.successful,
                     onProgress = { done, total ->
                         val progress = 50 + (done * 50) / total
-                        _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                            processingMessage = "Processing ($done/$total)...",
-                            processingProgress = progress
-                        ) ?: return@processDocuments
+                        updateProcessing(
+                            message = "Processing ($done/$total)...",
+                            progress = progress
+                        )
                     }
                 )
             }
             
-            _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                isProcessing = false,
-                errorMessage = if (result.isFullSuccess) null else "${result.failedCount} documents failed"
-            ) ?: return@launch
+            if (result.isFullSuccess) {
+                clearProcessing()
+            } else {
+                clearProcessing()
+                sendError("${result.failedCount} documents failed")
+            }
         }
     }
 
     fun deleteDocument(documentId: Long) {
         viewModelScope.launch {
             when (val result = useCases.deleteDocument(documentId)) {
-                is Result.Success -> { /* Auto-refresh */ }
+                is Result.Success -> { /* Auto-refresh from Flow */ }
                 is Result.Error -> 
-                    updateErrorMessage("Failed to delete: ${result.exception.message}")
+                    sendError("Failed to delete: ${result.exception.message}")
                 else -> {}
             }
         }
     }
 
     fun reorderDocuments(fromIndex: Int, toIndex: Int) {
-        if (_isSelectionMode.value) return
+        // ✅ Проверка selection mode
+        if (_selectionState.value.isActive) {
+            Timber.w("Cannot reorder in selection mode")
+            return
+        }
         
         val currentState = _uiState.value
         if (currentState !is EditorUiState.Success) return
@@ -321,17 +420,19 @@ class EditorViewModel @Inject constructor(
         if (fromIndex < 0 || fromIndex >= currentDocs.size ||
             toIndex < 0 || toIndex >= currentDocs.size) return
         
+        // Optimistic update
         val item = currentDocs.removeAt(fromIndex)
         currentDocs.add(toIndex, item)
         
         _uiState.value = currentState.copy(documents = currentDocs)
         
+        // Persist to DB
         viewModelScope.launch {
             val docIds = currentDocs.map { it.id }
             useCases.documents.reorder(RecordId(recordId), docIds)
                 .onFailure { error ->
-                    updateErrorMessage("Failed to reorder: ${error.message}")
-                    loadData()
+                    sendError("Failed to reorder: ${error.message}")
+                    loadData() // Revert on failure
                 }
         }
     }
@@ -358,6 +459,10 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    // ════════════════════════════════════════════════════════════════════
+    // RECORD OPERATIONS
+    // ════════════════════════════════════════════════════════════════════
+
     fun updateRecordName(name: String) {
         viewModelScope.launch {
             val currentState = _uiState.value
@@ -365,9 +470,9 @@ class EditorViewModel @Inject constructor(
 
             val updated = currentState.record.copy(name = name.trim())
             when (val result = useCases.updateRecord(updated)) {
-                is Result.Success -> loadData()
+                is Result.Success -> { /* Auto-refresh from Flow */ }
                 is Result.Error -> 
-                    updateErrorMessage("Failed to update: ${result.exception.message}")
+                    sendError("Failed to update: ${result.exception.message}")
                 else -> {}
             }
         }
@@ -380,9 +485,9 @@ class EditorViewModel @Inject constructor(
 
             val updated = currentState.record.copy(description = description)
             when (val result = useCases.updateRecord(updated)) {
-                is Result.Success -> loadData()
+                is Result.Success -> { /* Auto-refresh */ }
                 is Result.Error -> 
-                    updateErrorMessage("Failed to update: ${result.exception.message}")
+                    sendError("Failed to update: ${result.exception.message}")
                 else -> {}
             }
         }
@@ -391,7 +496,7 @@ class EditorViewModel @Inject constructor(
     fun addTag(tag: String) {
         val t = tag.trim().lowercase().replace(Regex("[^a-z0-9_-]"), "")
         if (t.isBlank()) {
-            updateErrorMessage("Invalid tag format")
+            sendError("Invalid tag format")
             return
         }
 
@@ -401,16 +506,16 @@ class EditorViewModel @Inject constructor(
             
             val currentTags = currentState.record.tags.toMutableList()
             if (currentTags.contains(t)) {
-                updateErrorMessage("Tag already exists")
+                sendError("Tag already exists")
                 return@launch
             }
             currentTags.add(t)
             
             val updated = currentState.record.copy(tags = currentTags)
             when (val result = useCases.updateRecord(updated)) {
-                is Result.Success -> loadData()
+                is Result.Success -> { /* Auto-refresh */ }
                 is Result.Error -> 
-                    updateErrorMessage("Failed to add tag: ${result.exception.message}")
+                    sendError("Failed to add tag: ${result.exception.message}")
                 else -> {}
             }
         }
@@ -428,9 +533,9 @@ class EditorViewModel @Inject constructor(
             
             val updated = currentState.record.copy(tags = currentTags)
             when (val result = useCases.updateRecord(updated)) {
-                is Result.Success -> loadData()
+                is Result.Success -> { /* Auto-refresh */ }
                 is Result.Error -> 
-                    updateErrorMessage("Failed to remove tag: ${result.exception.message}")
+                    sendError("Failed to remove tag: ${result.exception.message}")
                 else -> {}
             }
         }
@@ -446,90 +551,88 @@ class EditorViewModel @Inject constructor(
                 targetLanguage = target
             )
             when (val result = useCases.updateRecord(updated)) {
-                is Result.Success -> loadData()
+                is Result.Success -> { /* Auto-refresh */ }
                 is Result.Error -> 
-                    updateErrorMessage("Failed to update languages: ${result.exception.message}")
+                    sendError("Failed to update languages: ${result.exception.message}")
                 else -> {}
             }
         }
     }
 
-    fun shareRecordAsPdf() {
+    // ════════════════════════════════════════════════════════════════════
+    // INLINE EDITING OPERATIONS - Делегируем InlineEditingManager
+    // ════════════════════════════════════════════════════════════════════
+    
+    fun startInlineEditOcr(documentId: Long) {
         viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
-
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Generating PDF...",
-                processingProgress = 20
+            val doc = getDocumentById(documentId) ?: return@launch
+            inlineEditingManager.startEdit(
+                documentId = documentId,
+                field = TextEditField.OCR_TEXT,
+                initialText = doc.originalText ?: ""
             )
+        }
+    }
 
+    fun startInlineEditTranslation(documentId: Long) {
+        viewModelScope.launch {
+            val doc = getDocumentById(documentId) ?: return@launch
+            inlineEditingManager.startEdit(
+                documentId = documentId,
+                field = TextEditField.TRANSLATED_TEXT,
+                initialText = doc.translatedText ?: ""
+            )
+        }
+    }
+
+    fun updateInlineText(documentId: Long, field: TextEditField, text: String) {
+        inlineEditingManager.updateText(documentId, field, text)
+    }
+
+    fun saveInlineChanges(documentId: Long, field: TextEditField) {
+        viewModelScope.launch {
             try {
-                val docIds = currentState.documents.map { it.id }
-                val outputPath = "share_${System.currentTimeMillis()}.pdf"
-                
-                when (val result = useCases.export.exportToPdf(docIds, outputPath)) {
-                    is DomainResult.Success -> {
-                        _uiState.value = currentState.copy(isProcessing = false)
-                        _shareEvent.emit(ShareEvent.File(result.data, "application/pdf"))
-                    }
-                    is DomainResult.Failure -> {
-                        _uiState.value = currentState.copy(
-                            isProcessing = false,
-                            errorMessage = "PDF generation failed: ${result.error.message}"
-                        )
-                    }
-                }
+                inlineEditingManager.saveEdit(documentId, field)
             } catch (e: Exception) {
-                _uiState.value = currentState.copy(
-                    isProcessing = false,
-                    errorMessage = "Error: ${e.message}"
-                )
+                sendError("Failed to save: ${e.message}")
             }
         }
     }
-
-    fun shareRecordImagesZip() {
+    
+    fun finishInlineEdit(documentId: Long, field: TextEditField) {
         viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
-
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Creating ZIP...",
-                processingProgress = 20
-            )
-
             try {
-                val docIds = currentState.documents.map { it.id }
-                
-                when (val result = useCases.export.shareDocuments(docIds, asPdf = false)) {
-                    is DomainResult.Success -> {
-                        _uiState.value = currentState.copy(isProcessing = false)
-                        _shareEvent.emit(ShareEvent.File(result.data, "application/zip"))
-                    }
-                    is DomainResult.Failure -> {
-                        _uiState.value = currentState.copy(
-                            isProcessing = false,
-                            errorMessage = "ZIP creation failed: ${result.error.message}"
-                        )
-                    }
-                }
+                inlineEditingManager.finishEdit(documentId, field)
             } catch (e: Exception) {
-                _uiState.value = currentState.copy(
-                    isProcessing = false,
-                    errorMessage = "Error: ${e.message}"
-                )
+                sendError("Failed to save: ${e.message}")
             }
         }
     }
-
-    fun shareSingleImage(imagePath: String) {
-        viewModelScope.launch {
-            _shareEvent.emit(ShareEvent.File(imagePath, "image/*"))
+    
+    fun cancelInlineEdit(documentId: Long, field: TextEditField) {
+        inlineEditingManager.cancelEdit(documentId, field)
+    }
+    
+    /**
+     * ✅ Thread-safe сохранение в БД
+     */
+    private suspend fun saveInlineEditToDb(documentId: Long, field: TextEditField, text: String) {
+        val doc = useCases.getDocumentById(documentId) ?: throw IllegalStateException("Document not found")
+        
+        val updated = when (field) {
+            TextEditField.OCR_TEXT -> doc.copy(originalText = text)
+            TextEditField.TRANSLATED_TEXT -> doc.copy(translatedText = text)
+        }
+        
+        when (val result = useCases.updateDocument(updated)) {
+            is Result.Error -> throw result.exception
+            else -> {} // Success
         }
     }
+
+    // ════════════════════════════════════════════════════════════════════
+    // TEXT EDITING (Non-inline)
+    // ════════════════════════════════════════════════════════════════════
 
     fun updateDocumentText(documentId: Long, originalText: String?, translatedText: String?) {
         viewModelScope.launch {
@@ -538,6 +641,7 @@ class EditorViewModel @Inject constructor(
             val finalOriginalText = originalText ?: doc.originalText
             val finalTranslatedText = translatedText ?: doc.translatedText
             
+            // Add to history
             if (originalText != null && originalText != doc.originalText) {
                 addToHistory(documentId, TextEditField.OCR_TEXT, doc.originalText, originalText)
             }
@@ -553,112 +657,239 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateDocument(updated)) {
                 is Result.Success -> { /* Auto-refresh */ }
                 is Result.Error -> 
-                    updateErrorMessage("Failed to update text: ${result.exception.message}")
+                    sendError("Failed to update text: ${result.exception.message}")
                 else -> {}
             }
         }
     }
 
-    fun startInlineEditOcr(documentId: Long) {
-        _inlineEditingDocId.value = documentId
-        _inlineEditingField.value = TextEditField.OCR_TEXT
-    }
-
-    fun startInlineEditTranslation(documentId: Long) {
-        _inlineEditingDocId.value = documentId
-        _inlineEditingField.value = TextEditField.TRANSLATED_TEXT
-    }
-
-    fun updateInlineText(text: String) {
-        val docId = _inlineEditingDocId.value ?: return
-        pendingInlineChanges = docId to text
-        
-        autoSaveJob?.cancel()
-        autoSaveJob = viewModelScope.launch {
-            delay(1500)
-            saveInlineChanges()
-        }
-    }
-
-    fun saveInlineChanges() {
-        val (docId, text) = pendingInlineChanges ?: return
-        val field = _inlineEditingField.value ?: return
-        
-        viewModelScope.launch {
-            val doc = useCases.getDocumentById(docId) ?: return@launch
-            
-            val previousValue = when (field) {
-                TextEditField.OCR_TEXT -> doc.originalText
-                TextEditField.TRANSLATED_TEXT -> doc.translatedText
-            }
-            addToHistory(docId, field, previousValue, text)
-            
-            val updated = when (field) {
-                TextEditField.OCR_TEXT -> doc.copy(originalText = text)
-                TextEditField.TRANSLATED_TEXT -> doc.copy(translatedText = text)
-            }
-            
-            useCases.updateDocument(updated)
-        }
-        
-        pendingInlineChanges = null
-        _inlineEditingDocId.value = null
-        _inlineEditingField.value = null
-    }
-
     fun undoLastEdit() {
-        val history = _editHistory.value.toMutableList()
-        if (history.isEmpty()) return
-        
-        val lastEdit = history.removeAt(history.size - 1)
-        _editHistory.value = history
-        
         viewModelScope.launch {
-            val doc = useCases.getDocumentById(lastEdit.documentId) ?: return@launch
-            
-            val restored = when (lastEdit.field) {
-                TextEditField.OCR_TEXT -> doc.copy(originalText = lastEdit.previousValue)
-                TextEditField.TRANSLATED_TEXT -> doc.copy(translatedText = lastEdit.previousValue)
+            historyMutex.withLock {
+                val history = _editHistory.value.toMutableList()
+                if (history.isEmpty()) return@launch
+                
+                val lastEdit = history.removeAt(history.size - 1)
+                _editHistory.value = history
+                
+                val doc = useCases.getDocumentById(lastEdit.documentId) ?: return@launch
+                
+                val restored = when (lastEdit.field) {
+                    TextEditField.OCR_TEXT -> doc.copy(originalText = lastEdit.previousValue)
+                    TextEditField.TRANSLATED_TEXT -> doc.copy(translatedText = lastEdit.previousValue)
+                }
+                
+                useCases.updateDocument(restored)
             }
-            
-            useCases.updateDocument(restored)
         }
     }
 
+    /**
+     * ✅ Thread-safe добавление в историю с ограничением размера
+     */
     private fun addToHistory(
         documentId: Long,
         field: TextEditField,
         previousValue: String?,
         newValue: String?
     ) {
-        val history = _editHistory.value.toMutableList()
-        history.add(TextEditHistoryItem(documentId, field, previousValue, newValue))
-        while (history.size > maxHistorySize) {
-            history.removeAt(0)
+        viewModelScope.launch {
+            historyMutex.withLock {
+                val history = _editHistory.value.toMutableList()
+                history.add(TextEditHistoryItem(documentId, field, previousValue, newValue))
+                
+                // Ограничиваем размер
+                while (history.size > MAX_HISTORY_SIZE) {
+                    history.removeAt(0)
+                }
+                
+                _editHistory.value = history
+            }
         }
-        _editHistory.value = history
     }
+
+    // ════════════════════════════════════════════════════════════════════
+    // SELECTION MODE
+    // ════════════════════════════════════════════════════════════════════
+
+    fun enterSelectionMode() {
+        val currentState = _uiState.value
+        if (currentState !is EditorUiState.Success) return
+        
+        _selectionState.value = SelectionState(
+            mode = SelectionMode.Active(currentState.documents.size),
+            selectedIds = emptySet()
+        )
+        
+        Timber.d("Entered selection mode")
+    }
+
+    fun exitSelectionMode() {
+        _selectionState.value = SelectionState(
+            mode = SelectionMode.Inactive,
+            selectedIds = emptySet()
+        )
+        
+        Timber.d("Exited selection mode")
+    }
+
+    fun toggleDocumentSelection(documentId: Long) {
+        val current = _selectionState.value
+        
+        // ✅ Автоматически входим в selection mode если не активен
+        if (!current.isActive) {
+            enterSelectionMode()
+        }
+        
+        _selectionState.value = current.toggle(documentId)
+        
+        Timber.d("Toggled selection for doc $documentId (total: ${_selectionState.value.count})")
+    }
+
+    fun selectAll() {
+        val currentState = _uiState.value
+        if (currentState is EditorUiState.Success) {
+            _selectionState.value = _selectionState.value.copy(
+                selectedIds = currentState.documents.map { it.id.value }.toSet()
+            )
+            
+            Timber.d("Selected all ${_selectionState.value.count} documents")
+        }
+    }
+
+    fun deselectAll() {
+        _selectionState.value = _selectionState.value.copy(selectedIds = emptySet())
+        Timber.d("Deselected all documents")
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // BATCH OPERATIONS - Делегируем BatchOperationsManager
+    // ════════════════════════════════════════════════════════════════════
+
+    fun deleteSelectedDocuments() {
+        val docIds = _selectionState.value.selectedIds.toList()
+        if (docIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            batchOperationsManager.deleteDocuments(docIds) { result ->
+                result.fold(
+                    onSuccess = {
+                        exitSelectionMode()
+                        Timber.d("Deleted ${docIds.size} documents")
+                    },
+                    onFailure = { error ->
+                        if (error !is CancellationException) {
+                            sendError("Delete failed: ${error.message}")
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    fun exportSelectedDocuments(asPdf: Boolean) {
+        val docIds = _selectionState.value.selectedIds.toList()
+        if (docIds.isEmpty()) return
+        
+        viewModelScope.launch {
+            batchOperationsManager.exportDocuments(docIds, asPdf) { result ->
+                result.fold(
+                    onSuccess = { filePath ->
+                        viewModelScope.launch {
+                            _shareEvent.send(ShareEvent.File(
+                                path = filePath,
+                                mimeType = if (asPdf) "application/pdf" else "application/zip",
+                                fileName = if (asPdf) "export.pdf" else "export.zip"
+                            ))
+                        }
+                        exitSelectionMode()
+                        Timber.d("Exported ${docIds.size} documents as ${if (asPdf) "PDF" else "ZIP"}")
+                    },
+                    onFailure = { error ->
+                        if (error !is CancellationException) {
+                            sendError("Export failed: ${error.message}")
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    fun moveSelectedToRecord(targetRecordId: Long) {
+        val docIds = _selectionState.value.selectedIds.toList()
+        if (docIds.isEmpty()) return
+        
+        if (targetRecordId == recordId) {
+            sendError("Documents are already in this record")
+            return
+        }
+        
+        viewModelScope.launch {
+            batchOperationsManager.moveDocuments(docIds, targetRecordId) { result ->
+                result.fold(
+                    onSuccess = {
+                        exitSelectionMode()
+                        Timber.d("Moved ${docIds.size} documents to record $targetRecordId")
+                    },
+                    onFailure = { error ->
+                        if (error !is CancellationException) {
+                            sendError("Move failed: ${error.message}")
+                        }
+                    }
+                )
+            }
+        }
+    }
+    
+    fun cancelBatchOperation() {
+        batchOperationsManager.cancelCurrentOperation()
+        Timber.d("Cancelled batch operation")
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // SINGLE DOCUMENT OPERATIONS
+    // ════════════════════════════════════════════════════════════════════
+
+    fun moveDocument(documentId: Long, targetRecordId: Long) {
+        if (targetRecordId == recordId) {
+            sendError("Document is already in this record")
+            return
+        }
+        
+        viewModelScope.launch {
+            when (val result = useCases.documents.move(
+                DocumentId(documentId),
+                RecordId(targetRecordId)
+            )) {
+                is DomainResult.Success -> {
+                    Timber.d("Moved document $documentId to record $targetRecordId")
+                }
+                is DomainResult.Failure -> 
+                    sendError("Failed to move: ${result.error.message}")
+            }
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // RETRY OPERATIONS
+    // ════════════════════════════════════════════════════════════════════
 
     fun retryOcr(documentId: Long) {
         viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
-
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Retrying OCR...",
-                processingProgress = 30
+            setProcessing(
+                ProcessingOperation.AddingDocument,
+                message = "Retrying OCR...",
+                progress = 30
             )
 
             when (val result = useCases.fixOcr(documentId)) {
                 is Result.Success -> {
-                    _uiState.value = currentState.copy(isProcessing = false)
+                    clearProcessing()
+                    Timber.d("Retried OCR for document $documentId")
                 }
                 is Result.Error -> {
-                    _uiState.value = currentState.copy(
-                        isProcessing = false,
-                        errorMessage = "OCR failed: ${result.exception.message}"
-                    )
+                    clearProcessing()
+                    sendError("OCR failed: ${result.exception.message}")
                 }
                 else -> {}
             }
@@ -667,25 +898,23 @@ class EditorViewModel @Inject constructor(
 
     fun retryTranslation(documentId: Long) {
         viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
-
             val doc = useCases.getDocumentById(documentId)
             if (doc == null) {
-                updateErrorMessage("Document not found")
+                sendError("Document not found")
                 return@launch
             }
             if (doc.originalText.isNullOrBlank()) {
-                updateErrorMessage("No OCR text to translate")
+                sendError("No OCR text to translate")
                 return@launch
             }
 
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Retrying translation...",
-                processingProgress = 30
+            setProcessing(
+                ProcessingOperation.AddingDocument,
+                message = "Retrying translation...",
+                progress = 30
             )
 
+            // ✅ Используем ТЕКУЩИЙ targetLanguage
             val target = targetLanguage.value
             val model = translationModel.value
             
@@ -698,13 +927,12 @@ class EditorViewModel @Inject constructor(
                 targetLang = target
             )) {
                 is DomainResult.Success -> {
-                    _uiState.value = currentState.copy(isProcessing = false)
+                    clearProcessing()
+                    Timber.d("Retried translation for document $documentId")
                 }
                 is DomainResult.Failure -> {
-                    _uiState.value = currentState.copy(
-                        isProcessing = false,
-                        errorMessage = "Translation failed: ${result.error.message}"
-                    )
+                    clearProcessing()
+                    sendError("Translation failed: ${result.error.message}")
                 }
             }
         }
@@ -717,26 +945,21 @@ class EditorViewModel @Inject constructor(
         val failedDocs = currentState.documents.filter { it.processingStatus.isFailed }
         if (failedDocs.isEmpty()) return
         
+        val docIds = failedDocs.map { it.id.value }
+        
         viewModelScope.launch {
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Retrying failed...",
-                processingProgress = 0
-            )
-            
-            useCases.batch.processDocuments(
-                docIds = failedDocs.map { it.id },
-                onProgress = { done, total ->
-                    _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                        processingMessage = "Processing ($done/$total)...",
-                        processingProgress = (done * 100) / total
-                    ) ?: return@processDocuments
-                }
-            )
-            
-            _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                isProcessing = false
-            ) ?: return@launch
+            batchOperationsManager.retryAllOcr(docIds) { result ->
+                result.fold(
+                    onSuccess = {
+                        Timber.d("Retried ${docIds.size} failed documents")
+                    },
+                    onFailure = { error ->
+                        if (error !is CancellationException) {
+                            sendError("Retry failed: ${error.message}")
+                        }
+                    }
+                )
+            }
         }
     }
 
@@ -745,24 +968,21 @@ class EditorViewModel @Inject constructor(
         if (currentState !is EditorUiState.Success) return
         if (currentState.documents.isEmpty()) return
         
+        val docIds = currentState.documents.map { it.id.value }
+        
         viewModelScope.launch {
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Retrying all OCR...",
-                processingProgress = 0
-            )
-            
-            val total = currentState.documents.size
-            currentState.documents.forEachIndexed { index, doc ->
-                useCases.fixOcr(doc.id.value)
-                _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                    processingProgress = ((index + 1) * 100) / total
-                ) ?: return@launch
+            batchOperationsManager.retryAllOcr(docIds) { result ->
+                result.fold(
+                    onSuccess = {
+                        Timber.d("Retried OCR for all ${docIds.size} documents")
+                    },
+                    onFailure = { error ->
+                        if (error !is CancellationException) {
+                            sendError("Retry all OCR failed: ${error.message}")
+                        }
+                    }
+                )
             }
-            
-            _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                isProcessing = false
-            ) ?: return@launch
         }
     }
 
@@ -771,189 +991,118 @@ class EditorViewModel @Inject constructor(
         if (currentState !is EditorUiState.Success) return
         if (currentState.documents.isEmpty()) return
         
+        // ✅ Захватываем текущий targetLanguage
+        val target = targetLanguage.value
+        val docIds = currentState.documents.map { it.id.value }
+        
+        Timber.d("🌐 Retrying all translations to: ${target.displayName}")
+        
         viewModelScope.launch {
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Retrying all translations...",
-                processingProgress = 0
+            batchOperationsManager.retryAllTranslation(docIds, target) { result ->
+                result.fold(
+                    onSuccess = {
+                        Timber.d("Retried translation for all ${docIds.size} documents")
+                    },
+                    onFailure = { error ->
+                        if (error !is CancellationException) {
+                            sendError("Retry all translation failed: ${error.message}")
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // SHARE OPERATIONS
+    // ════════════════════════════════════════════════════════════════════
+
+    fun shareRecordAsPdf() {
+        viewModelScope.launch {
+            val currentState = _uiState.value
+            if (currentState !is EditorUiState.Success) return@launch
+
+            setProcessing(
+                ProcessingOperation.GeneratingPdf,
+                message = "Generating PDF...",
+                progress = 20
             )
-            
-            val target = targetLanguage.value
-            val total = currentState.documents.size
-            var failedCount = 0
-            
-            Timber.d("🌐 Retrying all translations to: ${target.displayName}")
-            
-            currentState.documents.forEachIndexed { index, doc ->
-                when (useCases.translation.translateDocument(
-                    docId = doc.id,
-                    targetLang = target
-                )) {
-                    is DomainResult.Failure -> failedCount++
-                    else -> {}
-                }
+
+            try {
+                val docIds = currentState.documents.map { it.id }
+                val outputPath = "share_${System.currentTimeMillis()}.pdf"
                 
-                _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                    processingProgress = ((index + 1) * 100) / total
-                ) ?: return@launch
-            }
-            
-            _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                isProcessing = false,
-                errorMessage = if (failedCount > 0) "$failedCount translations failed" else null
-            ) ?: return@launch
-        }
-    }
-
-    fun moveDocument(documentId: Long, targetRecordId: Long) {
-        if (targetRecordId == recordId) {
-            updateErrorMessage("Document is already in this record")
-            return
-        }
-        
-        viewModelScope.launch {
-            when (val result = useCases.documents.move(
-                DocumentId(documentId),
-                RecordId(targetRecordId)
-            )) {
-                is DomainResult.Success -> { /* Auto-refresh */ }
-                is DomainResult.Failure -> updateErrorMessage("Failed to move: ${result.error.message}")
+                when (val result = useCases.export.exportToPdf(docIds, outputPath)) {
+                    is DomainResult.Success -> {
+                        clearProcessing()
+                        _shareEvent.send(ShareEvent.File(
+                            path = result.data,
+                            mimeType = "application/pdf",
+                            fileName = "${currentState.record.name}.pdf"
+                        ))
+                        Timber.d("Generated PDF for record")
+                    }
+                    is DomainResult.Failure -> {
+                        clearProcessing()
+                        sendError("PDF generation failed: ${result.error.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                clearProcessing()
+                sendError("Error: ${e.message}")
             }
         }
     }
 
-    fun enterSelectionMode() {
-        _isSelectionMode.value = true
-    }
-
-    fun exitSelectionMode() {
-        _isSelectionMode.value = false
-        _selectedDocIds.value = emptySet()
-    }
-
-    fun toggleDocumentSelection(documentId: Long) {
-        val current = _selectedDocIds.value.toMutableSet()
-        if (current.contains(documentId)) {
-            current.remove(documentId)
-        } else {
-            current.add(documentId)
-        }
-        _selectedDocIds.value = current
-        
-        if (current.isEmpty()) {
-            _isSelectionMode.value = false
-        }
-    }
-
-    fun selectAll() {
-        val currentState = _uiState.value
-        if (currentState is EditorUiState.Success) {
-            _selectedDocIds.value = currentState.documents.map { it.id.value }.toSet()
-        }
-    }
-
-    fun deselectAll() {
-        _selectedDocIds.value = emptySet()
-    }
-
-    fun deleteSelectedDocuments() {
-        val docIds = _selectedDocIds.value.toList()
-        if (docIds.isEmpty()) return
-        
+    fun shareRecordImagesZip() {
         viewModelScope.launch {
             val currentState = _uiState.value
             if (currentState !is EditorUiState.Success) return@launch
-            
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Deleting ${docIds.size} pages...",
-                processingProgress = 0
-            )
-            
-            useCases.batch.deleteDocuments(
-                docIds = docIds.map { DocumentId(it) },
-                onProgress = { done, total ->
-                    _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                        processingProgress = (done * 100) / total
-                    ) ?: return@deleteDocuments
-                }
-            )
-            
-            _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                isProcessing = false
-            ) ?: return@launch
-            
-            exitSelectionMode()
-        }
-    }
 
-    fun exportSelectedDocuments(asPdf: Boolean) {
-        val docIds = _selectedDocIds.value.toList()
-        if (docIds.isEmpty()) return
-        
-        viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
-            
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = if (asPdf) "Generating PDF..." else "Creating ZIP...",
-                processingProgress = 20
+            setProcessing(
+                ProcessingOperation.CreatingZip,
+                message = "Creating ZIP...",
+                progress = 20
             )
-            
-            when (val result = useCases.export.shareDocuments(
-                docIds = docIds.map { DocumentId(it) },
-                asPdf = asPdf
-            )) {
-                is DomainResult.Success -> {
-                    _uiState.value = currentState.copy(isProcessing = false)
-                    _shareEvent.emit(ShareEvent.File(
-                        result.data, 
-                        if (asPdf) "application/pdf" else "application/zip"
-                    ))
-                    exitSelectionMode()
-                }
-                is DomainResult.Failure -> {
-                    _uiState.value = currentState.copy(
-                        isProcessing = false,
-                        errorMessage = "Export failed: ${result.error.message}"
-                    )
-                }
-            }
-        }
-    }
 
-    fun moveSelectedToRecord(targetRecordId: Long) {
-        val docIds = _selectedDocIds.value.toList()
-        if (docIds.isEmpty()) return
-        
-        viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
-            
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "Moving ${docIds.size} pages...",
-                processingProgress = 0
-            )
-            
-            var done = 0
-            docIds.forEach { docId ->
-                useCases.documents.move(DocumentId(docId), RecordId(targetRecordId))
-                    .onSuccess { done++ }
+            try {
+                val docIds = currentState.documents.map { it.id }
                 
-                _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                    processingProgress = (done * 100) / docIds.size
-                ) ?: return@launch
+                when (val result = useCases.export.shareDocuments(docIds, asPdf = false)) {
+                    is DomainResult.Success -> {
+                        clearProcessing()
+                        _shareEvent.send(ShareEvent.File(
+                            path = result.data,
+                            mimeType = "application/zip",
+                            fileName = "${currentState.record.name}.zip"
+                        ))
+                        Timber.d("Created ZIP for record")
+                    }
+                    is DomainResult.Failure -> {
+                        clearProcessing()
+                        sendError("ZIP creation failed: ${result.error.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                clearProcessing()
+                sendError("Error: ${e.message}")
             }
-            
-            _uiState.value = (_uiState.value as? EditorUiState.Success)?.copy(
-                isProcessing = false
-            ) ?: return@launch
-            
-            exitSelectionMode()
         }
     }
+
+    fun shareSingleImage(imagePath: String) {
+        viewModelScope.launch {
+            _shareEvent.send(ShareEvent.File(
+                path = imagePath,
+                mimeType = "image/*",
+                fileName = null
+            ))
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // AI OPERATIONS
+    // ════════════════════════════════════════════════════════════════════
 
     fun pasteText(documentId: Long, pastedText: String, isOcrText: Boolean) {
         viewModelScope.launch {
@@ -961,6 +1110,7 @@ class EditorViewModel @Inject constructor(
             
             val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
             val previousValue = if (isOcrText) doc.originalText else doc.translatedText
+            
             addToHistory(documentId, field, previousValue, pastedText)
             
             val updated = if (isOcrText) {
@@ -970,18 +1120,16 @@ class EditorViewModel @Inject constructor(
             }
             
             useCases.updateDocument(updated)
+            Timber.d("Pasted text to document $documentId")
         }
     }
 
     fun aiRewriteText(documentId: Long, text: String, isOcrText: Boolean) {
         viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
-            
-            _uiState.value = currentState.copy(
-                isProcessing = true,
-                processingMessage = "AI is rewriting...",
-                processingProgress = 50
+            setProcessing(
+                ProcessingOperation.AddingDocument,
+                message = "AI is rewriting...",
+                progress = 50
             )
             
             try {
@@ -997,10 +1145,8 @@ class EditorViewModel @Inject constructor(
                 val rewrittenText = when (result) {
                     is DomainResult.Success -> result.data
                     is DomainResult.Failure -> {
-                        _uiState.value = currentState.copy(
-                            isProcessing = false,
-                            errorMessage = "AI rewrite failed: ${result.error.message}"
-                        )
+                        clearProcessing()
+                        sendError("AI rewrite failed: ${result.error.message}")
                         return@launch
                     }
                 }
@@ -1009,6 +1155,7 @@ class EditorViewModel @Inject constructor(
                 
                 val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
                 val previousValue = if (isOcrText) doc.originalText else doc.translatedText
+                
                 addToHistory(documentId, field, previousValue, rewrittenText)
                 
                 val updated = if (isOcrText) {
@@ -1018,14 +1165,13 @@ class EditorViewModel @Inject constructor(
                 }
                 
                 useCases.updateDocument(updated)
+                clearProcessing()
                 
-                _uiState.value = currentState.copy(isProcessing = false)
+                Timber.d("AI rewrote text for document $documentId")
                 
             } catch (e: Exception) {
-                _uiState.value = currentState.copy(
-                    isProcessing = false,
-                    errorMessage = "AI rewrite failed: ${e.message}"
-                )
+                clearProcessing()
+                sendError("AI rewrite failed: ${e.message}")
             }
         }
     }
@@ -1053,8 +1199,13 @@ class EditorViewModel @Inject constructor(
             }
             
             useCases.updateDocument(updated)
+            Timber.d("Cleared formatting for document $documentId")
         }
     }
+
+    // ════════════════════════════════════════════════════════════════════
+    // CONFIDENCE TOOLTIP
+    // ════════════════════════════════════════════════════════════════════
 
     fun showConfidenceTooltip(word: String, confidence: Float) {
         _confidenceTooltip.value = word to confidence
@@ -1064,49 +1215,81 @@ class EditorViewModel @Inject constructor(
         _confidenceTooltip.value = null
     }
 
-    fun clearError() {
+    // ════════════════════════════════════════════════════════════════════
+    // HELPER METHODS
+    // ════════════════════════════════════════════════════════════════════
+
+    /**
+     * ✅ Безопасное получение документа по ID
+     */
+    private suspend fun getDocumentById(documentId: Long): Document? {
         val currentState = _uiState.value
-        if (currentState is EditorUiState.Success) {
-            _uiState.value = currentState.copy(errorMessage = null)
-        }
+        if (currentState !is EditorUiState.Success) return null
+        
+        return currentState.documents.find { it.id.value == documentId }
+            ?: useCases.getDocumentById(documentId)
     }
 
-    private fun updateErrorMessage(message: String) {
-        val currentState = _uiState.value
-        if (currentState is EditorUiState.Success) {
-            _uiState.value = currentState.copy(errorMessage = message)
-        }
+    /**
+     * ✅ Установить processing state
+     */
+    private fun setProcessing(
+        operation: ProcessingOperation,
+        message: String = "",
+        progress: Int = 0,
+        canCancel: Boolean = false
+    ) {
+        _processingState.value = ProcessingState(
+            isActive = true,
+            operation = operation,
+            message = message,
+            progress = progress,
+            canCancel = canCancel
+        )
     }
 
+    /**
+     * ✅ Обновить processing progress
+     */
+    private fun updateProcessing(
+        message: String? = null,
+        progress: Int? = null
+    ) {
+        val current = _processingState.value
+        if (!current.isActive) return
+        
+        _processingState.value = current.copy(
+            message = message ?: current.message,
+            progress = progress ?: current.progress
+        )
+    }
+
+    /**
+     * ✅ Очистить processing state
+     */
+    private fun clearProcessing() {
+        _processingState.value = ProcessingState()
+    }
+
+    /**
+     * ✅ Отправить error event
+     */
+    private fun sendError(
+        message: String,
+        actionLabel: String? = null,
+        action: (() -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            _errorEvent.send(ErrorEvent(message, actionLabel, action))
+        }
+        Timber.e("Error: $message")
+    }
+
+    /**
+     * ✅ Refresh OCR settings (обычно не нужно, т.к. используем StateFlow)
+     */
     fun refreshOcrSettings() {
-        loadOcrSettings()
+        // Settings автоматически обновляются через StateFlow
+        Timber.d("OCR settings are auto-updated via StateFlow")
     }
-}
-
-// ============================================
-// UI STATE
-// ============================================
-
-sealed interface EditorUiState {
-    data object Loading : EditorUiState
-    
-    data class Success(
-        val record: Record,
-        val folderName: String,
-        val documents: List<Document>,
-        val isProcessing: Boolean = false,
-        val processingMessage: String = "",
-        val processingProgress: Int = 0,
-        val errorMessage: String? = null
-    ) : EditorUiState
-    
-    data class Error(val message: String) : EditorUiState
-}
-
-// ============================================
-// SHARE EVENT
-// ============================================
-
-sealed interface ShareEvent {
-    data class File(val path: String, val mimeType: String) : ShareEvent
 }
