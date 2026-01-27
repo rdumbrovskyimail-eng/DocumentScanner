@@ -1,7 +1,7 @@
 package com.docs.scanner.presentation.screens.editor
 
 import com.docs.scanner.domain.core.*
-import com.docs.scanner.domain.model.Language
+import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.usecase.AllUseCases
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
