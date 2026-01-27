@@ -40,7 +40,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.docs.scanner.domain.core.ProcessingStatus
-import com.docs.scanner.domain.model.Document
+import com.docs.scanner.domain.core.Document
 import com.docs.scanner.presentation.components.MicroButton
 import com.docs.scanner.presentation.theme.*
 import java.io.File
