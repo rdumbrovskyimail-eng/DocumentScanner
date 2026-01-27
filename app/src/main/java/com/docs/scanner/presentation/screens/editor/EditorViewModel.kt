@@ -20,6 +20,7 @@ import com.docs.scanner.data.local.preferences.GeminiModelManager
 import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.data.remote.gemini.GeminiApi
 import com.docs.scanner.domain.core.*
+import com.docs.scanner.domain.core.Language
 import com.docs.scanner.domain.model.Document
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.domain.usecase.AllUseCases
