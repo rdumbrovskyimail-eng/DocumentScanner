@@ -47,6 +47,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 import javax.inject.Inject
+import com.docs.scanner.domain.model.Result
+import com.docs.scanner.domain.model.Result.*
 
 @HiltViewModel
 class EditorViewModel @Inject constructor(
