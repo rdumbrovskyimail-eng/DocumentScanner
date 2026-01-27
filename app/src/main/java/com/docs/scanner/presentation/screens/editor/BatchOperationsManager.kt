@@ -1,14 +1,22 @@
 package com.docs.scanner.presentation.screens.editor
 
-import com.docs.scanner.domain.core.*
+import com.docs.scanner.domain.core.DocumentId
+import com.docs.scanner.domain.core.DomainResult
 import com.docs.scanner.domain.core.Language
+import com.docs.scanner.domain.core.RecordId
 import com.docs.scanner.domain.usecase.AllUseCases
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
+ * BatchOperationsManager.kt
+ * Version: 8.0.0 - PRODUCTION READY (2026)
+ *
  * КРИТИЧЕСКИ ВАЖНО:
  * Все операции можно отменить через cancellationToken
  * Progress сохраняется даже если UI state изменился
@@ -21,7 +29,7 @@ class BatchOperationsManager(
     // Текущая активная операция
     private val _currentOperation = MutableStateFlow<BatchOperation?>(null)
     val currentOperation: StateFlow<BatchOperation?> = _currentOperation.asStateFlow()
-    
+
     /**
      * Удалить выбранные документы
      */
@@ -33,7 +41,7 @@ class BatchOperationsManager(
             onComplete(Result.success(Unit))
             return
         }
-        
+
         val cancellationToken = CancellationTokenSource()
         val operation = BatchOperation.Delete(
             docIds = docIds,
@@ -41,18 +49,17 @@ class BatchOperationsManager(
             total = docIds.size,
             cancellationToken = cancellationToken
         )
-        
+
         _currentOperation.value = operation
-        
+
         try {
-            // ✅ ИСПРАВЛЕНО - убран параметр cancellationToken
             useCases.batch.deleteDocuments(
                 docIds = docIds.map { DocumentId(it) },
                 onProgress = { done, total ->
                     if (cancellationToken.isCancellationRequested) {
                         throw CancellationException("User cancelled deletion")
                     }
-                    
+
                     // Обновляем прогресс НЕЗАВИСИМО от UI state
                     val current = _currentOperation.value as? BatchOperation.Delete
                     if (current != null) {
@@ -62,12 +69,11 @@ class BatchOperationsManager(
                         )
                     }
                 }
-                // cancellationToken удалён - параметр не существует в функции
             )
-            
+
             _currentOperation.value = null
             onComplete(Result.success(Unit))
-            
+
             Timber.d("Deleted ${docIds.size} documents")
         } catch (e: CancellationException) {
             _currentOperation.value = null
@@ -79,7 +85,7 @@ class BatchOperationsManager(
             onComplete(Result.failure(e))
         }
     }
-    
+
     /**
      * Экспортировать выбранные документы
      */
@@ -92,7 +98,7 @@ class BatchOperationsManager(
             onComplete(Result.failure(IllegalArgumentException("No documents to export")))
             return
         }
-        
+
         val cancellationToken = CancellationTokenSource()
         val operation = BatchOperation.Export(
             docIds = docIds,
@@ -101,15 +107,15 @@ class BatchOperationsManager(
             asPdf = asPdf,
             cancellationToken = cancellationToken
         )
-        
+
         _currentOperation.value = operation
-        
+
         try {
             val result = useCases.export.shareDocuments(
                 docIds = docIds.map { DocumentId(it) },
                 asPdf = asPdf
             )
-            
+
             when (result) {
                 is DomainResult.Success -> {
                     _currentOperation.value = null
@@ -132,7 +138,7 @@ class BatchOperationsManager(
             onComplete(Result.failure(e))
         }
     }
-    
+
     /**
      * Переместить выбранные документы в другую запись
      */
@@ -145,7 +151,7 @@ class BatchOperationsManager(
             onComplete(Result.success(Unit))
             return
         }
-        
+
         val cancellationToken = CancellationTokenSource()
         val operation = BatchOperation.Move(
             docIds = docIds,
@@ -154,18 +160,18 @@ class BatchOperationsManager(
             targetRecordId = targetRecordId,
             cancellationToken = cancellationToken
         )
-        
+
         _currentOperation.value = operation
-        
+
         try {
             var successCount = 0
             var failedCount = 0
-            
+
             docIds.forEachIndexed { index, docId ->
                 if (cancellationToken.isCancellationRequested) {
                     throw CancellationException("User cancelled move")
                 }
-                
+
                 when (useCases.documents.move(
                     DocumentId(docId),
                     RecordId(targetRecordId)
@@ -173,7 +179,7 @@ class BatchOperationsManager(
                     is DomainResult.Success -> successCount++
                     is DomainResult.Failure -> failedCount++
                 }
-                
+
                 // Обновляем прогресс
                 val current = _currentOperation.value as? BatchOperation.Move
                 if (current != null) {
@@ -183,9 +189,9 @@ class BatchOperationsManager(
                     )
                 }
             }
-            
+
             _currentOperation.value = null
-            
+
             if (failedCount > 0) {
                 Timber.w("Moved $successCount documents, $failedCount failed")
                 onComplete(Result.failure(Exception("$failedCount documents failed to move")))
@@ -203,7 +209,7 @@ class BatchOperationsManager(
             onComplete(Result.failure(e))
         }
     }
-    
+
     /**
      * Повторить OCR для всех документов
      */
@@ -215,7 +221,7 @@ class BatchOperationsManager(
             onComplete(Result.success(Unit))
             return
         }
-        
+
         val cancellationToken = CancellationTokenSource()
         val operation = BatchOperation.RetryOcr(
             docIds = docIds,
@@ -223,17 +229,17 @@ class BatchOperationsManager(
             total = docIds.size,
             cancellationToken = cancellationToken
         )
-        
+
         _currentOperation.value = operation
-        
+
         try {
             docIds.forEachIndexed { index, docId ->
                 if (cancellationToken.isCancellationRequested) {
                     throw CancellationException("User cancelled OCR retry")
                 }
-                
+
                 useCases.fixOcr(docId)
-                
+
                 // Обновляем прогресс
                 val current = _currentOperation.value as? BatchOperation.RetryOcr
                 if (current != null) {
@@ -243,7 +249,7 @@ class BatchOperationsManager(
                     )
                 }
             }
-            
+
             _currentOperation.value = null
             onComplete(Result.success(Unit))
             Timber.d("Retried OCR for ${docIds.size} documents")
@@ -257,7 +263,7 @@ class BatchOperationsManager(
             onComplete(Result.failure(e))
         }
     }
-    
+
     /**
      * Повторить перевод для всех документов
      */
@@ -270,7 +276,7 @@ class BatchOperationsManager(
             onComplete(Result.success(Unit))
             return
         }
-        
+
         val cancellationToken = CancellationTokenSource()
         val operation = BatchOperation.RetryTranslation(
             docIds = docIds,
@@ -279,17 +285,17 @@ class BatchOperationsManager(
             targetLanguage = targetLanguage,
             cancellationToken = cancellationToken
         )
-        
+
         _currentOperation.value = operation
-        
+
         try {
             var failedCount = 0
-            
+
             docIds.forEachIndexed { index, docId ->
                 if (cancellationToken.isCancellationRequested) {
                     throw CancellationException("User cancelled translation retry")
                 }
-                
+
                 when (useCases.translation.translateDocument(
                     docId = DocumentId(docId),
                     targetLang = targetLanguage
@@ -297,7 +303,7 @@ class BatchOperationsManager(
                     is DomainResult.Failure -> failedCount++
                     else -> {}
                 }
-                
+
                 // Обновляем прогресс
                 val current = _currentOperation.value as? BatchOperation.RetryTranslation
                 if (current != null) {
@@ -307,9 +313,9 @@ class BatchOperationsManager(
                     )
                 }
             }
-            
+
             _currentOperation.value = null
-            
+
             if (failedCount > 0) {
                 Timber.w("Retried translation for ${docIds.size} documents, $failedCount failed")
                 onComplete(Result.failure(Exception("$failedCount translations failed")))
@@ -327,7 +333,7 @@ class BatchOperationsManager(
             onComplete(Result.failure(e))
         }
     }
-    
+
     /**
      * Отменить текущую операцию
      */
@@ -347,14 +353,14 @@ sealed class BatchOperation {
     abstract val progress: Int
     abstract val total: Int
     abstract val cancellationToken: CancellationTokenSource
-    
+
     data class Delete(
         override val docIds: List<Long>,
         override val progress: Int,
         override val total: Int,
         override val cancellationToken: CancellationTokenSource
     ) : BatchOperation()
-    
+
     data class Export(
         override val docIds: List<Long>,
         override val progress: Int,
@@ -362,7 +368,7 @@ sealed class BatchOperation {
         val asPdf: Boolean,
         override val cancellationToken: CancellationTokenSource
     ) : BatchOperation()
-    
+
     data class Move(
         override val docIds: List<Long>,
         override val progress: Int,
@@ -370,14 +376,14 @@ sealed class BatchOperation {
         val targetRecordId: Long,
         override val cancellationToken: CancellationTokenSource
     ) : BatchOperation()
-    
+
     data class RetryOcr(
         override val docIds: List<Long>,
         override val progress: Int,
         override val total: Int,
         override val cancellationToken: CancellationTokenSource
     ) : BatchOperation()
-    
+
     data class RetryTranslation(
         override val docIds: List<Long>,
         override val progress: Int,
@@ -385,7 +391,7 @@ sealed class BatchOperation {
         val targetLanguage: Language,
         override val cancellationToken: CancellationTokenSource
     ) : BatchOperation()
-    
+
     val progressPercent: Int
         get() = if (total > 0) (progress * 100) / total else 0
 }
@@ -395,10 +401,10 @@ sealed class BatchOperation {
  */
 class CancellationTokenSource {
     private val cancelled = AtomicBoolean(false)
-    
+
     val isCancellationRequested: Boolean
         get() = cancelled.get()
-    
+
     fun cancel() {
         cancelled.set(true)
     }
