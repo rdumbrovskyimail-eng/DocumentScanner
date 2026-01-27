@@ -1,6 +1,7 @@
 package com.docs.scanner.presentation.screens.editor
 
 import com.docs.scanner.domain.core.*
+import com.docs.scanner.domain.model.Language
 import com.docs.scanner.domain.usecase.AllUseCases
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -44,6 +45,7 @@ class BatchOperationsManager(
         _currentOperation.value = operation
         
         try {
+            // ✅ ИСПРАВЛЕНО - убран параметр cancellationToken
             useCases.batch.deleteDocuments(
                 docIds = docIds.map { DocumentId(it) },
                 onProgress = { done, total ->
@@ -59,8 +61,8 @@ class BatchOperationsManager(
                             total = total
                         )
                     }
-                },
-                cancellationToken = cancellationToken
+                }
+                // cancellationToken удалён - параметр не существует в функции
             )
             
             _currentOperation.value = null
