@@ -1,5 +1,6 @@
 package com.docs.scanner.presentation.screens.editor
 
+import com.docs.scanner.domain.model.Language
 /**
  * КРИТИЧЕСКИ ВАЖНО:
  * Sealed interface заменяет множество callback'ов
