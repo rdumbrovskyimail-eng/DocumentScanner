@@ -726,9 +726,9 @@ fun EditorScreen(
         var source by remember(success.record.id.value) { mutableStateOf(success.record.sourceLanguage) }
         var target by remember(success.record.id.value) { mutableStateOf(success.record.targetLanguage) }
 
-        val sourceOptions = com.docs.scanner.domain.model.Language.ocrSourceOptions
-        val targetOptions = com.docs.scanner.domain.model.Language.translationSupported.filter { 
-            it != com.docs.scanner.domain.model.Language.AUTO 
+        val sourceOptions = Language.ocrSourceOptions  // ✅ ИСПРАВЛЕНО
+        val targetOptions = Language.translationSupported.filter {  // ✅ ИСПРАВЛЕНО
+            it != Language.AUTO  // ✅ ИСПРАВЛЕНО
         }
 
         AlertDialog(
