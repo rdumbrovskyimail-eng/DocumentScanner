@@ -1,6 +1,11 @@
 /*
  * DocumentCard.kt
- * Version: 4.0.0 - PRODUCTION READY (2026) - 100% FIXED
+ * Version: 5.0.0 - REFACTORED (2026)
+ * 
+ * КРИТИЧЕСКИЕ ИЗМЕНЕНИЯ:
+ * ✅ Убраны все local states - всё через ViewModel
+ * ✅ Inline editing через InlineEditingManager
+ * ✅ Оптимизирован для работы с Actions
  */
 
 package com.docs.scanner.presentation.screens.editor.components
@@ -47,38 +52,54 @@ fun DocumentCard(
     isSelected: Boolean,
     isSelectionMode: Boolean,
     isDragging: Boolean,
+    
+    // Inline editing state (управляется извне через ViewModel)
+    isInlineEditingOcr: Boolean = false,
+    isInlineEditingTranslation: Boolean = false,
+    inlineOcrText: String = "",
+    inlineTranslationText: String = "",
+    
+    // Basic actions
     onImageClick: () -> Unit,
     onOcrTextClick: () -> Unit,
     onTranslationClick: () -> Unit,
     onSelectionToggle: () -> Unit,
     onMenuClick: () -> Unit,
+    
+    // Retry actions
     onRetryOcr: () -> Unit,
     onRetryTranslation: () -> Unit,
+    
+    // Reorder actions
     onMoveUp: (() -> Unit)? = null,
     onMoveDown: (() -> Unit)? = null,
     isFirst: Boolean = false,
     isLast: Boolean = false,
+    
+    // Single actions
     onSharePage: (() -> Unit)? = null,
     onDeletePage: (() -> Unit)? = null,
     onMoveToRecord: (() -> Unit)? = null,
+    
+    // Text actions
     onCopyText: ((String) -> Unit)? = null,
     onPasteText: ((Boolean) -> Unit)? = null,
     onAiRewrite: ((Boolean) -> Unit)? = null,
     onClearFormatting: ((Boolean) -> Unit)? = null,
+    
+    // Confidence
     confidenceThreshold: Float = 0.7f,
     onWordTap: ((String, Float) -> Unit)? = null,
+    
+    // Inline editing callbacks
     onStartInlineEditOcr: (() -> Unit)? = null,
     onStartInlineEditTranslation: (() -> Unit)? = null,
     onInlineTextChange: ((String) -> Unit)? = null,
     onInlineEditComplete: (() -> Unit)? = null,
+    
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier
 ) {
-    var isInlineEditingOcr by remember { mutableStateOf(false) }
-    var isInlineEditingTranslation by remember { mutableStateOf(false) }
-    var inlineOcrText by remember(document.originalText) { mutableStateOf(document.originalText ?: "") }
-    var inlineTranslationText by remember(document.translatedText) { mutableStateOf(document.translatedText ?: "") }
-    
     val density = LocalDensity.current
     var photoHeight by remember { mutableStateOf(200.dp) }
     
@@ -257,16 +278,13 @@ fun DocumentCard(
                                 isInlineEditing = isInlineEditingOcr,
                                 inlineText = inlineOcrText,
                                 onInlineTextChange = { newText ->
-                                    inlineOcrText = newText
                                     onInlineTextChange?.invoke(newText)
                                 },
                                 onStartInlineEdit = {
                                     if (isInlineEditingOcr) {
                                         onInlineEditComplete?.invoke()
-                                        isInlineEditingOcr = false
                                     } else {
                                         onStartInlineEditOcr?.invoke()
-                                        isInlineEditingOcr = true
                                     }
                                 },
                                 confidenceThreshold = confidenceThreshold,
@@ -286,16 +304,13 @@ fun DocumentCard(
                 isInlineEditing = isInlineEditingTranslation,
                 inlineText = inlineTranslationText,
                 onInlineTextChange = { newText ->
-                    inlineTranslationText = newText
                     onInlineTextChange?.invoke(newText)
                 },
                 onStartInlineEdit = {
                     if (isInlineEditingTranslation) {
                         onInlineEditComplete?.invoke()
-                        isInlineEditingTranslation = false
                     } else {
                         onStartInlineEditTranslation?.invoke()
-                        isInlineEditingTranslation = true
                     }
                 },
                 onClick = onTranslationClick,
