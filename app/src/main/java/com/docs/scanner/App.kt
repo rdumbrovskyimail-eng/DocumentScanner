@@ -34,6 +34,7 @@ import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
 import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.domain.repository.FolderRepository
+import com.docs.scanner.util.CrashLogHandler
 import com.docs.scanner.util.LogcatCollector
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -174,6 +175,9 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     
     private fun initializeDebugTools() {
         try {
+            // ✅ Install crash handler FIRST - перехватывает ЛЮБЫЕ крэши
+            CrashLogHandler.install(this)
+            
             // ✅ Initialize LogcatCollector
             logcatCollector = LogcatCollector.getInstance(this).apply {
                 startCollecting()
@@ -181,7 +185,7 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
             Timber.d("📝 LogcatCollector started")
             
             enableStrictMode()
-            Timber.d("🔧 Debug tools initialized")
+            Timber.d("🔧 Debug tools initialized (crash handler active)")
         } catch (e: Exception) {
             Timber.e(e, "Failed to initialize debug tools")
         }
