@@ -16,18 +16,20 @@ import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * LogcatCollector - OCR DIAGNOSTIC MODE (FULLY FIXED)
+ * LogcatCollector - OCR DIAGNOSTIC MODE (FULLY FIXED + AUTO-SAVE)
  * 
  * ✅ FIXES:
  * - Правильная проверка количества строк
  * - Сохранение работает даже после остановки
  * - Корректная работа кнопки Save
  * - Проверка разрешений
+ * - ⭐ AUTO-SAVE: Автоматически сохраняет логи каждые 30 секунд при сборе
  */
 class LogcatCollector private constructor(private val context: Context) {
 
     private var logcatProcess: Process? = null
     private var collectJob: Job? = null
+    private var autoSaveJob: Job? = null
     private val logBuffer = StringBuilder()
     private val isSaving = AtomicBoolean(false)
     private var isCollecting = AtomicBoolean(false)
@@ -49,6 +51,7 @@ class LogcatCollector private constructor(private val context: Context) {
         }
 
         private const val MAX_BUFFER_LINES = 10000
+        private const val AUTO_SAVE_INTERVAL_MS = 30_000L // 30 секунд
 
         private val OCR_KEYWORDS = setOf(
             "tess", "tesseract", "ocr", "leptonica", "pix", "rect",
@@ -78,7 +81,7 @@ class LogcatCollector private constructor(private val context: Context) {
     }
 
     /**
-     * Начать сбор логов
+     * Начать сбор логов + запустить автосохранение
      */
     fun startCollecting() {
         if (!BuildConfig.DEBUG) {
@@ -94,6 +97,9 @@ class LogcatCollector private constructor(private val context: Context) {
         isCollecting.set(true)
         clearInternalBuffer()
 
+        // ✅ Запускаем автосохранение
+        startAutoSave()
+
         collectJob = CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {
                 // Очищаем системный буфер
@@ -102,6 +108,7 @@ class LogcatCollector private constructor(private val context: Context) {
                 
                 val pid = android.os.Process.myPid()
                 Timber.i("🚀 OCR Log Collector STARTED (PID: $pid)")
+                Timber.i("💾 Auto-save enabled (every 30s)")
 
                 // Захватываем ВСЕ логи приложения
                 logcatProcess = Runtime.getRuntime().exec(
@@ -153,7 +160,7 @@ class LogcatCollector private constructor(private val context: Context) {
     }
 
     /**
-     * Остановить сбор логов
+     * Остановить сбор логов + остановить автосохранение
      */
     fun stopCollecting() {
         if (!isCollecting.get()) return
@@ -161,6 +168,9 @@ class LogcatCollector private constructor(private val context: Context) {
         isCollecting.set(false)
         
         try {
+            // ✅ Останавливаем автосохранение
+            stopAutoSave()
+            
             collectJob?.cancel()
             logcatProcess?.destroy()
             Timber.i("🛑 Collector Stopped. Buffer has $lineCount lines")
@@ -183,8 +193,9 @@ class LogcatCollector private constructor(private val context: Context) {
 
     /**
      * ✅ FIXED: Сохранить логи ПРЯМО СЕЙЧАС
+     * @param isAutoSave - если true, добавляет префикс "AUTO_" к имени файла
      */
-    fun saveLogsNow() {
+    fun saveLogsNow(isAutoSave: Boolean = false) {
         if (!isSaving.compareAndSet(false, true)) {
             Timber.w("⚠️ Already saving logs")
             return
@@ -215,18 +226,22 @@ class LogcatCollector private constructor(private val context: Context) {
                     Locale.getDefault()
                 ).format(Date())
                 
-                val fileName = "OCR_DEBUG_$timestamp.txt"
+                val prefix = if (isAutoSave) "AUTO_" else ""
+                val fileName = "${prefix}OCR_DEBUG_$timestamp.txt"
                 val file = File(logsDir, fileName)
 
                 val finalLog = buildString {
                     append("=".repeat(60)).append("\n")
-                    append("OCR DIAGNOSTIC LOG\n")
+                    append("OCR DIAGNOSTIC LOG${if (isAutoSave) " (AUTO-SAVED)" else ""}\n")
                     append("=".repeat(60)).append("\n")
                     append("Timestamp: $timestamp\n")
                     append("Device: ${Build.MANUFACTURER} ${Build.MODEL}\n")
                     append("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\n")
                     append("App Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n")
                     append("Lines Captured: $currentLines\n")
+                    if (isAutoSave) {
+                        append("Save Type: Automatic (every 30s)\n")
+                    }
                     append("=".repeat(60)).append("\n\n")
                     
                     // OCR-related логи
@@ -251,14 +266,9 @@ class LogcatCollector private constructor(private val context: Context) {
 
                 file.writeText(finalLog)
                 
-                Timber.i("✅ LOG SAVED: ${file.absolutePath} (${file.length() / 1024} KB)")
+                val saveType = if (isAutoSave) "AUTO-SAVED" else "SAVED"
+                Timber.i("✅ LOG $saveType: ${file.absolutePath} (${file.length() / 1024} KB)")
                 Timber.i("📊 Saved $currentLines lines")
-
-                // Опционально: шарим файл
-                if (BuildConfig.DEBUG) {
-                    // Можно раскомментировать для автоматического share
-                    // shareLogFile(file)
-                }
 
             } catch (e: Exception) {
                 Timber.e(e, "❌ Failed to save logs")
@@ -317,4 +327,46 @@ class LogcatCollector private constructor(private val context: Context) {
      * Проверка, идет ли сбор
      */
     fun isCollecting(): Boolean = isCollecting.get()
+    
+    // ════════════════════════════════════════════════════════════════════════
+    // ⭐ AUTO-SAVE TIMER - BACKUP PROTECTION
+    // ════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Запускает таймер автосохранения
+     * Сохраняет логи каждые 30 секунд (на случай краша)
+     */
+    private fun startAutoSave() {
+        autoSaveJob?.cancel()
+        
+        autoSaveJob = CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+            try {
+                while (isActive && isCollecting.get()) {
+                    delay(AUTO_SAVE_INTERVAL_MS)
+                    
+                    if (lineCount > 100) {  // Сохраняем только если есть данные
+                        Timber.d("💾 Auto-save triggered (${lineCount} lines)")
+                        saveLogsNow(isAutoSave = true)
+                    }
+                }
+            } catch (e: Exception) {
+                if (e !is CancellationException) {
+                    Timber.e(e, "Auto-save job failed")
+                }
+            }
+        }
+    }
+    
+    /**
+     * Останавливает таймер автосохранения
+     */
+    private fun stopAutoSave() {
+        try {
+            autoSaveJob?.cancel()
+            autoSaveJob = null
+            Timber.d("⏹️ Auto-save stopped")
+        } catch (e: Exception) {
+            Timber.e(e, "Error stopping auto-save")
+        }
+    }
 }
