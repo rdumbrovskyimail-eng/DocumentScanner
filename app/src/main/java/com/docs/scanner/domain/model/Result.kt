@@ -12,7 +12,7 @@ import com.docs.scanner.domain.core.DomainResult
  */
 sealed interface Result<out T> {
     data class Success<T>(val data: T) : Result<T>
-    data class Error(val exception: Exception) : Result<Nothing>
+    data class Error(val exception: Throwable) : Result<Nothing>
     data object Loading : Result<Nothing>
 }
 
@@ -23,4 +23,3 @@ fun <T> DomainResult<T>.toLegacyResult(): Result<T> = when (this) {
 
 fun Result.Error.domainErrorOrNull(): DomainError? =
     (exception as? DomainException)?.error
-
