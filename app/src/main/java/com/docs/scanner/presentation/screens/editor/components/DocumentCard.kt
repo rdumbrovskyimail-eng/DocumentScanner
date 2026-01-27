@@ -87,7 +87,7 @@ import coil3.compose.AsyncImage
 import com.docs.scanner.domain.core.Document
 import com.docs.scanner.domain.core.ProcessingStatus
 import com.docs.scanner.presentation.components.MicroButton
-import import com.docs.scanner.presentation.screens.editor.components.StatusBadge
+import com.docs.scanner.presentation.screens.editor.components.StatusBadge
 import com.docs.scanner.presentation.theme.GoogleDocsBackground
 import com.docs.scanner.presentation.theme.GoogleDocsBorderLight
 import com.docs.scanner.presentation.theme.GoogleDocsError
