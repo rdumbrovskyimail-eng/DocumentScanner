@@ -4,13 +4,16 @@ import com.docs.scanner.domain.core.Document
 import com.docs.scanner.domain.core.Record
 
 /**
- * КРИТИЧЕСКИ ВАЖНО: 
+ * EditorUiState.kt
+ * Version: 8.0.0 - PRODUCTION READY (2026)
+ *
+ * КРИТИЧЕСКИ ВАЖНО:
  * Этот sealed interface описывает ТОЛЬКО domain данные (record, documents)
  * Processing state, selection, inline editing - в ОТДЕЛЬНЫХ StateFlow!
  */
 sealed interface EditorUiState {
     data object Loading : EditorUiState
-    
+
     /**
      * Success содержит ТОЛЬКО чистые domain данные
      * БЕЗ isProcessing, processingMessage, errorMessage!
@@ -20,7 +23,7 @@ sealed interface EditorUiState {
         val folderName: String,
         val documents: List<Document>
     ) : EditorUiState
-    
+
     data class Error(val message: String) : EditorUiState
 }
 
@@ -57,7 +60,7 @@ data class SelectionState(
     val count: Int get() = selectedIds.size
     val isActive: Boolean get() = mode is SelectionMode.Active
     val isEmpty: Boolean get() = selectedIds.isEmpty()
-    
+
     fun toggle(id: Long): SelectionState {
         val newSelected = if (selectedIds.contains(id)) {
             selectedIds - id
@@ -85,9 +88,9 @@ data class InlineEditState(
     val lastSaveTimestamp: Long = 0L
 )
 
-enum class TextEditField { 
-    OCR_TEXT, 
-    TRANSLATED_TEXT 
+enum class TextEditField {
+    OCR_TEXT,
+    TRANSLATED_TEXT
 }
 
 /**
@@ -106,7 +109,7 @@ data class TextEditHistoryItem(
  */
 sealed interface ShareEvent {
     data class File(
-        val path: String, 
+        val path: String,
         val mimeType: String,
         val fileName: String? = null
     ) : ShareEvent
