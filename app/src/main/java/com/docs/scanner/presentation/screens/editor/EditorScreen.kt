@@ -11,6 +11,7 @@
 
 package com.docs.scanner.presentation.screens.editor
 
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import android.content.Intent
 import android.net.Uri
