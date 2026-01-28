@@ -169,35 +169,7 @@ fun RecordMenu(
         expanded = expanded,
         onDismissRequest = onDismiss
     ) {
-        // Rename
-        DropdownMenuItem(
-            text = { Text("Rename") },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = null
-                )
-            },
-            onClick = {
-                onRename()
-                onDismiss()
-            }
-        )
         
-        // Edit description
-        DropdownMenuItem(
-            text = { Text("Edit description") },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Description,
-                    contentDescription = null
-                )
-            },
-            onClick = {
-                onEditDescription()
-                onDismiss()
-            }
-        )
         
         // Manage tags
         DropdownMenuItem(

@@ -393,9 +393,7 @@ fun EditorScreen(
                     title = {
                         Text(
                             text = when (val state = uiState) {
-                                is EditorUiState.Success -> state.record.name.ifBlank {
-                                    state.folderName.ifBlank { "Documents" }
-                                }
+                                is EditorUiState.Success -> state.folderName.ifBlank { "Documents" }
                                 else -> "Documents"
                             }
                         )
@@ -693,7 +691,7 @@ fun EditorScreen(
     }
 
     if (showRenameRecordDialog && success != null) {
-        var name by remember(success.record.id.value) { mutableStateOf(success.record.name) }
+        var name by remember { mutableStateOf(success.record.name) }
         AlertDialog(
             onDismissRequest = { showRenameRecordDialog = false },
             title = { Text("Rename record") },
@@ -722,7 +720,7 @@ fun EditorScreen(
     }
 
     if (showEditDescriptionDialog && success != null) {
-        var desc by remember(success.record.id.value) { mutableStateOf(success.record.description.orEmpty()) }
+        var desc by remember { mutableStateOf(success.record.description.orEmpty()) }
         AlertDialog(
             onDismissRequest = { showEditDescriptionDialog = false },
             title = { Text("Edit description") },
@@ -804,8 +802,8 @@ fun EditorScreen(
 
     // Language Dialog - inline implementation
     if (showLanguageDialog && success != null) {
-        var source by remember(success.record.id.value) { mutableStateOf(success.record.sourceLanguage) }
-        var target by remember(success.record.id.value) { mutableStateOf(success.record.targetLanguage) }
+        var source by remember { mutableStateOf(success.record.sourceLanguage) }
+        var target by remember { mutableStateOf(success.record.targetLanguage) }
 
         val sourceOptions = Language.ocrSourceOptions
         val targetOptions = Language.translationSupported.filter { it != Language.AUTO }
