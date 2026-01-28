@@ -2,7 +2,7 @@ package com.docs.scanner.presentation.screens.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.docs.scanner.domain.model.Document
+import com.docs.scanner.domain.core.SearchHistoryItem
 import com.docs.scanner.domain.usecase.AllUseCases
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
@@ -28,8 +28,12 @@ class SearchViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _uiState = MutableStateFlow<SearchUiState>(SearchUiState.Empty)
+    private val _uiState = MutableStateFlow<SearchUiState>(SearchUiState.Suggestions)
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+
+    val searchHistory: StateFlow<List<SearchHistoryItem>> =
+        useCases.documents.observeSearchHistory(limit = 20)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         viewModelScope.launch {
@@ -56,7 +60,7 @@ class SearchViewModel @Inject constructor(
     private suspend fun performSearch(query: String) {
         if (query.length < 2) {
             _uiState.value = if (query.isEmpty()) {
-                SearchUiState.Empty
+                SearchUiState.Suggestions
             } else {
                 SearchUiState.QueryTooShort
             }
@@ -66,21 +70,24 @@ class SearchViewModel @Inject constructor(
         _uiState.value = SearchUiState.Searching
 
         try {
-            useCases.searchDocuments(query)
+            useCases.documents.search(query)
                 .catch { e ->
                     _uiState.value = SearchUiState.Error(
                         "Search failed: ${e.message}"
                     )
                 }
                 .collect { documents ->
+                    // Persist query to history (best-effort).
+                    useCases.documents.saveSearchQuery(query, documents.size)
+
                     _uiState.value = if (documents.isEmpty()) {
                         SearchUiState.NoResults(query)
                     } else {
                         // Map to SearchResult with highlighting info
                         val results = documents.take(50).map { doc ->
                             SearchResult(
-                                documentId = doc.id,
-                                recordId = doc.recordId,
+                                documentId = doc.id.value,
+                                recordId = doc.recordId.value,
                                 recordName = doc.recordName ?: "Untitled",
                                 folderName = doc.folderName ?: "Documents",
                                 matchedText = doc.originalText ?: doc.translatedText ?: "",
@@ -124,7 +131,23 @@ class SearchViewModel @Inject constructor(
      */
     fun clearSearch() {
         _searchQuery.value = ""
-        _uiState.value = SearchUiState.Empty
+        _uiState.value = SearchUiState.Suggestions
+    }
+
+    fun selectHistory(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun deleteHistoryItem(id: Long) {
+        viewModelScope.launch {
+            useCases.documents.deleteSearchHistoryItem(id)
+        }
+    }
+
+    fun clearHistory() {
+        viewModelScope.launch {
+            useCases.documents.clearSearchHistory()
+        }
     }
 }
 
@@ -134,7 +157,7 @@ class SearchViewModel @Inject constructor(
  * Session 8: Added proper state management.
  */
 sealed interface SearchUiState {
-    object Empty : SearchUiState
+    object Suggestions : SearchUiState
     object QueryTooShort : SearchUiState
     object Searching : SearchUiState
     data class Success(val results: List<SearchResult>, val query: String) : SearchUiState

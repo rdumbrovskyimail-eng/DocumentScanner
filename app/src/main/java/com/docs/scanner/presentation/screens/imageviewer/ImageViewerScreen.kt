@@ -167,21 +167,4 @@ fun ImageViewerScreen(
     }
 }
 
-// ⚠️ TODO Session 9 Problem #4: Переместить в presentation/viewmodels/ImageViewerViewModel.kt
-@HiltViewModel
-class ImageViewerViewModel @Inject constructor(
-    private val documentRepository: DocumentRepository,
-    savedStateHandle: SavedStateHandle
-) : ViewModel() {
-    
-    private val documentId: Long = savedStateHandle.get<Long>("documentId") ?: 0L
-    
-    private val _document = MutableStateFlow<Document?>(null)
-    val document: StateFlow<Document?> = _document.asStateFlow()
-    
-    fun loadDocument(documentId: Long) {
-        viewModelScope.launch {
-            _document.value = documentRepository.getDocumentById(documentId)
-        }
-    }
-}
+// ViewModel is defined in `ImageViewerViewModel.kt`.

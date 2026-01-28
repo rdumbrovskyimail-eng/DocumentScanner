@@ -2,29 +2,35 @@ package com.docs.scanner.presentation.screens.records
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.docs.scanner.domain.core.FolderId
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.domain.usecase.AllUseCases
+import com.docs.scanner.presentation.screens.folders.SortMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/**
- * Records Screen ViewModel.
- * 
- * Session 8: Already excellent, no major changes needed
- */
 @HiltViewModel
 class RecordsViewModel @Inject constructor(
     private val useCases: AllUseCases
 ) : ViewModel() {
 
-    private val _currentFolderId = MutableStateFlow(-1L)
+    private val _currentFolderId = MutableStateFlow(0L)
     val currentFolderId: StateFlow<Long> = _currentFolderId.asStateFlow()
 
     private val _uiState = MutableStateFlow<RecordsUiState>(RecordsUiState.Loading)
     val uiState: StateFlow<RecordsUiState> = _uiState.asStateFlow()
+    
+    private val _sortMode = MutableStateFlow(SortMode.BY_DATE)
+    val sortMode: StateFlow<SortMode> = _sortMode.asStateFlow()
+    
+    // Для drag & drop
+    private val _isDragging = MutableStateFlow(false)
+    val isDragging: StateFlow<Boolean> = _isDragging.asStateFlow()
+    
+    private var _localRecords: List<Record> = emptyList()
 
     val allFolders: StateFlow<List<Folder>> = useCases.getFolders()
         .stateIn(
@@ -34,12 +40,14 @@ class RecordsViewModel @Inject constructor(
         )
 
     fun loadRecords(folderId: Long) {
-        if (folderId <= 0) {
+        if (folderId == 0L) {
             _uiState.value = RecordsUiState.Error("Invalid folder ID")
             return
         }
 
         _currentFolderId.value = folderId
+        
+        val isQuickScans = folderId == FolderId.QUICK_SCANS_ID
         
         viewModelScope.launch {
             _uiState.value = RecordsUiState.Loading
@@ -48,26 +56,124 @@ class RecordsViewModel @Inject constructor(
                 val folder = useCases.getFolderById(folderId)
                 val folderName = folder?.name ?: "Records"
 
-                useCases.getRecords(folderId)
-                    .catch { e ->
-                        _uiState.value = RecordsUiState.Error(
-                            "Failed to load records: ${e.message}"
-                        )
+                combine(
+                    useCases.getRecords(folderId),
+                    _sortMode,
+                    _isDragging
+                ) { records, sortMode, isDragging ->
+                    Triple(records, sortMode, isDragging)
+                }
+                .map { (records, sortMode, isDragging) ->
+                    if (isDragging) {
+                        _localRecords
+                    } else {
+                        sortRecords(records, sortMode).also { _localRecords = it }
                     }
-                    .collect { records ->
-                        _uiState.value = RecordsUiState.Success(
-                            folderId = folderId,
-                            folderName = folderName,
-                            records = records
-                        )
-                    }
+                }
+                .catch { e ->
+                    _uiState.value = RecordsUiState.Error("Failed to load records: ${e.message}")
+                }
+                .collect { records ->
+                    _uiState.value = RecordsUiState.Success(
+                        folderId = folderId,
+                        folderName = folderName,
+                        records = records,
+                        isQuickScansFolder = isQuickScans
+                    )
+                }
             } catch (e: Exception) {
-                _uiState.value = RecordsUiState.Error(
-                    "Failed to load data: ${e.message}"
-                )
+                _uiState.value = RecordsUiState.Error("Failed to load data: ${e.message}")
             }
         }
     }
+    
+    private fun sortRecords(records: List<Record>, sortMode: SortMode): List<Record> {
+        val pinned = records.filter { it.isPinned }
+        val others = records.filter { !it.isPinned }
+        
+        val sortedPinned = when (sortMode) {
+            SortMode.BY_DATE -> pinned.sortedByDescending { it.updatedAt }
+            SortMode.BY_NAME -> pinned.sortedBy { it.name.lowercase() }
+            SortMode.MANUAL -> pinned.sortedBy { it.position }
+        }
+        
+        val sortedOthers = when (sortMode) {
+            SortMode.BY_DATE -> others.sortedByDescending { it.updatedAt }
+            SortMode.BY_NAME -> others.sortedBy { it.name.lowercase() }
+            SortMode.MANUAL -> others.sortedBy { it.position }
+        }
+        
+        return sortedPinned + sortedOthers
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SORT MODE
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    fun setSortMode(mode: SortMode) {
+        _sortMode.value = mode
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DRAG & DROP
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    fun startDragging() {
+        _isDragging.value = true
+    }
+    
+    /**
+     * Переместить запись в списке (только визуально, без сохранения).
+     */
+    fun reorderRecords(fromIndex: Int, toIndex: Int) {
+        val currentState = _uiState.value
+        if (currentState !is RecordsUiState.Success) return
+        
+        val records = currentState.records.toMutableList()
+        
+        if (fromIndex < 0 || fromIndex >= records.size ||
+            toIndex < 0 || toIndex >= records.size) return
+        
+        if (fromIndex == toIndex) return
+        
+        // Перемещаем элемент
+        val item = records.removeAt(fromIndex)
+        records.add(toIndex, item)
+        
+        // Обновляем локальный список
+        _localRecords = records
+        _uiState.value = currentState.copy(records = records)
+    }
+    
+    /**
+     * Сохранить новый порядок записей в БД.
+     */
+    fun saveRecordOrder() {
+        viewModelScope.launch {
+            try {
+                _localRecords.forEachIndexed { index, record ->
+                    useCases.records.updatePosition(record.id, index)
+                }
+            } catch (e: Exception) {
+                updateErrorMessage("Failed to save order: ${e.message}")
+            } finally {
+                _isDragging.value = false
+            }
+        }
+    }
+    
+    fun cancelDragging() {
+        _isDragging.value = false
+        // Перезагрузить данные из БД
+        val folderId = _currentFolderId.value
+        if (folderId != 0L) {
+            loadRecords(folderId)
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CRUD OPERATIONS
+    // ═══════════════════════════════════════════════════════════════════════════
 
     fun createRecord(name: String, description: String?) {
         if (name.isBlank()) {
@@ -76,8 +182,14 @@ class RecordsViewModel @Inject constructor(
         }
 
         val folderId = _currentFolderId.value
-        if (folderId <= 0) {
+        
+        if (folderId == 0L) {
             updateErrorMessage("No folder selected")
+            return
+        }
+        
+        if (folderId == FolderId.QUICK_SCANS_ID) {
+            updateErrorMessage("Cannot create records manually in Quick Scans")
             return
         }
 
@@ -143,6 +255,10 @@ class RecordsViewModel @Inject constructor(
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // HELPERS
+    // ═══════════════════════════════════════════════════════════════════════════
+
     fun clearError() {
         val currentState = _uiState.value
         if (currentState is RecordsUiState.Success) {
@@ -160,6 +276,10 @@ class RecordsViewModel @Inject constructor(
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// UI STATE
+// ══════════════════════════════════════════════════════════════════════════════
+
 sealed interface RecordsUiState {
     data object Loading : RecordsUiState
     
@@ -167,6 +287,7 @@ sealed interface RecordsUiState {
         val folderId: Long,
         val folderName: String,
         val records: List<Record>,
+        val isQuickScansFolder: Boolean = false,
         val errorMessage: String? = null
     ) : RecordsUiState
     

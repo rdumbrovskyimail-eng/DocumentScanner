@@ -1,160 +1,241 @@
-# ================================================================================
-# Android CI/CD Pipeline
-# Version: 7.0.1 - FIXED (2026 Standards)
-#
-# ✅ FIX SERIOUS-7: Java 17 → Java 21
-#    build.gradle.kts требует Java 21 (compileOptions, kotlinOptions.jvmTarget)
-# ================================================================================
-
 name: Android CI
 
 on:
   push:
-    branches: [ main, master ]
-  workflow_dispatch:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    
+    timeout-minutes: 30
+
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
     
-    # ✅ FIX SERIOUS-7: Java 21 вместо 17
-    # build.gradle.kts:
-    #   compileOptions { sourceCompatibility = JavaVersion.VERSION_21 }
-    #   kotlinOptions { jvmTarget = "21" }
     - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
         java-version: '21'
         distribution: 'temurin'
+        cache: 'gradle'
     
-    # ✅ Кэширование Gradle
+    # Кеширование Gradle
     - name: Cache Gradle packages
       uses: actions/cache@v4
       with:
         path: |
           ~/.gradle/caches
           ~/.gradle/wrapper
-          ~/.gradle/build-cache
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          .gradle
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'buildSrc/**/*.kt') }}
         restore-keys: |
           ${{ runner.os }}-gradle-
     
-    # ✅ Кэширование Kotlin
-    - name: Cache Kotlin Native
+    # Кеширование зависимостей Kotlin
+    - name: Cache Kotlin/Native
       uses: actions/cache@v4
       with:
-        path: ~/.konan
+        path: |
+          ~/.konan
         key: ${{ runner.os }}-konan-${{ hashFiles('**/*.gradle*') }}
         restore-keys: |
           ${{ runner.os }}-konan-
     
-    # ✅ Права на gradlew
-    - name: Make gradlew executable
+    # ✅ ИСПРАВЛЕНО: Изменён ключ кэша для сброса старого билда
+    - name: Cache build outputs
+      uses: actions/cache@v4
+      with:
+        path: |
+          app/build
+          build
+        key: ${{ runner.os }}-build-v2-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-build-v2-
+    
+    - name: Grant execute permission for gradlew
       run: chmod +x gradlew
     
-    # ✅ Setup Gradle
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
-        
-    # ✅ Сборка
-    - name: Build with Gradle
+    # ✅ ИСПРАВЛЕНО: Принудительная очистка при изменении Kotlin файлов
+    - name: Clean build if needed
+      run: |
+        if git diff --name-only HEAD~1 HEAD | grep -E '(\.kt$|backup_rules\.xml|data_extraction_rules\.xml|proguard-rules\.pro|build\.gradle)'; then
+          echo "🧹 Critical files changed, cleaning build..."
+          ./gradlew clean
+        else
+          echo "✅ No critical files changed, using cache"
+        fi
+    
+    # Сборка DEBUG APK (подписанный debug-ключом)
+    - name: Build Debug APK
       id: build
       continue-on-error: true
-      run: ./gradlew assembleDebug --stacktrace
-      
-    # ⚠️ ВАЖНО: always() чтобы выполнялось даже при ошибке!
-    - name: Get commit info
-      if: always()
-      id: commit
       run: |
-        echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        echo "date=$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+        set +e
+        echo "🔨 Building with debug signing..."
+        ./gradlew assembleDebug --stacktrace --no-daemon --warning-mode all 2>&1 | tee build_log.txt
+        BUILD_EXIT_CODE=${PIPESTATUS[0]}
+        echo "build_exit_code=$BUILD_EXIT_CODE" >> $GITHUB_OUTPUT
         
-    # ✅ Создание Release (только при успехе)
+        if [ $BUILD_EXIT_CODE -eq 0 ]; then
+          echo "✅ Build successful!"
+        else
+          echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
+        fi
+        
+        exit $BUILD_EXIT_CODE
+    
+    # Извлечение только ошибок из лога
+    - name: Extract errors
+      if: always()
+      run: |
+        if [ -f build_log.txt ]; then
+          echo "## 🔍 Build Errors Summary" > build_errors.txt
+          echo "" >> build_errors.txt
+          
+          # Извлекаем критичные ошибки
+          grep -A 5 "^> Task.*FAILED$" build_log.txt >> build_errors.txt 2>/dev/null || true
+          grep -A 15 "FAILURE: Build failed" build_log.txt >> build_errors.txt 2>/dev/null || true
+          grep -A 3 "Error:" build_log.txt >> build_errors.txt 2>/dev/null || true
+          
+          # Signing ошибки
+          if grep -q "SigningConfig" build_log.txt; then
+            echo "" >> build_errors.txt
+            echo "## 🔑 Signing Errors" >> build_errors.txt
+            grep -A 5 "SigningConfig" build_log.txt >> build_errors.txt 2>/dev/null || true
+          fi
+          
+          # Lint ошибки
+          if grep -q "lintVitalRelease FAILED" build_log.txt; then
+            echo "" >> build_errors.txt
+            echo "## 📋 Lint Errors" >> build_errors.txt
+            grep -A 20 "Error:" build_log.txt | grep -E "(Error:|Explanation)" >> build_errors.txt 2>/dev/null || true
+          fi
+          
+          # Если файл пустой, добавляем заголовок об успехе
+          if [ ! -s build_errors.txt ]; then
+            echo "✅ No errors found - Build successful!" > build_errors.txt
+          fi
+          
+          # Показываем краткую сводку
+          echo "📊 Build Summary:"
+          tail -20 build_errors.txt
+        fi
+    
+    # Загрузка логов как артефакты
+    - name: Upload build logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-${{ github.run_number }}
+        path: |
+          build_log.txt
+          build_errors.txt
+          app/build/reports/
+          app/build/outputs/logs/
+        retention-days: 7
+    
+    # Комментарий с ошибками в PR
+    - name: Comment PR with errors
+      if: failure() && github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          let errorContent = '❌ **Build Failed**\n\n';
+          
+          if (fs.existsSync('build_errors.txt')) {
+            const errors = fs.readFileSync('build_errors.txt', 'utf8');
+            errorContent += '```\n' + errors.substring(0, 60000) + '\n```\n';
+            errorContent += '\n📥 Full logs available in [artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})';
+          }
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: errorContent
+          });
+    
+    # Проверка успеха сборки
+    - name: Check build status
+      if: steps.build.outputs.build_exit_code != '0'
+      run: |
+        echo "❌ Build failed with exit code ${{ steps.build.outputs.build_exit_code }}"
+        echo "📋 Check build_errors.txt in artifacts for details"
+        cat build_errors.txt
+        exit 1
+    
+    # Диагностика структуры APK
+    - name: Debug APK location
+      if: always()
+      run: |
+        echo "🔍 Searching for APK files..."
+        find app/build/outputs -name "*.apk" -type f 2>/dev/null || echo "No APK files found"
+        echo ""
+        echo "📂 Directory structure:"
+        ls -lhR app/build/outputs/apk/ 2>/dev/null || echo "APK directory doesn't exist"
+    
+    - name: Prepare APKs for Release
+      if: success()
+      run: |
+        mkdir -p apks
+        
+        # Ищем debug APK (он точно подписан)
+        DEBUG_APK=""
+        if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+          DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
+          echo "✅ Found debug APK"
+        fi
+        
+        if [ -n "$DEBUG_APK" ]; then
+          cp "$DEBUG_APK" apks/DocumentScanner-v${{ github.run_number }}-debug.apk
+          echo "✅ APK prepared: DocumentScanner-v${{ github.run_number }}-debug.apk"
+          ls -lh apks/
+          
+          # Показываем информацию об APK
+          echo ""
+          echo "📦 APK Info:"
+          file apks/DocumentScanner-v${{ github.run_number }}-debug.apk
+        else
+          echo "⚠️ No APK found in expected locations"
+          echo "Searching everywhere..."
+          find . -name "*.apk" -type f
+          exit 1
+        fi
+    
     - name: Create Release
-      if: steps.build.outcome == 'success'
-      id: create_release
+      if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: build-${{ steps.commit.outputs.date }}
-        name: Build ${{ steps.commit.outputs.short_sha }}
+        tag_name: v1.0.${{ github.run_number }}
+        name: DocumentScanner v1.0.${{ github.run_number }}
         body: |
-          🤖 Автоматическая сборка
-          📱 Commit: ${{ github.event.head_commit.message }}
-          👤 Автор: ${{ github.actor }}
-          🕐 Время: ${{ steps.commit.outputs.date }}
-        files: app/build/outputs/apk/debug/*.apk
-        draft: false
-        prerelease: true
-      continue-on-error: true
-    
-    # ✅ Отправка успешного уведомления (только если Release создан)
-    - name: Send Success Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome == 'success'
-      run: |
-        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-        APK_NAME=$(basename "$APK_PATH")
-        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/build-${{ steps.commit.outputs.date }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="✅ <b>APK собран успешно!</b>
-        
-        📱 Файл: <code>${APK_NAME}</code>
-        📦 Размер: ${APK_SIZE}
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        📥 <a href='${RELEASE_URL}'>Скачать APK</a>"
-    
-    # ⚠️ Уведомление если сборка прошла, но Release не создался
-    - name: Send Release Failure Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome != 'success'
-      run: |
-        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-        APK_NAME=$(basename "$APK_PATH")
-        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="⚠️ <b>APK собран, но Release не создан!</b>
-        
-        📱 Файл: <code>${APK_NAME}</code>
-        📦 Размер: ${APK_SIZE}
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        ⚠️ Проверьте права доступа к репозиторию
-        🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Посмотреть логи</a>"
-    
-    # ❌ Уведомление об ошибке сборки
-    - name: Send Build Failure Notification to Telegram
-      if: steps.build.outcome == 'failure'
-      run: |
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="❌ <b>Сборка упала!</b>
-        
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Посмотреть логи</a>"
+          ## 📱 DocumentScanner v1.0.${{ github.run_number }}
+          
+          **⚠️ Debug Build** - Signed with debug keystore (for testing only)
+          
+          **Commit:** `${{ github.sha }}`
+          **Build #:** ${{ github.run_number }}
+          **Build time:** Optimized with caching
+          
+          ### 📦 Downloads
+          - Debug APK included below (installable for testing)
+          
+          ### 🔧 Changes
+          ${{ github.event.head_commit.message }}
+          
+          ### ℹ️ Note
+          This is a debug build signed with Android's default debug certificate.
+          For production releases, a proper signing configuration is needed.
+          
+        files: apks/*.apk
+        fail_on_unmatched_files: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
