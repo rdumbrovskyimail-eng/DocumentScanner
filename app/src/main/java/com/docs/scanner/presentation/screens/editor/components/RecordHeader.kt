@@ -1,5 +1,6 @@
 package com.docs.scanner.presentation.screens.editor.components
 
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
