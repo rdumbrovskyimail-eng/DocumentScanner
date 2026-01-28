@@ -691,7 +691,7 @@ fun EditorScreen(
     }
 
     if (showRenameRecordDialog && success != null) {
-        var name by remember { mutableStateOf(success.record.name) }
+        var name by remember(success.record.name) { mutableStateOf(success.record.name) }
         AlertDialog(
             onDismissRequest = { showRenameRecordDialog = false },
             title = { Text("Rename record") },
@@ -720,7 +720,7 @@ fun EditorScreen(
     }
 
     if (showEditDescriptionDialog && success != null) {
-        var desc by remember { mutableStateOf(success.record.description.orEmpty()) }
+        var desc by remember(success.record.description) { mutableStateOf(success.record.description.orEmpty()) }
         AlertDialog(
             onDismissRequest = { showEditDescriptionDialog = false },
             title = { Text("Edit description") },
