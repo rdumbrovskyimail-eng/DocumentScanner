@@ -18,6 +18,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
+import com.docs.scanner.presentation.screens.editor.components.RecordHeader
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -532,6 +533,16 @@ fun EditorScreen(
                 }
 
                 is EditorUiState.Success -> {
+                    // Record Name & Description Header
+                    RecordHeader(
+                        name = state.record.name,
+                        description = state.record.description,
+                        onNameClick = { showRenameRecordDialog = true },
+                        onDescriptionClick = { showEditDescriptionDialog = true }
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     if (processingState.isActive) {
                         BatchProgressBanner(
                             processedCount = processingState.progress,
@@ -718,8 +729,12 @@ fun EditorScreen(
                     value = desc,
                     onValueChange = { desc = it },
                     label = { Text("Description") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 3
+                    placeholder = { Text("Add description for this record...") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 120.dp, max = 300.dp),
+                    minLines = 4,
+                    maxLines = 10
                 )
             },
             confirmButton = {
