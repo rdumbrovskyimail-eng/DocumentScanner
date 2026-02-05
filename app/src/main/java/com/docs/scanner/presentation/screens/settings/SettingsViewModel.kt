@@ -1,472 +1,1394 @@
+Вот полный код. Внеси только изменения
 
-package com.opuside.app.feature.settings.presentation
+/*
+ * SettingsViewModel.kt
+ * Version: 21.0.0 - GLOBAL SETTINGS SYNCHRONIZATION (2026)
+ * 
+ * ✅ NEW IN 21.0.0:
+ * - testTranslation() reads source/target from DataStore (CRITICAL FIX)
+ * - runMlkitOcrTest() reads ALL OCR settings from DataStore
+ * - loadMlkitSettings() syncs ALL settings from DataStore
+ * - Added setTranslationSourceLang() with DataStore persistence
+ * - setTranslationTargetLang() now saves to DataStore
+ * 
+ * ✅ FIX FOR: "переводит на английскую почемуто"
+ * Testing Tab now uses 100% global settings from DataStore
+ */
 
+package com.docs.scanner.presentation.screens.settings
+
+import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.opuside.app.BuildConfig
-import com.opuside.app.core.data.AppSettings
-import com.opuside.app.core.network.anthropic.ClaudeApiClient
-import com.opuside.app.core.network.anthropic.model.ClaudeMessage
-import com.opuside.app.core.network.github.GitHubApiClient
-import com.opuside.app.core.network.github.model.GitHubRepository
-import com.opuside.app.core.security.SecureSettingsDataStore
+import com.docs.scanner.BuildConfig
+import com.docs.scanner.data.local.preferences.GeminiModelOption
+import com.docs.scanner.data.local.preferences.GeminiModelManager
+import com.docs.scanner.data.local.preferences.SettingsDataStore
+import com.docs.scanner.data.local.security.ApiKeyEntry
+import com.docs.scanner.data.local.security.EncryptedKeyStorage
+import com.docs.scanner.data.remote.drive.DriveRepository
+import com.docs.scanner.data.remote.gemini.GeminiApi
+import com.docs.scanner.data.remote.mlkit.MLKitScanner
+import com.docs.scanner.data.remote.mlkit.OcrScriptMode
+import com.docs.scanner.domain.core.*
+import com.docs.scanner.domain.repository.FileRepository
+import com.docs.scanner.domain.repository.SettingsRepository
+import com.docs.scanner.domain.repository.StorageUsage
+import com.docs.scanner.domain.usecase.AllUseCases
+import com.docs.scanner.presentation.screens.settings.components.MlkitSettingsState
+import com.docs.scanner.util.ImageUtils
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.Scope
+import com.google.api.services.drive.DriveScopes
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
-sealed class ConnectionStatus {
-    data object Unknown : ConnectionStatus()
-    data object Testing : ConnectionStatus()
-    data object Connected : ConnectionStatus()
-    data class Error(val message: String) : ConnectionStatus()
-}
-
-/**
- * ✅ КРИТИЧЕСКИ ИСПРАВЛЕНО (2026-02-05):
- * 
- * ПРОБЛЕМА #1: GitHub Token пропадает после перезапуска
- * ────────────────────────────────────────────────────────
- * ПРИЧИНА: 
- * - loadSettings() загружал токен из config.token
- * - Но config.token содержит зашифрованный токен, который расшифровывается асинхронно
- * - При первой загрузке расшифровка не успевает → токен пустой
- * 
- * РЕШЕНИЕ:
- * - Загружаем токен НАПРЯМУЮ из secureSettings.getGitHubToken().first()
- * - Используем combine() для синхронной загрузки всех настроек
- * - Добавлено логирование для диагностики
- * 
- * ПРОБЛЕМА #2: Настройки не загружаются автоматически
- * ────────────────────────────────────────────────────────
- * ПРИЧИНА:
- * - loadSettings() вызывается в init {}, но UI не обновляется
- * - StateFlow не триггерится если значение то же самое
- * 
- * РЕШЕНИЕ:
- * - Используем SharingStarted.Eagerly для немедленной подписки
- * - Добавлена явная загрузка в init {} с логированием
- */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val appSettings: AppSettings,
-    private val secureSettings: SecureSettingsDataStore,
-    private val gitHubClient: GitHubApiClient,
-    private val claudeClient: ClaudeApiClient
+    @ApplicationContext private val appContext: Context,
+    private val settingsRepository: SettingsRepository,
+    private val driveRepository: DriveRepository,
+    private val encryptedKeyStorage: EncryptedKeyStorage,
+    private val settingsDataStore: SettingsDataStore,
+    private val fileRepository: FileRepository,
+    private val geminiApi: GeminiApi,
+    private val mlKitScanner: MLKitScanner,
+    private val useCases: AllUseCases,
+    private val modelManager: GeminiModelManager
 ) : ViewModel() {
 
-    // ═════════════════════════════════════════════════════════════════════════
-    // STATE - GitHub Settings
-    // ═════════════════════════════════════════════════════════════════════════
-    
-    private val _githubOwnerInput = MutableStateFlow("")
-    val githubOwnerInput: StateFlow<String> = _githubOwnerInput.asStateFlow()
+    companion object {
+        private const val TAG = "SettingsViewModel"
+        private const val SYSTEM_LANGUAGE = "system"
+        private const val MODEL_SWITCH_DEBOUNCE_MS = 300L
+    }
 
-    private val _githubRepoInput = MutableStateFlow("")
-    val githubRepoInput: StateFlow<String> = _githubRepoInput.asStateFlow()
+    private var currentOcrJob: Job? = null
+    private var modelSwitchJob: Job? = null
+    private var translationModelSwitchJob: Job? = null
 
-    private val _githubTokenInput = MutableStateFlow("")
-    val githubTokenInput: StateFlow<String> = _githubTokenInput.asStateFlow()
+    private val _apiKeys = MutableStateFlow<List<ApiKeyEntry>>(emptyList())
+    val apiKeys: StateFlow<List<ApiKeyEntry>> = _apiKeys.asStateFlow()
 
-    private val _githubBranchInput = MutableStateFlow("main")
-    val githubBranchInput: StateFlow<String> = _githubBranchInput.asStateFlow()
-
-    private val _githubStatus = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Unknown)
-    val githubStatus: StateFlow<ConnectionStatus> = _githubStatus.asStateFlow()
-
-    private val _repoInfo = MutableStateFlow<GitHubRepository?>(null)
-    val repoInfo: StateFlow<GitHubRepository?> = _repoInfo.asStateFlow()
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // STATE - Anthropic Settings
-    // ═════════════════════════════════════════════════════════════════════════
-    
-    private val _anthropicKeyInput = MutableStateFlow("")
-    val anthropicKeyInput: StateFlow<String> = _anthropicKeyInput.asStateFlow()
-
-    private val _claudeModelInput = MutableStateFlow("claude-opus-4-5-20251101")
-    val claudeModelInput: StateFlow<String> = _claudeModelInput.asStateFlow()
-
-    private val _claudeStatus = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Unknown)
-    val claudeStatus: StateFlow<ConnectionStatus> = _claudeStatus.asStateFlow()
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // STATE - Cache Settings
-    // ═════════════════════════════════════════════════════════════════════════
-    
-    private val _cacheTimeoutInput = MutableStateFlow(5)
-    val cacheTimeoutInput: StateFlow<Int> = _cacheTimeoutInput.asStateFlow()
-
-    private val _maxCacheFilesInput = MutableStateFlow(20)
-    val maxCacheFilesInput: StateFlow<Int> = _maxCacheFilesInput.asStateFlow()
-
-    private val _autoClearCacheInput = MutableStateFlow(true)
-    val autoClearCacheInput: StateFlow<Boolean> = _autoClearCacheInput.asStateFlow()
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // STATE - UI
-    // ═════════════════════════════════════════════════════════════════════════
-    
     private val _isSaving = MutableStateFlow(false)
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
 
-    private val _message = MutableStateFlow<String?>(null)
-    val message: StateFlow<String?> = _message.asStateFlow()
+    private val _saveMessage = MutableStateFlow("")
+    val saveMessage: StateFlow<String> = _saveMessage.asStateFlow()
 
-    private val _biometricAuthRequest = MutableStateFlow(false)
-    val biometricAuthRequest: StateFlow<Boolean> = _biometricAuthRequest.asStateFlow()
+    private val _keyTestMessage = MutableStateFlow("")
+    val keyTestMessage: StateFlow<String> = _keyTestMessage.asStateFlow()
 
-    // ═════════════════════════════════════════════════════════════════════════
-    // PUBLIC PROPERTIES
-    // ═════════════════════════════════════════════════════════════════════════
-    
-    val gitHubConfig = appSettings.gitHubConfig
-    val appVersion = BuildConfig.VERSION_NAME
-    val buildType = if (BuildConfig.DEBUG) "Debug" else "Release"
+    private val _driveEmail = MutableStateFlow<String?>(null)
+    val driveEmail: StateFlow<String?> = _driveEmail.asStateFlow()
 
-    // ═════════════════════════════════════════════════════════════════════════
-    // INITIALIZATION
-    // ═════════════════════════════════════════════════════════════════════════
+    private val _driveBackups = MutableStateFlow<List<BackupInfo>>(emptyList())
+    val driveBackups: StateFlow<List<BackupInfo>> = _driveBackups.asStateFlow()
+
+    private val _isBackingUp = MutableStateFlow(false)
+    val isBackingUp: StateFlow<Boolean> = _isBackingUp.asStateFlow()
+
+    private val _backupMessage = MutableStateFlow("")
+    val backupMessage: StateFlow<String> = _backupMessage.asStateFlow()
+
+    val themeMode: StateFlow<ThemeMode> =
+        useCases.settings.observeThemeMode()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThemeMode.SYSTEM)
+
+    val appLanguage: StateFlow<String> =
+        useCases.settings.observeAppLanguage()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SYSTEM_LANGUAGE)
+
+    val autoTranslate: StateFlow<Boolean> =
+        useCases.settings.observeAutoTranslate()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    val targetLanguage: StateFlow<Language> =
+        useCases.settings.observeTargetLanguage()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Language.ENGLISH)
+
+    val ocrMode: StateFlow<String> =
+        settingsDataStore.ocrLanguage
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "AUTO")
+
+    val cacheEnabled: StateFlow<Boolean> =
+        settingsDataStore.cacheEnabled
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    val cacheTtlDays: StateFlow<Int> =
+        settingsDataStore.cacheTtlDays
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 30)
+
+    private val _storageUsage = MutableStateFlow<StorageUsage?>(null)
+    val storageUsage: StateFlow<StorageUsage?> = _storageUsage.asStateFlow()
+
+    private val _cacheStats = MutableStateFlow<TranslationCacheStats?>(null)
+    val cacheStats: StateFlow<TranslationCacheStats?> = _cacheStats.asStateFlow()
+
+    private val _localBackups = MutableStateFlow<List<LocalBackup>>(emptyList())
+    val localBackups: StateFlow<List<LocalBackup>> = _localBackups.asStateFlow()
+
+    private val _mlkitSettings = MutableStateFlow(MlkitSettingsState())
+    val mlkitSettings: StateFlow<MlkitSettingsState> = _mlkitSettings.asStateFlow()
 
     init {
-        android.util.Log.d("SettingsViewModel", "🚀 Initializing SettingsViewModel...")
-        loadSettings()
+        if (BuildConfig.DEBUG) {
+            Timber.d("🔧 SettingsViewModel initialized (v21.0.0 - GLOBAL SETTINGS SYNC)")
+        }
+        
+        checkDriveConnection()
+        loadApiKeys()
+        refreshCacheStats()
+        refreshStorageUsage()
+        refreshLocalBackups()
+        loadMlkitSettings()
     }
 
-    /**
-     * ✅ КРИТИЧЕСКИ ИСПРАВЛЕНО: Правильная загрузка ВСЕХ настроек
-     * 
-     * ПРОБЛЕМА:
-     * ```kotlin
-     * val config = appSettings.gitHubConfig.first()
-     * _githubTokenInput.value = config.token  // ← НЕПРАВИЛЬНО! Токен еще расшифровывается
-     * ```
-     * 
-     * РЕШЕНИЕ:
-     * ```kotlin
-     * val token = secureSettings.getGitHubToken().first()  // ← ПРАВИЛЬНО! Прямая загрузка
-     * _githubTokenInput.value = token
-     * ```
-     */
-    private fun loadSettings() {
+    // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ MLKIT SETTINGS LOADER - COMPLETE SYNCHRONIZATION (21.0.0)
+    // ════════════════════════════════════════════════════════════════════════════════
+
+    private fun loadMlkitSettings() {
         viewModelScope.launch {
-            android.util.Log.d("SettingsViewModel", "📥 Loading settings from DataStore...")
+            try {
+                val scriptMode = try {
+                    val mode = settingsDataStore.ocrLanguage.first().trim().uppercase()
+                    when (mode) {
+                        "LATIN" -> OcrScriptMode.LATIN
+                        "CHINESE" -> OcrScriptMode.CHINESE
+                        "JAPANESE" -> OcrScriptMode.JAPANESE
+                        "KOREAN" -> OcrScriptMode.KOREAN
+                        "DEVANAGARI" -> OcrScriptMode.DEVANAGARI
+                        else -> OcrScriptMode.LATIN
+                    }
+                } catch (e: Exception) {
+                    OcrScriptMode.LATIN
+                }
+                
+                val autoDetect = try {
+                    settingsDataStore.autoDetectLanguage.first()
+                } catch (e: Exception) { true }
+                
+                val confidenceThreshold = try {
+                    settingsDataStore.confidenceThreshold.first()
+                } catch (e: Exception) { 0.7f }
+                
+                val geminiEnabled = settingsDataStore.geminiOcrEnabled.first()
+                val geminiThreshold = settingsDataStore.geminiOcrThreshold.first()
+                val geminiAlways = settingsDataStore.geminiOcrAlways.first()
+                val geminiModel = modelManager.getGlobalOcrModel()
+                
+                val translationSourceCode = try {
+                    settingsDataStore.translationSource.first()
+                } catch (e: Exception) { "auto" }
+                
+                val translationTargetCode = try {
+                    settingsDataStore.translationTarget.first()
+                } catch (e: Exception) { "en" }
+                
+                val translationModel = modelManager.getGlobalTranslationModel()
+                val availableModels = modelManager.getAvailableModels()
+                
+                _mlkitSettings.update { 
+                    it.copy(
+                        scriptMode = scriptMode,
+                        autoDetectLanguage = autoDetect,
+                        confidenceThreshold = confidenceThreshold,
+                        geminiOcrEnabled = geminiEnabled,
+                        geminiOcrThreshold = geminiThreshold,
+                        geminiOcrAlways = geminiAlways,
+                        selectedGeminiModel = geminiModel,
+                        availableGeminiModels = availableModels,
+                        translationSourceLang = Language.fromCode(translationSourceCode) ?: Language.AUTO,
+                        translationTargetLang = Language.fromCode(translationTargetCode) ?: Language.ENGLISH,
+                        selectedTranslationModel = translationModel,
+                        availableTranslationModels = availableModels
+                    ) 
+                }
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("════════════════════════════════════════════")
+                    Timber.d("📋 SETTINGS LOADED FOR TESTING TAB")
+                    Timber.d("════════════════════════════════════════════")
+                    Timber.d("   Script Mode:       $scriptMode")
+                    Timber.d("   Auto-detect:       $autoDetect")
+                    Timber.d("   Confidence:        ${(confidenceThreshold * 100).toInt()}%")
+                    Timber.d("   Gemini Enabled:    $geminiEnabled")
+                    Timber.d("   Gemini Threshold:  $geminiThreshold%")
+                    Timber.d("   Gemini Always:     $geminiAlways")
+                    Timber.d("   OCR Model:         $geminiModel")
+                    Timber.d("   Translation:       $translationSourceCode → $translationTargetCode")
+                    Timber.d("   Translation Model: $translationModel")
+                    Timber.d("════════════════════════════════════════════")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to load MLKit settings")
+            }
+        }
+    }
+
+    private fun loadApiKeys() {
+        viewModelScope.launch {
+            try {
+                _apiKeys.value = encryptedKeyStorage.getAllApiKeys()
+                if (BuildConfig.DEBUG) {
+                    Timber.d("🔑 Loaded ${_apiKeys.value.size} API keys")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to load API keys")
+                _saveMessage.value = "✗ Failed to load API keys: ${e.message}"
+            }
+        }
+    }
+
+    private fun checkDriveConnection() {
+        viewModelScope.launch {
+            try {
+                val isConnected = driveRepository.isSignedIn()
+                if (BuildConfig.DEBUG) {
+                    Timber.d("☁️ Drive connected: $isConnected")
+                }
+                if (isConnected) {
+                    when (val result = driveRepository.signIn()) {
+                        is com.docs.scanner.domain.model.Result.Success -> {
+                            _driveEmail.value = result.data
+                            refreshDriveBackups()
+                        }
+                        else -> {
+                            _driveEmail.value = null
+                            _driveBackups.value = emptyList()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to check Drive connection")
+            }
+        }
+    }
+
+    fun addApiKey(key: String, label: String?) {
+        viewModelScope.launch {
+            try {
+                if (!isValidApiKey(key)) {
+                    _saveMessage.value = "✗ Invalid API key format"
+                    return@launch
+                }
+                
+                val trimmedKey = key.trim()
+                val success = encryptedKeyStorage.addApiKey(
+                    key = trimmedKey,
+                    label = label?.ifBlank { "" } ?: ""
+                )
+                
+                if (success) {
+                    loadApiKeys()
+                    _saveMessage.value = "✓ API key added successfully"
+                    if (BuildConfig.DEBUG) {
+                        Timber.d("✅ Added new API key")
+                    }
+                } else {
+                    _saveMessage.value = "✗ Failed to add key (duplicate or limit reached)"
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to add API key")
+                _saveMessage.value = "✗ Failed to add key: ${e.message}"
+            }
+        }
+    }
+
+    fun activateKey(keyId: String) {
+        viewModelScope.launch {
+            try {
+                encryptedKeyStorage.setKeyAsPrimary(keyId)
+                loadApiKeys()
+                _saveMessage.value = "✓ API key activated"
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to activate key")
+                _saveMessage.value = "✗ Failed to activate key: ${e.message}"
+            }
+        }
+    }
+
+    fun deleteKey(keyId: String) {
+        viewModelScope.launch {
+            try {
+                val success = encryptedKeyStorage.removeApiKey(keyId)
+                if (success) {
+                    loadApiKeys()
+                    _saveMessage.value = "✓ API key deleted"
+                } else {
+                    _saveMessage.value = "✗ Key not found"
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to delete key")
+                _saveMessage.value = "✗ Failed to delete key: ${e.message}"
+            }
+        }
+    }
+
+    fun copyApiKey(key: String) {
+        try {
+            val clipboard = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("API Key", key)
+            clipboard.setPrimaryClip(clip)
+            _saveMessage.value = "✓ API key copied to clipboard"
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to copy API key")
+            _saveMessage.value = "✗ Failed to copy: ${e.message}"
+        }
+    }
+
+    fun testApiKey(keyId: String) {
+        testApiKeyRaw(keyId)
+    }
+
+    fun testApiKeyRaw(key: String) {
+        viewModelScope.launch {
+            _keyTestMessage.value = "Testing key..."
+            
+            when (
+                val result = geminiApi.generateTextWithKey(
+                    apiKey = key.trim(),
+                    prompt = "Reply with: OK",
+                    model = "gemini-2.5-flash-lite",
+                    fallbackModels = listOf("gemini-2.5-flash")
+                )
+            ) {
+                is DomainResult.Success -> {
+                    _keyTestMessage.value = "✓ OK: ${result.data.take(80)}"
+                }
+                is DomainResult.Failure -> {
+                    _keyTestMessage.value = "✗ Failed: ${result.error.message}"
+                }
+            }
+        }
+    }
+
+    fun clearMessages() {
+        _saveMessage.value = ""
+        _backupMessage.value = ""
+        _keyTestMessage.value = ""
+    }
+
+    private fun isValidApiKey(key: String): Boolean = 
+        key.matches(Regex("^AIza[A-Za-z0-9_-]{35}$"))
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch {
+            when (val r = useCases.settings.setThemeMode(mode)) {
+                is DomainResult.Failure -> {
+                    _saveMessage.value = "✗ Theme: ${r.error.message}"
+                }
+                is DomainResult.Success -> {}
+            }
+        }
+    }
+
+    fun setAppLanguage(code: String) {
+        viewModelScope.launch {
+            when (val r = useCases.settings.setAppLanguage(code)) {
+                is DomainResult.Failure -> {
+                    _saveMessage.value = "✗ Language: ${r.error.message}"
+                }
+                is DomainResult.Success -> {}
+            }
+        }
+    }
+
+    @Deprecated(
+        message = "Use setMlkitScriptMode() for better type safety",
+        replaceWith = ReplaceWith("setMlkitScriptMode(OcrScriptMode.valueOf(mode))")
+    )
+    fun setOcrMode(mode: String) {
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setOcrLanguage(mode)
+                val scriptMode = when (mode.uppercase()) {
+                    "LATIN" -> OcrScriptMode.LATIN
+                    "CHINESE" -> OcrScriptMode.CHINESE
+                    "JAPANESE" -> OcrScriptMode.JAPANESE
+                    "KOREAN" -> OcrScriptMode.KOREAN
+                    "DEVANAGARI" -> OcrScriptMode.DEVANAGARI
+                    else -> OcrScriptMode.LATIN
+                }
+                _mlkitSettings.update { it.copy(scriptMode = scriptMode) }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to set OCR mode")
+                _saveMessage.value = "✗ OCR: ${e.message}"
+            }
+        }
+    }
+
+    fun setTargetLanguage(lang: Language) {
+        viewModelScope.launch {
+            when (val r = useCases.settings.setTargetLanguage(lang)) {
+                is DomainResult.Failure -> {
+                    _saveMessage.value = "✗ Target: ${r.error.message}"
+                }
+                is DomainResult.Success -> {}
+            }
+        }
+    }
+
+    fun setAutoTranslate(enabled: Boolean) {
+        viewModelScope.launch {
+            when (val r = useCases.settings.setAutoTranslate(enabled)) {
+                is DomainResult.Failure -> {
+                    _saveMessage.value = "✗ Auto-translate: ${r.error.message}"
+                }
+                is DomainResult.Success -> {}
+            }
+        }
+    }
+
+    fun setCacheEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setCacheEnabled(enabled)
+            } catch (e: Exception) {
+                _saveMessage.value = "✗ Cache: ${e.message}"
+            }
+        }
+    }
+
+    fun setCacheTtl(days: Int) {
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setCacheTtl(days)
+            } catch (e: Exception) {
+                _saveMessage.value = "✗ Cache TTL: ${e.message}"
+            }
+        }
+    }
+
+    fun setImageQuality(quality: ImageQuality) {
+        viewModelScope.launch {
+            when (val r = useCases.settings.setImageQuality(quality)) {
+                is DomainResult.Success -> {
+                    _saveMessage.value = "✓ Image quality: ${quality.name}"
+                }
+                is DomainResult.Failure -> {
+                    _saveMessage.value = "✗ Image quality: ${r.error.message}"
+                }
+            }
+        }
+    }
+
+    fun refreshCacheStats() {
+        viewModelScope.launch {
+            try {
+                _cacheStats.value = useCases.translation.getCacheStats()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to refresh cache stats")
+            }
+        }
+    }
+
+    fun clearCache() {
+        viewModelScope.launch {
+            when (val r = useCases.translation.clearCache()) {
+                is DomainResult.Success -> {
+                    _saveMessage.value = "✓ Cache cleared"
+                    refreshCacheStats()
+                }
+                is DomainResult.Failure -> {
+                    _saveMessage.value = "✗ Cache: ${r.error.message}"
+                }
+            }
+        }
+    }
+
+    fun clearOldCache(days: Int) {
+        viewModelScope.launch {
+            when (val r = useCases.translation.clearOldCache(days)) {
+                is DomainResult.Success -> {
+                    _saveMessage.value = "✓ Deleted ${r.data} expired entries"
+                    refreshCacheStats()
+                }
+                is DomainResult.Failure -> {
+                    _saveMessage.value = "✗ Cache: ${r.error.message}"
+                }
+            }
+        }
+    }
+
+    fun refreshStorageUsage() {
+        viewModelScope.launch {
+            try {
+                _storageUsage.value = fileRepository.getStorageUsage()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to refresh storage usage")
+            }
+        }
+    }
+
+    fun clearTempFiles() {
+        viewModelScope.launch {
+            try {
+                val deleted = fileRepository.clearTempFiles()
+                _saveMessage.value = "✓ Cleared $deleted temp files"
+                refreshStorageUsage()
+            } catch (e: Exception) {
+                _saveMessage.value = "✗ Failed to clear temp files: ${e.message}"
+            }
+        }
+    }
+
+    fun createLocalBackup(includeImages: Boolean) {
+        viewModelScope.launch {
+            _isBackingUp.value = true
+            _backupMessage.value = "Creating backup..."
             
             try {
-                // ✅ ШАБЛОН: Загружаем все настройки параллельно через combine
-                combine(
-                    appSettings.gitHubConfig,
-                    secureSettings.getGitHubToken(),          // ✅ Прямая загрузка токена
-                    secureSettings.getAnthropicApiKey(),      // ✅ Прямая загрузка API ключа
-                    appSettings.claudeModel,
-                    appSettings.cacheConfig
-                ) { config, githubToken, anthropicKey, model, cacheConfig ->
-                    SettingsData(
-                        owner = config.owner,
-                        repo = config.repo,
-                        branch = config.branch,
-                        githubToken = githubToken,            // ✅ Расшифрованный токен
-                        anthropicKey = anthropicKey,          // ✅ Расшифрованный ключ
-                        claudeModel = model,
-                        cacheTimeout = cacheConfig.timeoutMinutes,
-                        maxFiles = cacheConfig.maxFiles,
-                        autoClear = cacheConfig.autoClear
-                    )
-                }.first().let { data ->
-                    // ✅ Обновляем UI состояние
-                    _githubOwnerInput.value = data.owner
-                    _githubRepoInput.value = data.repo
-                    _githubBranchInput.value = data.branch
-                    _githubTokenInput.value = data.githubToken
-                    _anthropicKeyInput.value = data.anthropicKey
-                    _claudeModelInput.value = data.claudeModel
-                    _cacheTimeoutInput.value = data.cacheTimeout
-                    _maxCacheFilesInput.value = data.maxFiles
-                    _autoClearCacheInput.value = data.autoClear
+                when (val r = useCases.backup.createLocal(includeImages)) {
+                    is DomainResult.Success -> {
+                        _backupMessage.value = "✓ Backup created"
+                        refreshLocalBackups()
+                    }
+                    is DomainResult.Failure -> {
+                        _backupMessage.value = "✗ Backup failed: ${r.error.message}"
+                    }
+                }
+            } finally {
+                _isBackingUp.value = false
+            }
+        }
+    }
+
+    fun restoreLocalBackup(path: String, merge: Boolean) {
+        viewModelScope.launch {
+            _isBackingUp.value = true
+            _backupMessage.value = "Restoring..."
+            
+            try {
+                when (val r = useCases.backup.restoreFromLocal(path, merge)) {
+                    is DomainResult.Success -> {
+                        val rr = r.data
+                        _backupMessage.value =
+                            if (rr.isFullSuccess) "✓ Restored ${rr.totalRestored} items"
+                            else "⚠️ Restored ${rr.totalRestored} items with ${rr.errors.size} warnings"
+                    }
+                    is DomainResult.Failure -> {
+                        _backupMessage.value = "✗ Restore failed: ${r.error.message}"
+                    }
+                }
+            } finally {
+                _isBackingUp.value = false
+            }
+        }
+    }
+
+    fun refreshLocalBackups() {
+        viewModelScope.launch {
+            try {
+                val dir = appContext.getExternalFilesDir("backups")
+                val files = dir?.listFiles()
+                    ?.filter { it.isFile && it.name.endsWith(".zip", ignoreCase = true) }
+                    ?.sortedByDescending { it.lastModified() }
+                    .orEmpty()
+                
+                _localBackups.value = files.map {
+                    LocalBackup(it.name, it.absolutePath, it.length(), it.lastModified())
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to refresh local backups")
+            }
+        }
+    }
+
+    fun refreshDriveBackups() {
+        viewModelScope.launch {
+            when (val r = useCases.backup.listGoogleDriveBackups()) {
+                is DomainResult.Success -> {
+                    _driveBackups.value = r.data.sortedByDescending { it.timestamp }
+                }
+                is DomainResult.Failure -> {
+                    Timber.e("Failed to list Drive backups: ${r.error.message}")
+                }
+            }
+        }
+    }
+
+    fun signInGoogleDrive(context: Context, launcher: ActivityResultLauncher<Intent>) {
+        try {
+            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestEmail()
+                .requestScopes(Scope(DriveScopes.DRIVE_FILE))
+                .build()
+            launcher.launch(GoogleSignIn.getClient(context, gso).signInIntent)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to start Drive sign-in")
+        }
+    }
+
+    fun handleSignInResult(resultCode: Int, data: Intent?) {
+        viewModelScope.launch {
+            try {
+                if (resultCode == Activity.RESULT_OK && data != null) {
+                    val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+                    val account = task.getResult(ApiException::class.java)
                     
-                    // ✅ Диагностическое логирование
-                    android.util.Log.d("SettingsViewModel", "✅ Settings loaded successfully:")
-                    android.util.Log.d("SettingsViewModel", "   Owner: ${data.owner}")
-                    android.util.Log.d("SettingsViewModel", "   Repo: ${data.repo}")
-                    android.util.Log.d("SettingsViewModel", "   Branch: ${data.branch}")
-                    android.util.Log.d("SettingsViewModel", "   GitHub Token: ${if (data.githubToken.isNotEmpty()) "[SET (${data.githubToken.take(10)}...)]" else "[EMPTY]"}")
-                    android.util.Log.d("SettingsViewModel", "   Anthropic Key: ${if (data.anthropicKey.isNotEmpty()) "[SET (${data.anthropicKey.take(10)}...)]" else "[EMPTY]"}")
-                    android.util.Log.d("SettingsViewModel", "   Model: ${data.claudeModel}")
-                    android.util.Log.d("SettingsViewModel", "   Cache: ${data.cacheTimeout}min, ${data.maxFiles} files, autoClear=${data.autoClear}")
-                }
-                
-            } catch (e: Exception) {
-                android.util.Log.e("SettingsViewModel", "❌ Failed to load settings", e)
-                _message.value = "⚠️ Failed to load settings: ${e.message}"
-            }
-        }
-    }
-
-    /**
-     * ✅ Data class для атомарной загрузки всех настроек
-     */
-    private data class SettingsData(
-        val owner: String,
-        val repo: String,
-        val branch: String,
-        val githubToken: String,
-        val anthropicKey: String,
-        val claudeModel: String,
-        val cacheTimeout: Int,
-        val maxFiles: Int,
-        val autoClear: Boolean
-    )
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // UPDATE FUNCTIONS - GitHub
-    // ═════════════════════════════════════════════════════════════════════════
-
-    fun updateGitHubOwner(owner: String) {
-        _githubOwnerInput.value = owner
-    }
-
-    fun updateGitHubRepo(repo: String) {
-        _githubRepoInput.value = repo
-    }
-
-    fun updateGitHubToken(token: String) {
-        _githubTokenInput.value = token
-    }
-
-    fun updateGitHubBranch(branch: String) {
-        _githubBranchInput.value = branch
-    }
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // UPDATE FUNCTIONS - Anthropic
-    // ═════════════════════════════════════════════════════════════════════════
-
-    fun updateAnthropicKey(key: String) {
-        _anthropicKeyInput.value = key
-    }
-
-    fun updateClaudeModel(model: String) {
-        _claudeModelInput.value = model
-    }
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // UPDATE FUNCTIONS - Cache
-    // ═════════════════════════════════════════════════════════════════════════
-
-    fun updateCacheTimeout(minutes: Int) {
-        _cacheTimeoutInput.value = minutes
-    }
-
-    fun updateMaxCacheFiles(count: Int) {
-        _maxCacheFilesInput.value = count
-    }
-
-    fun updateAutoClearCache(enabled: Boolean) {
-        _autoClearCacheInput.value = enabled
-    }
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // SAVE OPERATIONS
-    // ═════════════════════════════════════════════════════════════════════════
-
-    /**
-     * ✅ ИСПРАВЛЕНО: Правильное сохранение GitHub настроек
-     */
-    fun saveGitHubSettings() {
-        viewModelScope.launch {
-            _isSaving.value = true
-            android.util.Log.d("SettingsViewModel", "💾 Saving GitHub settings...")
-
-            try {
-                // ✅ Сохраняем токен (зашифрованно)
-                android.util.Log.d("SettingsViewModel", "   Encrypting GitHub token...")
-                secureSettings.setGitHubToken(_githubTokenInput.value)
-                
-                // ✅ Сохраняем owner/repo/branch (незашифрованно)
-                android.util.Log.d("SettingsViewModel", "   Saving config: ${_githubOwnerInput.value}/${_githubRepoInput.value}@${_githubBranchInput.value}")
-                secureSettings.setGitHubConfig(
-                    owner = _githubOwnerInput.value,
-                    repo = _githubRepoInput.value,
-                    branch = _githubBranchInput.value
-                )
-                
-                _message.value = "✅ GitHub settings saved successfully"
-                android.util.Log.d("SettingsViewModel", "✅ GitHub settings saved successfully")
-                
-            } catch (e: Exception) {
-                _message.value = "❌ Failed to save: ${e.message}"
-                android.util.Log.e("SettingsViewModel", "❌ Save failed", e)
-            } finally {
-                _isSaving.value = false
-            }
-        }
-    }
-
-    fun saveAnthropicSettings(useBiometric: Boolean) {
-        viewModelScope.launch {
-            _isSaving.value = true
-            android.util.Log.d("SettingsViewModel", "💾 Saving Anthropic settings (biometric: $useBiometric)...")
-
-            try {
-                secureSettings.setAnthropicApiKey(_anthropicKeyInput.value, useBiometric)
-                appSettings.setClaudeModel(_claudeModelInput.value)
-                _message.value = "✅ Claude settings saved successfully"
-                android.util.Log.d("SettingsViewModel", "✅ Anthropic settings saved successfully")
-            } catch (e: Exception) {
-                _message.value = "❌ Failed to save: ${e.message}"
-                android.util.Log.e("SettingsViewModel", "❌ Save failed", e)
-            } finally {
-                _isSaving.value = false
-            }
-        }
-    }
-
-    fun saveCacheSettings() {
-        viewModelScope.launch {
-            _isSaving.value = true
-            android.util.Log.d("SettingsViewModel", "💾 Saving cache settings...")
-
-            try {
-                appSettings.setCacheSettings(
-                    timeoutMinutes = _cacheTimeoutInput.value,
-                    maxFiles = _maxCacheFilesInput.value,
-                    autoClear = _autoClearCacheInput.value
-                )
-                _message.value = "✅ Cache settings saved successfully"
-                android.util.Log.d("SettingsViewModel", "✅ Cache settings saved successfully")
-            } catch (e: Exception) {
-                _message.value = "❌ Failed to save: ${e.message}"
-                android.util.Log.e("SettingsViewModel", "❌ Save failed", e)
-            } finally {
-                _isSaving.value = false
-            }
-        }
-    }
-
-    /**
-     * ✅ ИСПРАВЛЕНО: Правильное сохранение всех настроек
-     */
-    fun saveAllSettings() {
-        viewModelScope.launch {
-            _isSaving.value = true
-            android.util.Log.d("SettingsViewModel", "💾 Saving ALL settings...")
-
-            try {
-                // GitHub
-                android.util.Log.d("SettingsViewModel", "   Saving GitHub config...")
-                secureSettings.setGitHubToken(_githubTokenInput.value)
-                secureSettings.setGitHubConfig(
-                    owner = _githubOwnerInput.value,
-                    repo = _githubRepoInput.value,
-                    branch = _githubBranchInput.value
-                )
-                
-                // Anthropic
-                android.util.Log.d("SettingsViewModel", "   Saving Anthropic config...")
-                secureSettings.setAnthropicApiKey(_anthropicKeyInput.value, false)
-                appSettings.setClaudeModel(_claudeModelInput.value)
-                
-                // Cache
-                android.util.Log.d("SettingsViewModel", "   Saving cache config...")
-                appSettings.setCacheSettings(
-                    timeoutMinutes = _cacheTimeoutInput.value,
-                    maxFiles = _maxCacheFilesInput.value,
-                    autoClear = _autoClearCacheInput.value
-                )
-                
-                _message.value = "✅ All settings saved successfully"
-                android.util.Log.d("SettingsViewModel", "✅ All settings saved successfully")
-                
-            } catch (e: Exception) {
-                _message.value = "❌ Failed to save: ${e.message}"
-                android.util.Log.e("SettingsViewModel", "❌ Save all failed", e)
-            } finally {
-                _isSaving.value = false
-            }
-        }
-    }
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // TEST CONNECTIONS
-    // ═════════════════════════════════════════════════════════════════════════
-
-    fun testGitHubConnection() {
-        viewModelScope.launch {
-            _githubStatus.value = ConnectionStatus.Testing
-            android.util.Log.d("SettingsViewModel", "🔍 Testing GitHub connection...")
-
-            try {
-                val result = gitHubClient.getRepository()
-
-                result.onSuccess { repo ->
-                    _repoInfo.value = repo
-                    _githubStatus.value = ConnectionStatus.Connected
-                    android.util.Log.d("SettingsViewModel", "✅ GitHub connected: ${repo.fullName}")
-                }.onFailure { e ->
-                    _githubStatus.value = ConnectionStatus.Error(e.message ?: "Unknown error")
-                    android.util.Log.e("SettingsViewModel", "❌ GitHub connection failed", e)
+                    if (account != null) {
+                        when (val result = driveRepository.signIn()) {
+                            is com.docs.scanner.domain.model.Result.Success -> {
+                                _driveEmail.value = result.data
+                                refreshDriveBackups()
+                            }
+                            else -> _backupMessage.value = "✗ Connection failed"
+                        }
+                    }
                 }
             } catch (e: Exception) {
-                _githubStatus.value = ConnectionStatus.Error(e.message ?: "Unknown error")
-                android.util.Log.e("SettingsViewModel", "❌ GitHub connection exception", e)
+                Timber.e(e, "Drive sign-in error")
             }
         }
     }
 
-    fun testClaudeConnection() {
+    fun uploadBackupToGoogleDrive(includeImages: Boolean) {
         viewModelScope.launch {
-            _claudeStatus.value = ConnectionStatus.Testing
-            android.util.Log.d("SettingsViewModel", "🔍 Testing Claude connection...")
-
+            _isBackingUp.value = true
             try {
-                val result = claudeClient.sendMessage(
-                    messages = listOf(
-                        ClaudeMessage(role = "user", content = "Hello")
-                    ),
-                    maxTokens = 10
-                )
+                if (!driveRepository.isSignedIn()) {
+                    _backupMessage.value = "✗ Not signed in"
+                    return@launch
+                }
+                
+                val local = useCases.backup.createLocal(includeImages).getOrElse {
+                    _backupMessage.value = "✗ Backup failed: ${it.message}"
+                    return@launch
+                }
+                
+                when (val upload = useCases.backup.uploadToGoogleDrive(local) { }) {
+                    is DomainResult.Success -> {
+                        _backupMessage.value = "✓ Uploaded to Drive"
+                        refreshDriveBackups()
+                    }
+                    is DomainResult.Failure -> {
+                        _backupMessage.value = "✗ Upload failed: ${upload.error.message}"
+                    }
+                }
+            } finally {
+                _isBackingUp.value = false
+            }
+        }
+    }
 
-                result.onSuccess {
-                    _claudeStatus.value = ConnectionStatus.Connected
-                    android.util.Log.d("SettingsViewModel", "✅ Claude connected")
-                }.onFailure { e ->
-                    _claudeStatus.value = ConnectionStatus.Error(e.message ?: "Unknown error")
-                    android.util.Log.e("SettingsViewModel", "❌ Claude connection failed", e)
+    fun restoreDriveBackup(fileId: String, merge: Boolean) {
+        viewModelScope.launch {
+            _isBackingUp.value = true
+            try {
+                val localPath = when (val d = useCases.backup.downloadFromGoogleDrive(fileId) { }) {
+                    is DomainResult.Success -> d.data
+                    is DomainResult.Failure -> {
+                        _backupMessage.value = "✗ Download failed"
+                        return@launch
+                    }
+                }
+                
+                when (useCases.backup.restoreFromLocal(localPath, merge)) {
+                    is DomainResult.Success -> _backupMessage.value = "✓ Restored"
+                    is DomainResult.Failure -> _backupMessage.value = "✗ Restore failed"
+                }
+            } finally {
+                _isBackingUp.value = false
+            }
+        }
+    }
+
+    fun deleteDriveBackup(fileId: String) {
+        viewModelScope.launch {
+            _isBackingUp.value = true
+            try {
+                when (useCases.backup.deleteGoogleDriveBackup(fileId)) {
+                    is DomainResult.Success -> {
+                        _backupMessage.value = "✓ Deleted"
+                        refreshDriveBackups()
+                    }
+                    is DomainResult.Failure -> _backupMessage.value = "✗ Delete failed"
+                }
+            } finally {
+                _isBackingUp.value = false
+            }
+        }
+    }
+
+    fun signOutGoogleDrive() {
+        viewModelScope.launch {
+            try {
+                val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                    .requestEmail()
+                    .build()
+                GoogleSignIn.getClient(appContext, gso).signOut()
+                driveRepository.signOut()
+                _driveEmail.value = null
+                _driveBackups.value = emptyList()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to sign out")
+            }
+        }
+    }
+
+    fun setMlkitScriptMode(mode: OcrScriptMode) {
+        viewModelScope.launch {
+            _mlkitSettings.update { it.copy(scriptMode = mode) }
+            
+            val modeStr = when (mode) {
+                OcrScriptMode.LATIN -> "LATIN"
+                OcrScriptMode.CHINESE -> "CHINESE"
+                OcrScriptMode.JAPANESE -> "JAPANESE"
+                OcrScriptMode.KOREAN -> "KOREAN"
+                OcrScriptMode.DEVANAGARI -> "DEVANAGARI"
+                else -> "LATIN"
+            }
+            
+            try {
+                settingsDataStore.setOcrLanguage(modeStr)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save MLKit script mode")
+                _saveMessage.value = "✗ Failed to save OCR settings"
+            }
+        }
+    }
+
+    fun setMlkitAutoDetect(enabled: Boolean) {
+        _mlkitSettings.update { it.copy(autoDetectLanguage = enabled) }
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setAutoDetectLanguage(enabled)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save auto-detect setting")
+            }
+        }
+    }
+
+    fun setMlkitConfidenceThreshold(threshold: Float) {
+        _mlkitSettings.update { it.copy(confidenceThreshold = threshold) }
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setConfidenceThreshold(threshold)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save confidence threshold")
+            }
+        }
+    }
+
+    fun setMlkitHighlightLowConfidence(enabled: Boolean) {
+        _mlkitSettings.update { it.copy(highlightLowConfidence = enabled) }
+    }
+
+    fun setMlkitShowWordConfidences(enabled: Boolean) {
+        _mlkitSettings.update { it.copy(showWordConfidences = enabled) }
+    }
+
+    fun setMlkitSelectedImage(uri: Uri?) {
+        if (uri == null) {
+            _mlkitSettings.update { 
+                it.copy(selectedImageUri = null, testResult = null, testError = null) 
+            }
+            viewModelScope.launch(Dispatchers.IO) {
+                ImageUtils.clearOcrTestCache(appContext)
+            }
+            return
+        }
+        
+        viewModelScope.launch {
+            try {
+                _mlkitSettings.update { 
+                    it.copy(isTestRunning = true, testResult = null, testError = null) 
+                }
+                
+                val stableUri = ImageUtils.copyForOcrTest(appContext, uri)
+                
+                _mlkitSettings.update { 
+                    it.copy(selectedImageUri = stableUri, isTestRunning = false, testError = null) 
                 }
             } catch (e: Exception) {
-                _claudeStatus.value = ConnectionStatus.Error(e.message ?: "Unknown error")
-                android.util.Log.e("SettingsViewModel", "❌ Claude connection exception", e)
+                Timber.e(e, "Failed to prepare image for OCR test")
+                _mlkitSettings.update { 
+                    it.copy(
+                        selectedImageUri = null,
+                        isTestRunning = false,
+                        testError = "Failed to load image: ${e.localizedMessage ?: e.message}"
+                    ) 
+                }
             }
         }
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
-    // BIOMETRIC
-    // ═════════════════════════════════════════════════════════════════════════
-
-    fun requestBiometricAuth() {
-        _biometricAuthRequest.value = true
+    fun clearMlkitTestResult() {
+        _mlkitSettings.update { 
+            it.copy(testResult = null, testError = null, isTestRunning = false) 
+        }
     }
 
-    fun clearBiometricRequest() {
-        _biometricAuthRequest.value = false
+    fun clearMlkitCache() {
+        viewModelScope.launch {
+            mlKitScanner.clearCache()
+            _saveMessage.value = "✓ MLKit cache cleared"
+        }
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
-    // UTILITIES
-    // ═════════════════════════════════════════════════════════════════════════
+    fun getAvailableScriptModes(): List<OcrScriptMode> = 
+        mlKitScanner.getAvailableScriptModes()
 
-    fun resetToDefaults() {
-        _cacheTimeoutInput.value = 5
-        _maxCacheFilesInput.value = 20
-        _autoClearCacheInput.value = true
-        _claudeModelInput.value = "claude-opus-4-5-20251101"
-        _message.value = "⚠️ Settings reset to defaults (not saved)"
-        android.util.Log.d("SettingsViewModel", "♻️ Reset to defaults")
+    fun setGeminiOcrEnabled(enabled: Boolean) {
+        _mlkitSettings.update { it.copy(geminiOcrEnabled = enabled) }
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setGeminiOcrEnabled(enabled)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save Gemini OCR enabled setting")
+                _saveMessage.value = "✗ Failed to save Gemini OCR setting"
+            }
+        }
+    }
+    
+    fun setGeminiOcrThreshold(threshold: Int) {
+        _mlkitSettings.update { it.copy(geminiOcrThreshold = threshold) }
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setGeminiOcrThreshold(threshold)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save Gemini OCR threshold")
+                _saveMessage.value = "✗ Failed to save Gemini OCR threshold"
+            }
+        }
+    }
+    
+    fun setGeminiOcrAlways(always: Boolean) {
+        _mlkitSettings.update { it.copy(geminiOcrAlways = always) }
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setGeminiOcrAlways(always)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save Gemini OCR always setting")
+                _saveMessage.value = "✗ Failed to save Gemini OCR always setting"
+            }
+        }
     }
 
-    fun clearMessage() {
-        _message.value = null
+    fun setGeminiOcrModel(modelId: String) {
+        modelSwitchJob?.cancel()
+        
+        if (_mlkitSettings.value.isTestRunning) {
+            currentOcrJob?.cancel()
+            _mlkitSettings.update { it.copy(isTestRunning = false) }
+            
+            if (BuildConfig.DEBUG) {
+                Timber.d("🛑 Cancelled running OCR test due to model switch")
+            }
+        }
+        
+        modelSwitchJob = viewModelScope.launch {
+            try {
+                delay(MODEL_SWITCH_DEBOUNCE_MS)
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("🔄 Switching OCR model to: $modelId")
+                }
+                
+                modelManager.setGlobalOcrModel(modelId)
+                _mlkitSettings.update { it.copy(selectedGeminiModel = modelId) }
+                _saveMessage.value = "✓ OCR model: $modelId"
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("✅ OCR model switched: $modelId")
+                }
+                
+            } catch (e: CancellationException) {
+                if (BuildConfig.DEBUG) {
+                    Timber.d("🛑 OCR model switch cancelled")
+                }
+                throw e
+                
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to switch OCR model")
+                _saveMessage.value = "✗ Failed to switch OCR model"
+                
+                viewModelScope.launch {
+                    try {
+                        val currentModel = modelManager.getGlobalOcrModel()
+                        _mlkitSettings.update { it.copy(selectedGeminiModel = currentModel) }
+                    } catch (rollbackError: Exception) {
+                        Timber.e(rollbackError, "Failed to rollback OCR model selection")
+                    }
+                }
+            }
+        }
+    }
+    
+    fun getAvailableGeminiModels(): List<GeminiModelOption> {
+        return modelManager.getAvailableModels()
+    }
+
+    fun setMlkitTestGeminiFallback(enabled: Boolean) {
+        _mlkitSettings.update { it.copy(testGeminiFallback = enabled) }
+    }
+
+    fun setTranslationModel(modelId: String) {
+        translationModelSwitchJob?.cancel()
+        
+        translationModelSwitchJob = viewModelScope.launch {
+            try {
+                delay(MODEL_SWITCH_DEBOUNCE_MS)
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("🔄 Switching Translation model to: $modelId")
+                }
+                
+                modelManager.setGlobalTranslationModel(modelId)
+                _mlkitSettings.update { it.copy(selectedTranslationModel = modelId) }
+                _saveMessage.value = "✓ Translation model: $modelId"
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("✅ Translation model switched: $modelId")
+                }
+                
+            } catch (e: CancellationException) {
+                if (BuildConfig.DEBUG) {
+                    Timber.d("🛑 Translation model switch cancelled")
+                }
+                throw e
+                
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to switch Translation model")
+                _saveMessage.value = "✗ Failed to switch model"
+                
+                viewModelScope.launch {
+                    try {
+                        val currentModel = modelManager.getGlobalTranslationModel()
+                        _mlkitSettings.update { it.copy(selectedTranslationModel = currentModel) }
+                    } catch (rollbackError: Exception) {
+                        Timber.e(rollbackError, "Failed to rollback translation model selection")
+                    }
+                }
+            }
+        }
+    }
+    
+    fun getAvailableTranslationModels(): List<GeminiModelOption> {
+        return modelManager.getAvailableModels()
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ CANCELLABLE OCR TEST - READS ALL SETTINGS FROM DATASTORE (21.0.0)
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    fun runMlkitOcrTest() {
+        val currentState = _mlkitSettings.value
+        val imageUri = currentState.selectedImageUri
+        
+        if (imageUri == null) {
+            _mlkitSettings.update { it.copy(testError = "No image selected") }
+            return
+        }
+        
+        currentOcrJob?.cancel()
+        
+        currentOcrJob = viewModelScope.launch {
+            _mlkitSettings.update { 
+                it.copy(isTestRunning = true, testResult = null, testError = null) 
+            }
+            
+            try {
+                val autoDetect = try {
+                    settingsDataStore.autoDetectLanguage.first()
+                } catch (e: Exception) { true }
+                
+                val confidenceThreshold = try {
+                    settingsDataStore.confidenceThreshold.first()
+                } catch (e: Exception) { 0.7f }
+                
+                val geminiEnabled = try {
+                    settingsDataStore.geminiOcrEnabled.first()
+                } catch (e: Exception) { true }
+                
+                val geminiThreshold = try {
+                    settingsDataStore.geminiOcrThreshold.first()
+                } catch (e: Exception) { 65 }
+                
+                val geminiAlways = try {
+                    settingsDataStore.geminiOcrAlways.first()
+                } catch (e: Exception) { false }
+                
+                val ocrModel = try {
+                    settingsDataStore.geminiOcrModel.first()
+                } catch (e: Exception) { GeminiModelManager.DEFAULT_OCR_MODEL }
+                
+                val scriptMode = currentState.scriptMode
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("════════════════════════════════════════════")
+                    Timber.d("🔬 OCR TEST (100% FROM SETTINGS)")
+                    Timber.d("════════════════════════════════════════════")
+                    Timber.d("   Script Mode:     $scriptMode")
+                    Timber.d("   Auto-detect:     $autoDetect")
+                    Timber.d("   Confidence:      ${(confidenceThreshold * 100).toInt()}%")
+                    Timber.d("   Gemini Enabled:  $geminiEnabled")
+                    Timber.d("   Gemini Threshold:${geminiThreshold}%")
+                    Timber.d("   Gemini Always:   $geminiAlways")
+                    Timber.d("   OCR Model:       $ocrModel")
+                    Timber.d("   Force Gemini:    ${currentState.testGeminiFallback}")
+                    Timber.d("════════════════════════════════════════════")
+                }
+                
+                when (val result = mlKitScanner.testOcr(
+                    uri = imageUri,
+                    scriptMode = scriptMode,
+                    autoDetectLanguage = autoDetect,
+                    confidenceThreshold = confidenceThreshold,
+                    testGeminiFallback = currentState.testGeminiFallback || geminiAlways
+                )) {
+                    is DomainResult.Success -> {
+                        val ocrData = result.data
+                        
+                        val autoTranslate = try {
+                            settingsDataStore.autoTranslate.first()
+                        } catch (e: Exception) { false }
+                        
+                        val translationTargetCode = try {
+                            settingsDataStore.translationTarget.first()
+                        } catch (e: Exception) { "en" }
+                        val translationTargetLang = Language.fromCode(translationTargetCode) ?: Language.ENGLISH
+                        
+                        var translatedText: String? = null
+                        var translationTime: Long? = null
+                        
+                        if (autoTranslate && ocrData.text.isNotBlank()) {
+                            val translationStart = System.currentTimeMillis()
+                            
+                            if (BuildConfig.DEBUG) {
+                                Timber.d("🌐 Auto-translating to ${translationTargetLang.displayName}...")
+                            }
+                            
+                            when (val translateResult = useCases.translation.translateText(
+                                text = ocrData.text,
+                                source = ocrData.detectedLanguage ?: Language.AUTO,
+                                target = translationTargetLang
+                            )) {
+                                is DomainResult.Success -> {
+                                    translatedText = translateResult.data.translatedText
+                                    translationTime = System.currentTimeMillis() - translationStart
+                                    
+                                    if (BuildConfig.DEBUG) {
+                                        Timber.d("✅ Auto-translation completed in ${translationTime}ms")
+                                    }
+                                }
+                                is DomainResult.Failure -> {
+                                    Timber.w("⚠️ Auto-translation failed: ${translateResult.error.message}")
+                                }
+                            }
+                        }
+                        
+                        if (isActive) {
+                            _mlkitSettings.update { 
+                                it.copy(
+                                    testResult = ocrData.copy(
+                                        translatedText = translatedText,
+                                        translationTargetLang = translationTargetLang,
+                                        translationTimeMs = translationTime
+                                    ), 
+                                    isTestRunning = false,
+                                    translationTestText = ocrData.text,
+                                    translationSourceLang = ocrData.detectedLanguage ?: Language.AUTO,
+                                    translationResult = null,
+                                    translationError = null,
+                                    selectedGeminiModel = ocrModel,
+                                    autoDetectLanguage = autoDetect,
+                                    confidenceThreshold = confidenceThreshold,
+                                    geminiOcrEnabled = geminiEnabled,
+                                    geminiOcrThreshold = geminiThreshold,
+                                    geminiOcrAlways = geminiAlways
+                                ) 
+                            }
+                            
+                            if (BuildConfig.DEBUG) {
+                                Timber.d("════════════════════════════════════════════")
+                                Timber.d("✅ OCR TEST SUCCESS")
+                                Timber.d("════════════════════════════════════════════")
+                                Timber.d("   Words:      ${ocrData.totalWords}")
+                                Timber.d("   Source:     ${ocrData.source.name}")
+                                Timber.d("   Confidence: ${ocrData.confidencePercent}")
+                                Timber.d("   Time:       ${ocrData.processingTimeMs}ms")
+                                Timber.d("   → Synced to Translation Test")
+                                Timber.d("════════════════════════════════════════════")
+                            }
+                        }
+                    }
+                    
+                    is DomainResult.Failure -> {
+                        if (isActive) {
+                            _mlkitSettings.update { 
+                                it.copy(
+                                    testError = result.error.message, 
+                                    isTestRunning = false
+                                ) 
+                            }
+                            Timber.e("❌ OCR TEST FAILED: ${result.error.message}")
+                        }
+                    }
+                }
+                
+            } catch (e: CancellationException) {
+                Timber.d("🛑 OCR test cancelled")
+                throw e
+                
+            } catch (e: Exception) {
+                Timber.e(e, "❌ OCR test exception")
+                
+                if (isActive) {
+                    _mlkitSettings.update { 
+                        it.copy(
+                            testError = "OCR failed: ${e.message}", 
+                            isTestRunning = false
+                        ) 
+                    }
+                }
+            }
+        }
+    }
+    
+    fun cancelOcrTest() {
+        currentOcrJob?.cancel()
+        _mlkitSettings.update { 
+            it.copy(isTestRunning = false, testError = null) 
+        }
+        
+        if (BuildConfig.DEBUG) {
+            Timber.d("🛑 OCR test cancelled by user")
+        }
+    }
+
+    fun resetApiKeyErrors() {
+        viewModelScope.launch {
+            try {
+                encryptedKeyStorage.resetAllKeyErrors()
+                loadApiKeys()
+                _saveMessage.value = "✓ All key errors reset"
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to reset API key errors")
+                _saveMessage.value = "✗ Failed to reset errors: ${e.message}"
+            }
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ TRANSLATION TEST - READS FROM DATASTORE (21.0.0)
+    // ════════════════════════════════════════════════════════════════════════════════
+
+    fun setTranslationTestText(text: String) {
+        _mlkitSettings.update { it.copy(translationTestText = text) }
+    }
+
+    fun setTranslationSourceLang(lang: Language) {
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setTranslationSource(lang.code)
+                _mlkitSettings.update { it.copy(translationSourceLang = lang) }
+                _saveMessage.value = "✓ Source language: ${lang.displayName}"
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("✅ Translation source saved: ${lang.displayName} (${lang.code})")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save translation source")
+                _saveMessage.value = "✗ Failed to save source language"
+            }
+        }
+    }
+
+    fun setTranslationTargetLang(lang: Language) {
+        viewModelScope.launch {
+            try {
+                settingsDataStore.setTranslationTarget(lang.code)
+                _mlkitSettings.update { it.copy(translationTargetLang = lang) }
+                _saveMessage.value = "✓ Target language: ${lang.displayName}"
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("✅ Translation target saved: ${lang.displayName} (${lang.code})")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save translation target")
+                _saveMessage.value = "✗ Failed to save target language"
+            }
+        }
+    }
+
+    fun testTranslation() {
+        val state = _mlkitSettings.value
+        
+        if (state.translationTestText.isBlank()) {
+            _mlkitSettings.update {
+                it.copy(translationError = "Please enter text to translate")
+            }
+            return
+        }
+        
+        viewModelScope.launch {
+            _mlkitSettings.update { it.copy(isTranslating = true, translationError = null) }
+            
+            val start = System.currentTimeMillis()
+            
+            val sourceLang = try {
+                val code = settingsDataStore.translationSource.first()
+                Language.fromCode(code) ?: Language.AUTO
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to read source language, using AUTO")
+                Language.AUTO
+            }
+            
+            val targetLang = try {
+                val code = settingsDataStore.translationTarget.first()
+                Language.fromCode(code) ?: Language.ENGLISH
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to read target language, using English")
+                Language.ENGLISH
+            }
+            
+            val selectedModel = try {
+                modelManager.getGlobalTranslationModel()
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to get translation model, using default")
+                GeminiModelManager.DEFAULT_TRANSLATION_MODEL
+            }
+            
+            if (sourceLang != Language.AUTO && sourceLang == targetLang) {
+                _mlkitSettings.update {
+                    it.copy(
+                        translationError = "Source and target languages must be different",
+                        isTranslating = false
+                    )
+                }
+                return@launch
+            }
+            
+            if (BuildConfig.DEBUG) {
+                Timber.d("════════════════════════════════════════════")
+                Timber.d("🌐 TRANSLATION TEST (100% FROM SETTINGS)")
+                Timber.d("════════════════════════════════════════════")
+                Timber.d("   Source:  ${sourceLang.displayName} (${sourceLang.code})")
+                Timber.d("   Target:  ${targetLang.displayName} (${targetLang.code})")
+                Timber.d("   Model:   $selectedModel")
+                Timber.d("   Text:    ${state.translationTestText.take(50)}...")
+                Timber.d("════════════════════════════════════════════")
+            }
+            
+            when (val result = useCases.translation.translateTextWithModel(
+                text = state.translationTestText,
+                source = sourceLang,
+                target = targetLang,
+                model = selectedModel
+            )) {
+                is DomainResult.Success -> {
+                    val time = System.currentTimeMillis() - start
+                    _mlkitSettings.update {
+                        it.copy(
+                            translationResult = result.data.translatedText,
+                            isTranslating = false,
+                            translationError = null,
+                            translationSourceLang = sourceLang,
+                            translationTargetLang = targetLang
+                        )
+                    }
+                    _saveMessage.value = "✓ Translated to ${targetLang.displayName} in ${time}ms"
+                    
+                    if (BuildConfig.DEBUG) {
+                        Timber.d("✅ Translation SUCCESS")
+                        Timber.d("   → ${sourceLang.code} to ${targetLang.code}")
+                        Timber.d("   → Model: $selectedModel")
+                        Timber.d("   → Time: ${time}ms")
+                    }
+                }
+                
+                is DomainResult.Failure -> {
+                    _mlkitSettings.update {
+                        it.copy(
+                            translationResult = null,
+                            isTranslating = false,
+                            translationError = result.error.message
+                        )
+                    }
+                    Timber.e("❌ Translation FAILED: ${result.error.message}")
+                }
+            }
+        }
+    }
+
+    fun clearTranslationTest() {
+        _mlkitSettings.update {
+            it.copy(
+                translationTestText = "",
+                translationResult = null,
+                translationError = null
+            )
+        }
+    }
+    
+    fun syncOcrResultToTranslation() {
+        val ocrResult = _mlkitSettings.value.testResult
+        
+        if (ocrResult?.text?.isNotBlank() == true) {
+            _mlkitSettings.update { 
+                it.copy(
+                    translationTestText = ocrResult.text,
+                    translationSourceLang = ocrResult.detectedLanguage ?: Language.AUTO,
+                    translationResult = null,
+                    translationError = null
+                ) 
+            }
+            
+            if (BuildConfig.DEBUG) {
+                Timber.d("📋 Manually synced OCR result to Translation Test")
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        
+        if (BuildConfig.DEBUG) {
+            Timber.d("🧹 SettingsViewModel cleanup started")
+        }
+        
+        currentOcrJob?.cancel()
+        modelSwitchJob?.cancel()
+        translationModelSwitchJob?.cancel()
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                mlKitScanner.clearCache()
+                ImageUtils.clearOcrTestCache(appContext)
+                
+                if (BuildConfig.DEBUG) {
+                    Timber.d("✅ SettingsViewModel cleanup complete")
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "Error during cleanup")
+            }
+        }
     }
 }
 
+data class LocalBackup(
+    val name: String,
+    val path: String,
+    val sizeBytes: Long,
+    val lastModified: Long
+)
