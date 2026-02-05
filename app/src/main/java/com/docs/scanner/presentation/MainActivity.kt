@@ -1,6 +1,7 @@
 package com.docs.scanner.presentation
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -9,16 +10,26 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.presentation.navigation.NavGraph
 import com.docs.scanner.presentation.theme.DocumentScannerTheme
+import com.docs.scanner.domain.core.ThemeMode
+import com.docs.scanner.domain.repository.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var settingsRepository: SettingsRepository
+
+    private val pendingOpenTermId = mutableStateOf<Long?>(null)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -34,17 +45,35 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         requestNecessaryPermissions()
+        pendingOpenTermId.value = intent?.getLongExtra("open_term", -1L)?.takeIf { it > 0 }
 
         setContent {
-            DocumentScannerTheme {
+            val themeMode = settingsRepository.observeThemeMode()
+                .collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+                .value
+            val darkTheme = when (themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+
+            DocumentScannerTheme(darkTheme = darkTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    NavGraph()
+                    NavGraph(
+                        initialOpenTermId = pendingOpenTermId.value,
+                        onOpenTermConsumed = { pendingOpenTermId.value = null }
+                    )
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        pendingOpenTermId.value = intent.getLongExtra("open_term", -1L).takeIf { it > 0 }
     }
 
     private fun requestNecessaryPermissions() {

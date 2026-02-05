@@ -1,160 +1,132 @@
-# ================================================================================
-# Android CI/CD Pipeline
-# Version: 7.0.1 - FIXED (2026 Standards)
-#
-# ✅ FIX SERIOUS-7: Java 17 → Java 21
-#    build.gradle.kts требует Java 21 (compileOptions, kotlinOptions.jvmTarget)
-# ================================================================================
-
-name: Android CI
+name: Android CI (Fast Build)
 
 on:
   push:
-    branches: [ main, master ]
-  workflow_dispatch:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   build:
+    name: Fast Build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    timeout-minutes: 10
     
     steps:
-    - uses: actions/checkout@v4
-    
-    # ✅ FIX SERIOUS-7: Java 21 вместо 17
-    # build.gradle.kts:
-    #   compileOptions { sourceCompatibility = JavaVersion.VERSION_21 }
-    #   kotlinOptions { jvmTarget = "21" }
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+      
     - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
-        java-version: '21'
         distribution: 'temurin'
-    
-    # ✅ Кэширование Gradle
-    - name: Cache Gradle packages
+        java-version: '21'
+        cache: 'gradle'
+        
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-read-only: false
+        gradle-home-cache-cleanup: true
+        
+    - name: Cache Gradle & Kotlin
       uses: actions/cache@v4
       with:
         path: |
           ~/.gradle/caches
           ~/.gradle/wrapper
-          ~/.gradle/build-cache
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          ~/.gradle/daemon
+          ~/.konan
+          .gradle
+        key: ${{ runner.os }}-gradle-fast-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
         restore-keys: |
+          ${{ runner.os }}-gradle-fast-
           ${{ runner.os }}-gradle-
     
-    # ✅ Кэширование Kotlin
-    - name: Cache Kotlin Native
+    - name: Cache build outputs
       uses: actions/cache@v4
       with:
-        path: ~/.konan
-        key: ${{ runner.os }}-konan-${{ hashFiles('**/*.gradle*') }}
+        path: |
+          app/build/intermediates
+          app/build/tmp
+          build/kotlin
+        key: ${{ runner.os }}-build-fast-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-konan-
-    
-    # ✅ Права на gradlew
-    - name: Make gradlew executable
+          ${{ runner.os }}-build-fast-
+        
+    - name: Grant execute permission
       run: chmod +x gradlew
-    
-    # ✅ Setup Gradle
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
-        
-    # ✅ Сборка
-    - name: Build with Gradle
-      id: build
-      continue-on-error: true
-      run: ./gradlew assembleDebug --stacktrace
       
-    # ⚠️ ВАЖНО: always() чтобы выполнялось даже при ошибке!
-    - name: Get commit info
-      if: always()
-      id: commit
+    - name: Create local.properties
       run: |
-        echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        echo "date=$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
-        
-    # ✅ Создание Release (только при успехе)
+        cat > local.properties << EOF
+        sdk.dir=$ANDROID_HOME
+        ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+        GITHUB_TOKEN=${{ secrets.GH_TOKEN }}
+        GITHUB_OWNER=test-owner
+        GITHUB_REPO=test-repo
+        EOF
+    
+    - name: Fast Build Debug APK
+      id: build
+      run: |
+        ./gradlew assembleDebug \
+          --parallel \
+          --build-cache \
+          --configuration-cache \
+          --max-workers=4 \
+          --no-daemon \
+          -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" \
+          -Dkotlin.incremental=true \
+          -Dkotlin.compiler.execution.strategy=in-process \
+          -Pkotlin.daemon.jvmargs="-Xmx2g"
+      continue-on-error: true
+    
+    - name: Extract critical errors
+      if: failure()
+      run: |
+        echo "## ❌ Build Failed" > build_errors.txt
+        ./gradlew assembleDebug --stacktrace 2>&1 | grep -A 5 "FAILURE\|error:" | head -50 >> build_errors.txt
+        cat build_errors.txt
+    
+    - name: Unit Tests (Optional)
+      if: success() && github.event_name == 'pull_request'
+      run: ./gradlew testDebugUnitTest --parallel --build-cache --configuration-cache
+      continue-on-error: true
+    
+    - name: Upload logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-errors
+        path: build_errors.txt
+        retention-days: 1
+        if-no-files-found: ignore
+    
     - name: Create Release
-      if: steps.build.outcome == 'success'
-      id: create_release
+      if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: build-${{ steps.commit.outputs.date }}
-        name: Build ${{ steps.commit.outputs.short_sha }}
+        tag_name: v1.0.${{ github.run_number }}
+        name: Laboratory v1.0.${{ github.run_number }}
         body: |
-          🤖 Автоматическая сборка
-          📱 Commit: ${{ github.event.head_commit.message }}
-          👤 Автор: ${{ github.actor }}
-          🕐 Время: ${{ steps.commit.outputs.date }}
+          ## 📱 Laboratory v1.0.${{ github.run_number }}
+          
+          **Debug Build** - Fast compilation for testing
+          
+          **Commit:** `${{ github.sha }}`
+          **Build #:** ${{ github.run_number }}
+          
+          ### 📦 Download
+          Debug APK included below
+          
         files: app/build/outputs/apk/debug/*.apk
-        draft: false
-        prerelease: true
-      continue-on-error: true
-    
-    # ✅ Отправка успешного уведомления (только если Release создан)
-    - name: Send Success Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome == 'success'
-      run: |
-        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-        APK_NAME=$(basename "$APK_PATH")
-        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/build-${{ steps.commit.outputs.date }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="✅ <b>APK собран успешно!</b>
-        
-        📱 Файл: <code>${APK_NAME}</code>
-        📦 Размер: ${APK_SIZE}
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        📥 <a href='${RELEASE_URL}'>Скачать APK</a>"
-    
-    # ⚠️ Уведомление если сборка прошла, но Release не создался
-    - name: Send Release Failure Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome != 'success'
-      run: |
-        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-        APK_NAME=$(basename "$APK_PATH")
-        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="⚠️ <b>APK собран, но Release не создан!</b>
-        
-        📱 Файл: <code>${APK_NAME}</code>
-        📦 Размер: ${APK_SIZE}
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        ⚠️ Проверьте права доступа к репозиторию
-        🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Посмотреть логи</a>"
-    
-    # ❌ Уведомление об ошибке сборки
-    - name: Send Build Failure Notification to Telegram
-      if: steps.build.outcome == 'failure'
-      run: |
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="❌ <b>Сборка упала!</b>
-        
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Посмотреть логи</a>"
+        fail_on_unmatched_files: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
