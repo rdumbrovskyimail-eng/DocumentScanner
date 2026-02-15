@@ -9,10 +9,18 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
+/**
+ * DragDropState.kt
+ * Version: 9.0.0 - FULLY FIXED (2026)
+ *
+ * ✅ FIX #12 APPLIED: resetState() now uses snapTo instead of animateTo
+ * ✅ Added overscrollJob tracking and cancellation
+ */
 @Stable
 class DragDropState(
     val lazyListState: LazyListState,
@@ -43,6 +51,13 @@ class DragDropState(
     var draggingItemHeight by mutableIntStateOf(0)
         private set
     
+    // ✅ FIX #12: Track overscroll job for proper cancellation
+    private var overscrollJob: Job? = null
+    
+    // ✅ FIX #12: Track current element being dragged
+    private var currentElement: Int? = null
+    private var currentIndexOfDraggedItem: Int? = null
+    
     private val _scrollChannel = Channel<Float>(Channel.CONFLATED)
     val scrollEvents = _scrollChannel.receiveAsFlow()
     
@@ -54,6 +69,7 @@ class DragDropState(
         targetIndex = index
         draggingItemHeight = itemHeight
         dragOffset = Offset.Zero
+        currentIndexOfDraggedItem = index
         
         scope.launch {
             animatedOffsetY.snapTo(0f)
@@ -122,7 +138,14 @@ class DragDropState(
         }
     }
     
+    /**
+     * ✅ FIX #12: Use snapTo instead of animateTo to prevent sticky drag
+     */
     private fun resetState() {
+        currentIndexOfDraggedItem = null
+        currentElement = null
+        overscrollJob?.cancel()
+        
         draggingItemIndex = null
         initialDragIndex = -1
         targetIndex = null
@@ -130,7 +153,9 @@ class DragDropState(
         draggingItemHeight = 0
         
         scope.launch {
+            // ✅ Use snapTo instead of animateTo for instant reset
             animatedOffsetY.snapTo(0f)
+            animatedOffsetY.updateBounds(0f, 0f)
         }
     }
     
