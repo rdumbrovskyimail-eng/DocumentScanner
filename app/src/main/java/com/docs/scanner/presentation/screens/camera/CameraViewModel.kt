@@ -7,6 +7,9 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.data.remote.camera.DocumentScannerWrapper
+import com.docs.scanner.domain.core.FolderId
+import com.docs.scanner.domain.core.Folder
+import com.docs.scanner.domain.usecase.MultiPageScanState
 import com.docs.scanner.domain.usecase.AllUseCases
 import com.docs.scanner.domain.usecase.QuickScanState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -37,6 +40,20 @@ class CameraViewModel @Inject constructor(
     private val _navigationEvent = MutableSharedFlow<NavigationEvent>()
     val navigationEvent: SharedFlow<NavigationEvent> = _navigationEvent.asSharedFlow()
 
+    private val _previewPages = MutableStateFlow<List<Uri>>(emptyList())
+    val previewPages: StateFlow<List<Uri>> = _previewPages.asStateFlow()
+
+    private val _previewPdf = MutableStateFlow<Uri?>(null)
+    val previewPdf: StateFlow<Uri?> = _previewPdf.asStateFlow()
+
+    private val _targetFolderId = MutableStateFlow<Long?>(null)
+    val targetFolderId: StateFlow<Long?> = _targetFolderId.asStateFlow()
+
+    val folders: StateFlow<List<Folder>> =
+        useCases.folders.observeAll()
+            .map { list -> list.filter { !it.isArchived } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /**
      * Start document scanner.
      * Checks availability before starting.
@@ -62,7 +79,9 @@ class CameraViewModel @Inject constructor(
                     return@launch
                 }
 
-                documentScanner.startScan(activity, launcher)
+                documentScanner.startScan(activity, launcher, onError = { msg ->
+                    _uiState.value = CameraUiState.Error(msg)
+                })
                 _uiState.value = CameraUiState.ScannerActive
             } catch (e: Exception) {
                 _uiState.value = CameraUiState.Error(
@@ -82,76 +101,9 @@ class CameraViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
-            _uiState.value = CameraUiState.Processing(
-                progress = 0,
-                message = "Starting..."
-            )
-
-            try {
-                useCases.quickScan(uris.first())
-                    .catch { e ->
-                        _uiState.value = CameraUiState.Error(
-                            "Processing failed: ${e.message}"
-                        )
-                    }
-                    .collect { state ->
-                        when (state) {
-                            is QuickScanState.CreatingStructure -> {
-                                _uiState.value = CameraUiState.Processing(
-                                    progress = state.progress,
-                                    message = state.message
-                                )
-                            }
-                            is QuickScanState.CreatingFolder -> {
-                                _uiState.value = CameraUiState.Processing(
-                                    progress = state.progress,
-                                    message = state.message
-                                )
-                            }
-                            is QuickScanState.CreatingRecord -> {
-                                _uiState.value = CameraUiState.Processing(
-                                    progress = state.progress,
-                                    message = state.message
-                                )
-                            }
-                            is QuickScanState.ScanningImage -> {
-                                _uiState.value = CameraUiState.Processing(
-                                    progress = state.progress,
-                                    message = state.message
-                                )
-                            }
-                            is QuickScanState.ProcessingOcr -> {
-                                _uiState.value = CameraUiState.Processing(
-                                    progress = state.progress,
-                                    message = state.message
-                                )
-                            }
-                            is QuickScanState.Translating -> {
-                                _uiState.value = CameraUiState.Processing(
-                                    progress = state.progress,
-                                    message = state.message
-                                )
-                            }
-                            is QuickScanState.Success -> {
-                                _uiState.value = CameraUiState.Success(state.recordId)
-                                
-                                // Emit navigation event
-                                _navigationEvent.emit(
-                                    NavigationEvent.NavigateToEditor(state.recordId)
-                                )
-                            }
-                            is QuickScanState.Error -> {
-                                _uiState.value = CameraUiState.Error(state.message)
-                            }
-                        }
-                    }
-            } catch (e: Exception) {
-                _uiState.value = CameraUiState.Error(
-                    "Unexpected error: ${e.message}"
-                )
-            }
-        }
+        // For Stage 3: always show preview (multi-page).
+        _previewPages.value = uris
+        _uiState.value = CameraUiState.Preview
     }
 
     /**
@@ -162,6 +114,7 @@ class CameraViewModel @Inject constructor(
         viewModelScope.launch {
             when (val scanResult = documentScanner.handleScanResult(result)) {
                 is DocumentScannerWrapper.ScanResult.Success -> {
+                    _previewPdf.value = scanResult.pdfUri
                     processScannedImages(scanResult.imageUris)
                 }
                 is DocumentScannerWrapper.ScanResult.Error -> {
@@ -178,6 +131,10 @@ class CameraViewModel @Inject constructor(
         _uiState.value = CameraUiState.Idle
     }
 
+    fun onError(message: String) {
+        _uiState.value = CameraUiState.Error(message)
+    }
+
     /**
      * Reset to ready state.
      */
@@ -191,6 +148,114 @@ class CameraViewModel @Inject constructor(
     fun clearError() {
         _uiState.value = CameraUiState.Ready
     }
+
+    fun removePreviewPage(index: Int) {
+        val current = _previewPages.value
+        if (index !in current.indices) return
+        _previewPages.value = current.toMutableList().apply { removeAt(index) }
+        if (_previewPages.value.isEmpty()) {
+            _uiState.value = CameraUiState.Ready
+        }
+    }
+
+    fun movePreviewPageUp(index: Int) {
+        val current = _previewPages.value.toMutableList()
+        if (index <= 0 || index !in current.indices) return
+        val tmp = current[index - 1]
+        current[index - 1] = current[index]
+        current[index] = tmp
+        _previewPages.value = current
+    }
+
+    fun movePreviewPageDown(index: Int) {
+        val current = _previewPages.value.toMutableList()
+        if (index !in current.indices || index >= current.lastIndex) return
+        val tmp = current[index + 1]
+        current[index + 1] = current[index]
+        current[index] = tmp
+        _previewPages.value = current
+    }
+
+    fun setTargetFolder(folderId: Long?) {
+        _targetFolderId.value = folderId
+    }
+
+    fun clearPreview() {
+        _previewPages.value = emptyList()
+        _previewPdf.value = null
+        _uiState.value = CameraUiState.Ready
+    }
+
+    fun savePreviewAsRecord() {
+        val pages = _previewPages.value
+        if (pages.isEmpty()) {
+            _uiState.value = CameraUiState.Error("No pages to save")
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = CameraUiState.Processing(progress = 0, message = "Preparing…")
+            val folder = _targetFolderId.value?.let { FolderId(it) }
+
+            useCases.multiPageScan(
+                imageUris = pages.map { it.toString() },
+                targetFolderId = folder
+            )
+                .catch { e ->
+                    _uiState.value = CameraUiState.Error("Processing failed: ${e.message}")
+                }
+                .collect { state ->
+                    when (state) {
+                        is MultiPageScanState.Preparing -> _uiState.value =
+                            CameraUiState.Processing(progress = 5, message = "Preparing…")
+
+                        is MultiPageScanState.CreatingRecord -> _uiState.value =
+                            CameraUiState.Processing(progress = 15, message = "Creating record…")
+
+                        is MultiPageScanState.SavingImage -> {
+                            val base = 20
+                            val span = 30
+                            val progress = base + ((state.index * span) / state.total.coerceAtLeast(1))
+                            _uiState.value = CameraUiState.Processing(
+                                progress = progress.coerceIn(0, 95),
+                                message = "Saving page ${state.index}/${state.total}…"
+                            )
+                        }
+
+                        is MultiPageScanState.Processing -> {
+                            val base = 55
+                            val span = 40
+                            val p = base + ((state.index * span) / state.total.coerceAtLeast(1))
+                            val msg = when (state.state) {
+                                is com.docs.scanner.domain.usecase.ProcessingState.OcrInProgress -> "OCR page ${state.index}/${state.total}…"
+                                is com.docs.scanner.domain.usecase.ProcessingState.TranslationInProgress -> "Translating page ${state.index}/${state.total}…"
+                                is com.docs.scanner.domain.usecase.ProcessingState.OcrComplete -> "OCR complete"
+                                is com.docs.scanner.domain.usecase.ProcessingState.Complete -> "Done"
+                                is com.docs.scanner.domain.usecase.ProcessingState.Failed -> "Failed"
+                                is com.docs.scanner.domain.usecase.ProcessingState.Idle -> "Working…"
+                            }
+                            _uiState.value = CameraUiState.Processing(progress = p.coerceIn(0, 99), message = msg)
+                        }
+
+                        is MultiPageScanState.PageFailed -> {
+                            // Keep going; user can retry per-page later in Editor.
+                            _uiState.value = CameraUiState.Processing(
+                                progress = 70,
+                                message = "Page ${state.index}/${state.total} failed: ${state.error.message}"
+                            )
+                        }
+
+                        is MultiPageScanState.Error -> _uiState.value =
+                            CameraUiState.Error(state.error.message)
+
+                        is MultiPageScanState.Success -> {
+                            _uiState.value = CameraUiState.Success(state.recordId.value)
+                            _navigationEvent.emit(NavigationEvent.NavigateToEditor(state.recordId.value))
+                        }
+                    }
+                }
+        }
+    }
 }
 
 /**
@@ -203,6 +268,7 @@ sealed interface CameraUiState {
     object Loading : CameraUiState
     object Ready : CameraUiState
     object ScannerActive : CameraUiState
+    object Preview : CameraUiState
     
     data class Processing(
         val progress: Int,
