@@ -9,12 +9,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * InlineEditingManager.kt
- * Version: 8.0.0 - PRODUCTION READY (2026)
+ * Version: 9.0.0 - FULLY FIXED (2026)
+ *
+ * ✅ FIX #9 APPLIED: Added saveMutex for thread-safety in saveAll()
  *
  * КРИТИЧЕСКИ ВАЖНО:
  * Использует ConcurrentHashMap для thread-safe операций
@@ -27,6 +31,9 @@ class InlineEditingManager(
     private val onHistoryAdd: (Long, TextEditField, String?, String?) -> Unit,
     private val autoSaveDelayMs: Long = 1500L
 ) {
+    // ✅ FIX #9: Added Mutex for thread-safe saveAll()
+    private val saveMutex = Mutex()
+    
     // Thread-safe хранилище активных редактирований
     private val activeEdits = ConcurrentHashMap<String, InlineEditState>()
     
@@ -201,26 +208,18 @@ class InlineEditingManager(
     }
     
     /**
+     * ✅ FIX #9: Thread-safe saveAll() with Mutex
      * Сохранить все активные редактирования (при выходе из экрана)
      */
     suspend fun saveAll() {
-        val keys = activeEdits.keys.toList()
-        
-        for (k in keys) {
-            val parts = k.split(":")
-            if (parts.size != 2) continue
-            
-            val docId = parts[0].toLongOrNull() ?: continue
-            val field = try {
-                TextEditField.valueOf(parts[1])
-            } catch (e: IllegalArgumentException) {
-                continue
+        saveMutex.withLock {
+            _editingStates.value.values.forEach { state ->
+                if (state.isDirty) {
+                    onSave(state.documentId, state.field, state.currentText)
+                }
             }
-            
-            saveEdit(docId, field)
+            _editingStates.value = emptyMap()
         }
-        
-        Timber.d("Saved all inline edits")
     }
     
     /**
