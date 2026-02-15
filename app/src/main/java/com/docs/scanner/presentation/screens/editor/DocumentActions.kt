@@ -4,7 +4,9 @@ import com.docs.scanner.domain.core.Language
 
 /**
  * DocumentActions.kt
- * Version: 8.0.0 - PRODUCTION READY (2026)
+ * Version: 9.0.0 - FULLY FIXED (2026)
+ *
+ * ✅ FIX #15 APPLIED: PasteText.text is now nullable (String?)
  *
  * КРИТИЧЕСКИ ВАЖНО:
  * Sealed interface заменяет множество callback'ов
@@ -37,7 +39,14 @@ sealed interface DocumentAction {
 
     // Text operations
     data class CopyText(val documentId: Long, val text: String, val isOcrText: Boolean) : DocumentAction
-    data class PasteText(val documentId: Long, val isOcrText: Boolean) : DocumentAction
+    
+    // ✅ FIX #15: text is now nullable to handle empty clipboard
+    data class PasteText(
+        val documentId: Long, 
+        val text: String?,  // ← CHANGED from String to String?
+        val isOcrText: Boolean
+    ) : DocumentAction
+    
     data class AiRewrite(val documentId: Long, val text: String, val isOcrText: Boolean) : DocumentAction
     data class ClearFormatting(val documentId: Long, val isOcrText: Boolean) : DocumentAction
 
