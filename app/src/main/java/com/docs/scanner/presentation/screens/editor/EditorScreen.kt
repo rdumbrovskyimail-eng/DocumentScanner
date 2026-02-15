@@ -1,6 +1,10 @@
 /*
  * EditorScreen.kt
- * Version: 8.0.0 - REFACTORED (2026)
+ * Version: 9.0.0 - FULLY FIXED (2026)
+ *
+ * ✅ FIX #10 APPLIED: BackHandler for selection mode
+ * ✅ FIX #14 APPLIED: All remember → rememberSaveable
+ * ✅ FIX #16 APPLIED: Conditional ReorderableState creation
  *
  * КРИТИЧЕСКИЕ ИЗМЕНЕНИЯ:
  * ✅ DocumentAction вместо 21 callback
@@ -15,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -76,6 +81,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -145,24 +151,24 @@ fun EditorScreen(
     val lazyListState = rememberLazyListState()
 
     // ════════════════════════════════════════════════════════════════════
-    // DIALOG STATES
+    // ✅ FIX #14: DIALOG STATES - Changed remember → rememberSaveable
     // ════════════════════════════════════════════════════════════════════
 
-    var recordMenuExpanded by remember { mutableStateOf(false) }
-    var showRenameRecordDialog by remember { mutableStateOf(false) }
-    var showEditDescriptionDialog by remember { mutableStateOf(false) }
-    var showTagsDialog by remember { mutableStateOf(false) }
-    var showLanguageDialog by remember { mutableStateOf(false) }
-    var showAddDocumentDialog by remember { mutableStateOf(false) }
-    var showSmartRetryBanner by remember { mutableStateOf(true) }
-    var showBatchDeleteConfirm by remember { mutableStateOf(false) }
-    var showBatchExportDialog by remember { mutableStateOf(false) }
-    var showBatchMoveDialog by remember { mutableStateOf(false) }
+    var recordMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    var showRenameRecordDialog by rememberSaveable { mutableStateOf(false) }
+    var showEditDescriptionDialog by rememberSaveable { mutableStateOf(false) }
+    var showTagsDialog by rememberSaveable { mutableStateOf(false) }
+    var showLanguageDialog by rememberSaveable { mutableStateOf(false) }
+    var showAddDocumentDialog by rememberSaveable { mutableStateOf(false) }
+    var showSmartRetryBanner by rememberSaveable { mutableStateOf(true) }
+    var showBatchDeleteConfirm by rememberSaveable { mutableStateOf(false) }
+    var showBatchExportDialog by rememberSaveable { mutableStateOf(false) }
+    var showBatchMoveDialog by rememberSaveable { mutableStateOf(false) }
 
-    var editingTextDocId by remember { mutableStateOf<Long?>(null) }
-    var editingTextIsOcr by remember { mutableStateOf(true) }
-    var showMoveDocumentDialogForId by remember { mutableStateOf<Long?>(null) }
-    var docMenuExpandedId by remember { mutableStateOf<Long?>(null) }
+    var editingTextDocId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var editingTextIsOcr by rememberSaveable { mutableStateOf(true) }
+    var showMoveDocumentDialogForId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var docMenuExpandedId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     // ════════════════════════════════════════════════════════════════════
     // GALLERY LAUNCHERS
@@ -191,13 +197,23 @@ fun EditorScreen(
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // REORDERABLE STATE - ✅ Отключается в selection mode
+    // ✅ FIX #16: REORDERABLE STATE - Conditional creation
     // ════════════════════════════════════════════════════════════════════
 
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        if (!selectionState.isActive) {
+    val reorderableState = if (!selectionState.isActive) {
+        rememberReorderableLazyListState(lazyListState) { from, to ->
             viewModel.reorderDocuments(from.index, to.index)
         }
+    } else {
+        null
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // ✅ FIX #10: BackHandler for selection mode
+    // ════════════════════════════════════════════════════════════════════
+
+    BackHandler(enabled = selectionState.isActive) {
+        viewModel.exitSelectionMode()
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -329,7 +345,8 @@ fun EditorScreen(
             }
 
             is DocumentAction.PasteText -> {
-                clipboardManager.getText()?.text?.let { clipText ->
+                val clipText = clipboardManager.getText()?.text
+                if (clipText != null) {
                     viewModel.pasteText(action.documentId, clipText, action.isOcrText)
                 }
             }
@@ -594,21 +611,8 @@ fun EditorScreen(
                             ) { document ->
                                 val index = state.documents.indexOf(document)
 
-                                if (selectionState.isActive) {
-                                    DocumentCardItem(
-                                        document = document,
-                                        index = index,
-                                        state = state,
-                                        selectionState = selectionState,
-                                        ocrSettings = ocrSettings,
-                                        inlineEditingStates = inlineEditingStates,
-                                        onAction = ::handleDocumentAction,
-                                        docMenuExpandedId = docMenuExpandedId,
-                                        onDocMenuExpandedChange = { docMenuExpandedId = it },
-                                        isDragging = false,
-                                        dragModifier = Modifier
-                                    )
-                                } else {
+                                // ✅ FIX #16: Conditional rendering based on reorderableState
+                                if (reorderableState != null && !selectionState.isActive) {
                                     ReorderableItem(reorderableState, key = document.id.value) { isDragging ->
                                         DocumentCardItem(
                                             document = document,
@@ -629,6 +633,20 @@ fun EditorScreen(
                                             )
                                         )
                                     }
+                                } else {
+                                    DocumentCardItem(
+                                        document = document,
+                                        index = index,
+                                        state = state,
+                                        selectionState = selectionState,
+                                        ocrSettings = ocrSettings,
+                                        inlineEditingStates = inlineEditingStates,
+                                        onAction = ::handleDocumentAction,
+                                        docMenuExpandedId = docMenuExpandedId,
+                                        onDocMenuExpandedChange = { docMenuExpandedId = it },
+                                        isDragging = false,
+                                        dragModifier = Modifier
+                                    )
                                 }
 
                                 if (index < state.documents.lastIndex) {
@@ -1086,6 +1104,9 @@ private fun DocumentCardItem(
         inlineOcrText = inlineOcrText,
         inlineTranslationText = inlineTranslationText,
 
+        menuExpanded = docMenuExpandedId == document.id.value,
+        onMenuDismiss = { onDocMenuExpandedChange(null) },
+
         onImageClick = {
             onAction(DocumentAction.ImageClick(document.id.value))
         },
@@ -1131,7 +1152,7 @@ private fun DocumentCardItem(
             onAction(DocumentAction.CopyText(document.id.value, text, true))
         },
         onPasteText = { isOcr ->
-            onAction(DocumentAction.PasteText(document.id.value, isOcr))
+            onAction(DocumentAction.PasteText(document.id.value, null, isOcr))
         },
         onAiRewrite = { isOcr ->
             val text = if (isOcr) document.originalText else document.translatedText
