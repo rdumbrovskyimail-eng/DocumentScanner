@@ -1,6 +1,6 @@
 /*
  * EditorViewModel.kt
- * Version: 9.0.0 - FULLY FIXED (2026)
+ * Version: 9.1.0 - NULLABLE TEXT FIX (2026)
  *
  * ✅ ALL CRITICAL FIXES APPLIED:
  * 1. ✅ Result/DomainResult imports fixed
@@ -10,7 +10,7 @@
  * 5. ✅ recordId validation in init
  * 6. ✅ onCleared() lifecycle
  * 7. ✅ addTag/removeTag fixed
- * 8. ✅ All obfuscated code restored
+ * 8. ✅ pasteText nullable check added
  */
 
 package com.docs.scanner.presentation.screens.editor
@@ -1190,11 +1190,21 @@ class EditorViewModel @Inject constructor(
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // AI OPERATIONS
+    // AI OPERATIONS - ✅ FIX #8: Nullable text check added
     // ════════════════════════════════════════════════════════════════════
 
-    fun pasteText(documentId: Long, pastedText: String, isOcrText: Boolean) {
+    /**
+     * Вставить текст из буфера обмена
+     * ✅ Теперь с проверкой на null/empty
+     */
+    fun pasteText(documentId: Long, pastedText: String?, isOcrText: Boolean) {
         viewModelScope.launch {
+            // ✅ Проверка на null или пустой текст
+            if (pastedText.isNullOrBlank()) {
+                sendError("Clipboard is empty")
+                return@launch
+            }
+
             val doc = useCases.getDocumentById(documentId) ?: return@launch
 
             val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
