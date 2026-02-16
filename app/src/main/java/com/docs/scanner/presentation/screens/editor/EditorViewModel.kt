@@ -1,7 +1,8 @@
 /*
  * EditorViewModel.kt
- * Version: 8.7.0 - COMPILATION FIXED (2026)
+ * Version: 9.0.0 - FULLY FIXED (2026)
  *
+ * ✅ FIX #8: toggleDocumentSelection now uses fresh state after enterSelectionMode
  * ✅ FIX: Добавлены else ветки во все 12 when expressions
  * ✅ FIX: handleDocumentAction is public
  * ✅ FIX: PasteText обрабатывается корректно
@@ -732,10 +733,13 @@ class EditorViewModel @Inject constructor(
         Timber.d("Exited selection mode")
     }
 
+    // ✅ FIX #8: Use fresh state after enterSelectionMode
     fun toggleDocumentSelection(documentId: Long) {
-        val current = _selectionState.value
-        if (!current.isActive) enterSelectionMode()
-        _selectionState.value = current.toggle(documentId)
+        if (!_selectionState.value.isActive) {
+            enterSelectionMode()
+        }
+        // Теперь берём АКТУАЛЬНЫЙ state после enterSelectionMode
+        _selectionState.value = _selectionState.value.toggle(documentId)
         Timber.d("Toggled selection for doc $documentId (total: ${_selectionState.value.count})")
     }
 
