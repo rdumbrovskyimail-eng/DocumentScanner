@@ -1,4 +1,4 @@
-name: Android CI (Fast Build)
+name: Android CI (Nuclear Clean Build)
 
 on:
   push:
@@ -12,30 +12,70 @@ permissions:
 
 jobs:
   build:
-    name: Fast Build
+    name: Nuclear Clean Build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         fetch-depth: 1
+        clean: true  # ✅ Force clean checkout
       
+    # ═══════════════════════════════════════════════════════════════
+    # 🔥 NUCLEAR CACHE CLEANUP - STEP 1: Delete all cached data
+    # ═══════════════════════════════════════════════════════════════
+    - name: 🔥 Nuclear Cache Cleanup
+      run: |
+        echo "🔥 NUCLEAR CLEANUP INITIATED"
+        
+        # Remove ALL Gradle caches
+        rm -rf ~/.gradle/caches
+        rm -rf ~/.gradle/wrapper
+        rm -rf ~/.gradle/daemon
+        rm -rf ~/.gradle/kotlin-dsl
+        rm -rf ~/.gradle/build-scan-data
+        rm -rf ~/.gradle/configuration-cache
+        rm -rf ~/.gradle/notifications
+        
+        # Remove ALL Kotlin Native caches
+        rm -rf ~/.konan
+        
+        # Remove ALL project build directories
+        rm -rf .gradle
+        rm -rf build
+        rm -rf app/build
+        rm -rf */build
+        
+        # Remove all intermediate files
+        find . -type d -name "intermediates" -exec rm -rf {} + 2>/dev/null || true
+        find . -type d -name "tmp" -exec rm -rf {} + 2>/dev/null || true
+        find . -type d -name ".transforms" -exec rm -rf {} + 2>/dev/null || true
+        
+        # Remove all Kotlin compilation caches
+        find . -type d -name "kotlin" -path "*/build/*" -exec rm -rf {} + 2>/dev/null || true
+        
+        echo "✅ All caches destroyed"
+        
     - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '21'
-        cache: 'gradle'
+        cache: 'gradle'  # This will create NEW clean cache
         
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
       with:
         cache-read-only: false
         gradle-home-cache-cleanup: true
+        cache-disabled: false  # Allow caching for NEXT build
         
-    - name: Cache Gradle & Kotlin
+    # ═══════════════════════════════════════════════════════════════
+    # 📦 FRESH CACHE - Only after successful build
+    # ═══════════════════════════════════════════════════════════════
+    - name: Cache Gradle (Fresh)
       uses: actions/cache@v4
       with:
         path: |
@@ -43,26 +83,37 @@ jobs:
           ~/.gradle/wrapper
           ~/.gradle/daemon
           ~/.konan
-          .gradle
-        key: ${{ runner.os }}-gradle-fast-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+        key: ${{ runner.os }}-gradle-nuclear-${{ github.run_number }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
         restore-keys: |
-          ${{ runner.os }}-gradle-fast-
-          ${{ runner.os }}-gradle-
+          ${{ runner.os }}-gradle-nuclear-${{ github.run_number }}-
     
-    - name: Cache build outputs
+    - name: Cache Build Outputs (Fresh)
       uses: actions/cache@v4
       with:
         path: |
           app/build/intermediates
           app/build/tmp
           build/kotlin
-        key: ${{ runner.os }}-build-fast-${{ github.sha }}
+        key: ${{ runner.os }}-build-nuclear-${{ github.run_number }}-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-build-fast-
+          ${{ runner.os }}-build-nuclear-${{ github.run_number }}-
         
     - name: Grant execute permission
       run: chmod +x gradlew
       
+    # ═══════════════════════════════════════════════════════════════
+    # 🧹 PRE-BUILD CLEANUP
+    # ═══════════════════════════════════════════════════════════════
+    - name: 🧹 Pre-build Gradle Clean
+      run: |
+        echo "🧹 Running Gradle clean..."
+        ./gradlew clean --no-daemon --no-build-cache
+        
+        # Verify cleanup
+        echo "📊 Checking cleanup status..."
+        du -sh ~/.gradle/caches 2>/dev/null || echo "✅ Gradle caches empty"
+        du -sh app/build 2>/dev/null || echo "✅ App build directory empty"
+        
     - name: Create local.properties
       run: |
         cat > local.properties << EOF
@@ -73,60 +124,136 @@ jobs:
         GITHUB_REPO=test-repo
         EOF
     
-    - name: Fast Build Debug APK
+    # ═══════════════════════════════════════════════════════════════
+    # 🏗️ CLEAN BUILD FROM SCRATCH
+    # ═══════════════════════════════════════════════════════════════
+    - name: 🏗️ Fresh Build Debug APK
       id: build
       run: |
+        echo "🏗️ Starting CLEAN build..."
+        
         ./gradlew assembleDebug \
-          --parallel \
-          --build-cache \
-          --configuration-cache \
-          --max-workers=4 \
+          --no-build-cache \
+          --no-configuration-cache \
+          --rerun-tasks \
           --no-daemon \
-          -Dorg.gradle.jvmargs="-Xmx4g -XX:+UseParallelGC" \
-          -Dkotlin.incremental=true \
+          --stacktrace \
+          --info \
+          --parallel \
+          --max-workers=4 \
+          -Dorg.gradle.jvmargs="-Xmx5g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g" \
+          -Dkotlin.incremental=false \
           -Dkotlin.compiler.execution.strategy=in-process \
           -Pkotlin.daemon.jvmargs="-Xmx2g"
       continue-on-error: true
     
-    - name: Extract critical errors
+    # ═══════════════════════════════════════════════════════════════
+    # 🔍 ERROR DIAGNOSIS
+    # ═══════════════════════════════════════════════════════════════
+    - name: 🔍 Extract Detailed Errors
       if: failure()
       run: |
-        echo "## ❌ Build Failed" > build_errors.txt
-        ./gradlew assembleDebug --stacktrace 2>&1 | grep -A 5 "FAILURE\|error:" | head -50 >> build_errors.txt
+        echo "## ❌ BUILD FAILED - DETAILED DIAGNOSTICS" > build_errors.txt
+        echo "" >> build_errors.txt
+        echo "### Commit Information" >> build_errors.txt
+        echo "SHA: ${{ github.sha }}" >> build_errors.txt
+        echo "Branch: ${{ github.ref }}" >> build_errors.txt
+        echo "" >> build_errors.txt
+        
+        echo "### Compilation Errors" >> build_errors.txt
+        ./gradlew assembleDebug --stacktrace 2>&1 | \
+          grep -A 10 "FAILURE\|error:\|Exception\|BUILD FAILED" | \
+          head -100 >> build_errors.txt
+        
+        echo "" >> build_errors.txt
+        echo "### File Checksums" >> build_errors.txt
+        md5sum app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt >> build_errors.txt 2>/dev/null || echo "EditorViewModel.kt not found"
+        md5sum app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorScreen.kt >> build_errors.txt 2>/dev/null || echo "EditorScreen.kt not found"
+        
         cat build_errors.txt
+    
+    - name: Verify Source Files
+      if: failure()
+      run: |
+        echo "📁 Verifying critical source files..."
+        
+        if [ -f "app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt" ]; then
+          echo "✅ EditorViewModel.kt exists"
+          echo "First 50 lines:"
+          head -50 app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt
+          
+          echo ""
+          echo "Checking for DomainResult patterns:"
+          grep -n "is DomainResult" app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt | head -20
+        else
+          echo "❌ EditorViewModel.kt NOT FOUND"
+        fi
     
     - name: Unit Tests (Optional)
       if: success() && github.event_name == 'pull_request'
-      run: ./gradlew testDebugUnitTest --parallel --build-cache --configuration-cache
+      run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
       continue-on-error: true
     
-    - name: Upload logs on failure
+    - name: Upload Full Build Log
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: build-errors
-        path: build_errors.txt
-        retention-days: 1
+        name: build-logs-${{ github.run_number }}
+        path: |
+          build_errors.txt
+          app/build/reports/
+          build/reports/
+        retention-days: 3
         if-no-files-found: ignore
+    
+    - name: Upload APK
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: debug-apk-${{ github.run_number }}
+        path: app/build/outputs/apk/debug/*.apk
+        retention-days: 7
     
     - name: Create Release
       if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v1.0.${{ github.run_number }}
-        name: Laboratory v1.0.${{ github.run_number }}
+        name: 🔥 Nuclear Clean v1.0.${{ github.run_number }}
         body: |
-          ## 📱 Laboratory v1.0.${{ github.run_number }}
+          ## 📱 Nuclear Clean Build v1.0.${{ github.run_number }}
           
-          **Debug Build** - Fast compilation for testing
+          **🔥 Built from scratch** - All caches purged
           
           **Commit:** `${{ github.sha }}`
           **Build #:** ${{ github.run_number }}
+          **Strategy:** Nuclear clean (no cache reuse)
           
           ### 📦 Download
-          Debug APK included below
+          Fresh debug APK below
           
         files: app/build/outputs/apk/debug/*.apk
         fail_on_unmatched_files: false
+        overwrite_files: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    # ═══════════════════════════════════════════════════════════════
+    # 📊 BUILD SUMMARY
+    # ═══════════════════════════════════════════════════════════════
+    - name: 📊 Build Summary
+      if: always()
+      run: |
+        echo "═══════════════════════════════════════════════════════════"
+        echo "Build Status: ${{ job.status }}"
+        echo "Commit: ${{ github.sha }}"
+        echo "Branch: ${{ github.ref }}"
+        echo "Build #: ${{ github.run_number }}"
+        echo "═══════════════════════════════════════════════════════════"
+        
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ BUILD SUCCESSFUL"
+          ls -lh app/build/outputs/apk/debug/ 2>/dev/null || echo "No APK found"
+        else
+          echo "❌ BUILD FAILED - Check artifacts for logs"
+        fi
