@@ -1,7 +1,9 @@
 package com.docs.scanner.presentation.screens.folders
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -31,6 +34,7 @@ fun FoldersScreen(
     onCameraClick: () -> Unit,
     onQuickScanComplete: (Long) -> Unit
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showArchived by viewModel.showArchived.collectAsStateWithLifecycle()
     val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
@@ -58,9 +62,22 @@ fun FoldersScreen(
         }
     }
 
+    // ✅ FIX #2: PickVisualMedia вместо GetContent + persistable permission
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? -> uri?.let(viewModel::quickScan) }
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            // Берём persistable permission чтобы Uri не expired
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+                // Некоторые провайдеры не поддерживают persistable, это ОК
+            }
+            viewModel.quickScan(uri)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -83,7 +100,13 @@ fun FoldersScreen(
                     IconButton(onClick = onSearchClick) { Icon(Icons.Default.Search, "Search") }
                     IconButton(onClick = onTermsClick) { Icon(Icons.Default.Event, "Terms") }
                     IconButton(onClick = onCameraClick) { Icon(Icons.Default.CameraAlt, "Camera") }
-                    IconButton(onClick = { galleryLauncher.launch("image/*") }) { Icon(Icons.Default.PhotoLibrary, "Gallery") }
+                    IconButton(onClick = {
+                        galleryLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }) {
+                        Icon(Icons.Default.PhotoLibrary, "Gallery")
+                    }
                     IconButton(onClick = onSettingsClick) { Icon(Icons.Default.Settings, "Settings") }
                 }
             )
@@ -113,7 +136,8 @@ fun FoldersScreen(
                         onFolderClick = onFolderClick,
                         onMenuClick = { menuFolder = it },
                         onClearQuickScans = { showClearQuickScansDialog = true },
-                        onReorder = viewModel::reorderFolders
+                        onReorder = viewModel::reorderFolders,
+                        onDragEnd = viewModel::saveFolderOrder
                     )
                 }
             }
@@ -179,7 +203,8 @@ private fun FoldersList(
     onFolderClick: (Long) -> Unit,
     onMenuClick: (Folder) -> Unit,
     onClearQuickScans: () -> Unit,
-    onReorder: (Int, Int) -> Unit
+    onReorder: (Int, Int) -> Unit,
+    onDragEnd: () -> Unit
 ) {
     val quickScansFolder = folders.find { it.isQuickScans }
     val otherFolders = folders.filter { !it.isQuickScans }
@@ -199,6 +224,10 @@ private fun FoldersList(
                 if (from == 0 || to == 0) return@DragDropLazyColumn
             }
             onReorder(from, to)
+        },
+        onDragEnd = { _, _ ->
+            // ✅ FIX #11: Сохраняем порядок после завершения перетаскивания
+            onDragEnd()
         },
         modifier = Modifier.fillMaxSize(),
         enabled = isManualMode
