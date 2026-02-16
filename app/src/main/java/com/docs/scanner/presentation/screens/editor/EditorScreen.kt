@@ -1,10 +1,13 @@
 /*
  * EditorScreen.kt
- * Version: 9.0.2 - FULLY FIXED (2026)
+ * Version: 10.0.0 - FULLY FIXED (2026)
  *
+ * ✅ FIX #1: Unconditional ReorderableState creation
+ * ✅ FIX #3: Removed extra Spacer after RecordHeader
+ * ✅ FIX #4: TopBar shows record.name instead of folderName
+ * ✅ FIX #5: Removed duplicate DropdownMenu
  * ✅ FIX #10: BackHandler for selection mode
  * ✅ FIX #14: All remember → rememberSaveable
- * ✅ FIX #16: Conditional ReorderableState creation
  * ✅ FIX #17: ShareEvent.TextContent case handled
  * ✅ FIX #18: handleDocumentAction calls viewModel method
  */
@@ -86,6 +89,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -189,15 +193,13 @@ fun EditorScreen(
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // REORDERABLE STATE
+    // ✅ FIX #1: UNCONDITIONAL REORDERABLE STATE
     // ════════════════════════════════════════════════════════════════════
 
-    val reorderableState = if (!selectionState.isActive) {
-        rememberReorderableLazyListState(lazyListState) { from, to ->
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        if (!selectionState.isActive) {
             viewModel.reorderDocuments(from.index, to.index)
         }
-    } else {
-        null
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -272,7 +274,6 @@ fun EditorScreen(
                     }
                 }
                 
-                // ✅ FIX #17: Handle TextContent case
                 is ShareEvent.TextContent -> {
                     try {
                         val sendIntent = Intent(Intent.ACTION_SEND).apply {
@@ -350,7 +351,6 @@ fun EditorScreen(
                 clipboardManager.setText(AnnotatedString(action.text))
             }
 
-            // ✅ FIX #18: Читаем clipboard здесь, делегируем через viewModel.handleDocumentAction
             is DocumentAction.PasteText -> {
                 val clipText = clipboardManager.getText()?.text
                 viewModel.handleDocumentAction(
@@ -369,7 +369,6 @@ fun EditorScreen(
             is DocumentAction.SaveInlineEdit,
             is DocumentAction.CancelInlineEdit,
             is DocumentAction.WordTap -> {
-                // ✅ FIX #18: Delegate to ViewModel
                 viewModel.handleDocumentAction(action)
             }
         }
@@ -400,9 +399,11 @@ fun EditorScreen(
                     title = {
                         Text(
                             text = when (val state = uiState) {
-                                is EditorUiState.Success -> state.folderName.ifBlank { "Documents" }
+                                is EditorUiState.Success -> state.record.name.ifBlank { "Untitled" }
                                 else -> "Documents"
-                            }
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     },
                     navigationIcon = {
@@ -543,8 +544,6 @@ fun EditorScreen(
                         onDescriptionClick = { showEditDescriptionDialog = true }
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
-
                     if (processingState.isActive) {
                         BatchProgressBanner(
                             processedCount = processingState.progress,
@@ -588,7 +587,9 @@ fun EditorScreen(
                         LazyColumn(
                             state = lazyListState,
                             verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
                         ) {
                             items(
                                 items = state.documents,
@@ -596,28 +597,8 @@ fun EditorScreen(
                             ) { document ->
                                 val index = state.documents.indexOf(document)
 
-                                if (reorderableState != null && !selectionState.isActive) {
-                                    ReorderableItem(reorderableState, key = document.id.value) { isDragging ->
-                                        DocumentCardItem(
-                                            document = document,
-                                            index = index,
-                                            state = state,
-                                            selectionState = selectionState,
-                                            ocrSettings = ocrSettings,
-                                            inlineEditingStates = inlineEditingStates,
-                                            onAction = ::handleDocumentAction,
-                                            docMenuExpandedId = docMenuExpandedId,
-                                            onDocMenuExpandedChange = { id -> docMenuExpandedId = id },
-                                            isDragging = isDragging,
-                                            dragModifier = Modifier.draggableHandle(
-                                                onDragStarted = {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                },
-                                                onDragStopped = {}
-                                            )
-                                        )
-                                    }
-                                } else {
+                                ReorderableItem(reorderableState, key = document.id.value) { isDragging ->
+                                    val actualDragging = isDragging && !selectionState.isActive
                                     DocumentCardItem(
                                         document = document,
                                         index = index,
@@ -627,9 +608,18 @@ fun EditorScreen(
                                         inlineEditingStates = inlineEditingStates,
                                         onAction = ::handleDocumentAction,
                                         docMenuExpandedId = docMenuExpandedId,
-                                        onDocMenuExpandedChange = { docMenuExpandedId = it },
-                                        isDragging = false,
-                                        dragModifier = Modifier
+                                        onDocMenuExpandedChange = { id -> docMenuExpandedId = id },
+                                        isDragging = actualDragging,
+                                        dragModifier = if (!selectionState.isActive) {
+                                            Modifier.draggableHandle(
+                                                onDragStarted = {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                },
+                                                onDragStopped = {}
+                                            )
+                                        } else {
+                                            Modifier
+                                        }
                                     )
                                 }
 
