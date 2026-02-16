@@ -16,9 +16,10 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * InlineEditingManager.kt
- * Version: 9.0.0 - FULLY FIXED (2026)
+ * Version: 10.0.0 - FULLY FIXED (2026)
  *
  * ✅ FIX #9 APPLIED: Added saveMutex for thread-safety in saveAll()
+ * ✅ FIX #12 APPLIED: saveAll() now uses activeEdits instead of _editingStates
  *
  * КРИТИЧЕСКИ ВАЖНО:
  * Использует ConcurrentHashMap для thread-safe операций
@@ -31,7 +32,6 @@ class InlineEditingManager(
     private val onHistoryAdd: (Long, TextEditField, String?, String?) -> Unit,
     private val autoSaveDelayMs: Long = 1500L
 ) {
-    // ✅ FIX #9: Added Mutex for thread-safe saveAll()
     private val saveMutex = Mutex()
     
     // Thread-safe хранилище активных редактирований
@@ -208,17 +208,29 @@ class InlineEditingManager(
     }
     
     /**
-     * ✅ FIX #9: Thread-safe saveAll() with Mutex
+     * ✅ FIX #12: saveAll() now uses activeEdits instead of _editingStates
      * Сохранить все активные редактирования (при выходе из экрана)
      */
     suspend fun saveAll() {
         saveMutex.withLock {
-            _editingStates.value.values.forEach { state ->
+            // ✅ FIX #12: Используем activeEdits вместо _editingStates
+            activeEdits.values.toList().forEach { state ->
                 if (state.isDirty) {
-                    onSave(state.documentId, state.field, state.currentText)
+                    try {
+                        onSave(state.documentId, state.field, state.currentText)
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to save edit during saveAll")
+                    }
                 }
             }
-            _editingStates.value = emptyMap()
+            
+            // Отменяем все Job'ы
+            autoSaveJobs.values.forEach { it.cancel() }
+            autoSaveJobs.clear()
+            
+            // Очищаем активные редактирования
+            activeEdits.clear()
+            updateStateFlow()
         }
     }
     
