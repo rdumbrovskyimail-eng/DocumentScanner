@@ -1,7 +1,9 @@
 /*
  * DocumentCard.kt
- * Version: 9.0.0 - FULLY FIXED (2026)
+ * Version: 10.0.0 - FULLY FIXED (2026)
  *
+ * ✅ FIX #5: Removed empty DropdownMenu from ActionButtonsRow
+ * ✅ FIX #6: Added file existence check and fallback for AsyncImage
  * ✅ FIX #11 APPLIED: Menu structure fixed - IconButton + DropdownMenu wrapped in Box
  * ✅ Added menuExpanded, onMenuDismiss parameters
  *
@@ -38,6 +40,7 @@ import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
@@ -57,7 +60,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -127,7 +129,6 @@ fun DocumentCard(
     onTranslationClick: () -> Unit,
     onSelectionToggle: () -> Unit,
     
-    // ✅ FIX #11: Added menu parameters
     menuExpanded: Boolean,
     onMenuDismiss: () -> Unit,
     onMenuClick: () -> Unit,
@@ -235,12 +236,30 @@ fun DocumentCard(
                             }
                         }
                 ) {
-                    AsyncImage(
-                        model = File(document.imagePath),
-                        contentDescription = "Document page ${index + 1}",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
+                    // ✅ FIX #6: File existence check and fallback
+                    val imageFile = remember(document.imagePath) { File(document.imagePath) }
+
+                    if (imageFile.exists()) {
+                        AsyncImage(
+                            model = imageFile,
+                            contentDescription = "Document page ${index + 1}",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        // Fallback для несуществующих файлов
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.BrokenImage,
+                                contentDescription = "Image not found",
+                                tint = GoogleDocsTextTertiary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                    }
 
                     // Selection overlay
                     if (isSelectionMode) {
@@ -389,16 +408,12 @@ fun DocumentCard(
             // ═══════════════════════════════════════════════════════════════
             ActionButtonsRow(
                 document = document,
-                menuExpanded = menuExpanded,
-                onMenuDismiss = onMenuDismiss,
                 onMenuClick = onMenuClick,
                 onCopyText = onCopyText,
                 onPasteText = onPasteText,
                 onAiRewrite = onAiRewrite,
                 onClearFormatting = onClearFormatting,
-                onSharePage = onSharePage,
-                onDeletePage = onDeletePage,
-                onMoveToRecord = onMoveToRecord
+                onSharePage = onSharePage
             )
         }
     }
@@ -716,21 +731,17 @@ private fun TranslationSection(
 }
 
 /**
- * ✅ FIX #11: Menu structure fixed - IconButton + DropdownMenu wrapped in Box
+ * ✅ FIX #5: Removed empty DropdownMenu - menu is now in EditorScreen
  */
 @Composable
 private fun ActionButtonsRow(
     document: Document,
-    menuExpanded: Boolean,
-    onMenuDismiss: () -> Unit,
     onMenuClick: () -> Unit,
     onCopyText: ((String) -> Unit)?,
     onPasteText: ((Boolean) -> Unit)?,
     onAiRewrite: ((Boolean) -> Unit)?,
     onClearFormatting: ((Boolean) -> Unit)?,
-    onSharePage: (() -> Unit)?,
-    onDeletePage: (() -> Unit)?,
-    onMoveToRecord: (() -> Unit)?
+    onSharePage: (() -> Unit)?
 ) {
     var showTextSelector by remember { mutableStateOf(false) }
     var pendingAction by remember { mutableStateOf<String?>(null) }
@@ -806,27 +817,17 @@ private fun ActionButtonsRow(
             }
         }
 
-        // ✅ FIX #11: Wrap IconButton + DropdownMenu in Box
-        Box {
-            IconButton(
-                onClick = onMenuClick,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    Icons.Default.MoreVert,
-                    contentDescription = "More options",
-                    modifier = Modifier.size(18.dp),
-                    tint = GoogleDocsTextSecondary
-                )
-            }
-
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = onMenuDismiss
-            ) {
-                // Menu items будут добавлены в EditorScreen
-                // Здесь просто пустое меню для структуры
-            }
+        // ✅ FIX #5: Just IconButton, no DropdownMenu here
+        IconButton(
+            onClick = onMenuClick,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = "More options",
+                modifier = Modifier.size(18.dp),
+                tint = GoogleDocsTextSecondary
+            )
         }
     }
 
