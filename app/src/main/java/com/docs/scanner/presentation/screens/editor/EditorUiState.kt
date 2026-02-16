@@ -3,21 +3,13 @@ package com.docs.scanner.presentation.screens.editor
 import com.docs.scanner.domain.core.Document
 import com.docs.scanner.domain.core.Record
 
-/**
- * EditorUiState.kt
- * Version: 8.1.0 (2026)
- *
- * ✅ ДОБАВЛЕНО: ShareEvent.TextContent
- */
 sealed interface EditorUiState {
     data object Loading : EditorUiState
-
     data class Success(
         val record: Record,
         val folderName: String,
         val documents: List<Document>
     ) : EditorUiState
-
     data class Error(val message: String) : EditorUiState
 }
 
@@ -72,10 +64,7 @@ data class InlineEditState(
     val lastSaveTimestamp: Long = 0L
 )
 
-enum class TextEditField {
-    OCR_TEXT,
-    TRANSLATED_TEXT
-}
+// TextEditField — НЕ ДУБЛИРОВАТЬ, объявлен в DocumentActions.kt
 
 data class TextEditHistoryItem(
     val documentId: Long,
@@ -85,7 +74,6 @@ data class TextEditHistoryItem(
     val timestamp: Long = System.currentTimeMillis()
 )
 
-// ✅ ДОБАВЛЕНО: TextContent для AI результатов (summary, key points, etc.)
 sealed interface ShareEvent {
     data class File(
         val path: String,
@@ -110,21 +98,3 @@ data class OcrSettingsSnapshot(
     val geminiEnabled: Boolean = true,
     val usedThreshold: Float? = null
 )
-Единственное изменение — добавлен TextContent в ShareEvent. Теперь в EditorScreen.kt нужно обработать этот новый тип в коллекторе shareEvent:
-LaunchedEffect(Unit) {
-    viewModel.shareEvent.collect { event ->
-        when (event) {
-            is ShareEvent.File -> {
-                // ... существующий код шаринга файла
-            }
-            // ✅ Добавить обработку TextContent:
-            is ShareEvent.TextContent -> {
-                snackbarHostState.showSnackbar(
-                    message = event.title,
-                    duration = SnackbarDuration.Long
-                )
-                // или открыть диалог с текстом
-            }
-        }
-    }
-}
