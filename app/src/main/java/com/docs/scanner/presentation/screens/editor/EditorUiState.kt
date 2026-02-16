@@ -5,19 +5,13 @@ import com.docs.scanner.domain.core.Record
 
 /**
  * EditorUiState.kt
- * Version: 8.0.0 - PRODUCTION READY (2026)
+ * Version: 8.1.0 (2026)
  *
- * КРИТИЧЕСКИ ВАЖНО:
- * Этот sealed interface описывает ТОЛЬКО domain данные (record, documents)
- * Processing state, selection, inline editing - в ОТДЕЛЬНЫХ StateFlow!
+ * ✅ ДОБАВЛЕНО: ShareEvent.TextContent
  */
 sealed interface EditorUiState {
     data object Loading : EditorUiState
 
-    /**
-     * Success содержит ТОЛЬКО чистые domain данные
-     * БЕЗ isProcessing, processingMessage, errorMessage!
-     */
     data class Success(
         val record: Record,
         val folderName: String,
@@ -27,10 +21,6 @@ sealed interface EditorUiState {
     data class Error(val message: String) : EditorUiState
 }
 
-/**
- * Отдельный state для обработки документов
- * Живёт НЕЗАВИСИМО от EditorUiState!
- */
 data class ProcessingState(
     val isActive: Boolean = false,
     val operation: ProcessingOperation? = null,
@@ -50,9 +40,6 @@ sealed interface ProcessingOperation {
     data class RetryingTranslation(val total: Int) : ProcessingOperation
 }
 
-/**
- * Selection state - независимый от основного UI
- */
 data class SelectionState(
     val mode: SelectionMode = SelectionMode.Inactive,
     val selectedIds: Set<Long> = emptySet()
@@ -76,9 +63,6 @@ sealed interface SelectionMode {
     data class Active(val totalItems: Int) : SelectionMode
 }
 
-/**
- * Inline editing state - для безопасного редактирования
- */
 data class InlineEditState(
     val documentId: Long,
     val field: TextEditField,
@@ -93,9 +77,6 @@ enum class TextEditField {
     TRANSLATED_TEXT
 }
 
-/**
- * История изменений для Undo
- */
 data class TextEditHistoryItem(
     val documentId: Long,
     val field: TextEditField,
@@ -104,31 +85,46 @@ data class TextEditHistoryItem(
     val timestamp: Long = System.currentTimeMillis()
 )
 
-/**
- * Share события через Channel (не SharedFlow!)
- */
+// ✅ ДОБАВЛЕНО: TextContent для AI результатов (summary, key points, etc.)
 sealed interface ShareEvent {
     data class File(
         val path: String,
         val mimeType: String,
         val fileName: String? = null
     ) : ShareEvent
+
+    data class TextContent(
+        val text: String,
+        val title: String
+    ) : ShareEvent
 }
 
-/**
- * Error события для Snackbar
- */
 data class ErrorEvent(
     val message: String,
     val actionLabel: String? = null,
     val action: (() -> Unit)? = null
 )
 
-/**
- * OCR настройки snapshot
- */
 data class OcrSettingsSnapshot(
     val confidenceThreshold: Float = 0.7f,
     val geminiEnabled: Boolean = true,
-    val usedThreshold: Float? = null // Threshold использованный при последнем OCR
+    val usedThreshold: Float? = null
 )
+Единственное изменение — добавлен TextContent в ShareEvent. Теперь в EditorScreen.kt нужно обработать этот новый тип в коллекторе shareEvent:
+LaunchedEffect(Unit) {
+    viewModel.shareEvent.collect { event ->
+        when (event) {
+            is ShareEvent.File -> {
+                // ... существующий код шаринга файла
+            }
+            // ✅ Добавить обработку TextContent:
+            is ShareEvent.TextContent -> {
+                snackbarHostState.showSnackbar(
+                    message = event.title,
+                    duration = SnackbarDuration.Long
+                )
+                // или открыть диалог с текстом
+            }
+        }
+    }
+}
