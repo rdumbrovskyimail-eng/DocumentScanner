@@ -64,8 +64,9 @@ fun RecordHeader(
                 text = description?.ifBlank { "Add description..." } ?: "Add description...",
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (description.isNullOrBlank()) GoogleDocsTextTertiary else GoogleDocsTextSecondary,
-                modifier = Modifier.weight(1f)
-                // Без maxLines — расширяется вниз!
+                modifier = Modifier.weight(1f),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
             )
             Icon(
                 imageVector = Icons.Default.Edit,
