@@ -1,8 +1,8 @@
 /*
  * EditorViewModel.kt
- * Version: 8.4.0 - COMPILATION FIXED (2026)
+ * Version: 8.5.0 - COMPILATION FIXED (2026)
  *
- * ✅ FIX: Все when выражения для DomainResult.Success<*> / Failure<*> полные
+ * ✅ FIX: Убраны <*> wildcards из when expressions
  * ✅ FIX: handleDocumentAction is public
  * ✅ FIX: PasteText обрабатывается корректно
  */
@@ -378,9 +378,8 @@ class EditorViewModel @Inject constructor(
     fun deleteDocument(documentId: Long) {
         viewModelScope.launch {
             when (val result = useCases.deleteDocument(documentId)) {
-                is DomainResult.Success<*> -> { /* Auto-refresh from Flow */ }
-                is DomainResult.Failure<*> ->
-                    sendError("Failed to delete: ${result.error.message}")
+                is DomainResult.Success -> { /* Auto-refresh from Flow */ }
+                is DomainResult.Failure -> sendError("Failed to delete: ${result.error.message}")
             }
         }
     }
@@ -442,9 +441,8 @@ class EditorViewModel @Inject constructor(
 
             val updated = currentState.record.copy(name = name.trim())
             when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> { /* Auto-refresh */ }
-                is DomainResult.Failure<*> ->
-                    sendError("Failed to update: ${result.error.message}")
+                is DomainResult.Success -> { /* Auto-refresh */ }
+                is DomainResult.Failure -> sendError("Failed to update: ${result.error.message}")
             }
         }
     }
@@ -456,9 +454,8 @@ class EditorViewModel @Inject constructor(
 
             val updated = currentState.record.copy(description = description)
             when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> { /* Auto-refresh */ }
-                is DomainResult.Failure<*> ->
-                    sendError("Failed to update: ${result.error.message}")
+                is DomainResult.Success -> { /* Auto-refresh */ }
+                is DomainResult.Failure -> sendError("Failed to update: ${result.error.message}")
             }
         }
     }
@@ -483,8 +480,8 @@ class EditorViewModel @Inject constructor(
 
             val updated = currentState.record.copy(tags = currentTags)
             when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> Timber.d("✅ Tag '$t' added")
-                is DomainResult.Failure<*> -> sendError("Failed to add tag: ${result.error.message}")
+                is DomainResult.Success -> Timber.d("✅ Tag '$t' added")
+                is DomainResult.Failure -> sendError("Failed to add tag: ${result.error.message}")
             }
         }
     }
@@ -501,8 +498,8 @@ class EditorViewModel @Inject constructor(
 
             val updated = currentState.record.copy(tags = currentTags)
             when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> Timber.d("✅ Tag '$t' removed")
-                is DomainResult.Failure<*> -> sendError("Failed to remove tag: ${result.error.message}")
+                is DomainResult.Success -> Timber.d("✅ Tag '$t' removed")
+                is DomainResult.Failure -> sendError("Failed to remove tag: ${result.error.message}")
             }
         }
     }
@@ -517,9 +514,8 @@ class EditorViewModel @Inject constructor(
                 targetLanguage = target
             )
             when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> { /* Auto-refresh */ }
-                is DomainResult.Failure<*> ->
-                    sendError("Failed to update languages: ${result.error.message}")
+                is DomainResult.Success -> { /* Auto-refresh */ }
+                is DomainResult.Failure -> sendError("Failed to update languages: ${result.error.message}")
             }
         }
     }
@@ -602,10 +598,10 @@ class EditorViewModel @Inject constructor(
         }
 
         when (result) {
-            is DomainResult.Success<*> -> {
+            is DomainResult.Success -> {
                 Timber.d("✅ Saved ${field.name} for document $documentId")
             }
-            is DomainResult.Failure<*> -> {
+            is DomainResult.Failure -> {
                 sendError("Save failed: ${result.error.message}")
                 throw Exception(result.error.message)
             }
@@ -667,9 +663,8 @@ class EditorViewModel @Inject constructor(
             )
 
             when (val result = useCases.updateDocument(updated)) {
-                is DomainResult.Success<*> -> { /* Auto-refresh */ }
-                is DomainResult.Failure<*> ->
-                    sendError("Failed to update: ${result.error.message}")
+                is DomainResult.Success -> { /* Auto-refresh */ }
+                is DomainResult.Failure -> sendError("Failed to update: ${result.error.message}")
             }
         }
     }
@@ -693,11 +688,11 @@ class EditorViewModel @Inject constructor(
                 }
 
                 when (val result = useCases.updateDocument(updated)) {
-                    is DomainResult.Success<*> -> {
+                    is DomainResult.Success -> {
                         _editHistory.value = history
                         Timber.d("Undid edit for document ${lastEdit.documentId}")
                     }
-                    is DomainResult.Failure<*> -> {
+                    is DomainResult.Failure -> {
                         sendError("Failed to undo: ${result.error.message}")
                     }
                 }
@@ -851,11 +846,10 @@ class EditorViewModel @Inject constructor(
                 DocumentId(documentId),
                 RecordId(targetRecordId)
             )) {
-                is DomainResult.Success<*> -> {
+                is DomainResult.Success -> {
                     Timber.d("Moved document $documentId to record $targetRecordId")
                 }
-                is DomainResult.Failure<*> ->
-                    sendError("Failed to move: ${result.error.message}")
+                is DomainResult.Failure -> sendError("Failed to move: ${result.error.message}")
             }
         }
     }
@@ -873,11 +867,11 @@ class EditorViewModel @Inject constructor(
             )
 
             when (val result = useCases.fixOcr(documentId)) {
-                is DomainResult.Success<*> -> {
+                is DomainResult.Success -> {
                     clearProcessing()
                     Timber.d("Retried OCR for document $documentId")
                 }
-                is DomainResult.Failure<*> -> {
+                is DomainResult.Failure -> {
                     clearProcessing()
                     sendError("OCR failed: ${result.error.message}")
                 }
@@ -909,11 +903,11 @@ class EditorViewModel @Inject constructor(
                 docId = DocumentId(documentId),
                 targetLang = target
             )) {
-                is DomainResult.Success<*> -> {
+                is DomainResult.Success -> {
                     clearProcessing()
                     Timber.d("Retried translation for document $documentId")
                 }
-                is DomainResult.Failure<*> -> {
+                is DomainResult.Failure -> {
                     clearProcessing()
                     sendError("Translation failed: ${result.error.message}")
                 }
@@ -1015,7 +1009,7 @@ class EditorViewModel @Inject constructor(
                 val outputPath = "share_${System.currentTimeMillis()}.pdf"
 
                 when (val result = useCases.export.exportToPdf(docIds, outputPath)) {
-                    is DomainResult.Success<*> -> {
+                    is DomainResult.Success -> {
                         clearProcessing()
                         _shareEvent.send(
                             ShareEvent.File(
@@ -1025,7 +1019,7 @@ class EditorViewModel @Inject constructor(
                             )
                         )
                     }
-                    is DomainResult.Failure<*> -> {
+                    is DomainResult.Failure -> {
                         clearProcessing()
                         sendError("PDF generation failed: ${result.error.message}")
                     }
@@ -1048,7 +1042,7 @@ class EditorViewModel @Inject constructor(
                 val docIds = currentState.documents.map { it.id }
 
                 when (val result = useCases.export.shareDocuments(docIds, asPdf = false)) {
-                    is DomainResult.Success<*> -> {
+                    is DomainResult.Success -> {
                         clearProcessing()
                         _shareEvent.send(
                             ShareEvent.File(
@@ -1058,7 +1052,7 @@ class EditorViewModel @Inject constructor(
                             )
                         )
                     }
-                    is DomainResult.Failure<*> -> {
+                    is DomainResult.Failure -> {
                         clearProcessing()
                         sendError("ZIP creation failed: ${result.error.message}")
                     }
@@ -1183,8 +1177,8 @@ class EditorViewModel @Inject constructor(
             }
 
             when (val result = useCases.updateDocument(updated)) {
-                is DomainResult.Success<*> -> Timber.d("Pasted text to document $documentId")
-                is DomainResult.Failure<*> -> sendError("Failed to paste: ${result.error.message}")
+                is DomainResult.Success -> Timber.d("Pasted text to document $documentId")
+                is DomainResult.Failure -> sendError("Failed to paste: ${result.error.message}")
             }
         }
     }
@@ -1206,8 +1200,8 @@ class EditorViewModel @Inject constructor(
                 )
 
                 val rewrittenText = when (result) {
-                    is DomainResult.Success<*> -> result.data as String
-                    is DomainResult.Failure<*> -> {
+                    is DomainResult.Success -> result.data as String
+                    is DomainResult.Failure -> {
                         clearProcessing()
                         sendError("AI rewrite failed: ${result.error.message}")
                         return@launch
@@ -1260,8 +1254,8 @@ class EditorViewModel @Inject constructor(
             }
 
             when (val result = useCases.updateDocument(updated)) {
-                is DomainResult.Success<*> -> Timber.d("Cleared formatting for document $documentId")
-                is DomainResult.Failure<*> -> sendError("Failed to clear formatting: ${result.error.message}")
+                is DomainResult.Success -> Timber.d("Cleared formatting for document $documentId")
+                is DomainResult.Failure -> sendError("Failed to clear formatting: ${result.error.message}")
             }
         }
     }
@@ -1307,8 +1301,8 @@ class EditorViewModel @Inject constructor(
                 )
 
                 val summary = when (result) {
-                    is DomainResult.Success<*> -> result.data as String
-                    is DomainResult.Failure<*> -> {
+                    is DomainResult.Success -> result.data as String
+                    is DomainResult.Failure -> {
                         clearProcessing()
                         sendError("AI summarization failed: ${result.error.message}")
                         return@launch
@@ -1367,8 +1361,8 @@ class EditorViewModel @Inject constructor(
                 )
 
                 val keyPoints = when (result) {
-                    is DomainResult.Success<*> -> result.data as String
-                    is DomainResult.Failure<*> -> {
+                    is DomainResult.Success -> result.data as String
+                    is DomainResult.Failure -> {
                         clearProcessing()
                         sendError("Key points extraction failed: ${result.error.message}")
                         return@launch
