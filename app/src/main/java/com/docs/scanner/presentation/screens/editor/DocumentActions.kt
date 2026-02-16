@@ -1,112 +1,303 @@
+/*
+ * DocumentActionHandler.kt - УЛУЧШЕННАЯ ВЕРСИЯ
+ * Version: 9.1.0 (2026)
+ *
+ * ✅ Улучшенная обработка PasteText с null text
+ * ✅ Все actions обрабатываются единообразно
+ */
+
 package com.docs.scanner.presentation.screens.editor
 
-import com.docs.scanner.domain.core.Language
+import timber.log.Timber
 
 /**
- * DocumentActions.kt
- * Version: 9.0.0 - FULLY FIXED (2026)
- *
- * ✅ FIX #15 APPLIED: PasteText.text is now nullable (String?)
- *
- * КРИТИЧЕСКИ ВАЖНО:
- * Sealed interface заменяет множество callback'ов
- * Вместо 21 параметра → 1 функция: (DocumentAction) -> Unit
+ * Обработчик всех действий с документами
+ * 
+ * ИСПОЛЬЗОВАНИЕ в EditorScreen.kt:
+ * 
+ * val onDocumentAction: (DocumentAction) -> Unit = { action ->
+ *     when (action) {
+ *         // Copy обрабатываем в UI (clipboard API)
+ *         is DocumentAction.CopyText -> {
+ *             clipboardManager.setText(AnnotatedString(action.text))
+ *         }
+ *         
+ *         // Paste обрабатываем в UI (получаем text из clipboard)
+ *         is DocumentAction.PasteText -> {
+ *             val clipText = clipboardManager.getText()?.text
+ *             viewModel.handleDocumentAction(
+ *                 action.copy(text = clipText?.takeIf { it.isNotBlank() })
+ *             )
+ *         }
+ *         
+ *         // Все остальное → ViewModel
+ *         else -> viewModel.handleDocumentAction(action)
+ *     }
+ * }
  */
-sealed interface DocumentAction {
-    // Базовые действия
-    data class ImageClick(val documentId: Long) : DocumentAction
-    data class OcrTextClick(val documentId: Long) : DocumentAction
-    data class TranslationClick(val documentId: Long) : DocumentAction
+fun EditorViewModel.handleDocumentAction(action: DocumentAction) {
+    when (action) {
+        // ═══════════════════════════════════════════════════════════
+        // CLICKS
+        // ═══════════════════════════════════════════════════════════
+        is DocumentAction.ImageClick -> {
+            Timber.d("📸 Image clicked: ${action.documentId}")
+            // UI handles navigation
+        }
 
-    // Selection
-    data class ToggleSelection(val documentId: Long) : DocumentAction
+        is DocumentAction.OcrTextClick -> {
+            startInlineEditOcr(action.documentId)
+        }
 
-    // Menu
-    data class MenuClick(val documentId: Long) : DocumentAction
+        is DocumentAction.TranslationClick -> {
+            startInlineEditTranslation(action.documentId)
+        }
 
-    // Retry operations
-    data class RetryOcr(val documentId: Long) : DocumentAction
-    data class RetryTranslation(val documentId: Long) : DocumentAction
+        // ═══════════════════════════════════════════════════════════
+        // SELECTION
+        // ═══════════════════════════════════════════════════════════
+        is DocumentAction.ToggleSelection -> {
+            toggleDocumentSelection(action.documentId)
+        }
 
-    // Move operations
-    data class MoveUp(val documentId: Long) : DocumentAction
-    data class MoveDown(val documentId: Long) : DocumentAction
-    data class MoveToRecord(val documentId: Long, val targetRecordId: Long) : DocumentAction
+        // ═══════════════════════════════════════════════════════════
+        // MENU
+        // ═══════════════════════════════════════════════════════════
+        is DocumentAction.MenuClick -> {
+            Timber.d("📋 Menu clicked for document: ${action.documentId}")
+            // UI handles menu state
+        }
 
-    // Share/Delete operations
-    data class SharePage(val documentId: Long, val imagePath: String) : DocumentAction
-    data class DeletePage(val documentId: Long) : DocumentAction
+        // ═══════════════════════════════════════════════════════════
+        // RETRY OPERATIONS
+        // ═══════════════════════════════════════════════════════════
+        is DocumentAction.RetryOcr -> {
+            Timber.d("🔄 Retrying OCR for document ${action.documentId}")
+            retryOcr(action.documentId)
+        }
 
-    // Text operations
-    data class CopyText(val documentId: Long, val text: String, val isOcrText: Boolean) : DocumentAction
-    
-    // ✅ FIX #15: text is now nullable to handle empty clipboard
-    data class PasteText(
-        val documentId: Long, 
-        val text: String?,  // ← CHANGED from String to String?
-        val isOcrText: Boolean
-    ) : DocumentAction
-    
-    data class AiRewrite(val documentId: Long, val text: String, val isOcrText: Boolean) : DocumentAction
-    data class ClearFormatting(val documentId: Long, val isOcrText: Boolean) : DocumentAction
+        is DocumentAction.RetryTranslation -> {
+            Timber.d("🌐 Retrying translation for document ${action.documentId}")
+            retryTranslation(action.documentId)
+        }
 
-    // Confidence
-    data class WordTap(val word: String, val confidence: Float) : DocumentAction
+        // ═══════════════════════════════════════════════════════════
+        // MOVE OPERATIONS
+        // ═══════════════════════════════════════════════════════════
+        is DocumentAction.MoveUp -> {
+            moveDocumentUp(action.documentId)
+        }
 
-    // Inline editing
-    data class StartInlineEdit(
-        val documentId: Long,
-        val field: TextEditField,
-        val initialText: String
-    ) : DocumentAction
-    data class UpdateInlineText(
-        val documentId: Long,
-        val field: TextEditField,
-        val text: String
-    ) : DocumentAction
-    data class SaveInlineEdit(
-        val documentId: Long,
-        val field: TextEditField
-    ) : DocumentAction
-    data class CancelInlineEdit(
-        val documentId: Long,
-        val field: TextEditField
-    ) : DocumentAction
+        is DocumentAction.MoveDown -> {
+            moveDocumentDown(action.documentId)
+        }
+
+        is DocumentAction.MoveToRecord -> {
+            moveDocument(action.documentId, action.targetRecordId)
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // SHARE/DELETE
+        // ═══════════════════════════════════════════════════════════
+        is DocumentAction.SharePage -> {
+            shareSingleImage(action.imagePath)
+        }
+
+        is DocumentAction.DeletePage -> {
+            Timber.d("🗑️ Deleting document ${action.documentId}")
+            deleteDocument(action.documentId)
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // TEXT OPERATIONS
+        // ═══════════════════════════════════════════════════════════
+        is DocumentAction.CopyText -> {
+            Timber.d("📋 Text copied from document ${action.documentId}: ${action.text.take(50)}...")
+            // Clipboard handling in UI layer
+        }
+
+        // ✅ ИСПРАВЛЕНО: Правильная обработка nullable text
+        is DocumentAction.PasteText -> {
+            if (action.text != null) {
+                Timber.d("📋 Pasting ${action.text.length} chars to document ${action.documentId}")
+                pasteText(action.documentId, action.text, action.isOcrText)
+            } else {
+                Timber.w("⚠️ Paste failed: clipboard is empty")
+                sendError("Clipboard is empty")
+            }
+        }
+
+        is DocumentAction.AiRewrite -> {
+            Timber.d("🤖 AI rewriting text for document ${action.documentId}")
+            aiRewriteText(action.documentId, action.text, action.isOcrText)
+        }
+
+        is DocumentAction.ClearFormatting -> {
+            Timber.d("✨ Clearing formatting for document ${action.documentId}")
+            clearFormatting(action.documentId, action.isOcrText)
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // CONFIDENCE
+        // ═══════════════════════════════════════════════════════════
+        is DocumentAction.WordTap -> {
+            showConfidenceTooltip(action.word, action.confidence)
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // INLINE EDITING
+        // ═══════════════════════════════════════════════════════════
+        is DocumentAction.StartInlineEdit -> {
+            when (action.field) {
+                TextEditField.OCR_TEXT -> startInlineEditOcr(action.documentId)
+                TextEditField.TRANSLATED_TEXT -> startInlineEditTranslation(action.documentId)
+            }
+        }
+
+        is DocumentAction.UpdateInlineText -> {
+            updateInlineText(action.documentId, action.field, action.text)
+        }
+
+        is DocumentAction.SaveInlineEdit -> {
+            saveInlineChanges(action.documentId, action.field)
+        }
+
+        is DocumentAction.CancelInlineEdit -> {
+            cancelInlineEdit(action.documentId, action.field)
+        }
+    }
 }
 
 /**
- * Record-level actions
+ * Обработчик действий с Record
  */
-sealed interface RecordAction {
-    data class Rename(val name: String) : RecordAction
-    data class UpdateDescription(val description: String?) : RecordAction
-    data class AddTag(val tag: String) : RecordAction
-    data class RemoveTag(val tag: String) : RecordAction
-    data class UpdateLanguages(val source: Language, val target: Language) : RecordAction
-    data object ShareAsPdf : RecordAction
-    data object ShareAsZip : RecordAction
-    data object EnterSelectionMode : RecordAction
-    data object ExitSelectionMode : RecordAction
-    data object SelectAll : RecordAction
-    data object DeselectAll : RecordAction
-    data object DeleteSelected : RecordAction
-    data class ExportSelected(val asPdf: Boolean) : RecordAction
-    data class MoveSelectedToRecord(val targetRecordId: Long) : RecordAction
-    data object CancelBatchOperation : RecordAction
-    data object RetryFailedDocuments : RecordAction
-    data object RetryAllOcr : RecordAction
-    data object RetryAllTranslation : RecordAction
-    data object Undo : RecordAction
+fun EditorViewModel.handleRecordAction(action: RecordAction) {
+    when (action) {
+        is RecordAction.Rename -> {
+            Timber.d("✏️ Renaming record to: ${action.name}")
+            updateRecordName(action.name)
+        }
+
+        is RecordAction.UpdateDescription -> {
+            updateRecordDescription(action.description)
+        }
+
+        is RecordAction.AddTag -> {
+            Timber.d("🏷️ Adding tag: ${action.tag}")
+            addTag(action.tag)
+        }
+
+        is RecordAction.RemoveTag -> {
+            Timber.d("🏷️ Removing tag: ${action.tag}")
+            removeTag(action.tag)
+        }
+
+        is RecordAction.UpdateLanguages -> {
+            Timber.d("🌐 Updating languages: ${action.source.code} → ${action.target.code}")
+            updateLanguages(action.source, action.target)
+        }
+
+        RecordAction.ShareAsPdf -> {
+            Timber.d("📄 Sharing as PDF")
+            shareRecordAsPdf()
+        }
+
+        RecordAction.ShareAsZip -> {
+            Timber.d("📦 Sharing as ZIP")
+            shareRecordImagesZip()
+        }
+
+        RecordAction.EnterSelectionMode -> {
+            Timber.d("✅ Entering selection mode")
+            enterSelectionMode()
+        }
+
+        RecordAction.ExitSelectionMode -> {
+            Timber.d("❌ Exiting selection mode")
+            exitSelectionMode()
+        }
+
+        RecordAction.SelectAll -> {
+            Timber.d("✅ Selecting all documents")
+            selectAll()
+        }
+
+        RecordAction.DeselectAll -> {
+            Timber.d("❌ Deselecting all documents")
+            deselectAll()
+        }
+
+        RecordAction.DeleteSelected -> {
+            Timber.d("🗑️ Deleting selected documents")
+            deleteSelectedDocuments()
+        }
+
+        is RecordAction.ExportSelected -> {
+            Timber.d("📤 Exporting selected as ${if (action.asPdf) "PDF" else "ZIP"}")
+            exportSelectedDocuments(action.asPdf)
+        }
+
+        is RecordAction.MoveSelectedToRecord -> {
+            Timber.d("📁 Moving selected to record ${action.targetRecordId}")
+            moveSelectedToRecord(action.targetRecordId)
+        }
+
+        RecordAction.CancelBatchOperation -> {
+            Timber.d("🛑 Cancelling batch operation")
+            cancelBatchOperation()
+        }
+
+        RecordAction.RetryFailedDocuments -> {
+            Timber.d("🔄 Retrying failed documents")
+            retryFailedDocuments()
+        }
+
+        RecordAction.RetryAllOcr -> {
+            Timber.d("🔄 Retrying all OCR")
+            retryAllOcr()
+        }
+
+        RecordAction.RetryAllTranslation -> {
+            Timber.d("🌐 Retrying all translations")
+            retryAllTranslation()
+        }
+
+        RecordAction.Undo -> {
+            Timber.d("↩️ Undoing last edit")
+            undoLastEdit()
+        }
+    }
 }
 
+// ════════════════════════════════════════════════════════════════════
+// HELPER для удобного создания action handlers в UI
+// ════════════════════════════════════════════════════════════════════
+
 /**
- * Dialog actions
+ * Создает lambda для обработки DocumentAction с учетом clipboard operations
+ * 
+ * Использование в EditorScreen:
+ * ```kotlin
+ * val clipboardManager = LocalClipboardManager.current
+ * val onDocumentAction = viewModel.createDocumentActionHandler(clipboardManager)
+ * ```
  */
-sealed interface DialogAction {
-    data object ShowRenameDialog : DialogAction
-    data object ShowDescriptionDialog : DialogAction
-    data object ShowTagsDialog : DialogAction
-    data object ShowLanguageDialog : DialogAction
-    data object ShowAddDocumentDialog : DialogAction
-    data object DismissDialog : DialogAction
+fun EditorViewModel.createDocumentActionHandler(
+    clipboardManager: androidx.compose.ui.platform.ClipboardManager
+): (DocumentAction) -> Unit = { action ->
+    when (action) {
+        // Copy обрабатываем в UI
+        is DocumentAction.CopyText -> {
+            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(action.text))
+        }
+        
+        // Paste получаем text из clipboard и делегируем
+        is DocumentAction.PasteText -> {
+            val clipText = clipboardManager.getText()?.text?.takeIf { it.isNotBlank() }
+            handleDocumentAction(action.copy(text = clipText))
+        }
+        
+        // Все остальное
+        else -> handleDocumentAction(action)
+    }
 }
