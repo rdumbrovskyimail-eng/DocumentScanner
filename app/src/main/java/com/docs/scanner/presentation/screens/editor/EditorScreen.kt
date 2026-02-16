@@ -1,11 +1,12 @@
 /*
  * EditorScreen.kt
- * Version: 9.0.1 - FULLY FIXED (2026)
+ * Version: 9.0.2 - FULLY FIXED (2026)
  *
- * ✅ FIX #10 APPLIED: BackHandler for selection mode
- * ✅ FIX #14 APPLIED: All remember → rememberSaveable
- * ✅ FIX #16 APPLIED: Conditional ReorderableState creation
- * ✅ FIX PasteText APPLIED: Delegate to ViewModel with null-safe clipboard text
+ * ✅ FIX #10: BackHandler for selection mode
+ * ✅ FIX #14: All remember → rememberSaveable
+ * ✅ FIX #16: Conditional ReorderableState creation
+ * ✅ FIX #17: ShareEvent.TextContent case handled
+ * ✅ FIX #18: handleDocumentAction calls viewModel method
  */
 
 package com.docs.scanner.presentation.screens.editor
@@ -146,7 +147,7 @@ fun EditorScreen(
     val lazyListState = rememberLazyListState()
 
     // ════════════════════════════════════════════════════════════════════
-    // ✅ FIX #14: DIALOG STATES - rememberSaveable
+    // DIALOG STATES
     // ════════════════════════════════════════════════════════════════════
 
     var recordMenuExpanded by rememberSaveable { mutableStateOf(false) }
@@ -188,7 +189,7 @@ fun EditorScreen(
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // ✅ FIX #16: REORDERABLE STATE - Conditional creation
+    // REORDERABLE STATE
     // ════════════════════════════════════════════════════════════════════
 
     val reorderableState = if (!selectionState.isActive) {
@@ -200,7 +201,7 @@ fun EditorScreen(
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // ✅ FIX #10: BackHandler for selection mode
+    // BACK HANDLER
     // ════════════════════════════════════════════════════════════════════
 
     BackHandler(enabled = selectionState.isActive) {
@@ -270,6 +271,26 @@ fun EditorScreen(
                         snackbarHostState.showSnackbar("Share failed: ${e.message}")
                     }
                 }
+                
+                // ✅ FIX #17: Handle TextContent case
+                is ShareEvent.TextContent -> {
+                    try {
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, event.text)
+                            putExtra(Intent.EXTRA_TITLE, event.title)
+                        }
+                        
+                        if (sendIntent.resolveActivity(context.packageManager) != null) {
+                            context.startActivity(Intent.createChooser(sendIntent, event.title))
+                        } else {
+                            snackbarHostState.showSnackbar("No apps to share text")
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Share text failed")
+                        snackbarHostState.showSnackbar("Share failed: ${e.message}")
+                    }
+                }
             }
         }
     }
@@ -329,49 +350,27 @@ fun EditorScreen(
                 clipboardManager.setText(AnnotatedString(action.text))
             }
 
-            // ✅ FIX PasteText: читаем clipboard здесь, делегируем в ViewModel
-            // ViewModel получит null если clipboard пустой и покажет ошибку сам
+            // ✅ FIX #18: Читаем clipboard здесь, делегируем через viewModel.handleDocumentAction
             is DocumentAction.PasteText -> {
                 val clipText = clipboardManager.getText()?.text
                 viewModel.handleDocumentAction(
                     DocumentAction.PasteText(
                         documentId = action.documentId,
-                        text = clipText?.takeIf { it.isNotBlank() }, // null если пустой
+                        text = clipText?.takeIf { it.isNotBlank() },
                         isOcrText = action.isOcrText
                     )
                 )
             }
 
-            is DocumentAction.AiRewrite -> {
-                viewModel.aiRewriteText(action.documentId, action.text, action.isOcrText)
-            }
-
-            is DocumentAction.ClearFormatting -> {
-                viewModel.clearFormatting(action.documentId, action.isOcrText)
-            }
-
-            is DocumentAction.StartInlineEdit -> {
-                if (action.field == TextEditField.OCR_TEXT) {
-                    viewModel.startInlineEditOcr(action.documentId)
-                } else {
-                    viewModel.startInlineEditTranslation(action.documentId)
-                }
-            }
-
-            is DocumentAction.UpdateInlineText -> {
-                viewModel.updateInlineText(action.documentId, action.field, action.text)
-            }
-
-            is DocumentAction.SaveInlineEdit -> {
-                viewModel.finishInlineEdit(action.documentId, action.field)
-            }
-
-            is DocumentAction.CancelInlineEdit -> {
-                viewModel.cancelInlineEdit(action.documentId, action.field)
-            }
-
+            is DocumentAction.AiRewrite,
+            is DocumentAction.ClearFormatting,
+            is DocumentAction.StartInlineEdit,
+            is DocumentAction.UpdateInlineText,
+            is DocumentAction.SaveInlineEdit,
+            is DocumentAction.CancelInlineEdit,
             is DocumentAction.WordTap -> {
-                viewModel.showConfidenceTooltip(action.word, action.confidence)
+                // ✅ FIX #18: Delegate to ViewModel
+                viewModel.handleDocumentAction(action)
             }
         }
     }
@@ -597,7 +596,6 @@ fun EditorScreen(
                             ) { document ->
                                 val index = state.documents.indexOf(document)
 
-                                // ✅ FIX #16: Conditional rendering based on reorderableState
                                 if (reorderableState != null && !selectionState.isActive) {
                                     ReorderableItem(reorderableState, key = document.id.value) { isDragging ->
                                         DocumentCardItem(
