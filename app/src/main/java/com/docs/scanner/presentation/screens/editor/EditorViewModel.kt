@@ -1,8 +1,8 @@
 /*
  * EditorViewModel.kt
- * Version: 8.6.0 - COMPILATION FIXED (2026)
+ * Version: 8.7.0 - COMPILATION FIXED (2026)
  *
- * ✅ FIX: Добавлены else ветки во все when expressions
+ * ✅ FIX: Добавлены else ветки во все 12 when expressions
  * ✅ FIX: handleDocumentAction is public
  * ✅ FIX: PasteText обрабатывается корректно
  */
@@ -380,6 +380,7 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.deleteDocument(documentId)) {
                 is DomainResult.Success<*> -> { /* Auto-refresh from Flow */ }
                 is DomainResult.Failure<*> -> sendError("Failed to delete: ${result.error.message}")
+                else -> { /* Unreachable */ }
             }
         }
     }
@@ -443,6 +444,7 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateRecord(updated)) {
                 is DomainResult.Success<*> -> { /* Auto-refresh */ }
                 is DomainResult.Failure<*> -> sendError("Failed to update: ${result.error.message}")
+                else -> { /* Unreachable */ }
             }
         }
     }
@@ -456,6 +458,7 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateRecord(updated)) {
                 is DomainResult.Success<*> -> { /* Auto-refresh */ }
                 is DomainResult.Failure<*> -> sendError("Failed to update: ${result.error.message}")
+                else -> { /* Unreachable */ }
             }
         }
     }
@@ -482,6 +485,7 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateRecord(updated)) {
                 is DomainResult.Success<*> -> Timber.d("✅ Tag '$t' added")
                 is DomainResult.Failure<*> -> sendError("Failed to add tag: ${result.error.message}")
+                else -> { /* Unreachable */ }
             }
         }
     }
@@ -500,6 +504,7 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateRecord(updated)) {
                 is DomainResult.Success<*> -> Timber.d("✅ Tag '$t' removed")
                 is DomainResult.Failure<*> -> sendError("Failed to remove tag: ${result.error.message}")
+                else -> { /* Unreachable */ }
             }
         }
     }
@@ -516,6 +521,7 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateRecord(updated)) {
                 is DomainResult.Success<*> -> { /* Auto-refresh */ }
                 is DomainResult.Failure<*> -> sendError("Failed to update languages: ${result.error.message}")
+                else -> { /* Unreachable */ }
             }
         }
     }
@@ -605,6 +611,7 @@ class EditorViewModel @Inject constructor(
                 sendError("Save failed: ${result.error.message}")
                 throw Exception(result.error.message)
             }
+            else -> { /* Unreachable */ }
         }
     }
 
@@ -665,6 +672,7 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateDocument(updated)) {
                 is DomainResult.Success<*> -> { /* Auto-refresh */ }
                 is DomainResult.Failure<*> -> sendError("Failed to update: ${result.error.message}")
+                else -> { /* Unreachable */ }
             }
         }
     }
@@ -695,6 +703,7 @@ class EditorViewModel @Inject constructor(
                     is DomainResult.Failure<*> -> {
                         sendError("Failed to undo: ${result.error.message}")
                     }
+                    else -> { /* Unreachable */ }
                 }
             }
         }
@@ -850,6 +859,7 @@ class EditorViewModel @Inject constructor(
                     Timber.d("Moved document $documentId to record $targetRecordId")
                 }
                 is DomainResult.Failure<*> -> sendError("Failed to move: ${result.error.message}")
+                else -> { /* Unreachable */ }
             }
         }
     }
@@ -875,6 +885,7 @@ class EditorViewModel @Inject constructor(
                     clearProcessing()
                     sendError("OCR failed: ${result.error.message}")
                 }
+                else -> { /* Unreachable */ }
             }
         }
     }
@@ -911,6 +922,7 @@ class EditorViewModel @Inject constructor(
                     clearProcessing()
                     sendError("Translation failed: ${result.error.message}")
                 }
+                else -> { /* Unreachable */ }
             }
         }
     }
@@ -1023,6 +1035,7 @@ class EditorViewModel @Inject constructor(
                         clearProcessing()
                         sendError("PDF generation failed: ${result.error.message}")
                     }
+                    else -> { /* Unreachable */ }
                 }
             } catch (e: Exception) {
                 clearProcessing()
@@ -1056,6 +1069,7 @@ class EditorViewModel @Inject constructor(
                         clearProcessing()
                         sendError("ZIP creation failed: ${result.error.message}")
                     }
+                    else -> { /* Unreachable */ }
                 }
             } catch (e: Exception) {
                 clearProcessing()
@@ -1179,6 +1193,7 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateDocument(updated)) {
                 is DomainResult.Success<*> -> Timber.d("Pasted text to document $documentId")
                 is DomainResult.Failure<*> -> sendError("Failed to paste: ${result.error.message}")
+                else -> { /* Unreachable */ }
             }
         }
     }
@@ -1204,6 +1219,11 @@ class EditorViewModel @Inject constructor(
                     is DomainResult.Failure<*> -> {
                         clearProcessing()
                         sendError("AI rewrite failed: ${result.error.message}")
+                        return@launch
+                    }
+                    else -> {
+                        clearProcessing()
+                        sendError("AI rewrite failed: Unknown error")
                         return@launch
                     }
                 }
@@ -1256,6 +1276,7 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateDocument(updated)) {
                 is DomainResult.Success<*> -> Timber.d("Cleared formatting for document $documentId")
                 is DomainResult.Failure<*> -> sendError("Failed to clear formatting: ${result.error.message}")
+                else -> { /* Unreachable */ }
             }
         }
     }
@@ -1305,6 +1326,11 @@ class EditorViewModel @Inject constructor(
                     is DomainResult.Failure<*> -> {
                         clearProcessing()
                         sendError("AI summarization failed: ${result.error.message}")
+                        return@launch
+                    }
+                    else -> {
+                        clearProcessing()
+                        sendError("AI summarization failed: Unknown error")
                         return@launch
                     }
                 }
@@ -1365,6 +1391,11 @@ class EditorViewModel @Inject constructor(
                     is DomainResult.Failure<*> -> {
                         clearProcessing()
                         sendError("Key points extraction failed: ${result.error.message}")
+                        return@launch
+                    }
+                    else -> {
+                        clearProcessing()
+                        sendError("Key points extraction failed: Unknown error")
                         return@launch
                     }
                 }
