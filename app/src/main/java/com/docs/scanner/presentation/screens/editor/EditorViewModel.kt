@@ -1,12 +1,10 @@
 /*
  * EditorViewModel.kt
- * Version: 8.3.0 - BUILD FIXED (2026)
+ * Version: 8.4.0 - COMPILATION FIXED (2026)
  *
- * ✅ FIX: addToHistory вызывается в viewModelScope.launch
- * ✅ FIX: DomainResult.Success<*> / DomainResult.Failure<*>
- * ✅ FIX: return@withLock вместо return@launch внутри mutex
- * ✅ FIX: sendError is internal
- * ✅ FIX: ShareEvent.Text → ShareEvent.TextContent
+ * ✅ FIX: Все when выражения для DomainResult.Success<*> / Failure<*> полные
+ * ✅ FIX: handleDocumentAction is public
+ * ✅ FIX: PasteText обрабатывается корректно
  */
 
 package com.docs.scanner.presentation.screens.editor
@@ -71,7 +69,6 @@ class EditorViewModel @Inject constructor(
         onSave = { docId, field, text ->
             saveInlineEditToDb(docId, field, text)
         },
-        // ✅ FIX #1: onHistoryAdd теперь запускает корутину через viewModelScope
         onHistoryAdd = { docId, field, prev, new ->
             viewModelScope.launch {
                 addToHistory(docId, field, prev, new)
@@ -98,16 +95,8 @@ class EditorViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<EditorUiState>(EditorUiState.Loading)
     val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
 
-    // ════════════════════════════════════════════════════════════════════
-    // PROCESSING STATE
-    // ════════════════════════════════════════════════════════════════════
-
     private val _processingState = MutableStateFlow(ProcessingState())
     val processingState: StateFlow<ProcessingState> = _processingState.asStateFlow()
-
-    // ════════════════════════════════════════════════════════════════════
-    // SELECTION STATE
-    // ════════════════════════════════════════════════════════════════════
 
     private val _selectionState = MutableStateFlow(SelectionState())
     val selectionState: StateFlow<SelectionState> = _selectionState.asStateFlow()
@@ -115,21 +104,9 @@ class EditorViewModel @Inject constructor(
     val selectedCount: StateFlow<Int> = _selectionState.map { it.count }
         .stateIn(viewModelScope, SharingStarted.Lazily, 0)
 
-    // ════════════════════════════════════════════════════════════════════
-    // INLINE EDITING
-    // ════════════════════════════════════════════════════════════════════
-
     val inlineEditingStates = inlineEditingManager.editingStates
 
-    // ════════════════════════════════════════════════════════════════════
-    // BATCH OPERATIONS
-    // ════════════════════════════════════════════════════════════════════
-
     val batchOperation = batchOperationsManager.currentOperation
-
-    // ════════════════════════════════════════════════════════════════════
-    // EVENTS
-    // ════════════════════════════════════════════════════════════════════
 
     private val _shareEvent = Channel<ShareEvent>(Channel.BUFFERED)
     val shareEvent: Flow<ShareEvent> = _shareEvent.receiveAsFlow()
@@ -188,23 +165,11 @@ class EditorViewModel @Inject constructor(
     val canUndo: StateFlow<Boolean> = _editHistory.map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.Lazily, false)
 
-    // ════════════════════════════════════════════════════════════════════
-    // MOVE TARGETS
-    // ════════════════════════════════════════════════════════════════════
-
     private val _moveTargets = MutableStateFlow<List<Record>>(emptyList())
     val moveTargets: StateFlow<List<Record>> = _moveTargets.asStateFlow()
 
-    // ════════════════════════════════════════════════════════════════════
-    // CONFIDENCE TOOLTIP
-    // ════════════════════════════════════════════════════════════════════
-
     private val _confidenceTooltip = MutableStateFlow<Pair<String, Float>?>(null)
     val confidenceTooltip: StateFlow<Pair<String, Float>?> = _confidenceTooltip.asStateFlow()
-
-    // ════════════════════════════════════════════════════════════════════
-    // DERIVED STATES
-    // ════════════════════════════════════════════════════════════════════
 
     val failedDocumentsCount: StateFlow<Int> = _uiState.map { state ->
         when (state) {
@@ -218,29 +183,25 @@ class EditorViewModel @Inject constructor(
     // ════════════════════════════════════════════════════════════════════
 
     init {
-    if (recordId <= 0) {
-        Timber.e("❌ Invalid recordId: $recordId")
-        _uiState.value = EditorUiState.Error("Invalid record ID")
-    } else {
-        loadData()
+        if (recordId <= 0) {
+            Timber.e("❌ Invalid recordId: $recordId")
+            _uiState.value = EditorUiState.Error("Invalid record ID")
+        } else {
+            loadData()
 
-        viewModelScope.launch {
-            val target = targetLanguage.value
-            val model = translationModel.value
-            val autoTranslate = autoTranslateEnabled.value
+            viewModelScope.launch {
+                val target = targetLanguage.value
+                val model = translationModel.value
+                val autoTranslate = autoTranslateEnabled.value
 
-            Timber.d("📋 Editor Settings:")
-            Timber.d("   ├─ Record ID: $recordId")
-            Timber.d("   ├─ Target Language: ${target.displayName} (${target.code})")
-            Timber.d("   ├─ Translation Model: $model")
-            Timber.d("   └─ Auto-translate: $autoTranslate")
+                Timber.d("📋 Editor Settings:")
+                Timber.d("   ├─ Record ID: $recordId")
+                Timber.d("   ├─ Target Language: ${target.displayName} (${target.code})")
+                Timber.d("   ├─ Translation Model: $model")
+                Timber.d("   └─ Auto-translate: $autoTranslate")
+            }
         }
     }
-}
-
-    // ════════════════════════════════════════════════════════════════════
-    // CLEANUP
-    // ════════════════════════════════════════════════════════════════════
 
     override fun onCleared() {
         super.onCleared()
@@ -416,7 +377,6 @@ class EditorViewModel @Inject constructor(
 
     fun deleteDocument(documentId: Long) {
         viewModelScope.launch {
-            // ✅ FIX #2: DomainResult.Success<*> / DomainResult.Failure<*>
             when (val result = useCases.deleteDocument(documentId)) {
                 is DomainResult.Success<*> -> { /* Auto-refresh from Flow */ }
                 is DomainResult.Failure<*> ->
@@ -618,10 +578,6 @@ class EditorViewModel @Inject constructor(
         inlineEditingManager.cancelEdit(documentId, field)
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    // HELPERS FOR INLINE EDITING
-    // ════════════════════════════════════════════════════════════════════
-
     private suspend fun saveInlineEditToDb(
         documentId: Long,
         field: TextEditField,
@@ -634,10 +590,6 @@ class EditorViewModel @Inject constructor(
             return
         }
 
-        val docId = DocumentId(documentId)
-
-        // ✅ FIX #3: updateOcrText / updateTranslatedText — если методы не существуют,
-        // используем updateDocument напрямую
         val result = when (field) {
             TextEditField.OCR_TEXT -> {
                 val updated = doc.copy(originalText = text)
@@ -695,7 +647,7 @@ class EditorViewModel @Inject constructor(
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // TEXT EDITING (Non-inline)
+    // TEXT EDITING
     // ════════════════════════════════════════════════════════════════════
 
     fun updateDocumentText(documentId: Long, originalText: String?, translatedText: String?) {
@@ -730,7 +682,6 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch {
             historyMutex.withLock {
                 val history = _editHistory.value.toMutableList()
-                // ✅ FIX #4: return@withLock вместо return@launch внутри mutex
                 if (history.isEmpty()) return@withLock
 
                 val lastEdit = history.removeAt(history.lastIndex)
@@ -888,10 +839,6 @@ class EditorViewModel @Inject constructor(
         batchOperationsManager.cancelCurrentOperation()
         Timber.d("Cancelled batch operation")
     }
-
-    // ════════════════════════════════════════════════════════════════════
-    // SINGLE DOCUMENT OPERATIONS
-    // ════════════════════════════════════════════════════════════════════
 
     fun moveDocument(documentId: Long, targetRecordId: Long) {
         if (targetRecordId == recordId) {
@@ -1132,10 +1079,95 @@ class EditorViewModel @Inject constructor(
     }
 
     // ════════════════════════════════════════════════════════════════════
+    // PUBLIC ACTION HANDLER
+    // ════════════════════════════════════════════════════════════════════
+
+    /**
+     * Main entry point for handling document actions from UI.
+     * Delegates to appropriate internal methods.
+     */
+    fun handleDocumentAction(action: DocumentAction) {
+        when (action) {
+            is DocumentAction.PasteText -> {
+                val text = action.text
+                if (text.isNullOrBlank()) {
+                    sendError("Clipboard is empty")
+                    return
+                }
+                pasteText(action.documentId, text, action.isOcrText)
+            }
+            is DocumentAction.AiRewrite -> {
+                aiRewriteText(action.documentId, action.text, action.isOcrText)
+            }
+            is DocumentAction.ClearFormatting -> {
+                clearFormatting(action.documentId, action.isOcrText)
+            }
+            is DocumentAction.CopyText -> {
+                // Handled in UI directly via ClipboardManager
+            }
+            is DocumentAction.ImageClick -> {
+                // Handled in UI navigation
+            }
+            is DocumentAction.OcrTextClick -> {
+                // Handled in UI navigation
+            }
+            is DocumentAction.TranslationClick -> {
+                // Handled in UI navigation
+            }
+            is DocumentAction.ToggleSelection -> {
+                toggleDocumentSelection(action.documentId)
+            }
+            is DocumentAction.MenuClick -> {
+                // Handled in UI state
+            }
+            is DocumentAction.RetryOcr -> {
+                retryOcr(action.documentId)
+            }
+            is DocumentAction.RetryTranslation -> {
+                retryTranslation(action.documentId)
+            }
+            is DocumentAction.MoveUp -> {
+                moveDocumentUp(action.documentId)
+            }
+            is DocumentAction.MoveDown -> {
+                moveDocumentDown(action.documentId)
+            }
+            is DocumentAction.SharePage -> {
+                shareSingleImage(action.imagePath)
+            }
+            is DocumentAction.DeletePage -> {
+                deleteDocument(action.documentId)
+            }
+            is DocumentAction.MoveToRecord -> {
+                // Handled in UI dialog
+            }
+            is DocumentAction.WordTap -> {
+                showConfidenceTooltip(action.word, action.confidence)
+            }
+            is DocumentAction.StartInlineEdit -> {
+                if (action.field == TextEditField.OCR_TEXT) {
+                    startInlineEditOcr(action.documentId)
+                } else {
+                    startInlineEditTranslation(action.documentId)
+                }
+            }
+            is DocumentAction.UpdateInlineText -> {
+                updateInlineText(action.documentId, action.field, action.text)
+            }
+            is DocumentAction.SaveInlineEdit -> {
+                finishInlineEdit(action.documentId, action.field)
+            }
+            is DocumentAction.CancelInlineEdit -> {
+                cancelInlineEdit(action.documentId, action.field)
+            }
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
     // AI OPERATIONS
     // ════════════════════════════════════════════════════════════════════
 
-    fun pasteText(documentId: Long, pastedText: String, isOcrText: Boolean) {
+    private fun pasteText(documentId: Long, pastedText: String, isOcrText: Boolean) {
         viewModelScope.launch {
             val doc = useCases.getDocumentById(documentId) ?: return@launch
 
@@ -1285,7 +1317,6 @@ class EditorViewModel @Inject constructor(
 
                 clearProcessing()
 
-                // ✅ FIX #5: ShareEvent.TextContent вместо ShareEvent.Text
                 _shareEvent.send(
                     ShareEvent.TextContent(
                         text = summary,
@@ -1491,7 +1522,6 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    // ✅ FIX #6: internal вместо private — доступен из DocumentActionHandler.kt
     internal fun sendError(
         message: String,
         actionLabel: String? = null,
