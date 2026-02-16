@@ -132,6 +132,7 @@ jobs:
       run: |
         echo "🏗️ Starting CLEAN build..."
         
+        # Capture FULL output including ALL errors
         ./gradlew assembleDebug \
           --no-build-cache \
           --no-configuration-cache \
@@ -144,50 +145,108 @@ jobs:
           -Dorg.gradle.jvmargs="-Xmx5g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g" \
           -Dkotlin.incremental=false \
           -Dkotlin.compiler.execution.strategy=in-process \
-          -Pkotlin.daemon.jvmargs="-Xmx2g"
+          -Pkotlin.daemon.jvmargs="-Xmx2g" 2>&1 | tee full_build_log.txt
+        
+        # Save exit code
+        echo "BUILD_EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
       continue-on-error: true
     
     # ═══════════════════════════════════════════════════════════════
-    # 🔍 ERROR DIAGNOSIS
+    # 🔍 COMPREHENSIVE ERROR EXTRACTION
     # ═══════════════════════════════════════════════════════════════
-    - name: 🔍 Extract Detailed Errors
-      if: failure()
+    - name: 🔍 Extract ALL Compilation Errors
+      if: always()
       run: |
-        echo "## ❌ BUILD FAILED - DETAILED DIAGNOSTICS" > build_errors.txt
-        echo "" >> build_errors.txt
-        echo "### Commit Information" >> build_errors.txt
-        echo "SHA: ${{ github.sha }}" >> build_errors.txt
-        echo "Branch: ${{ github.ref }}" >> build_errors.txt
-        echo "" >> build_errors.txt
+        echo "# 🔥 COMPLETE BUILD ERROR REPORT" > COMPILATION_ERRORS.md
+        echo "" >> COMPILATION_ERRORS.md
+        echo "## 📊 Build Information" >> COMPILATION_ERRORS.md
+        echo "" >> COMPILATION_ERRORS.md
+        echo "- **Build #:** ${{ github.run_number }}" >> COMPILATION_ERRORS.md
+        echo "- **Commit:** \`${{ github.sha }}\`" >> COMPILATION_ERRORS.md
+        echo "- **Branch:** \`${{ github.ref }}\`" >> COMPILATION_ERRORS.md
+        echo "- **Exit Code:** \`${BUILD_EXIT_CODE:-unknown}\`" >> COMPILATION_ERRORS.md
+        echo "- **Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> COMPILATION_ERRORS.md
+        echo "" >> COMPILATION_ERRORS.md
         
-        echo "### Compilation Errors" >> build_errors.txt
-        ./gradlew assembleDebug --stacktrace 2>&1 | \
-          grep -A 10 "FAILURE\|error:\|Exception\|BUILD FAILED" | \
-          head -100 >> build_errors.txt
+        if [ -f "full_build_log.txt" ]; then
+          # Extract Kotlin compilation errors
+          echo "## ❌ Kotlin Compilation Errors" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo '```kotlin' >> COMPILATION_ERRORS.md
+          grep -E "^e: file://|^e: |error:" full_build_log.txt | head -200 >> COMPILATION_ERRORS.md || echo "No Kotlin errors found" >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          
+          # Extract BUILD FAILED section
+          echo "## 🚫 Build Failure Summary" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          sed -n '/BUILD FAILED/,/BUILD FAILED/p' full_build_log.txt | head -50 >> COMPILATION_ERRORS.md || echo "No build failure section" >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          
+          # Extract task failures
+          echo "## ⚠️ Failed Tasks" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          grep "Task.*FAILED" full_build_log.txt >> COMPILATION_ERRORS.md || echo "No failed tasks logged" >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          
+          # Count errors
+          ERROR_COUNT=$(grep -c "^e: " full_build_log.txt || echo "0")
+          echo "## 📈 Error Statistics" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo "- Total Kotlin errors: **${ERROR_COUNT}**" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+        else
+          echo "⚠️ No build log found" >> COMPILATION_ERRORS.md
+        fi
         
-        echo "" >> build_errors.txt
-        echo "### File Checksums" >> build_errors.txt
-        md5sum app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt >> build_errors.txt 2>/dev/null || echo "EditorViewModel.kt not found"
-        md5sum app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorScreen.kt >> build_errors.txt 2>/dev/null || echo "EditorScreen.kt not found"
-        
-        cat build_errors.txt
-    
-    - name: Verify Source Files
-      if: failure()
-      run: |
-        echo "📁 Verifying critical source files..."
+        # Check critical files
+        echo "## 📁 Source File Verification" >> COMPILATION_ERRORS.md
+        echo "" >> COMPILATION_ERRORS.md
         
         if [ -f "app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt" ]; then
-          echo "✅ EditorViewModel.kt exists"
-          echo "First 50 lines:"
-          head -50 app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt
+          echo "### ✅ EditorViewModel.kt" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo '```kotlin' >> COMPILATION_ERRORS.md
+          echo "// First 30 lines:" >> COMPILATION_ERRORS.md
+          head -30 app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
           
-          echo ""
-          echo "Checking for DomainResult patterns:"
-          grep -n "is DomainResult" app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt | head -20
+          echo "### 🔍 DomainResult Pattern Check" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo '```kotlin' >> COMPILATION_ERRORS.md
+          grep -n "is DomainResult" app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt | head -30 >> COMPILATION_ERRORS.md || echo "No patterns found"
+          echo '```' >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          
+          # MD5 checksum
+          MD5=$(md5sum app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt | cut -d' ' -f1)
+          echo "**MD5:** \`${MD5}\`" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
         else
-          echo "❌ EditorViewModel.kt NOT FOUND"
+          echo "### ❌ EditorViewModel.kt NOT FOUND" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
         fi
+        
+        # Show full file for small error reports
+        if [ "${ERROR_COUNT:-0}" -lt "20" ] && [ "${ERROR_COUNT:-0}" -gt "0" ]; then
+          echo "## 📄 Full Error Context" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          grep -B5 -A5 "^e: " full_build_log.txt >> COMPILATION_ERRORS.md || true
+          echo '```' >> COMPILATION_ERRORS.md
+        fi
+        
+        echo "---" >> COMPILATION_ERRORS.md
+        echo "" >> COMPILATION_ERRORS.md
+        echo "💡 **Tip:** Check the [full build log artifact](#artifacts) for complete details." >> COMPILATION_ERRORS.md
+        
+        # Display to console
+        cat COMPILATION_ERRORS.md
     
     - name: Unit Tests (Optional)
       if: success() && github.event_name == 'pull_request'
@@ -195,15 +254,16 @@ jobs:
       continue-on-error: true
     
     - name: Upload Full Build Log
-      if: failure()
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: build-logs-${{ github.run_number }}
         path: |
-          build_errors.txt
+          full_build_log.txt
+          COMPILATION_ERRORS.md
           app/build/reports/
           build/reports/
-        retention-days: 3
+        retention-days: 7
         if-no-files-found: ignore
     
     - name: Upload APK
@@ -214,25 +274,38 @@ jobs:
         path: app/build/outputs/apk/debug/*.apk
         retention-days: 7
     
-    - name: Create Release
-      if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # ═══════════════════════════════════════════════════════════════
+    # 🎯 CREATE RELEASE WITH ERROR REPORT
+    # ═══════════════════════════════════════════════════════════════
+    - name: Create Release (Success or Failure)
+      if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v1.0.${{ github.run_number }}
-        name: 🔥 Nuclear Clean v1.0.${{ github.run_number }}
+        name: ${{ env.BUILD_EXIT_CODE == '0' && '✅' || '❌' }} Build v1.0.${{ github.run_number }}
         body: |
           ## 📱 Nuclear Clean Build v1.0.${{ github.run_number }}
           
+          **Status:** ${{ env.BUILD_EXIT_CODE == '0' && '✅ SUCCESS' || '❌ FAILED' }}
           **🔥 Built from scratch** - All caches purged
           
           **Commit:** `${{ github.sha }}`
           **Build #:** ${{ github.run_number }}
           **Strategy:** Nuclear clean (no cache reuse)
+          **Exit Code:** `${{ env.BUILD_EXIT_CODE }}`
           
-          ### 📦 Download
-          Fresh debug APK below
+          ### 📦 Downloads
+          ${{ env.BUILD_EXIT_CODE == '0' && '- ✅ **Debug APK** - See assets below' || '- ❌ **No APK** - Build failed' }}
+          - 📄 **[COMPILATION_ERRORS.md](COMPILATION_ERRORS.md)** - Complete error report
+          - 📋 **[Full Build Log](../../actions/runs/${{ github.run_id }})** - Detailed logs in artifacts
           
-        files: app/build/outputs/apk/debug/*.apk
+          ---
+          
+          ${{ env.BUILD_EXIT_CODE != '0' && '### ⚠️ Build Failed - See attached error report' || '### ✨ Build succeeded!' }}
+          
+        files: |
+          app/build/outputs/apk/debug/*.apk
+          COMPILATION_ERRORS.md
         fail_on_unmatched_files: false
         overwrite_files: true
       env:
@@ -246,14 +319,24 @@ jobs:
       run: |
         echo "═══════════════════════════════════════════════════════════"
         echo "Build Status: ${{ job.status }}"
+        echo "Exit Code: ${BUILD_EXIT_CODE:-unknown}"
         echo "Commit: ${{ github.sha }}"
         echo "Branch: ${{ github.ref }}"
         echo "Build #: ${{ github.run_number }}"
         echo "═══════════════════════════════════════════════════════════"
         
-        if [ "${{ job.status }}" == "success" ]; then
+        if [ "${BUILD_EXIT_CODE:-1}" == "0" ]; then
           echo "✅ BUILD SUCCESSFUL"
           ls -lh app/build/outputs/apk/debug/ 2>/dev/null || echo "No APK found"
         else
-          echo "❌ BUILD FAILED - Check artifacts for logs"
+          echo "❌ BUILD FAILED"
+          echo ""
+          echo "📄 Error report saved to: COMPILATION_ERRORS.md"
+          echo "📋 Full log saved to: full_build_log.txt"
+          echo ""
+          echo "Quick error summary:"
+          grep "^e: " full_build_log.txt | head -10 || echo "No errors captured"
         fi
+        
+        # Fail the job if build failed
+        exit ${BUILD_EXIT_CODE:-1}
