@@ -1,16 +1,11 @@
 /*
  * EditorScreen.kt
- * Version: 9.0.0 - FULLY FIXED (2026)
+ * Version: 9.0.1 - FULLY FIXED (2026)
  *
  * ✅ FIX #10 APPLIED: BackHandler for selection mode
  * ✅ FIX #14 APPLIED: All remember → rememberSaveable
  * ✅ FIX #16 APPLIED: Conditional ReorderableState creation
- *
- * КРИТИЧЕСКИЕ ИЗМЕНЕНИЯ:
- * ✅ DocumentAction вместо 21 callback
- * ✅ Безопасная работа с drag & drop в selection mode
- * ✅ Обработка всех edge cases
- * ✅ Правильный FileProvider error handling
+ * ✅ FIX PasteText APPLIED: Delegate to ViewModel with null-safe clipboard text
  */
 
 package com.docs.scanner.presentation.screens.editor
@@ -132,7 +127,7 @@ fun EditorScreen(
     val clipboardManager = LocalClipboardManager.current
 
     // ════════════════════════════════════════════════════════════════════
-    // STATES - Собираем все states из ViewModel
+    // STATES
     // ════════════════════════════════════════════════════════════════════
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -151,7 +146,7 @@ fun EditorScreen(
     val lazyListState = rememberLazyListState()
 
     // ════════════════════════════════════════════════════════════════════
-    // ✅ FIX #14: DIALOG STATES - Changed remember → rememberSaveable
+    // ✅ FIX #14: DIALOG STATES - rememberSaveable
     // ════════════════════════════════════════════════════════════════════
 
     var recordMenuExpanded by rememberSaveable { mutableStateOf(false) }
@@ -179,9 +174,7 @@ fun EditorScreen(
     ) { uri: Uri? ->
         uri?.let {
             viewModel.addDocument(it)
-            if (BuildConfig.DEBUG) {
-                Timber.d("📷 Single image selected: $it")
-            }
+            if (BuildConfig.DEBUG) Timber.d("📷 Single image selected: $it")
         }
     }
 
@@ -190,9 +183,7 @@ fun EditorScreen(
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
             viewModel.addDocuments(uris)
-            if (BuildConfig.DEBUG) {
-                Timber.d("📷 Multiple images selected: ${uris.size}")
-            }
+            if (BuildConfig.DEBUG) Timber.d("📷 Multiple images selected: ${uris.size}")
         }
     }
 
@@ -240,12 +231,10 @@ fun EditorScreen(
                             snackbarHostState.showSnackbar("File not found")
                             return@collect
                         }
-
                         if (file.length() == 0L) {
                             snackbarHostState.showSnackbar("File is empty")
                             return@collect
                         }
-
                         if (!file.canRead()) {
                             snackbarHostState.showSnackbar("Cannot read file")
                             return@collect
@@ -267,10 +256,7 @@ fun EditorScreen(
                             type = event.mimeType
                             putExtra(Intent.EXTRA_STREAM, uri)
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-
-                            event.fileName?.let { name ->
-                                putExtra(Intent.EXTRA_TITLE, name)
-                            }
+                            event.fileName?.let { name -> putExtra(Intent.EXTRA_TITLE, name) }
                         }
 
                         if (intent.resolveActivity(context.packageManager) != null) {
@@ -295,7 +281,6 @@ fun EditorScreen(
                 actionLabel = event.actionLabel,
                 duration = SnackbarDuration.Long
             )
-
             if (result == SnackbarResult.ActionPerformed && event.action != null) {
                 event.action.invoke()
             }
@@ -303,7 +288,7 @@ fun EditorScreen(
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // ACTION HANDLER - Один обработчик вместо 21 callback
+    // ACTION HANDLER
     // ════════════════════════════════════════════════════════════════════
 
     fun handleDocumentAction(action: DocumentAction) {
@@ -344,11 +329,17 @@ fun EditorScreen(
                 clipboardManager.setText(AnnotatedString(action.text))
             }
 
+            // ✅ FIX PasteText: читаем clipboard здесь, делегируем в ViewModel
+            // ViewModel получит null если clipboard пустой и покажет ошибку сам
             is DocumentAction.PasteText -> {
                 val clipText = clipboardManager.getText()?.text
-                if (clipText != null) {
-                    viewModel.pasteText(action.documentId, clipText, action.isOcrText)
-                }
+                viewModel.handleDocumentAction(
+                    DocumentAction.PasteText(
+                        documentId = action.documentId,
+                        text = clipText?.takeIf { it.isNotBlank() }, // null если пустой
+                        isOcrText = action.isOcrText
+                    )
+                )
             }
 
             is DocumentAction.AiRewrite -> {
@@ -504,10 +495,6 @@ fun EditorScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
 
-        // ════════════════════════════════════════════════════════════════
-        // CONTENT
-        // ════════════════════════════════════════════════════════════════
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -550,7 +537,6 @@ fun EditorScreen(
                 }
 
                 is EditorUiState.Success -> {
-                    // Record Name & Description Header
                     RecordHeader(
                         name = state.record.name,
                         description = state.record.description,
@@ -769,7 +755,6 @@ fun EditorScreen(
         )
     }
 
-    // Tags Dialog - inline implementation
     if (showTagsDialog && success != null) {
         var newTag by remember { mutableStateOf("") }
         AlertDialog(
@@ -793,7 +778,6 @@ fun EditorScreen(
                             }
                         }
                     }
-                    
                     OutlinedTextField(
                         value = newTag,
                         onValueChange = { newTag = it },
@@ -818,7 +802,6 @@ fun EditorScreen(
         )
     }
 
-    // Language Dialog - inline implementation
     if (showLanguageDialog && success != null) {
         var source by remember { mutableStateOf(success.record.sourceLanguage) }
         var target by remember { mutableStateOf(success.record.targetLanguage) }
@@ -831,7 +814,6 @@ fun EditorScreen(
             title = { Text("Languages") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    // Source language
                     Column {
                         Text("Source (OCR)", style = MaterialTheme.typography.labelMedium)
                         sourceOptions.forEach { lang ->
@@ -842,18 +824,12 @@ fun EditorScreen(
                                     .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                RadioButton(
-                                    selected = source == lang,
-                                    onClick = { source = lang }
-                                )
+                                RadioButton(selected = source == lang, onClick = { source = lang })
                                 Text(lang.displayName)
                             }
                         }
                     }
-                    
                     HorizontalDivider()
-                    
-                    // Target language
                     Column {
                         Text("Target (Translation)", style = MaterialTheme.typography.labelMedium)
                         targetOptions.forEach { lang ->
@@ -864,10 +840,7 @@ fun EditorScreen(
                                     .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                RadioButton(
-                                    selected = target == lang,
-                                    onClick = { target = lang }
-                                )
+                                RadioButton(selected = target == lang, onClick = { target = lang })
                                 Text(lang.displayName)
                             }
                         }
@@ -890,7 +863,6 @@ fun EditorScreen(
 
     showMoveDocumentDialogForId?.let { docId ->
         var selectedRecordId by remember { mutableStateOf<Long?>(null) }
-
         AlertDialog(
             onDismissRequest = { showMoveDocumentDialogForId = null },
             title = { Text("Move to...") },
@@ -1037,7 +1009,6 @@ fun EditorScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("OCR Confidence: ${(confidence * 100).toInt()}%")
-
                     LinearProgressIndicator(
                         progress = { confidence },
                         modifier = Modifier.fillMaxWidth(),
@@ -1047,7 +1018,6 @@ fun EditorScreen(
                             else -> GoogleDocsPrimary
                         }
                     )
-
                     Text(
                         text = when {
                             confidence < 0.5f -> "Very low confidence - may need correction"
@@ -1107,27 +1077,13 @@ private fun DocumentCardItem(
         menuExpanded = docMenuExpandedId == document.id.value,
         onMenuDismiss = { onDocMenuExpandedChange(null) },
 
-        onImageClick = {
-            onAction(DocumentAction.ImageClick(document.id.value))
-        },
-        onOcrTextClick = {
-            onAction(DocumentAction.OcrTextClick(document.id.value))
-        },
-        onTranslationClick = {
-            onAction(DocumentAction.TranslationClick(document.id.value))
-        },
-        onSelectionToggle = {
-            onAction(DocumentAction.ToggleSelection(document.id.value))
-        },
-        onMenuClick = {
-            onAction(DocumentAction.MenuClick(document.id.value))
-        },
-        onRetryOcr = {
-            onAction(DocumentAction.RetryOcr(document.id.value))
-        },
-        onRetryTranslation = {
-            onAction(DocumentAction.RetryTranslation(document.id.value))
-        },
+        onImageClick = { onAction(DocumentAction.ImageClick(document.id.value)) },
+        onOcrTextClick = { onAction(DocumentAction.OcrTextClick(document.id.value)) },
+        onTranslationClick = { onAction(DocumentAction.TranslationClick(document.id.value)) },
+        onSelectionToggle = { onAction(DocumentAction.ToggleSelection(document.id.value)) },
+        onMenuClick = { onAction(DocumentAction.MenuClick(document.id.value)) },
+        onRetryOcr = { onAction(DocumentAction.RetryOcr(document.id.value)) },
+        onRetryTranslation = { onAction(DocumentAction.RetryTranslation(document.id.value)) },
 
         onMoveUp = if (!selectionState.isActive && index > 0) {
             { onAction(DocumentAction.MoveUp(document.id.value)) }
@@ -1138,54 +1094,26 @@ private fun DocumentCardItem(
         isFirst = index == 0,
         isLast = index == state.documents.lastIndex,
 
-        onSharePage = {
-            onAction(DocumentAction.SharePage(document.id.value, document.imagePath))
-        },
-        onDeletePage = {
-            onAction(DocumentAction.DeletePage(document.id.value))
-        },
-        onMoveToRecord = {
-            onAction(DocumentAction.MoveToRecord(document.id.value, 0L))
-        },
+        onSharePage = { onAction(DocumentAction.SharePage(document.id.value, document.imagePath)) },
+        onDeletePage = { onAction(DocumentAction.DeletePage(document.id.value)) },
+        onMoveToRecord = { onAction(DocumentAction.MoveToRecord(document.id.value, 0L)) },
 
-        onCopyText = { text ->
-            onAction(DocumentAction.CopyText(document.id.value, text, true))
-        },
-        onPasteText = { isOcr ->
-            onAction(DocumentAction.PasteText(document.id.value, null, isOcr))
-        },
+        onCopyText = { text -> onAction(DocumentAction.CopyText(document.id.value, text, true)) },
+        onPasteText = { isOcr -> onAction(DocumentAction.PasteText(document.id.value, null, isOcr)) },
         onAiRewrite = { isOcr ->
             val text = if (isOcr) document.originalText else document.translatedText
-            text?.let {
-                onAction(DocumentAction.AiRewrite(document.id.value, it, isOcr))
-            }
+            text?.let { onAction(DocumentAction.AiRewrite(document.id.value, it, isOcr)) }
         },
-        onClearFormatting = { isOcr ->
-            onAction(DocumentAction.ClearFormatting(document.id.value, isOcr))
-        },
+        onClearFormatting = { isOcr -> onAction(DocumentAction.ClearFormatting(document.id.value, isOcr)) },
 
         confidenceThreshold = ocrSettings.confidenceThreshold,
-        onWordTap = { word, confidence ->
-            onAction(DocumentAction.WordTap(word, confidence))
-        },
+        onWordTap = { word, confidence -> onAction(DocumentAction.WordTap(word, confidence)) },
 
         onStartInlineEditOcr = {
-            onAction(
-                DocumentAction.StartInlineEdit(
-                    document.id.value,
-                    TextEditField.OCR_TEXT,
-                    document.originalText ?: ""
-                )
-            )
+            onAction(DocumentAction.StartInlineEdit(document.id.value, TextEditField.OCR_TEXT, document.originalText ?: ""))
         },
         onStartInlineEditTranslation = {
-            onAction(
-                DocumentAction.StartInlineEdit(
-                    document.id.value,
-                    TextEditField.TRANSLATED_TEXT,
-                    document.translatedText ?: ""
-                )
-            )
+            onAction(DocumentAction.StartInlineEdit(document.id.value, TextEditField.TRANSLATED_TEXT, document.translatedText ?: ""))
         },
         onInlineTextChange = { text ->
             if (isInlineEditingOcr) {
@@ -1270,9 +1198,7 @@ private fun DocumentCardItem(
                 onDocMenuExpandedChange(null)
                 onAction(DocumentAction.DeletePage(document.id.value))
             },
-            leadingIcon = {
-                Icon(Icons.Default.Delete, null, tint = GoogleDocsError)
-            }
+            leadingIcon = { Icon(Icons.Default.Delete, null, tint = GoogleDocsError) }
         )
     }
 }
