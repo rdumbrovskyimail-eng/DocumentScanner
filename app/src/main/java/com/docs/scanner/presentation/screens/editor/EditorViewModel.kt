@@ -218,12 +218,10 @@ class EditorViewModel @Inject constructor(
     // ════════════════════════════════════════════════════════════════════
 
     init {
-        if (recordId <= 0) {
-            Timber.e("❌ Invalid recordId: $recordId")
-            _uiState.value = EditorUiState.Error("Invalid record ID")
-            return@init
-        }
-
+    if (recordId <= 0) {
+        Timber.e("❌ Invalid recordId: $recordId")
+        _uiState.value = EditorUiState.Error("Invalid record ID")
+    } else {
         loadData()
 
         viewModelScope.launch {
@@ -238,6 +236,7 @@ class EditorViewModel @Inject constructor(
             Timber.d("   └─ Auto-translate: $autoTranslate")
         }
     }
+}
 
     // ════════════════════════════════════════════════════════════════════
     // CLEANUP
