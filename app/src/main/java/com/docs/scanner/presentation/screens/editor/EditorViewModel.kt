@@ -1,11 +1,12 @@
 /*
  * EditorViewModel.kt
- * Version: 9.0.0 - FULLY FIXED (2026)
+ * Version: 9.0.1 - FULLY FIXED (2026)
  *
  * ✅ FIX #8: toggleDocumentSelection now uses fresh state after enterSelectionMode
  * ✅ FIX: Добавлены else ветки во все 12 when expressions
  * ✅ FIX: handleDocumentAction is public
  * ✅ FIX: PasteText обрабатывается корректно
+ * ✅ FIX #13: updateRecordName и updateRecordDescription теперь вызывают loadRecord()
  */
 
 package com.docs.scanner.presentation.screens.editor
@@ -443,7 +444,7 @@ class EditorViewModel @Inject constructor(
 
             val updated = currentState.record.copy(name = name.trim())
             when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> { /* Auto-refresh */ }
+                is DomainResult.Success<*> -> loadRecord()
                 is DomainResult.Failure<*> -> sendError("Failed to update: ${result.error.message}")
                 else -> { /* Unreachable */ }
             }
@@ -457,7 +458,7 @@ class EditorViewModel @Inject constructor(
 
             val updated = currentState.record.copy(description = description)
             when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> { /* Auto-refresh */ }
+                is DomainResult.Success<*> -> loadRecord()
                 is DomainResult.Failure<*> -> sendError("Failed to update: ${result.error.message}")
                 else -> { /* Unreachable */ }
             }
@@ -1094,10 +1095,6 @@ class EditorViewModel @Inject constructor(
     // PUBLIC ACTION HANDLER
     // ════════════════════════════════════════════════════════════════════
 
-    /**
-     * Main entry point for handling document actions from UI.
-     * Delegates to appropriate internal methods.
-     */
     fun handleDocumentAction(action: DocumentAction) {
         when (action) {
             is DocumentAction.PasteText -> {
