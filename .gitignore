@@ -144,4 +144,4 @@ temp/
 
 # ✅ NEW: Backup files
 *.backup
-*.old
+*.old 
