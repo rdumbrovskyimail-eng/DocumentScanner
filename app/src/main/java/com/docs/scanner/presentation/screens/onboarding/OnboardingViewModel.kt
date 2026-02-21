@@ -39,7 +39,7 @@ fun OnboardingScreen(
     val apiKey by viewModel.apiKey.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(apiKey) {
         viewModel.checkFirstLaunch {
             onComplete()
         }
@@ -65,7 +65,6 @@ fun OnboardingScreen(
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Компактный заголовок
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -92,7 +91,6 @@ fun OnboardingScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Компактные фичи в одну строку
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -104,7 +102,6 @@ fun OnboardingScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // API Key Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -128,7 +125,7 @@ fun OnboardingScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    var showPassword by remember { mutableStateOf(false) }
+                    var showPassword by remember { mutableStateOf(true) }
 
                     OutlinedTextField(
                         value = apiKey,
@@ -136,17 +133,17 @@ fun OnboardingScreen(
                         label = { Text("API Key") },
                         placeholder = { Text("AIza...") },
                         visualTransformation = if (showPassword) {
-                            VisualTransformation.None
-                        } else {
                             PasswordVisualTransformation()
+                        } else {
+                            VisualTransformation.None
                         },
                         trailingIcon = {
                             IconButton(onClick = { showPassword = !showPassword }) {
                                 Icon(
                                     imageVector = if (showPassword) {
-                                        Icons.Default.VisibilityOff
-                                    } else {
                                         Icons.Default.Visibility
+                                    } else {
+                                        Icons.Default.VisibilityOff
                                     },
                                     contentDescription = if (showPassword) {
                                         "Hide API key"
@@ -186,7 +183,7 @@ fun OnboardingScreen(
                             onClick = {
                                 viewModel.saveAndContinue(onComplete)
                             },
-                            enabled = apiKey.isNotBlank() && !isLoading
+                            enabled = apiKey.isBlank() && !isLoading
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(
