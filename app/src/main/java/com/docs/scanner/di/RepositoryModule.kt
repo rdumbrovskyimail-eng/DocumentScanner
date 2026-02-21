@@ -6,7 +6,6 @@ import com.docs.scanner.data.repository.FileRepositoryImpl
 import com.docs.scanner.data.repository.FolderRepositoryImpl
 import com.docs.scanner.data.repository.OcrRepositoryImpl
 import com.docs.scanner.data.repository.RecordRepositoryImpl
-import com.docs.scanner.data.repository.ScannerRepositoryImpl
 import com.docs.scanner.data.repository.SettingsRepositoryImpl
 import com.docs.scanner.data.repository.TermRepositoryImpl
 import com.docs.scanner.data.repository.TranslationRepositoryImpl
@@ -16,7 +15,6 @@ import com.docs.scanner.domain.repository.FileRepository
 import com.docs.scanner.domain.repository.FolderRepository
 import com.docs.scanner.domain.repository.OcrRepository
 import com.docs.scanner.domain.repository.RecordRepository
-import com.docs.scanner.domain.repository.ScannerRepository
 import com.docs.scanner.domain.repository.SettingsRepository
 import com.docs.scanner.domain.repository.TermRepository
 import com.docs.scanner.domain.repository.TranslationRepository
@@ -73,16 +71,6 @@ abstract class RepositoryModule {
     abstract fun bindDocumentRepository(
         impl: DocumentRepositoryImpl
     ): DocumentRepository
-
-    /**
-     * Binds ScannerRepository interface to implementation.
-     * Used by: QuickScanUseCase, RetryTranslationUseCase, ProcessingQueue
-     */
-    @Binds
-    @Singleton
-    abstract fun bindScannerRepository(
-        impl: ScannerRepositoryImpl
-    ): ScannerRepository
 
     /**
      * Binds SettingsRepository interface to implementation.

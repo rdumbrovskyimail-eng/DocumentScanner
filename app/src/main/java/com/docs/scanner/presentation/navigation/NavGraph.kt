@@ -8,6 +8,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.docs.scanner.domain.core.FolderId
 import com.docs.scanner.presentation.screens.camera.CameraScreen
 import com.docs.scanner.presentation.screens.editor.EditorScreen
 import com.docs.scanner.presentation.screens.folders.FoldersScreen
@@ -15,6 +16,7 @@ import com.docs.scanner.presentation.screens.imageviewer.ImageViewerScreen
 import com.docs.scanner.presentation.screens.onboarding.OnboardingScreen
 import com.docs.scanner.presentation.screens.records.RecordsScreen
 import com.docs.scanner.presentation.screens.search.SearchScreen
+import com.docs.scanner.presentation.screens.debug.DebugScreen
 import com.docs.scanner.presentation.screens.settings.SettingsScreen
 import com.docs.scanner.presentation.screens.terms.TermsScreen
 
@@ -22,8 +24,20 @@ private const val TAG = "NavGraph"
 
 @Composable
 fun NavGraph(
-    navController: NavHostController = rememberNavController()
+    navController: NavHostController = rememberNavController(),
+    initialOpenTermId: Long? = null,
+    onOpenTermConsumed: () -> Unit = {}
 ) {
+    LaunchedEffect(initialOpenTermId) {
+        val id = initialOpenTermId
+        if (id != null && id > 0) {
+            safeNavigate(navController) {
+                navigate(Screen.Terms.createRoute(id))
+            }
+            onOpenTermConsumed()
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = Screen.Onboarding.route
@@ -75,7 +89,10 @@ fun NavGraph(
                 return@composable
             }
             
-            if (folderId <= 0) {
+            // ✅ FIX: Allow Quick Scans folder ID (-1L) 
+            // Quick Scans uses QUICK_SCANS_ID = -1L to avoid conflict with autoGenerate
+            // Valid folder IDs are: -1L (Quick Scans) or positive numbers (user folders)
+            if (!isValidFolderId(folderId)) {
                 Log.e(TAG, "Invalid folderId: $folderId")
                 navController.popBackStack()
                 return@composable
@@ -115,6 +132,11 @@ fun NavGraph(
                     safeNavigate(navController) {
                         navigate(Screen.ImageViewer.createRoute(documentId))
                     }
+                },
+                onCameraClick = {
+                    safeNavigate(navController) {
+                        navigate(Screen.Camera.route)
+                    }
                 }
             )
         }
@@ -143,14 +165,28 @@ fun NavGraph(
             )
         }
 
-        composable(Screen.Terms.route) {
+        composable(
+            route = Screen.Terms.route,
+            arguments = listOf(
+                navArgument("openTermId") { type = NavType.LongType; defaultValue = -1L }
+            )
+        ) { backStackEntry ->
+            val openTermId = backStackEntry.arguments?.getLong("openTermId")?.takeIf { v -> v > 0 }
             TermsScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                openTermId = openTermId
             )
         }
 
         composable(Screen.Settings.route) {
             SettingsScreen(
+                onBackClick = { navController.popBackStack() },
+                onDebugClick = { navController.navigate(Screen.Debug.route) }
+            )
+        }
+
+        composable(Screen.Debug.route) {
+            DebugScreen(
                 onBackClick = { navController.popBackStack() }
             )
         }
@@ -180,6 +216,21 @@ fun NavGraph(
 }
 
 /**
+ * Validates folder ID.
+ * 
+ * Valid folder IDs:
+ * - FolderId.QUICK_SCANS_ID (-1L) - system folder for quick scans
+ * - Any positive Long - user-created folders
+ * 
+ * Invalid:
+ * - 0L (FolderId requires non-zero)
+ * - Any other negative number (reserved, not used)
+ */
+private fun isValidFolderId(folderId: Long): Boolean {
+    return folderId == FolderId.QUICK_SCANS_ID || folderId > 0
+}
+
+/**
  * Safe navigation wrapper that catches IllegalArgumentException
  * from Screen.createRoute() validation.
  */
@@ -191,6 +242,5 @@ private fun safeNavigate(
         navController.block()
     } catch (e: IllegalArgumentException) {
         Log.e(TAG, "Navigation error: ${e.message}", e)
-        // Stay on current screen instead of crashing
     }
 }

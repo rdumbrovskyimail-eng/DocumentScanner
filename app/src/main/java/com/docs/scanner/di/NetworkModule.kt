@@ -1,13 +1,18 @@
 /**
  * NetworkModule.kt
- * Version: 7.0.1 - FIXED (2026 Standards)
- *
- * ✅ FIX CRITICAL-3: Исправлен провайдер GoogleDriveService
- *    БЫЛО: return GoogleDriveService(context) - не хватало 4 зависимостей
- *    СТАЛО: Провайдер удалён, т.к. GoogleDriveService имеет @Inject constructor
- *           и все его зависимости доступны в Hilt графе
- *
- * Hilt module providing network and remote service dependencies.
+ * Version: 14.0.0 - GEMINI MODEL MANAGER INTEGRATION (2026)
+ * 
+ * ✅ NEW IN 14.0.0:
+ * - Added GeminiModelManager injection to GeminiTranslator
+ * - Centralized model selection through ModelManager
+ * 
+ * ✅ PREVIOUS IN 13.1.0:
+ * - BuildConfig.BUILD_TYPE вместо BuildConfig.DEBUG для гарантированного отключения в release
+ * - Асинхронное логирование больших сообщений (устраняет 5-10 сек UI freeze)
+ * - Ультра-агрессивные тайм-ауты для мгновенного failover
+ * - Smart logging с фильтрацией base64 по размеру и паттернам
+ * - HEADERS-only logging вместо BASIC (не парсит тело запроса)
+ * - Connection pooling с оптимальными параметрами
  */
 
 package com.docs.scanner.di
@@ -15,13 +20,17 @@ package com.docs.scanner.di
 import android.content.Context
 import com.docs.scanner.BuildConfig
 import com.docs.scanner.data.cache.TranslationCacheManager
+import com.docs.scanner.data.local.preferences.GeminiModelManager
 import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
 import com.docs.scanner.data.remote.camera.DocumentScannerWrapper
 import com.docs.scanner.data.remote.gemini.GeminiApi
 import com.docs.scanner.data.remote.gemini.GeminiApiService
+import com.docs.scanner.data.remote.gemini.GeminiKeyManager
+import com.docs.scanner.data.remote.gemini.GeminiOcrService
 import com.docs.scanner.data.remote.gemini.GeminiTranslator
 import com.docs.scanner.data.remote.mlkit.MLKitScanner
+import com.docs.scanner.data.remote.mlkit.OcrQualityAnalyzer
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import dagger.Module
@@ -29,6 +38,11 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -37,38 +51,31 @@ import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
-/**
- * Hilt module providing network and remote service dependencies.
- * 
- * Fixed issues:
- * - ✅ CRITICAL-3: Removed broken GoogleDriveService provider
- *   GoogleDriveService has @Inject constructor, so Hilt creates it automatically.
- *   All its dependencies (AppDatabase, DataStore, JsonSerializer, RetryPolicy)
- *   are already available in the Hilt graph.
- * 
- * - 🔵 Minor: OkHttp retryOnConnectionFailure для POST запросов (спорно)
- * - 🟡 #12: Unified logging (Timber instead of android.util.Log)
- */
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
     
     private const val BASE_URL = "https://generativelanguage.googleapis.com/"
     
-    // Timeout configuration for Gemini API (large responses)
-    private const val CONNECT_TIMEOUT_SECONDS = 60L
-    private const val READ_TIMEOUT_SECONDS = 60L
-    private const val WRITE_TIMEOUT_SECONDS = 60L
-    private const val CALL_TIMEOUT_SECONDS = 120L
+    // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ ULTRA-AGGRESSIVE TIMEOUTS - Мгновенный failover
+    // ════════════════════════════════════════════════════════════════════════════════
+    private const val CONNECT_TIMEOUT_SECONDS = 5L
+    private const val READ_TIMEOUT_SECONDS = 12L
+    private const val WRITE_TIMEOUT_SECONDS = 12L
+    private const val CALL_TIMEOUT_SECONDS = 15L
+    
+    // ✅ Connection pool для переиспользования TCP-соединений
+    private const val MAX_IDLE_CONNECTIONS = 5
+    private const val KEEP_ALIVE_DURATION_MINUTES = 5L
+    
+    // ✅ Async logging scope для неблокирующего логирования
+    private val loggingScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
     // ════════════════════════════════════════════════════════════════════════════════
     // GSON
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Provides Gson with lenient parsing.
-     * Lenient mode allows parsing of malformed JSON from Gemini API.
-     */
     @Provides
     @Singleton
     fun provideGson(): Gson {
@@ -78,20 +85,9 @@ object NetworkModule {
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
-    // OKHTTP CLIENT
+    // ✅ OKHTTP CLIENT - ULTRA OPTIMIZED
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Provides OkHttpClient with:
-     * - Extended timeouts for Gemini API (60-120s)
-     * - Retry on connection failure (READ-ONLY requests recommended)
-     * - DEBUG-only logging with API key masking
-     * 
-     * NOTE: 🔵 Minor #18 - retryOnConnectionFailure can retry POST requests.
-     * This is generally safe for idempotent operations, but be cautious
-     * with non-idempotent endpoints. Consider using Interceptor for
-     * selective retry logic if needed.
-     */
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
@@ -100,20 +96,45 @@ object NetworkModule {
             .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .callTimeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true) // ⚠️ Can retry POST - see note above
+            .connectionPool(
+                ConnectionPool(
+                    maxIdleConnections = MAX_IDLE_CONNECTIONS,
+                    keepAliveDuration = KEEP_ALIVE_DURATION_MINUTES,
+                    timeUnit = TimeUnit.MINUTES
+                )
+            )
+            .retryOnConnectionFailure(true)
         
-        // HTTP logging only in DEBUG mode
-        if (BuildConfig.DEBUG) {
+        if (BuildConfig.BUILD_TYPE == "debug") {
             val loggingInterceptor = HttpLoggingInterceptor { message ->
-                // Mask API keys in logs for security
-                val sanitized = message
-                    .replace(Regex("key=[^&\\s]+"), "key=***REDACTED***")
-                    .replace(Regex("AIza[0-9A-Za-z_-]{35}"), "AIza***REDACTED***")
+                if (message.length <= 500) {
+                    val sanitized = sanitizeApiKeys(message)
+                    Timber.tag("HTTP").d(sanitized)
+                    return@HttpLoggingInterceptor
+                }
                 
-                // FIXED: 🟡 #12 - Use Timber instead of android.util.Log
+                if (isBase64ImageData(message)) {
+                    loggingScope.launch {
+                        Timber.tag("HTTP").d(
+                            "[IMAGE DATA: ${message.length} chars - logged async for performance]"
+                        )
+                    }
+                    return@HttpLoggingInterceptor
+                }
+                
+                if (message.length > 5_000) {
+                    val sanitized = sanitizeApiKeys(message)
+                    Timber.tag("HTTP").d(
+                        sanitized.take(1000) + "... [truncated ${message.length - 1000} chars]"
+                    )
+                    return@HttpLoggingInterceptor
+                }
+                
+                val sanitized = sanitizeApiKeys(message)
                 Timber.tag("HTTP").d(sanitized)
+                
             }.apply {
-                level = HttpLoggingInterceptor.Level.BODY
+                level = HttpLoggingInterceptor.Level.HEADERS
             }
             
             builder.addInterceptor(loggingInterceptor)
@@ -123,12 +144,26 @@ object NetworkModule {
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
+    // ✅ HELPER FUNCTIONS
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    private fun isBase64ImageData(message: String): Boolean {
+        return message.contains("inlineData") ||
+               message.contains("/9j/") ||
+               message.contains("iVBORw") ||
+               message.contains("\"data\":\"")
+    }
+    
+    private fun sanitizeApiKeys(message: String): String {
+        return message
+            .replace(Regex("key=[^&\\s]+"), "key=***REDACTED***")
+            .replace(Regex("AIza[0-9A-Za-z_-]{35}"), "AIza***REDACTED***")
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
     // RETROFIT
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Provides Retrofit instance for Gemini API.
-     */
     @Provides
     @Singleton
     fun provideRetrofit(
@@ -142,9 +177,6 @@ object NetworkModule {
             .build()
     }
     
-    /**
-     * Provides Gemini API service interface.
-     */
     @Provides
     @Singleton
     fun provideGeminiApiService(retrofit: Retrofit): GeminiApiService {
@@ -152,42 +184,76 @@ object NetworkModule {
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
+    // GEMINI KEY MANAGER
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    @Provides
+    @Singleton
+    fun provideGeminiKeyManager(
+        keyStorage: EncryptedKeyStorage
+    ): GeminiKeyManager {
+        return GeminiKeyManager(keyStorage)
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
     // GEMINI API WRAPPERS
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Provides GeminiApi wrapper.
-     * Handles rate limiting, retries, and error handling.
-     */
     @Provides
     @Singleton
     fun provideGeminiApi(
-        geminiApiService: GeminiApiService
+        geminiApiService: GeminiApiService,
+        keyManager: GeminiKeyManager
     ): GeminiApi {
-        return GeminiApi(geminiApiService)
+        return GeminiApi(geminiApiService, keyManager)
     }
     
-    /**
-     * Provides GeminiTranslator with cache integration.
-     * 
-     * Integrates with TranslationCacheManager to reduce API calls:
-     * - Checks cache before API call
-     * - Saves translation to cache after API call
-     * - Supports language parameters (source/target)
-     * 
-     * Previously CRITICAL FIX: This was missing and caused compilation failure.
-     */
+    // ✅ ИСПРАВЛЕНО: Добавлен modelManager
     @Provides
     @Singleton
     fun provideGeminiTranslator(
         geminiApi: GeminiApi,
         translationCacheManager: TranslationCacheManager,
-        encryptedKeyStorage: EncryptedKeyStorage
+        keyManager: GeminiKeyManager,
+        settingsDataStore: SettingsDataStore,
+        modelManager: GeminiModelManager  // ✅ ДОБАВЛЕНО!
     ): GeminiTranslator {
         return GeminiTranslator(
             geminiApi = geminiApi,
             translationCacheManager = translationCacheManager,
-            encryptedKeyStorage = encryptedKeyStorage
+            keyManager = keyManager,
+            settingsDataStore = settingsDataStore,
+            modelManager = modelManager  // ✅ ДОБАВЛЕНО!
+        )
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // OCR QUALITY ANALYZER
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    @Provides
+    @Singleton
+    fun provideOcrQualityAnalyzer(): OcrQualityAnalyzer {
+        return OcrQualityAnalyzer()
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // GEMINI OCR SERVICE
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    @Provides
+    @Singleton
+    fun provideGeminiOcrService(
+        @ApplicationContext context: Context,
+        apiService: GeminiApiService,
+        keyManager: GeminiKeyManager,
+        settingsDataStore: SettingsDataStore
+    ): GeminiOcrService {
+        return GeminiOcrService(
+            context = context,
+            apiService = apiService,
+            keyManager = keyManager,
+            settingsDataStore = settingsDataStore
         )
     }
     
@@ -195,24 +261,17 @@ object NetworkModule {
     // ML KIT & DOCUMENT SCANNER
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Provides ML Kit OCR scanner with language settings.
-     */
     @Provides
     @Singleton
     fun provideMLKitScanner(
         @ApplicationContext context: Context,
-        settingsDataStore: SettingsDataStore
+        settingsDataStore: SettingsDataStore,
+        geminiOcrService: GeminiOcrService,
+        qualityAnalyzer: OcrQualityAnalyzer
     ): MLKitScanner {
-        return MLKitScanner(context, settingsDataStore)
+        return MLKitScanner(context, settingsDataStore, geminiOcrService, qualityAnalyzer)
     }
     
-    /**
-     * Provides Google ML Kit Document Scanner wrapper.
-     * 
-     * For scanning documents with camera.
-     * Requires Google Play Services 23.0+
-     */
     @Provides
     @Singleton
     fun provideDocumentScannerWrapper(
@@ -220,43 +279,4 @@ object NetworkModule {
     ): DocumentScannerWrapper {
         return DocumentScannerWrapper(context)
     }
-    
-    // ════════════════════════════════════════════════════════════════════════════════
-    // GOOGLE DRIVE
-    // ════════════════════════════════════════════════════════════════════════════════
-    
-    /*
-     * ✅ FIX CRITICAL-3: REMOVED broken provider!
-     * 
-     * БЫЛО (ОШИБКА):
-     * ```
-     * @Provides
-     * @Singleton
-     * fun provideGoogleDriveService(
-     *     @ApplicationContext context: Context
-     * ): GoogleDriveService {
-     *     return GoogleDriveService(context)  // ❌ Не хватает 4 параметров!
-     * }
-     * ```
-     * 
-     * GoogleDriveService имеет конструктор:
-     * ```
-     * class GoogleDriveService @Inject constructor(
-     *     context: Context,
-     *     database: AppDatabase,           // ❌ Не передавался!
-     *     dataStore: DataStore<Preferences>, // ❌ Не передавался!
-     *     jsonSerializer: JsonSerializer,    // ❌ Не передавался!
-     *     retryPolicy: RetryPolicy           // ❌ Не передавался!
-     * )
-     * ```
-     * 
-     * РЕШЕНИЕ: Удалить провайдер.
-     * Поскольку GoogleDriveService имеет @Inject constructor и @Singleton,
-     * Hilt автоматически создаст его, инжектируя все зависимости из графа:
-     * - Context: через @ApplicationContext
-     * - AppDatabase: из DatabaseModule
-     * - DataStore<Preferences>: из DataStoreModule
-     * - JsonSerializer: @Inject constructor + @Singleton (авто-binding)
-     * - RetryPolicy: @Inject constructor + @Singleton (авто-binding)
-     */
 }

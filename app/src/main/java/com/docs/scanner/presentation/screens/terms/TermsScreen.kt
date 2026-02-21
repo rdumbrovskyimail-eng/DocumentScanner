@@ -1,33 +1,113 @@
 package com.docs.scanner.presentation.screens.terms
 
-import androidx.compose.foundation.layout.*
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoDelete
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle  // ✅ ДОБАВЛЕН
-import com.docs.scanner.domain.model.Term
-import java.text.SimpleDateFormat
-import java.util.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.docs.scanner.domain.core.Term
+import com.docs.scanner.domain.core.TermPriority
+import com.docs.scanner.domain.core.TermStatus
+import com.docs.scanner.presentation.components.ConfirmDialog
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TermsScreen(
     onNavigateBack: () -> Unit,
-    viewModel: TermsViewModel = hiltViewModel()
+    viewModel: TermsViewModel = hiltViewModel(),
+    openTermId: Long? = null
 ) {
-    // ✅ ИСПРАВЛЕНО: collectAsState() → collectAsStateWithLifecycle()
-    val upcoming by viewModel.upcomingTerms.collectAsStateWithLifecycle()
-    val completed by viewModel.completedTerms.collectAsStateWithLifecycle()
-    
-    var selectedTab by remember { mutableIntStateOf(0) }
-    var showDialog by remember { mutableStateOf(false) }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val selectedTerm by viewModel.selectedTerm.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    var query by remember { mutableStateOf("") }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var showDeleteAllMenu by remember { mutableStateOf(false) }
+    var pendingDeleteTerm by remember { mutableStateOf<Term?>(null) }
+    var pendingDeleteAllCompleted by remember { mutableStateOf(false) }
+    var pendingDeleteAllCancelled by remember { mutableStateOf(false) }
+
+    LaunchedEffect(openTermId) {
+        if (openTermId != null && openTermId > 0) {
+            viewModel.openTerm(openTermId)
+        }
+    }
+
+    LaunchedEffect(message) {
+        val msg = message
+        if (!msg.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearMessage()
+        }
+    }
+
+    val success = uiState as? TermsUiState.Success
+    val now = success?.now ?: System.currentTimeMillis()
+    val filter = success?.filter ?: TermsFilter.ACTIVE
+    val visible = success?.visible ?: emptyList()
+    val filtered = remember(visible, query) {
+        val q = query.trim()
+        if (q.isBlank()) visible
+        else visible.filter {
+            it.title.contains(q, ignoreCase = true) ||
+                (it.description?.contains(q, ignoreCase = true) == true)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -38,364 +118,402 @@ fun TermsScreen(
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }
+                ,
+                actions = {
+                    IconButton(onClick = { showDeleteAllMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+                    }
+                    DropdownMenu(expanded = showDeleteAllMenu, onDismissRequest = { showDeleteAllMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Delete all completed") },
+                            leadingIcon = { Icon(Icons.Default.AutoDelete, contentDescription = null) },
+                            onClick = {
+                                showDeleteAllMenu = false
+                                pendingDeleteAllCompleted = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete all cancelled") },
+                            leadingIcon = { Icon(Icons.Default.AutoDelete, contentDescription = null) },
+                            onClick = {
+                                showDeleteAllMenu = false
+                                pendingDeleteAllCancelled = true
+                            }
+                        )
+                    }
+                }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Add term")
+            FloatingActionButton(onClick = { showCreateDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Add")
             }
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-        ) {
-            TabRow(selectedTabIndex = selectedTab) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("Upcoming (${upcoming.size})") }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("Completed (${completed.size})") }
-                )
-            }
-
-            when (selectedTab) {
-                0 -> TermsList(
-                    terms = upcoming,
-                    onComplete = viewModel::completeTerm,
-                    onDelete = viewModel::deleteTerm
-                )
-                1 -> TermsList(
-                    terms = completed,
-                    onComplete = null,
-                    onDelete = viewModel::deleteTerm
-                )
-            }
-        }
-    }
-
-    if (showDialog) {
-        CreateTermDialog(
-            onDismiss = { showDialog = false },
-            onCreate = { title, description, date, minutes ->
-                viewModel.createTerm(title, description, date, minutes)
-                showDialog = false
-            }
-        )
-    }
-}
-
-// ============================================
-// ✅ ВОССТАНОВЛЕНО: TermsList (~60 lines)
-// ============================================
-@Composable
-private fun TermsList(
-    terms: List<Term>,
-    onComplete: ((Long) -> Unit)?,
-    onDelete: (Long) -> Unit
-) {
-    if (terms.isEmpty()) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Event,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-                )
-                Text(
-                    text = if (onComplete != null) "No upcoming deadlines" else "No completed terms",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (onComplete != null) {
-                    Text(
-                        text = "Tap + to add your first deadline",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    } else {
-        LazyColumn(
-            contentPadding = PaddingValues(16.dp),
+                .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(terms, key = { it.id }) { term ->
-                TermCard(
-                    term = term,
-                    onComplete = onComplete,
-                    onDelete = onDelete
-                )
-            }
-        }
-    }
-}
+            when (uiState) {
+                is TermsUiState.Error -> Text((uiState as TermsUiState.Error).message, color = MaterialTheme.colorScheme.error)
+                TermsUiState.Loading -> Text("Loading...")
+                is TermsUiState.Success -> {
+                    val s = uiState as TermsUiState.Success
+                    var tabIndex by remember { mutableIntStateOf(0) }
+                    val tabs = listOf(
+                        TermsFilter.ACTIVE,
+                        TermsFilter.UPCOMING,
+                        TermsFilter.DUE_TODAY,
+                        TermsFilter.OVERDUE,
+                        TermsFilter.COMPLETED,
+                        TermsFilter.CANCELLED,
+                        TermsFilter.ALL
+                    )
+                    tabIndex = tabs.indexOf(filter).coerceAtLeast(0)
 
-// ============================================
-// ✅ ВОССТАНОВЛЕНО: TermCard (~150 lines)
-// ============================================
-@Composable
-private fun TermCard(
-    term: Term,
-    onComplete: ((Long) -> Unit)?,
-    onDelete: (Long) -> Unit
-) {
-    val isOverdue = !term.isCompleted && term.dueDate < System.currentTimeMillis()
-    val timeUntil = term.dueDate - System.currentTimeMillis()
-    
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                term.isCompleted -> MaterialTheme.colorScheme.surfaceVariant
-                isOverdue -> MaterialTheme.colorScheme.errorContainer
-                timeUntil < 24 * 60 * 60 * 1000 -> MaterialTheme.colorScheme.tertiaryContainer
-                else -> MaterialTheme.colorScheme.surface
-            }
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = if (term.isCompleted) 0.dp else 2.dp
-        )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = term.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = when {
-                            term.isCompleted -> MaterialTheme.colorScheme.onSurfaceVariant
-                            isOverdue -> MaterialTheme.colorScheme.error
-                            else -> MaterialTheme.colorScheme.onSurface
-                        }
-                    )
-                    
-                    if (!term.description.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = term.description,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                
-                IconButton(onClick = { onDelete(term.id) }) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    // Date
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.CalendarToday,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = formatDate(term.dueDate),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    // Time until / overdue
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            if (isOverdue) Icons.Default.Warning else Icons.Default.Schedule,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = if (isOverdue) MaterialTheme.colorScheme.error 
-                                   else MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = formatTimeUntil(timeUntil, term.isCompleted),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isOverdue) MaterialTheme.colorScheme.error
-                                   else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = if (isOverdue) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
-                    
-                    // Reminder
-                    if (term.reminderMinutesBefore > 0) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Notifications,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Reminder: ${term.reminderMinutesBefore} min before",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                    TabRow(selectedTabIndex = tabIndex) {
+                        tabs.forEachIndexed { index, f ->
+                            val count = when (f) {
+                                TermsFilter.ACTIVE -> s.active.size
+                                TermsFilter.UPCOMING -> s.upcoming.size
+                                TermsFilter.DUE_TODAY -> s.dueToday.size
+                                TermsFilter.OVERDUE -> s.overdue.size
+                                TermsFilter.COMPLETED -> s.completed.size
+                                TermsFilter.CANCELLED -> s.cancelled.size
+                                TermsFilter.ALL -> s.all.size
+                            }
+                            Tab(
+                                selected = tabIndex == index,
+                                onClick = { viewModel.setFilter(f) },
+                                text = { Text("${f.name.replace('_', ' ')} ($count)") }
                             )
                         }
                     }
-                }
-                
-                // Complete button
-                if (onComplete != null) {
-                    FilledTonalButton(
-                        onClick = { onComplete(term.id) },
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-                    ) {
-                        Icon(
-                            Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Complete")
-                    }
-                }
-            }
-        }
-    }
-}
 
-// ============================================
-// ✅ ВОССТАНОВЛЕНО: CreateTermDialog (~190 lines)
-// ============================================
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CreateTermDialog(
-    onDismiss: () -> Unit,
-    onCreate: (String, String?, Long, Int) -> Unit
-) {
-    var title by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var selectedDate by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var selectedHour by remember { mutableIntStateOf(12) }
-    var selectedMinute by remember { mutableIntStateOf(0) }
-    var reminderMinutes by remember { mutableIntStateOf(30) }
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showTimePicker by remember { mutableStateOf(false) }
-    
-    val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = selectedDate
-    )
-    
-    val timePickerState = rememberTimePickerState(
-        initialHour = selectedHour,
-        initialMinute = selectedMinute
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Create Deadline") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 500.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Title
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Title") },
-                    placeholder = { Text("Exam, Assignment, etc.") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                // Description
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description (optional)") },
-                    maxLines = 3,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                // Date picker button
-                OutlinedButton(
-                    onClick = { showDatePicker = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.CalendarToday, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(formatDate(selectedDate))
-                }
-                
-                // Time picker button
-                OutlinedButton(
-                    onClick = { showTimePicker = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Schedule, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(String.format("%02d:%02d", selectedHour, selectedMinute))
-                }
-                
-                // Reminder
-                Column {
-                    Text(
-                        "Reminder",
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    Row(
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(0, 15, 30, 60, 120).forEach { minutes ->
-                            FilterChip(
-                                selected = reminderMinutes == minutes,
-                                onClick = { reminderMinutes = minutes },
-                                label = { 
-                                    Text(
-                                        when (minutes) {
-                                            0 -> "None"
-                                            60 -> "1h"
-                                            120 -> "2h"
-                                            else -> "${minutes}m"
-                                        },
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
+                        label = { Text("Search") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        singleLine = true
+                    )
+
+                    TermsList(
+                        now = now,
+                        terms = filtered,
+                        onEdit = { viewModel.openTerm(it.id.value) },
+                        onComplete = { viewModel.completeTerm(it.id.value) },
+                        onUncomplete = { viewModel.uncompleteTerm(it.id.value) },
+                        onCancel = { viewModel.cancelTerm(it.id.value) },
+                        onRestore = { viewModel.restoreTerm(it.id.value) },
+                        onDelete = { pendingDeleteTerm = it }
+                    )
+                }
+            }
+        }
+    }
+
+    if (showCreateDialog) {
+        TermEditorDialog(
+            title = "Create term",
+            initial = null,
+            now = now,
+            onDismiss = { showCreateDialog = false },
+            onSave = { data ->
+                viewModel.createTerm(
+                    title = data.title,
+                    description = data.description,
+                    dueDate = data.dueDate,
+                    reminderMinutesBefore = data.reminderMinutesBefore,
+                    priority = data.priority,
+                    folderId = null
+                )
+                showCreateDialog = false
+            }
+        )
+    }
+
+    selectedTerm?.let { term ->
+        TermEditorDialog(
+            title = "Edit term",
+            initial = term,
+            now = now,
+            onDismiss = { viewModel.closeDialog() },
+            onSave = { data ->
+                viewModel.updateTerm(
+                    term.copy(
+                        title = data.title,
+                        description = data.description,
+                        dueDate = data.dueDate,
+                        reminderMinutesBefore = data.reminderMinutesBefore,
+                        priority = data.priority
+                    )
+                )
+                viewModel.closeDialog()
+            }
+        )
+    }
+
+    pendingDeleteTerm?.let { term ->
+        ConfirmDialog(
+            title = "Delete term?",
+            message = "This will delete \"${term.title}\". This action cannot be undone.",
+            confirmText = "Delete",
+            onConfirm = {
+                viewModel.deleteTerm(term.id.value)
+                pendingDeleteTerm = null
+            },
+            onDismiss = { pendingDeleteTerm = null }
+        )
+    }
+
+    if (pendingDeleteAllCompleted) {
+        ConfirmDialog(
+            title = "Delete all completed?",
+            message = "This will permanently delete all completed terms.",
+            confirmText = "Delete",
+            onConfirm = {
+                viewModel.deleteAllCompleted()
+                pendingDeleteAllCompleted = false
+            },
+            onDismiss = { pendingDeleteAllCompleted = false }
+        )
+    }
+
+    if (pendingDeleteAllCancelled) {
+        ConfirmDialog(
+            title = "Delete all cancelled?",
+            message = "This will permanently delete all cancelled terms.",
+            confirmText = "Delete",
+            onConfirm = {
+                viewModel.deleteAllCancelled()
+                pendingDeleteAllCancelled = false
+            },
+            onDismiss = { pendingDeleteAllCancelled = false }
+        )
+    }
+}
+
+@Composable
+private fun TermsList(
+    now: Long,
+    terms: List<Term>,
+    onEdit: (Term) -> Unit,
+    onComplete: (Term) -> Unit,
+    onUncomplete: (Term) -> Unit,
+    onCancel: (Term) -> Unit,
+    onRestore: (Term) -> Unit,
+    onDelete: (Term) -> Unit
+) {
+    if (terms.isEmpty()) {
+        Text("Nothing here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        return
+    }
+
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(terms, key = { it.id.value }) { term ->
+            var menuExpanded by remember(term.id.value) { mutableStateOf(false) }
+            val status = term.computeStatus(now)
+            val dueText = remember(term.dueDate) { formatDue(term.dueDate) }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(term.title, style = MaterialTheme.typography.titleMedium)
+                        term.description?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                        Text(
+                            text = "Due: $dueText • Reminder: ${term.reminderMinutesBefore}m • ${term.priority.name}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = status.name,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = when (status) {
+                                TermStatus.OVERDUE -> MaterialTheme.colorScheme.error
+                                TermStatus.DUE_TODAY -> MaterialTheme.colorScheme.tertiary
+                                TermStatus.UPCOMING -> MaterialTheme.colorScheme.primary
+                                TermStatus.COMPLETED -> MaterialTheme.colorScheme.onSurfaceVariant
+                                TermStatus.CANCELLED -> MaterialTheme.colorScheme.onSurfaceVariant
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Actions")
+                    }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Edit") },
+                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                onEdit(term)
+                            }
+                        )
+                        if (!term.isCancelled && !term.isCompleted) {
+                            DropdownMenuItem(
+                                text = { Text("Complete") },
+                                leadingIcon = { Icon(Icons.Default.Done, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onComplete(term)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Cancel") },
+                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onCancel(term)
+                                }
+                            )
+                        }
+                        if (term.isCompleted) {
+                            DropdownMenuItem(
+                                text = { Text("Mark as not completed") },
+                                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onUncomplete(term)
+                                }
+                            )
+                        }
+                        if (term.isCancelled) {
+                            DropdownMenuItem(
+                                text = { Text("Restore") },
+                                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onRestore(term)
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Delete") },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete(term)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class TermEditorData(
+    val title: String,
+    val description: String?,
+    val dueDate: Long,
+    val reminderMinutesBefore: Int,
+    val priority: TermPriority
+)
+
+@Composable
+private fun TermEditorDialog(
+    title: String,
+    initial: Term?,
+    now: Long,
+    onDismiss: () -> Unit,
+    onSave: (TermEditorData) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val zone = remember { ZoneId.systemDefault() }
+
+    var termTitle by remember(initial?.id?.value) { mutableStateOf(initial?.title.orEmpty()) }
+    var desc by remember(initial?.id?.value) { mutableStateOf(initial?.description.orEmpty()) }
+
+    val initialDue = initial?.dueDate ?: (now + 24 * 60 * 60 * 1000L)
+    var date by remember(initial?.id?.value) { mutableStateOf(Instant.ofEpochMilli(initialDue).atZone(zone).toLocalDate()) }
+    var time by remember(initial?.id?.value) { mutableStateOf(Instant.ofEpochMilli(initialDue).atZone(zone).toLocalTime().withSecond(0).withNano(0)) }
+
+    var reminder by remember(initial?.id?.value) { mutableIntStateOf(initial?.reminderMinutesBefore ?: 60) }
+    var priority by remember(initial?.id?.value) { mutableStateOf(initial?.priority ?: TermPriority.NORMAL) }
+
+    val dueMillis = remember(date, time) { ZonedDateTime.of(date, time, zone).toInstant().toEpochMilli() }
+
+    var priorityMenu by remember { mutableStateOf(false) }
+    var reminderMenu by remember { mutableStateOf(false) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = termTitle,
+                    onValueChange = { termTitle = it },
+                    label = { Text("Title") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = desc,
+                    onValueChange = { desc = it },
+                    label = { Text("Description (optional)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = {
+                            DatePickerDialog(
+                                context,
+                                { _, y, m, d -> date = LocalDate.of(y, m + 1, d) },
+                                date.year,
+                                date.monthValue - 1,
+                                date.dayOfMonth
+                            ).show()
+                        }
+                    ) { Text("Date: ${date.toString()}") }
+
+                    TextButton(
+                        onClick = {
+                            TimePickerDialog(
+                                context,
+                                { _, hh, mm -> time = LocalTime.of(hh, mm) },
+                                time.hour,
+                                time.minute,
+                                true
+                            ).show()
+                        }
+                    ) { Text("Time: ${time.toString()}") }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { reminderMenu = true }) { Text("Reminder: ${reminder}m") }
+                    DropdownMenu(expanded = reminderMenu, onDismissRequest = { reminderMenu = false }) {
+                        listOf(0, 5, 15, 30, 60, 120, 240, 1440, 2880).forEach { m ->
+                            DropdownMenuItem(
+                                text = { Text(if (m == 0) "At due time" else "$m minutes") },
+                                onClick = {
+                                    reminderMenu = false
+                                    reminder = m
+                                }
+                            )
+                        }
+                    }
+
+                    TextButton(onClick = { priorityMenu = true }) { Text("Priority: ${priority.name}") }
+                    DropdownMenu(expanded = priorityMenu, onDismissRequest = { priorityMenu = false }) {
+                        TermPriority.entries.forEach { p ->
+                            DropdownMenuItem(
+                                text = { Text(p.name) },
+                                onClick = {
+                                    priorityMenu = false
+                                    priority = p
                                 }
                             )
                         }
@@ -405,105 +523,29 @@ private fun CreateTermDialog(
         },
         confirmButton = {
             TextButton(
+                enabled = termTitle.trim().isNotBlank() && dueMillis > now,
                 onClick = {
-                    if (title.isNotBlank()) {
-                        val calendar = Calendar.getInstance().apply {
-                            timeInMillis = selectedDate
-                            set(Calendar.HOUR_OF_DAY, selectedHour)
-                            set(Calendar.MINUTE, selectedMinute)
-                            set(Calendar.SECOND, 0)
-                        }
-                        onCreate(
-                            title,
-                            description.ifBlank { null },
-                            calendar.timeInMillis,
-                            reminderMinutes
+                    onSave(
+                        TermEditorData(
+                            title = termTitle.trim(),
+                            description = desc.trim().ifBlank { null },
+                            dueDate = dueMillis,
+                            reminderMinutesBefore = reminder,
+                            priority = priority
                         )
-                    }
-                },
-                enabled = title.isNotBlank()
-            ) {
-                Text("Create")
-            }
+                    )
+                }
+            ) { Text("Save") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
-
-    // Date Picker Dialog
-    if (showDatePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    datePickerState.selectedDateMillis?.let { selectedDate = it }
-                    showDatePicker = false
-                }) {
-                    Text("OK")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) {
-                    Text("Cancel")
-                }
-            }
-        ) {
-            DatePicker(state = datePickerState)
-        }
-    }
-
-    // Time Picker Dialog
-    if (showTimePicker) {
-        AlertDialog(
-            onDismissRequest = { showTimePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    selectedHour = timePickerState.hour
-                    selectedMinute = timePickerState.minute
-                    showTimePicker = false
-                }) {
-                    Text("OK")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTimePicker = false }) {
-                    Text("Cancel")
-                }
-            },
-            text = {
-                TimePicker(state = timePickerState)
-            }
-        )
-    }
 }
 
-// ============================================
-// ✅ HELPER FUNCTIONS
-// ============================================
-private fun formatDate(millis: Long): String {
-    val sdf = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-    return sdf.format(Date(millis))
-}
-
-private fun formatTimeUntil(millis: Long, isCompleted: Boolean): String {
-    if (isCompleted) return "Completed"
-    
-    if (millis < 0) {
-        val overdue = -millis
-        return when {
-            overdue < 60 * 60 * 1000 -> "Overdue by ${overdue / (60 * 1000)} min"
-            overdue < 24 * 60 * 60 * 1000 -> "Overdue by ${overdue / (60 * 60 * 1000)} hours"
-            else -> "Overdue by ${overdue / (24 * 60 * 60 * 1000)} days"
-        }
-    }
-    
-    return when {
-        millis < 60 * 60 * 1000 -> "In ${millis / (60 * 1000)} minutes"
-        millis < 24 * 60 * 60 * 1000 -> "In ${millis / (60 * 60 * 1000)} hours"
-        millis < 7 * 24 * 60 * 60 * 1000 -> "In ${millis / (24 * 60 * 60 * 1000)} days"
-        else -> "In ${millis / (7 * 24 * 60 * 60 * 1000)} weeks"
-    }
+private fun formatDue(epochMillis: Long): String {
+    val zone = ZoneId.systemDefault()
+    val dt = Instant.ofEpochMilli(epochMillis).atZone(zone)
+    val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+    return dt.format(fmt)
 }
