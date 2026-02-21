@@ -35,22 +35,22 @@ fun OnboardingScreen(
     onComplete: () -> Unit
 ) {
     val context = LocalContext.current
-
+    
     val apiKey by viewModel.apiKey.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
-
+    
     LaunchedEffect(Unit) {
         viewModel.checkFirstLaunch {
             onComplete()
         }
     }
-
+    
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Welcome") },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
@@ -65,6 +65,7 @@ fun OnboardingScreen(
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Компактный заголовок
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -88,9 +89,10 @@ fun OnboardingScreen(
                     )
                 }
             }
-
+            
             Spacer(modifier = Modifier.height(16.dp))
-
+            
+            // Компактные фичи в одну строку
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -99,13 +101,14 @@ fun OnboardingScreen(
                 CompactFeature(Icons.Default.TextFields, "OCR")
                 CompactFeature(Icons.Default.Translate, "Translate")
             }
-
+            
             Spacer(modifier = Modifier.height(16.dp))
-
+            
+            // API Key Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
                 )
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -114,19 +117,19 @@ fun OnboardingScreen(
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
-
+                    
                     Spacer(modifier = Modifier.height(4.dp))
-
+                    
                     Text(
                         text = "Enter your Google Gemini API key to enable translation",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
-
+                    
                     Spacer(modifier = Modifier.height(12.dp))
-
+                    
                     var showPassword by remember { mutableStateOf(false) }
-
+                    
                     OutlinedTextField(
                         value = apiKey,
                         onValueChange = viewModel::updateApiKey,
@@ -146,9 +149,9 @@ fun OnboardingScreen(
                                         Icons.Default.Visibility
                                     },
                                     contentDescription = if (showPassword) {
-                                        "Show API key"
-                                    } else {
                                         "Hide API key"
+                                    } else {
+                                        "Show API key"
                                     }
                                 )
                             }
@@ -156,14 +159,14 @@ fun OnboardingScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-
+                    
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         TextButton(
-                            onClick = {
+                            onClick = { 
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
                                     data = Uri.parse("https://aistudio.google.com/app/apikey")
                                 }
@@ -178,7 +181,7 @@ fun OnboardingScreen(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Get free API key")
                         }
-
+                        
                         Button(
                             onClick = {
                                 viewModel.saveAndContinue(onComplete)
@@ -198,7 +201,7 @@ fun OnboardingScreen(
                     }
                 }
             }
-
+            
             Spacer(modifier = Modifier.height(8.dp))
         }
     }
