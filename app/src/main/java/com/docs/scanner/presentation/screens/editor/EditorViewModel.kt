@@ -247,7 +247,7 @@ class EditorViewModel @Inject constructor(
                         _uiState.value = EditorUiState.Error("Failed to load documents: ${e.message}")
                     }
                     .collect { documents ->
-                        val currentRecord = useCases.getRecordById(recordId) ?: record
+                        val currentRecord = (_uiState.value as? EditorUiState.Success)?.record ?: record
 
                         _uiState.value = EditorUiState.Success(
                             record = currentRecord,
