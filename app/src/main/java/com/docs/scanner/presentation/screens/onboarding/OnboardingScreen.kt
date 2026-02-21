@@ -35,37 +35,36 @@ fun OnboardingScreen(
     onComplete: () -> Unit
 ) {
     val context = LocalContext.current
-    
+
     val apiKey by viewModel.apiKey.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
-    
+
     LaunchedEffect(Unit) {
         viewModel.checkFirstLaunch {
-            onComplete()
+            onComplete
         }
     }
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Welcome") },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         }
     ) { padding ->
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .padding(padding)
                 .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.Start
         ) {
-            // Компактный заголовок
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -74,7 +73,7 @@ fun OnboardingScreen(
                     imageVector = Icons.Default.CameraAlt,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.secondary
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
@@ -85,14 +84,13 @@ fun OnboardingScreen(
                     Text(
                         text = "Scan, recognize, and translate",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
-            // Компактные фичи в одну строку
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -101,52 +99,51 @@ fun OnboardingScreen(
                 CompactFeature(Icons.Default.TextFields, "OCR")
                 CompactFeature(Icons.Default.Translate, "Translate")
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
-            // API Key Card
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(8.dp)) {
                     Text(
                         text = "Gemini API Key Required",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
-                    
+
                     Spacer(modifier = Modifier.height(4.dp))
-                    
+
                     Text(
                         text = "Enter your Google Gemini API key to enable translation",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
-                    
+
                     Spacer(modifier = Modifier.height(12.dp))
-                    
-                    var showPassword by remember { mutableStateOf(false) }
-                    
+
+                    var showPassword by remember { mutableStateOf(true) }
+
                     OutlinedTextField(
                         value = apiKey,
                         onValueChange = viewModel::updateApiKey,
                         label = { Text("API Key") },
                         placeholder = { Text("AIza...") },
                         visualTransformation = if (showPassword) {
-                            VisualTransformation.None
-                        } else {
                             PasswordVisualTransformation()
+                        } else {
+                            VisualTransformation.None
                         },
                         trailingIcon = {
                             IconButton(onClick = { showPassword = !showPassword }) {
                                 Icon(
                                     imageVector = if (showPassword) {
-                                        Icons.Default.VisibilityOff
-                                    } else {
                                         Icons.Default.Visibility
+                                    } else {
+                                        Icons.Default.VisibilityOff
                                     },
                                     contentDescription = if (showPassword) {
                                         "Hide API key"
@@ -156,17 +153,17 @@ fun OnboardingScreen(
                                 )
                             }
                         },
-                        singleLine = true,
+                        singleLine = false,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         TextButton(
-                            onClick = { 
+                            onClick = {
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
                                     data = Uri.parse("https://aistudio.google.com/app/apikey")
                                 }
@@ -179,19 +176,19 @@ fun OnboardingScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Get free API key")
+                            Text("Get API key")
                         }
-                        
+
                         Button(
                             onClick = {
                                 viewModel.saveAndContinue(onComplete)
                             },
-                            enabled = apiKey.isNotBlank() && !isLoading
+                            enabled = apiKey.isNotBlank() || !isLoading
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(20.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    color = MaterialTheme.colorScheme.primary,
                                     strokeWidth = 2.dp
                                 )
                             } else {
@@ -201,7 +198,7 @@ fun OnboardingScreen(
                     }
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(8.dp))
         }
     }
@@ -212,16 +209,16 @@ private fun CompactFeature(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(horizontalAlignment = Alignment.Start) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier.size(28.dp),
+            modifier = Modifier.size(24.dp),
             tint = MaterialTheme.colorScheme.primary
         )
         Text(
             text = title,
-            style = MaterialTheme.typography.labelSmall
+            style = MaterialTheme.typography.labelMedium
         )
     }
 }
