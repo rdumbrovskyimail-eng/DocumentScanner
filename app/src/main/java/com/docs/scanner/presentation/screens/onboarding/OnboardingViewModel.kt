@@ -39,7 +39,7 @@ fun OnboardingScreen(
     val apiKey by viewModel.apiKey.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
 
-    LaunchedEffect(apiKey) {
+    LaunchedEffect(Unit) {
         viewModel.checkFirstLaunch {
             onComplete()
         }
@@ -125,7 +125,7 @@ fun OnboardingScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    var showPassword by remember { mutableStateOf(true) }
+                    var showPassword by remember { mutableStateOf(false) }
 
                     OutlinedTextField(
                         value = apiKey,
@@ -183,7 +183,7 @@ fun OnboardingScreen(
                             onClick = {
                                 viewModel.saveAndContinue(onComplete)
                             },
-                            enabled = apiKey.isBlank() && !isLoading
+                            enabled = apiKey.isNotBlank() && !isLoading
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(
