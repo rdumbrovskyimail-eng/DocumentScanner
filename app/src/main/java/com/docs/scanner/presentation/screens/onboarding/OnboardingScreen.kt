@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -35,23 +36,23 @@ fun OnboardingScreen(
     onComplete: () -> Unit
 ) {
     val context = LocalContext.current
-    
+
     val apiKey by viewModel.apiKey.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
-    
+
     LaunchedEffect(Unit) {
         viewModel.checkFirstLaunch {
             onComplete()
         }
     }
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Welcome") },
+                title = { Text("Get Started") },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         }
@@ -62,7 +63,7 @@ fun OnboardingScreen(
                 .padding(padding)
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+                .padding(horizontal = 32.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Компактный заголовок
@@ -73,67 +74,67 @@ fun OnboardingScreen(
                 Icon(
                     imageVector = Icons.Default.CameraAlt,
                     contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.primary
+                    modifier = Modifier.size(56.dp),
+                    tint = MaterialTheme.colorScheme.secondary
                 )
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(
-                        text = "Document Scanner",
-                        style = MaterialTheme.typography.titleLarge
+                        text = "Doc Scanner App",
+                        style = MaterialTheme.typography.headlineSmall
                     )
                     Text(
-                        text = "Scan, recognize, and translate",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = "Scan, recognize, and translate documents",
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             // Компактные фичи в одну строку
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                horizontalArrangement = Arrangement.SpaceAround
             ) {
                 CompactFeature(Icons.Default.CameraAlt, "Scan")
                 CompactFeature(Icons.Default.TextFields, "OCR")
                 CompactFeature(Icons.Default.Translate, "Translate")
             }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             // API Key Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
                 )
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(20.dp)) {
                     Text(
-                        text = "Gemini API Key Required",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        text = "API Key Setup",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
                     )
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Text(
-                        text = "Enter your Google Gemini API key to enable translation",
+                        text = "Provide your Google Gemini API key to enable translation features",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
                     )
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    var showPassword by remember { mutableStateOf(false) }
-                    
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    var showPassword by remember { mutableStateOf(true) }
+
                     OutlinedTextField(
                         value = apiKey,
                         onValueChange = viewModel::updateApiKey,
-                        label = { Text("API Key") },
+                        label = { Text("Gemini API Key") },
                         placeholder = { Text("AIza...") },
                         visualTransformation = if (showPassword) {
                             VisualTransformation.None
@@ -156,17 +157,17 @@ fun OnboardingScreen(
                                 )
                             }
                         },
-                        singleLine = true,
+                        singleLine = false,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         TextButton(
-                            onClick = { 
+                            onClick = {
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
                                     data = Uri.parse("https://aistudio.google.com/app/apikey")
                                 }
@@ -176,12 +177,12 @@ fun OnboardingScreen(
                             Icon(
                                 Icons.Default.OpenInNew,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(20.dp)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Get free API key")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Get your free API key")
                         }
-                        
+
                         Button(
                             onClick = {
                                 viewModel.saveAndContinue(onComplete)
@@ -190,19 +191,19 @@ fun OnboardingScreen(
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
+                                    modifier = Modifier.size(24.dp),
                                     color = MaterialTheme.colorScheme.onPrimary,
                                     strokeWidth = 2.dp
                                 )
                             } else {
-                                Text("Continue")
+                                Text("Next")
                             }
                         }
                     }
                 }
             }
-            
-            Spacer(modifier = Modifier.height(8.dp))
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
@@ -216,12 +217,12 @@ private fun CompactFeature(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier.size(28.dp),
-            tint = MaterialTheme.colorScheme.primary
+            modifier = Modifier.size(36.dp),
+            tint = MaterialTheme.colorScheme.secondary
         )
         Text(
             text = title,
-            style = MaterialTheme.typography.labelSmall
+            style = MaterialTheme.typography.labelMedium
         )
     }
 }
