@@ -11,7 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -49,10 +48,10 @@ fun OnboardingScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Get Started") },
+                title = { Text("Welcome") },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
         }
@@ -63,7 +62,7 @@ fun OnboardingScreen(
                 .padding(padding)
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 32.dp, vertical = 24.dp),
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Компактный заголовок
@@ -74,67 +73,67 @@ fun OnboardingScreen(
                 Icon(
                     imageVector = Icons.Default.CameraAlt,
                     contentDescription = null,
-                    modifier = Modifier.size(56.dp),
-                    tint = MaterialTheme.colorScheme.secondary
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Column {
                     Text(
-                        text = "Doc Scanner App",
-                        style = MaterialTheme.typography.headlineSmall
+                        text = "Document Scanner",
+                        style = MaterialTheme.typography.titleLarge
                     )
                     Text(
-                        text = "Scan, recognize, and translate documents",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "Scan, recognize, and translate",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Компактные фичи в одну строку
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceAround
+                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 CompactFeature(Icons.Default.CameraAlt, "Scan")
                 CompactFeature(Icons.Default.TextFields, "OCR")
                 CompactFeature(Icons.Default.Translate, "Translate")
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // API Key Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
                 )
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "API Key Setup",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                        text = "Gemini API Key Required",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     Text(
-                        text = "Provide your Google Gemini API key to enable translation features",
+                        text = "Enter your Google Gemini API key to enable translation",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    var showPassword by remember { mutableStateOf(true) }
+                    var showPassword by remember { mutableStateOf(false) }
 
                     OutlinedTextField(
                         value = apiKey,
                         onValueChange = viewModel::updateApiKey,
-                        label = { Text("Gemini API Key") },
+                        label = { Text("API Key") },
                         placeholder = { Text("AIza...") },
                         visualTransformation = if (showPassword) {
                             VisualTransformation.None
@@ -157,7 +156,7 @@ fun OnboardingScreen(
                                 )
                             }
                         },
-                        singleLine = false,
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -177,10 +176,10 @@ fun OnboardingScreen(
                             Icon(
                                 Icons.Default.OpenInNew,
                                 contentDescription = null,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(16.dp)
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Get your free API key")
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Get free API key")
                         }
 
                         Button(
@@ -191,19 +190,19 @@ fun OnboardingScreen(
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
+                                    modifier = Modifier.size(20.dp),
                                     color = MaterialTheme.colorScheme.onPrimary,
                                     strokeWidth = 2.dp
                                 )
                             } else {
-                                Text("Next")
+                                Text("Continue")
                             }
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
@@ -217,12 +216,12 @@ private fun CompactFeature(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier.size(36.dp),
-            tint = MaterialTheme.colorScheme.secondary
+            modifier = Modifier.size(28.dp),
+            tint = MaterialTheme.colorScheme.primary
         )
         Text(
             text = title,
-            style = MaterialTheme.typography.labelMedium
+            style = MaterialTheme.typography.labelSmall
         )
     }
 }
