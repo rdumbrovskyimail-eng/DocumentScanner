@@ -41,7 +41,7 @@ fun OnboardingScreen(
 
     LaunchedEffect(Unit) {
         viewModel.checkFirstLaunch {
-            onComplete
+            onComplete()
         }
     }
 
@@ -50,20 +50,20 @@ fun OnboardingScreen(
             TopAppBar(
                 title = { Text("Welcome") },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
         }
     ) { padding ->
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(padding)
                 .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 16.dp),
-            horizontalAlignment = Alignment.Start
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -73,7 +73,7 @@ fun OnboardingScreen(
                     imageVector = Icons.Default.CameraAlt,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.secondary
+                    tint = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
@@ -84,7 +84,7 @@ fun OnboardingScreen(
                     Text(
                         text = "Scan, recognize, and translate",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -108,10 +108,10 @@ fun OnboardingScreen(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             ) {
-                Column(modifier = Modifier.padding(8.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = "Gemini API Key Required",
-                        style = MaterialTheme.typography.titleSmall,
+                        style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
 
@@ -125,7 +125,7 @@ fun OnboardingScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    var showPassword by remember { mutableStateOf(true) }
+                    var showPassword by remember { mutableStateOf(false) }
 
                     OutlinedTextField(
                         value = apiKey,
@@ -133,27 +133,27 @@ fun OnboardingScreen(
                         label = { Text("API Key") },
                         placeholder = { Text("AIza...") },
                         visualTransformation = if (showPassword) {
-                            PasswordVisualTransformation()
-                        } else {
                             VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
                         },
                         trailingIcon = {
                             IconButton(onClick = { showPassword = !showPassword }) {
                                 Icon(
                                     imageVector = if (showPassword) {
-                                        Icons.Default.Visibility
-                                    } else {
                                         Icons.Default.VisibilityOff
+                                    } else {
+                                        Icons.Default.Visibility
                                     },
                                     contentDescription = if (showPassword) {
-                                        "Hide API key"
-                                    } else {
                                         "Show API key"
+                                    } else {
+                                        "Hide API key"
                                     }
                                 )
                             }
                         },
-                        singleLine = false,
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -176,19 +176,19 @@ fun OnboardingScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Get API key")
+                            Text("Get free API key")
                         }
 
                         Button(
                             onClick = {
                                 viewModel.saveAndContinue(onComplete)
                             },
-                            enabled = apiKey.isNotBlank() || !isLoading
+                            enabled = apiKey.isNotBlank() && !isLoading
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(20.dp),
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = MaterialTheme.colorScheme.onPrimary,
                                     strokeWidth = 2.dp
                                 )
                             } else {
@@ -209,16 +209,16 @@ private fun CompactFeature(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String
 ) {
-    Column(horizontalAlignment = Alignment.Start) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(28.dp),
             tint = MaterialTheme.colorScheme.primary
         )
         Text(
             text = title,
-            style = MaterialTheme.typography.labelMedium
+            style = MaterialTheme.typography.labelSmall
         )
     }
 }
