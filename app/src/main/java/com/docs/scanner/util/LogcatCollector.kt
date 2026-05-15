@@ -101,6 +101,10 @@ class LogcatCollector private constructor(private val context: Context) {
         startAutoSave()
 
         collectJob = CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+            collectJob?.invokeOnCompletion { 
+                logcatProcess?.destroy() 
+                Timber.d("Logcat process destroyed via completion handler")
+            }
             try {
                 // Очищаем системный буфер
                 Runtime.getRuntime().exec("logcat -c").waitFor()
