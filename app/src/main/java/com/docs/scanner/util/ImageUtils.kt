@@ -75,23 +75,41 @@ object ImageUtils {
         // 3. Создаём выходной файл
         val outputFile = File(outputDir, "image_${System.currentTimeMillis()}.jpg")
         
-        // 4. Открываем входной поток и читаем байты
-        val imageBytes = context.contentResolver.openInputStream(sourceUri)?.use { stream ->
-            stream.readBytes()
-        } ?: throw IOException("Cannot open input stream for URI: $sourceUri")
-        
-        try {
-            // 5. Декодируем с оптимизацией памяти
-            val bitmap = decodeSampledBitmap(imageBytes, maxDimension)
-                ?: throw IOException("Failed to decode bitmap from URI: $sourceUri")
-            
-            // 6. Корректируем ориентацию по EXIF
-            val rotatedBitmap = try {
-                correctBitmapOrientation(bitmap, imageBytes)
-            } catch (e: Exception) {
-                Timber.w(e, "$TAG: Failed to correct orientation, using original")
-                bitmap
-            }
+        // 4 & 5. Читаем только размеры и вычисляем inSampleSize
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(sourceUri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, options)
+        }
+        options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight, maxDimension, maxDimension)
+        options.inJustDecodeBounds = false
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888
+
+        // Декодируем уменьшенную версию
+        val bitmap = context.contentResolver.openInputStream(sourceUri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, options)
+        } ?: throw IOException("Failed to decode bitmap from URI: $sourceUri")
+
+        // 6. Читаем EXIF напрямую из потока и корректируем ориентацию
+        val rotatedBitmap = try {
+            context.contentResolver.openInputStream(sourceUri)?.use { stream ->
+                val exif = ExifInterface(stream)
+                val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+                val matrix = Matrix()
+                when (orientation) {
+                    ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                    ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                    ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                    ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.preScale(-1f, 1f)
+                    ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.preScale(1f, -1f)
+                    ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.postRotate(90f); matrix.preScale(-1f, 1f) }
+                    ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.postRotate(-90f); matrix.preScale(-1f, 1f) }
+                }
+                if (!matrix.isIdentity) Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true) else bitmap
+            } ?: bitmap
+        } catch (e: Exception) {
+            Timber.w(e, "$TAG: Failed to correct orientation, using original")
+            bitmap
+        }
             
             // 7. Сохраняем в файл
             FileOutputStream(outputFile).use { output ->
