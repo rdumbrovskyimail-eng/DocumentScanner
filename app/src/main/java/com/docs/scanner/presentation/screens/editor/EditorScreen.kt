@@ -93,7 +93,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.docs.scanner.BuildConfig
 import com.docs.scanner.domain.core.Document
 import com.docs.scanner.domain.core.Language
@@ -223,10 +225,12 @@ fun EditorScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        viewModel.shareEvent.collect { event ->
-            when (event) {
-                is ShareEvent.File -> {
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(viewModel.shareEvent, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.shareEvent.collect { event ->
+                when (event) {
+                    is ShareEvent.File -> {
                     try {
                         val file = File(event.path)
 
