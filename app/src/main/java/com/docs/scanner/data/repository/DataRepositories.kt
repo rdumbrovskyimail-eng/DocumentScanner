@@ -1651,9 +1651,13 @@ class FileRepositoryImpl @Inject constructor(
                         val imgW = bounds.outWidth.coerceAtLeast(1)
                         val imgH = bounds.outHeight.coerceAtLeast(1)
 
-                        val targetMax = maxOf(pageWidth, pageHeight) * 2
+                        val targetMax = 1024 
                         val sample = calculateInSampleSize(imgW, imgH, targetMax, targetMax)
-                        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                        
+                        val opts = android.graphics.BitmapFactory.Options().apply { 
+                            inSampleSize = sample
+                            inPreferredConfig = Bitmap.Config.RGB_565 
+                        }
                         val bitmap = android.graphics.BitmapFactory.decodeFile(imgFile.absolutePath, opts)
                             ?: throw IOException("Failed to decode image: $imgPath")
 
