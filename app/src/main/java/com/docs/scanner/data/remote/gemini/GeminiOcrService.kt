@@ -613,22 +613,19 @@ class GeminiOcrService @Inject constructor(
      * 2. Если файл > 2MB → агрессивное сжатие на Default dispatcher
      */
     private suspend fun loadAndEncodeImageUltraFast(uri: Uri): String = withContext(Dispatchers.IO) {
-        val rawBytes = openInputStreamForUri(uri).use { it.readBytes() }
-        val sizeMB = rawBytes.size / 1_048_576f
+        val sizeBytes = try {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
         
-        // ✅ Быстрый путь: если уже маленькое
-        if (rawBytes.size <= MAX_IMAGE_SIZE_BYTES) {
-            if (BuildConfig.DEBUG) {
-                Timber.d("$TAG: ✅ Sending original (%.2fMB, no compression)", sizeMB)
-            }
+        if (sizeBytes in 1..MAX_IMAGE_SIZE_BYTES) {
+            if (BuildConfig.DEBUG) Timber.d("$TAG: ✅ Sending original (no compression)")
+            val rawBytes = openInputStreamForUri(uri).use { it.readBytes() }
             return@withContext Base64.encodeToString(rawBytes, Base64.NO_WRAP)
         }
         
-        // ✅ НОВОЕ В 4.1.0: Сжатие на Default dispatcher (CPU-bound operation)
-        if (BuildConfig.DEBUG) {
-            Timber.d("$TAG: ⚙️ Compressing (%.2fMB > 2MB limit)", sizeMB)
-        }
-        
+        if (BuildConfig.DEBUG) Timber.d("$TAG: ⚙️ Compressing (size unknown or > 2MB)")
         withContext(Dispatchers.Default) {
             compressImageUltraFast(uri)
         }
