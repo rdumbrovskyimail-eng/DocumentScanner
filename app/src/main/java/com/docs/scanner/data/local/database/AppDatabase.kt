@@ -164,10 +164,6 @@ abstract class AppDatabase : RoomDatabase() {
                     
                     Timber.d("✅ Created indices")
                     
-                    // Очистить кэш (ключи изменились из-за model)
-                    db.execSQL("DELETE FROM translation_cache")
-                    Timber.w("⚠️ Cleared translation cache (keys regenerated with model)")
-                    
                     Timber.d("✅ Migration 18→19 completed successfully")
                     
                 } catch (e: Exception) {
