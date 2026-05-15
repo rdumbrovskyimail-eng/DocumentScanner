@@ -276,46 +276,6 @@ class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
 
     override fun onCreate(db: SupportSQLiteDatabase) {
         super.onCreate(db)
-
-        // FTS triggers for auto-updating index
-        try {
-            db.execSQL(
-                """
-                CREATE TRIGGER IF NOT EXISTS documents_fts_insert 
-                AFTER INSERT ON documents 
-                BEGIN
-                    INSERT INTO documents_fts(rowid, original_text, translated_text)
-                    VALUES (NEW.id, NEW.original_text, NEW.translated_text);
-                END
-            """
-            )
-
-            db.execSQL(
-                """
-                CREATE TRIGGER IF NOT EXISTS documents_fts_update 
-                AFTER UPDATE ON documents 
-                BEGIN
-                    UPDATE documents_fts 
-                    SET original_text = NEW.original_text, translated_text = NEW.translated_text
-                    WHERE rowid = NEW.id;
-                END
-            """
-            )
-
-            db.execSQL(
-                """
-                CREATE TRIGGER IF NOT EXISTS documents_fts_delete 
-                BEFORE DELETE ON documents 
-                BEGIN
-                    DELETE FROM documents_fts WHERE rowid = OLD.id;
-                END
-            """
-            )
-
-            Timber.d("✅ FTS triggers created")
-        } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to create FTS triggers")
-        }
     }
 
     override fun onOpen(db: SupportSQLiteDatabase) {
