@@ -63,7 +63,7 @@ fun CameraScreen(
     }
     
     LaunchedEffect(Unit) {
-        val activity = context as? Activity
+        val activity = context.findActivity()
         if (activity != null) {
             viewModel.startScanner(activity, scannerLauncher)
         } else {
@@ -130,7 +130,7 @@ fun CameraScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(onClick = {
-                            val activity = context as? Activity
+                            val activity = context.findActivity()
                             if (activity != null) {
                                 viewModel.startScanner(activity, scannerLauncher)
                             }
@@ -150,7 +150,7 @@ fun CameraScreen(
                         onMoveDown = viewModel::movePreviewPageDown,
                         onDelete = viewModel::removePreviewPage,
                         onRescan = {
-                            val activity = context as? Activity
+                            val activity = context.findActivity()
                             if (activity != null) {
                                 viewModel.clearPreview()
                                 viewModel.startScanner(activity, scannerLauncher)
@@ -172,6 +172,12 @@ fun CameraScreen(
             }
         }
     }
+}
+
+tailrec fun android.content.Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 @Composable
