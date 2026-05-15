@@ -270,8 +270,6 @@ class Converters {
 class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
 
     companion object {
-        private const val MAX_MMAP_SIZE = 256 * 1024 * 1024L // 256MB max
-        private const val MMAP_PERCENTAGE = 0.1 // 10% of available memory
     }
 
     override fun onCreate(db: SupportSQLiteDatabase) {
@@ -281,15 +279,10 @@ class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
     override fun onOpen(db: SupportSQLiteDatabase) {
         super.onOpen(db)
 
-        // ✅ Adaptive mmap_size
+        // ✅ Fixed mmap_size
         try {
-            val runtime = Runtime.getRuntime()
-            val maxMemory = runtime.maxMemory()
-            val adaptiveMmapSize = (maxMemory * MMAP_PERCENTAGE).toLong()
-                .coerceAtMost(MAX_MMAP_SIZE)
-
-            db.execSQL("PRAGMA mmap_size=$adaptiveMmapSize")
-            Timber.d("✅ Set adaptive mmap_size: ${adaptiveMmapSize / (1024 * 1024)}MB")
+            db.execSQL("PRAGMA mmap_size=268435456")
+            Timber.d("✅ Set fixed mmap_size: 256MB")
         } catch (e: Exception) {
             Timber.w(e, "⚠️ Failed to set mmap_size")
         }
