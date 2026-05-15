@@ -352,9 +352,9 @@ class BatchOperationsUseCase @Inject constructor(
     ): BatchResult<DocumentId> = withContext(Dispatchers.IO) {
         if (docIds.isEmpty()) return@withContext BatchResult(emptyList(), emptyList(), 0)
         
-        val successful = mutableListOf<DocumentId>()
-        val failed = mutableListOf<Pair<Int, DomainError>>()
-        var completed = 0
+        val successful = java.util.concurrent.ConcurrentLinkedQueue<DocumentId>()
+        val failed = java.util.concurrent.ConcurrentLinkedQueue<Pair<Int, DomainError>>()
+        val completed = java.util.concurrent.atomic.AtomicInteger(0)
         val semaphore = Semaphore(maxConcurrency)
         
         docIds.mapIndexed { index, docId ->
@@ -363,17 +363,15 @@ class BatchOperationsUseCase @Inject constructor(
                     var lastError: DomainError? = null
                     processDoc(docId).collect { state ->
                         when (state) {
-                            is ProcessingState.Complete -> synchronized(successful) { successful.add(docId) }
+                            is ProcessingState.Complete -> successful.add(docId)
                             is ProcessingState.Failed -> lastError = state.error
                             else -> {}
                         }
                     }
-                    lastError?.let { synchronized(failed) { failed.add(index to it) } }
+                    lastError?.let { failed.add(index to it) }
                     
-                    synchronized(this@withContext) {
-                        completed++
-                        onProgress?.invoke(completed, docIds.size)
-                    }
+                    val currentCompleted = completed.incrementAndGet()
+                    onProgress?.invoke(currentCompleted, docIds.size)
                 }
             }
         }.awaitAll()
@@ -401,21 +399,19 @@ class BatchOperationsUseCase @Inject constructor(
     ): BatchResult<R> = withContext(Dispatchers.IO) {
         if (items.isEmpty()) return@withContext BatchResult(emptyList(), emptyList(), 0)
         
-        val successful = mutableListOf<R>()
-        val failed = mutableListOf<Pair<Int, DomainError>>()
-        var completed = 0
+        val successful = java.util.concurrent.ConcurrentLinkedQueue<R>()
+        val failed = java.util.concurrent.ConcurrentLinkedQueue<Pair<Int, DomainError>>()
+        val completed = java.util.concurrent.atomic.AtomicInteger(0)
         val semaphore = Semaphore(maxConcurrency)
         
         items.mapIndexed { index, item ->
             async {
                 semaphore.withPermit {
                     operation(index, item)
-                        .onSuccess { synchronized(successful) { successful.add(it) } }
-                        .onFailure { synchronized(failed) { failed.add(index to it) } }
-                    synchronized(this@withContext) {
-                        completed++
-                        onProgress?.invoke(completed, items.size)
-                    }
+                        .onSuccess { successful.add(it) }
+                        .onFailure { failed.add(index to it) }
+                    val currentCompleted = completed.incrementAndGet()
+                    onProgress?.invoke(currentCompleted, items.size)
                 }
             }
         }.awaitAll()
