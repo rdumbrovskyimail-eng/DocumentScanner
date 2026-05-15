@@ -1659,7 +1659,10 @@ class FileRepositoryImpl @Inject constructor(
                             inPreferredConfig = Bitmap.Config.RGB_565 
                         }
                         val bitmap = android.graphics.BitmapFactory.decodeFile(imgFile.absolutePath, opts)
-                            ?: throw IOException("Failed to decode image: $imgPath")
+                        if (bitmap == null) {
+                            Timber.w("⚠️ Failed to decode image (possibly deleted mid-export): $imgPath")
+                            continue // Пропускаем удалённую страницу, не крашим весь экспорт
+                        }
 
                         val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, index + 1).create()
                         val page = pdf.startPage(pageInfo)
