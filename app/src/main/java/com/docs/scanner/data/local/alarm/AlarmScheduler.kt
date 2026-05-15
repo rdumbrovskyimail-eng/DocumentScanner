@@ -90,7 +90,7 @@ class AlarmScheduler @Inject constructor(
                 time = reminder.time,
                 title = reminder.message,
                 description = term.description,
-                requestCode = term.id.toInt() * 1000 + reminder.offset,
+                requestCode = (term.id.hashCode() * 31 + reminder.offset) and Int.MAX_VALUE,
                 isMainAlarm = reminder.offset == MAIN_ALARM_OFFSET
             )) {
                 successCount++
