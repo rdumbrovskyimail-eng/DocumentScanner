@@ -138,7 +138,8 @@ class GeminiKeyManager @Inject constructor(
         var lastError: Throwable? = null
         var backoffMs = INITIAL_BACKOFF_MS
         
-        repeat(maxRetries) { attempt ->
+        val actualRetries = keyStorage.getAllApiKeys().size.coerceAtLeast(1)
+        repeat(actualRetries) { attempt ->
             val key = getActiveKey()
             
             if (key == null) {
