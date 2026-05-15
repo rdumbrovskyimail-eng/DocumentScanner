@@ -60,38 +60,29 @@ class GeminiKeyManager @Inject constructor(
      * @return Active API key or null if none available
      */
     suspend fun getActiveKey(): String? = keyLock.withLock {
+        getActiveKeyLocked()
+    }
+
+    private fun getActiveKeyLocked(): String? {
         val allKeys = keyStorage.getAllApiKeys()
-        
         if (allKeys.isEmpty()) {
             Timber.w("$TAG: No API keys configured")
-            return@withLock null
+            return null
         }
-        
         val healthyKeys = allKeys.filter { it.isHealthy(MAX_ERRORS_BEFORE_COOLDOWN, ERROR_COOLDOWN_MS) }
-        
         if (healthyKeys.isEmpty()) {
-            // All keys are in cooldown - try the one with oldest error
-            val fallback = allKeys
-                .filter { it.isActive }
-                .minByOrNull { it.lastErrorAt ?: 0L }
-            
+            val fallback = allKeys.filter { it.isActive }.minByOrNull { it.lastErrorAt ?: 0L }
             if (fallback != null) {
                 Timber.w("$TAG: All keys in cooldown, using fallback: ${fallback.maskedKey}")
-                return@withLock fallback.key
+                return fallback.key
             }
-            
             Timber.e("$TAG: No active API keys available!")
-            return@withLock null
+            return null
         }
-        
-        val index = currentKeyIndex.get() % healthyKeys.size
+        val index = (currentKeyIndex.get() and Int.MAX_VALUE) % healthyKeys.size
         val selected = healthyKeys[index]
-        
-        if (BuildConfig.DEBUG) {
-            Timber.d("$TAG: Using key ${index + 1}/${healthyKeys.size}: ${selected.maskedKey}")
-        }
-        
-        return@withLock selected.key
+        if (BuildConfig.DEBUG) Timber.d("$TAG: Using key ${index + 1}/${healthyKeys.size}: ${selected.maskedKey}")
+        return selected.key
     }
     
     /**
@@ -126,7 +117,7 @@ class GeminiKeyManager @Inject constructor(
         // Move to next key
         currentKeyIndex.incrementAndGet()
         
-        return@withLock getActiveKey()
+        return@withLock getActiveKeyLocked()
     }
     
     /**
