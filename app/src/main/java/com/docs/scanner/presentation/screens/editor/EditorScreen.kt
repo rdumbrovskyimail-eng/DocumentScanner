@@ -147,7 +147,6 @@ fun EditorScreen(
     val failedCount by viewModel.failedDocumentsCount.collectAsStateWithLifecycle()
     val confidenceTooltip by viewModel.confidenceTooltip.collectAsStateWithLifecycle()
     val ocrSettings by viewModel.ocrSettings.collectAsStateWithLifecycle()
-    val inlineEditingStates by viewModel.inlineEditingStates.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val lazyListState = rememberLazyListState()
@@ -609,7 +608,7 @@ fun EditorScreen(
                                         state = state,
                                         selectionState = selectionState,
                                         ocrSettings = ocrSettings,
-                                        inlineEditingStates = inlineEditingStates,
+                                        viewModel = viewModel,
                                         onAction = ::handleDocumentAction,
                                         docMenuExpandedId = docMenuExpandedId,
                                         onDocMenuExpandedChange = { id -> docMenuExpandedId = id },
@@ -1035,18 +1034,15 @@ private fun DocumentCardItem(
     state: EditorUiState.Success,
     selectionState: SelectionState,
     ocrSettings: OcrSettingsSnapshot,
-    inlineEditingStates: Map<String, InlineEditState>,
+    viewModel: EditorViewModel,
     onAction: (DocumentAction) -> Unit,
     docMenuExpandedId: Long?,
     onDocMenuExpandedChange: (Long?) -> Unit,
     isDragging: Boolean,
     dragModifier: Modifier
 ) {
-    val ocrEditKey = "${document.id.value}:${TextEditField.OCR_TEXT.name}"
-    val translationEditKey = "${document.id.value}:${TextEditField.TRANSLATED_TEXT.name}"
-
-    val ocrEditState = inlineEditingStates[ocrEditKey]
-    val translationEditState = inlineEditingStates[translationEditKey]
+    val ocrEditState = viewModel.inlineEditingManager.rememberEditState(document.id.value, TextEditField.OCR_TEXT)
+    val translationEditState = viewModel.inlineEditingManager.rememberEditState(document.id.value, TextEditField.TRANSLATED_TEXT)
 
     val isInlineEditingOcr = ocrEditState != null
     val isInlineEditingTranslation = translationEditState != null
