@@ -82,9 +82,8 @@ class CrashLogHandler private constructor(
             ).format(Date())
 
             // Получаем папку Downloads БЕЗ разрешений
-            val downloadsDir = Environment.getExternalStoragePublicDirectory(
-                Environment.DIRECTORY_DOWNLOADS
-            )
+            val downloadsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                ?: context.filesDir // Fallback если внешнее хранилище недоступно
             val logsDir = File(downloadsDir, "DocumentScanner_OCR_Logs")
             
             if (!logsDir.exists()) {
