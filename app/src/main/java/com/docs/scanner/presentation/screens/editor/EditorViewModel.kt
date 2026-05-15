@@ -66,7 +66,7 @@ class EditorViewModel @Inject constructor(
     // MANAGERS
     // ════════════════════════════════════════════════════════════════════
 
-    private val inlineEditingManager = InlineEditingManager(
+    val inlineEditingManager = InlineEditingManager(
         scope = viewModelScope,
         onSave = { docId, field, text ->
             saveInlineEditToDb(docId, field, text)
