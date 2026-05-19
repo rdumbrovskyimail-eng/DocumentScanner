@@ -348,13 +348,14 @@ class MLKitScanner @Inject constructor(
                         // Gemini failed, but ML Kit succeeded → use ML Kit
                         Timber.w("$TAG: ⚠️ Gemini fallback failed, using ML Kit result")
                         return DomainResult.Success(
-                            OcrResult(
-                                text = mlKitResult.text,
-                                detectedLanguage = mlKitResult.detectedLanguage,
-                                confidence = mlKitResult.overallConfidence,
-                                processingTimeMs = System.currentTimeMillis() - start,
-                                source = OcrSource.ML_KIT
-                            )
+                OcrResult(
+                    text = mlKitResult.text,
+                    detectedLanguage = mlKitResult.detectedLanguage,
+                    confidence = mlKitResult.overallConfidence,
+                    wordConfidences = mlKitResult.words.associate { it.text to it.confidence },
+                    processingTimeMs = System.currentTimeMillis() - start,
+                    source = OcrSource.ML_KIT
+                )
                         )
                     }
                 }
@@ -395,6 +396,7 @@ class MLKitScanner @Inject constructor(
                     text = result.text,
                     detectedLanguage = result.detectedLanguage,
                     confidence = result.overallConfidence,
+                    wordConfidences = result.words.associate { it.text to it.confidence },
                     processingTimeMs = System.currentTimeMillis() - start,
                     source = OcrSource.ML_KIT
                 )
@@ -1095,6 +1097,8 @@ class MLKitScanner @Inject constructor(
         val lowConfidenceRanges = words
             .filter { it.needsReview }
             .map { it.startIndex..it.endIndex }
+        
+        val wordConfMap = words.associate { it.text to it.confidence }
         
         return OcrResultWithConfidence(
             text = fullText,

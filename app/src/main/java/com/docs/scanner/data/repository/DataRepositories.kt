@@ -308,7 +308,6 @@ class FolderRepositoryImpl @Inject constructor(
             }.toDomainResult()
         }
 
-    @Transaction
     override suspend fun deleteFolder(id: FolderId, deleteContents: Boolean): DomainResult<Unit> = 
         withContext(Dispatchers.IO) {
             runCatching {
@@ -547,9 +546,7 @@ class RecordRepositoryImpl @Inject constructor(
      * ✅ FIXED (Serious #7): Full implementation instead of stub.
      * 
      * Duplicates a record and optionally all its documents.
-     * Uses @Transaction to ensure atomicity.
      */
-    @Transaction
     override suspend fun duplicateRecord(
         id: RecordId, 
         toFolderId: FolderId?, 
@@ -876,7 +873,6 @@ class DocumentRepositoryImpl @Inject constructor(
             }.toDomainResult()
         }
 
-    @Transaction
     override suspend fun createDocuments(newDocs: List<NewDocument>): DomainResult<List<DocumentId>> = 
         withContext(Dispatchers.IO) {
             runCatching {
@@ -915,7 +911,6 @@ class DocumentRepositoryImpl @Inject constructor(
             }.toDomainResult()
         }
 
-    @Transaction
     override suspend fun deleteDocuments(ids: List<DocumentId>): DomainResult<Int> = 
         withContext(Dispatchers.IO) {
             runCatching {
@@ -951,7 +946,6 @@ class DocumentRepositoryImpl @Inject constructor(
             }.toDomainResult()
         }
 
-    @Transaction
     override suspend fun reorderDocuments(
         recordId: RecordId, 
         docIds: List<DocumentId>
@@ -980,6 +974,7 @@ class DocumentRepositoryImpl @Inject constructor(
         text: String, 
         lang: Language?, 
         confidence: Float?, 
+        wordConfidences: Map<String, Float>?, 
         status: ProcessingStatus
     ): DomainResult<Unit> = withContext(Dispatchers.IO) {
         runCatching {
@@ -988,6 +983,7 @@ class DocumentRepositoryImpl @Inject constructor(
                 text,
                 lang?.code,
                 confidence,
+                wordConfidences,
                 ProcessingStatusMapper.toInt(status),
                 System.currentTimeMillis()
             )
@@ -1246,7 +1242,6 @@ class TermRepositoryImpl @Inject constructor(
             }.toDomainResult()
         }
 
-    @Transaction
     override suspend fun deleteAllCompleted(): DomainResult<Int> = 
         withContext(Dispatchers.IO) {
             runCatching {
@@ -1258,7 +1253,6 @@ class TermRepositoryImpl @Inject constructor(
             }.toDomainResult()
         }
 
-    @Transaction
     override suspend fun deleteAllCancelled(): DomainResult<Int> = 
         withContext(Dispatchers.IO) {
             runCatching {
@@ -1660,9 +1654,12 @@ class FileRepositoryImpl @Inject constructor(
                         }
                         val bitmap = android.graphics.BitmapFactory.decodeFile(imgFile.absolutePath, opts)
                         if (bitmap == null) {
-                            Timber.w("⚠️ Failed to decode image (possibly deleted mid-export): $imgPath")
-                            continue // Пропускаем удалённую страницу, не крашим весь экспорт
+                            Timber.w("⚠️ Failed to decode image: $imgPath")
+                            continue
                         }
+
+                        // ✅ ИСПРАВЛЕНО: Учитываем EXIF ориентацию перед отрисовкой в PDF
+                        val rotatedBitmap = rotateIfNeeded(Uri.fromFile(imgFile), bitmap)
 
                         val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(pageWidth, pageHeight, index + 1).create()
                         val page = pdf.startPage(pageInfo)
@@ -1672,16 +1669,19 @@ class FileRepositoryImpl @Inject constructor(
 
                             val availableW = (pageWidth - margin * 2).toFloat()
                             val availableH = (pageHeight - margin * 2).toFloat()
-                            val scale = minOf(availableW / bitmap.width.toFloat(), availableH / bitmap.height.toFloat())
-                            val drawW = bitmap.width * scale
-                            val drawH = bitmap.height * scale
+                            val scale = minOf(availableW / rotatedBitmap.width.toFloat(), availableH / rotatedBitmap.height.toFloat())
+                            val drawW = rotatedBitmap.width * scale
+                            val drawH = rotatedBitmap.height * scale
                             val left = margin + (availableW - drawW) / 2f
                             val top = margin + (availableH - drawH) / 2f
 
                             val dest = android.graphics.RectF(left, top, left + drawW, top + drawH)
-                            canvas.drawBitmap(bitmap, null, dest, null)
+                            canvas.drawBitmap(rotatedBitmap, null, dest, null)
                         } finally {
                             pdf.finishPage(page)
+                            if (rotatedBitmap !== bitmap) {
+                                rotatedBitmap.recycle()
+                            }
                             bitmap.recycle()
                         }
                     }

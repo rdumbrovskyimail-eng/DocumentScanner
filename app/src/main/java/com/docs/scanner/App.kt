@@ -472,29 +472,7 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
         }
     }
     
-    /**
-     * ✅ FIX: Called when application is terminating.
-     * Properly cancel coroutine scope to prevent memory leak.
-     */
-    override fun onTerminate() {
-        super.onTerminate()
-        cleanupResources()
-    }
-    
-    private fun cleanupResources() {
-        try {
-            // ✅ Cancel coroutine scope to prevent memory leak
-            applicationScope.cancel()
-            
-            // ✅ Stop LogcatCollector and save final logs
-            logcatCollector?.stopCollecting()
-            logcatCollector = null
-            
-            Timber.d("🧹 Resources cleaned up (scope cancelled, logcat stopped)")
-        } catch (e: Exception) {
-            Timber.e(e, "Error during cleanup")
-        }
-    }
+
 }
 
 /**

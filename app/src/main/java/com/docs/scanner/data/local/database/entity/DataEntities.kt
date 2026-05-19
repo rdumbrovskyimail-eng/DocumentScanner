@@ -416,6 +416,9 @@ data class DocumentEntity(
     @ColumnInfo(name = "ocr_confidence")
     val ocrConfidence: Float? = null,
 
+    @ColumnInfo(name = "word_confidences")
+    val wordConfidences: Map<String, Float>? = null,
+
     @ColumnInfo(name = "file_size", defaultValue = "0")
     val fileSize: Long = 0L,
 
@@ -446,6 +449,7 @@ data class DocumentEntity(
             position = position,
             processingStatus = ProcessingStatusMapper.fromInt(processingStatus),
             ocrConfidence = ocrConfidence,
+            wordConfidences = wordConfidences,
             fileSize = fileSize,
             width = width,
             height = height,
@@ -484,6 +488,7 @@ data class DocumentEntity(
             position = doc.position,
             processingStatus = ProcessingStatusMapper.toInt(doc.processingStatus),
             ocrConfidence = doc.ocrConfidence,
+            wordConfidences = doc.wordConfidences,
             fileSize = doc.fileSize,
             width = doc.width,
             height = doc.height,
@@ -521,6 +526,7 @@ data class DocumentWithPath(
     val position: Int,
     val processingStatus: Int,
     val ocrConfidence: Float?,
+    val wordConfidences: Map<String, Float>?,
     val fileSize: Long,
     val width: Int,
     val height: Int,
@@ -542,6 +548,7 @@ data class DocumentWithPath(
         position = position,
         processingStatus = ProcessingStatusMapper.fromInt(processingStatus),
         ocrConfidence = ocrConfidence,
+        wordConfidences = wordConfidences,
         fileSize = fileSize,
         width = width,
         height = height,

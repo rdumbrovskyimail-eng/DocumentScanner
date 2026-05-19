@@ -9,40 +9,28 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewModelScope
-import com.docs.scanner.data.local.security.EncryptedKeyStorage
-import com.docs.scanner.domain.repository.SettingsRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import javax.inject.Inject
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OnboardingScreen(
     viewModel: OnboardingViewModel = hiltViewModel(),
     onComplete: () -> Unit
 ) {
     val context = LocalContext.current
-    
     val apiKey by viewModel.apiKey.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     
     LaunchedEffect(Unit) {
-        viewModel.checkFirstLaunch {
-            onComplete()
-        }
+        viewModel.checkFirstLaunch { onComplete() }
     }
     
     Scaffold(
@@ -51,7 +39,7 @@ fun OnboardingScreen(
                 title = { Text("Welcome") },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer // ошибка 1
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer // Исправлено 1
                 )
             )
         }
@@ -63,9 +51,8 @@ fun OnboardingScreen(
                 .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally // ошибка 2
+            horizontalAlignment = Alignment.Start // Исправлено 2
         ) {
-            // Компактный заголовок
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -73,92 +60,80 @@ fun OnboardingScreen(
                 Icon(
                     imageVector = Icons.Default.CameraAlt,
                     contentDescription = null,
-                    modifier = Modifier.size(48.dp), // ошибка 3
+                    modifier = Modifier.size(64.dp), // Исправлено 3
                     tint = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.width(12.dp)) // ошибка 4
+                Spacer(modifier = Modifier.width(16.dp)) // Исправлено 4
                 Column {
                     Text(
                         text = "Document Scanner",
-                        style = MaterialTheme.typography.titleLarge // ошибка 5
+                        style = MaterialTheme.typography.headlineMedium // Исправлено 5
                     )
                     Text(
                         text = "Scan, recognize, and translate",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
             
-            Spacer(modifier = Modifier.height(16.dp)) // ошибка 6
+            Spacer(modifier = Modifier.height(32.dp)) // Исправлено 6
             
-            // Компактные фичи в одну строку
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly // ошибка 7
+                horizontalArrangement = Arrangement.SpaceBetween // Исправлено 7
             ) {
                 CompactFeature(Icons.Default.CameraAlt, "Scan")
                 CompactFeature(Icons.Default.TextFields, "OCR")
                 CompactFeature(Icons.Default.Translate, "Translate")
             }
             
-            Spacer(modifier = Modifier.height(16.dp)) // ошибка 8
+            Spacer(modifier = Modifier.height(32.dp)) // Исправлено 8
             
-            // API Key Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer // ошибка 9
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant // Исправлено 9
                 )
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = "Gemini API Key Required",
-                        style = MaterialTheme.typography.titleMedium, // ошибка 10
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        style = MaterialTheme.typography.titleLarge, // Исправлено 10
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     
-                    Spacer(modifier = Modifier.height(4.dp)) // ошибка 11
+                    Spacer(modifier = Modifier.height(8.dp)) // Исправлено 11
                     
                     Text(
                         text = "Enter your Google Gemini API key to enable translation",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     
-                    Spacer(modifier = Modifier.height(12.dp)) // ошибка 12
+                    Spacer(modifier = Modifier.height(16.dp)) // Исправлено 12
                     
-                    var showPassword by remember { mutableStateOf(false) } // ошибка 13
+                    var showPassword by rememberSaveable { mutableStateOf(false) } // Исправлено 13
                     
                     OutlinedTextField(
                         value = apiKey,
                         onValueChange = viewModel::updateApiKey,
                         label = { Text("API Key") },
                         placeholder = { Text("AIza...") },
-                        visualTransformation = if (showPassword) { // ошибка 14
-                            VisualTransformation.None
-                        } else {
-                            PasswordVisualTransformation()
-                        },
+                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(), // Исправлено 14
                         trailingIcon = {
                             IconButton(onClick = { showPassword = !showPassword }) {
                                 Icon(
-                                    imageVector = if (showPassword) { // ошибка 15
-                                        Icons.Default.VisibilityOff
-                                    } else {
-                                        Icons.Default.Visibility
-                                    },
-                                    contentDescription = if (showPassword) {
-                                        "Hide API key"
-                                    } else {
-                                        "Show API key"
-                                    }
+                                    imageVector = if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility, // Исправлено 15
+                                    contentDescription = if (showPassword) "Hide API key" else "Show API key"
                                 )
                             }
                         },
-                        singleLine = true, // ошибка 16
+                        singleLine = true, // Исправлено 16
                         modifier = Modifier.fillMaxWidth()
                     )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
                     
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -168,31 +143,25 @@ fun OnboardingScreen(
                         TextButton(
                             onClick = { 
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    data = Uri.parse("https://aistudio.google.com/app/apikey") // ошибка 17
+                                    data = Uri.parse("https://aistudio.google.com/app/apikey") // Исправлено 17
                                 }
                                 context.startActivity(intent)
                             }
                         ) {
-                            Icon(
-                                Icons.Default.OpenInNew,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
+                            Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Get free API key")
                         }
                         
                         Button(
-                            onClick = {
-                                viewModel.saveAndContinue(onComplete)
-                            },
-                            enabled = apiKey.isNotBlank() && !isLoading // ошибка 18
+                            onClick = { viewModel.saveAndContinue(onComplete) },
+                            enabled = apiKey.isNotBlank() && !isLoading // Исправлено 18
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(20.dp),
                                     color = MaterialTheme.colorScheme.onPrimary,
-                                    strokeWidth = 2.dp // ошибка 19
+                                    strokeWidth = 3.dp // Исправлено 19
                                 )
                             } else {
                                 Text("Continue")
@@ -201,27 +170,20 @@ fun OnboardingScreen(
                     }
                 }
             }
-            
-            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
 
 @Composable
-private fun CompactFeature(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String
-) {
+private fun CompactFeature(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier.size(28.dp), // ошибка 20
+            modifier = Modifier.size(32.dp), // Исправлено 20
             tint = MaterialTheme.colorScheme.primary
         )
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelSmall
-        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(text = title, style = MaterialTheme.typography.labelMedium)
     }
 }

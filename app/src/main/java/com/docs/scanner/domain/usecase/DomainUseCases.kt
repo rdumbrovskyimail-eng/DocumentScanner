@@ -124,7 +124,7 @@ class ProcessDocumentUseCase @Inject constructor(
         
         docRepo.updateOcrResult(
             id, ocrResult.text, ocrResult.detectedLanguage, 
-            ocrResult.confidence, ProcessingStatus.Ocr.Complete
+            ocrResult.confidence, ocrResult.wordConfidences, ProcessingStatus.Ocr.Complete
         )
         emit(ProcessingState.OcrComplete(ocrResult.text, ocrResult.detectedLanguage))
         

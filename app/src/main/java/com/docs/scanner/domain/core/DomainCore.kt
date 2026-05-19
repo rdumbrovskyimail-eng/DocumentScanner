@@ -656,6 +656,7 @@ data class OcrResult(
     val text: String,
     val detectedLanguage: Language?,
     val confidence: Float?,
+    val wordConfidences: Map<String, Float>? = null,
     val processingTimeMs: Long,
     val source: OcrSource = OcrSource.UNKNOWN
 )

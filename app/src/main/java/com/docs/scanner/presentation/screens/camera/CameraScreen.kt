@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun CameraScreen(
     viewModel: CameraViewModel = hiltViewModel(),
@@ -104,7 +105,12 @@ fun CameraScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.padding(32.dp)
                     ) {
-                        CircularProgressIndicator()
+                        val progress = (uiState as CameraUiState.Processing).progress / 100f
+                        if (progress > 0f) {
+                            CircularProgressIndicator(progress = { progress })
+                        } else {
+                            CircularProgressIndicator()
+                        }
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = (uiState as CameraUiState.Processing).message,

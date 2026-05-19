@@ -412,11 +412,12 @@ interface DocumentDao {
             original_text = :text, 
             detected_language = :language, 
             ocr_confidence = :confidence,
+            word_confidences = :wordConfidences,
             processing_status = :status, 
             updated_at = :timestamp 
         WHERE id = :documentId
     """)
-    suspend fun updateOcrResult(documentId: Long, text: String, language: String?, confidence: Float?, status: Int, timestamp: Long)
+    suspend fun updateOcrResult(documentId: Long, text: String, language: String?, confidence: Float?, wordConfidences: Map<String, Float>?, status: Int, timestamp: Long)
 
     @Query("UPDATE documents SET translated_text = :text, processing_status = :status, updated_at = :timestamp WHERE id = :documentId")
     suspend fun updateTranslation(documentId: Long, text: String, status: Int, timestamp: Long)
@@ -465,7 +466,7 @@ interface DocumentDao {
                d.original_text AS originalText, d.translated_text AS translatedText,
                d.detected_language AS detectedLanguage, d.source_language AS sourceLanguage,
                d.target_language AS targetLanguage, d.position, d.processing_status AS processingStatus,
-               d.ocr_confidence AS ocrConfidence, d.file_size AS fileSize, d.width, d.height,
+               d.ocr_confidence AS ocrConfidence, d.word_confidences AS wordConfidences, d.file_size AS fileSize, d.width, d.height,
                d.created_at AS createdAt, d.updated_at AS updatedAt,
                r.name AS recordName, f.name AS folderName
         FROM documents d
@@ -483,7 +484,7 @@ interface DocumentDao {
                d.original_text AS originalText, d.translated_text AS translatedText,
                d.detected_language AS detectedLanguage, d.source_language AS sourceLanguage,
                d.target_language AS targetLanguage, d.position, d.processing_status AS processingStatus,
-               d.ocr_confidence AS ocrConfidence, d.file_size AS fileSize, d.width, d.height,
+               d.ocr_confidence AS ocrConfidence, d.word_confidences AS wordConfidences, d.file_size AS fileSize, d.width, d.height,
                d.created_at AS createdAt, d.updated_at AS updatedAt,
                r.name AS recordName, f.name AS folderName
         FROM documents_fts fts

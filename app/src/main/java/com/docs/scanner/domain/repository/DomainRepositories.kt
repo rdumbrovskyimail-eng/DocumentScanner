@@ -121,7 +121,7 @@ interface DocumentRepository {
     
     // Processing
     suspend fun updateProcessingStatus(id: DocumentId, status: ProcessingStatus): DomainResult<Unit>
-    suspend fun updateOcrResult(id: DocumentId, text: String, lang: Language?, confidence: Float?, status: ProcessingStatus): DomainResult<Unit>
+    suspend fun updateOcrResult(id: DocumentId, text: String, lang: Language?, confidence: Float?, wordConfidences: Map<String, Float>?, status: ProcessingStatus): DomainResult<Unit>
     suspend fun updateTranslationResult(id: DocumentId, text: String, status: ProcessingStatus): DomainResult<Unit>
 }
 

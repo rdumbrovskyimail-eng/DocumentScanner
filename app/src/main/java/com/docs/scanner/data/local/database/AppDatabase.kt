@@ -38,7 +38,7 @@ import timber.log.Timber
         TranslationCacheEntity::class,
         SearchHistoryEntity::class
     ],
-    version = 19, // ✅ ИЗМЕНЕНО: было 18, стало 19
+    version = 20, // ✅ ИЗМЕНЕНО: было 19, стало 20
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -91,12 +91,20 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_15_16,
                     MIGRATION_16_17,
                     MIGRATION_17_18,
-                    MIGRATION_18_19 // ✅ ДОБАВЛЕНО: новая миграция
+                    MIGRATION_18_19,
+                    MIGRATION_19_20 // ✅ ДОБАВЛЕНО: новая миграция
                 )
                 .addCallback(DatabaseCallback(context))
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                 .build()
+        }
+
+        // ✅ ДОБАВЛЕНО: Миграция 19→20 (добавление колонки word_confidences)
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE documents ADD COLUMN word_confidences TEXT")
+            }
         }
 
         // ✅ ДОБАВЛЕНО: Миграция 18→19 (добавление колонки model)
@@ -259,6 +267,22 @@ class Converters {
                 Timber.w(e, "⚠️ Failed to decode string map")
                 null
             }
+        }
+    }
+
+    @TypeConverter
+    fun fromStringFloatMap(map: Map<String, Float>?): String? {
+        return map?.let { 
+            json.encodeToString(MapSerializer(String.serializer(), kotlinx.serialization.builtins.Float.serializer()), it) 
+        }
+    }
+
+    @TypeConverter
+    fun toStringFloatMap(value: String?): Map<String, Float>? {
+        return value?.let {
+            try {
+                json.decodeFromString(MapSerializer(String.serializer(), kotlinx.serialization.builtins.Float.serializer()), it)
+            } catch (e: Exception) { null }
         }
     }
 }

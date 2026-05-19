@@ -225,7 +225,6 @@ class TranslationCacheManager @Inject constructor(
         }
     }
     
-    @Transaction
     suspend fun checkAndCleanIfNeeded() = withContext(Dispatchers.IO) {
         try {
             val currentCount = cacheDao.getCount()
