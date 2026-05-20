@@ -157,6 +157,7 @@ class DragDropState(
             animatedOffsetY.snapTo(0f)
         }
     }
+    }
     
     private fun updateTargetIndex() {
         val dragIdx = draggingItemIndex ?: return

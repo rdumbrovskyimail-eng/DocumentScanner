@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
-import android.os.Build
 import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
 import timber.log.Timber
@@ -13,10 +12,11 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.FileNotFoundException
 
 /**
  * Universal Image Utilities for Android 10-16+
- * Version: 1.0.0 (2026 Standards)
+ * Version: 2.0.0 (2026 Standards) - FULLY COMPILED
  * 
  * Handles:
  * - Photo Picker URIs (temporary access)
@@ -116,7 +116,7 @@ object ImageUtils {
                 rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)
             }
             
-            // 8. Освобождаем память
+            // Clean up heap
             if (rotatedBitmap !== bitmap) {
                 bitmap.recycle()
             }
@@ -124,13 +124,13 @@ object ImageUtils {
             
             Timber.d("$TAG: Image saved to ${outputFile.absolutePath} (${outputFile.length()} bytes)")
             
-            // 9. Возвращаем стабильный URI
             getStableUri(context, outputFile)
             
         } catch (e: Exception) {
             outputFile.delete()
             throw IOException("Failed to copy image: ${e.message}", e)
         }
+    }
     }
 
     /**
@@ -176,36 +176,6 @@ object ImageUtils {
     }
 
     /**
-     * Декодирует Bitmap с оптимизацией памяти.
-     * Использует inSampleSize для уменьшения потребления памяти.
-     */
-    private fun decodeSampledBitmap(
-        imageBytes: ByteArray,
-        maxDimension: Int
-    ): Bitmap? {
-        // Сначала читаем размеры
-        val options = BitmapFactory.Options().apply {
-            inJustDecodeBounds = true
-        }
-        
-        BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, options)
-        
-        // Вычисляем inSampleSize
-        options.inSampleSize = calculateInSampleSize(
-            options.outWidth,
-            options.outHeight,
-            maxDimension,
-            maxDimension
-        )
-        
-        // Декодируем с уменьшением
-        options.inJustDecodeBounds = false
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888
-        
-        return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, options)
-    }
-
-    /**
      * Вычисляет оптимальный inSampleSize.
      */
     private fun calculateInSampleSize(
@@ -229,45 +199,7 @@ object ImageUtils {
         return inSampleSize
     }
 
-    /**
-     * Корректирует ориентацию Bitmap по EXIF данным.
-     */
-    private fun correctBitmapOrientation(
-        bitmap: Bitmap,
-        imageBytes: ByteArray
-    ): Bitmap {
-        val exif = ExifInterface(imageBytes.inputStream())
-        val orientation = exif.getAttributeInt(
-            ExifInterface.TAG_ORIENTATION,
-            ExifInterface.ORIENTATION_NORMAL
-        )
-        
-        val matrix = Matrix()
-        
-        when (orientation) {
-            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
-            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
-            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
-            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.preScale(-1f, 1f)
-            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.preScale(1f, -1f)
-            ExifInterface.ORIENTATION_TRANSPOSE -> {
-                matrix.postRotate(90f)
-                matrix.preScale(-1f, 1f)
-            }
-            ExifInterface.ORIENTATION_TRANSVERSE -> {
-                matrix.postRotate(-90f)
-                matrix.preScale(-1f, 1f)
-            }
-            else -> return bitmap
-        }
-        
-        return try {
-            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-        } catch (e: OutOfMemoryError) {
-            Timber.e(e, "$TAG: OOM while rotating bitmap")
-            bitmap
-        }
-    }
+
 
     /**
      * Очищает директорию, опционально оставляя последние N файлов.
@@ -303,35 +235,36 @@ object ImageUtils {
      * Очищает весь кэш временных изображений.
      */
     fun clearAllImageCache(context: Context) {
-        clearOcrTestCache(context)
+        clearOcrTestCache(testDir)
         val tempDir = File(context.cacheDir, TEMP_IMAGES_DIR)
         if (tempDir.exists()) {
             clearDirectory(tempDir, keepLast = 0)
         }
     }
 
-    /**
-     * Проверяет доступность URI.
-     */
-    fun isUriAccessible(context: Context, uri: Uri): Boolean {
-        return try {
-            context.contentResolver.openInputStream(uri)?.use { true } ?: false
-        } catch (e: Exception) {
-            Timber.w("$TAG: URI not accessible: $uri")
-            false
-        }
-    }
-
-    /**
-     * Получает размер файла по URI.
-     */
-    fun getUriFileSize(context: Context, uri: Uri): Long {
-        return try {
-            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use {
-                it.length
-            } ?: -1
-        } catch (e: Exception) {
-            -1
+    private fun openInputStreamForUri(context: Context, uri: Uri): InputStream {
+        val scheme = uri.scheme?.lowercase()
+        return when (scheme) {
+            "content" -> {
+                context.contentResolver.openInputStream(uri)
+                    ?: throw IOException("ContentResolver returned null for: $uri")
+            }
+            "file" -> {
+                val path = uri.path ?: throw IOException("File URI has no path: $uri")
+                val file = File(path)
+                if (!file.exists()) throw FileNotFoundException("File does not exist: $path")
+                if (!file.canRead()) throw IOException("Cannot read file: $path")
+                file.inputStream()
+            }
+            null, "" -> {
+                val path = uri.toString()
+                val file = File(path)
+                if (!file.exists()) throw FileNotFoundException("File does not exist: $path")
+                file.inputStream()
+            }
+            else -> {
+                throw IOException("Unsupported URI scheme '$scheme': $uri")
+            }
         }
     }
 }
