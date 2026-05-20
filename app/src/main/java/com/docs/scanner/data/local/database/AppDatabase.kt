@@ -273,7 +273,7 @@ class Converters {
     @TypeConverter
     fun fromStringFloatMap(map: Map<String, Float>?): String? {
         return map?.let { 
-            json.encodeToString(MapSerializer(String.serializer(), kotlinx.serialization.builtins.Float.serializer()), it) 
+            json.encodeToString(MapSerializer(String.serializer(), kotlinx.serialization.builtins.serializer()), it) 
         }
     }
 
@@ -281,7 +281,7 @@ class Converters {
     fun toStringFloatMap(value: String?): Map<String, Float>? {
         return value?.let {
             try {
-                json.decodeFromString(MapSerializer(String.serializer(), kotlinx.serialization.builtins.Float.serializer()), it)
+                json.decodeFromString(MapSerializer(String.serializer(), kotlinx.serialization.builtins.serializer()), it)
             } catch (e: Exception) { null }
         }
     }

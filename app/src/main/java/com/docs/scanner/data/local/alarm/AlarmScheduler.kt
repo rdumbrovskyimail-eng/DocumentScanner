@@ -90,7 +90,7 @@ class AlarmScheduler @Inject constructor(
                 time = reminder.time,
                 title = reminder.message,
                 description = term.description,
-                requestCode = (term.id.hashCode() * 31 + reminder.offset) and Int.MAX_VALUE,
+                offset = reminder.offset,
                 isMainAlarm = reminder.offset == MAIN_ALARM_OFFSET
             )) {
                 successCount++
@@ -183,9 +183,8 @@ class AlarmScheduler @Inject constructor(
      */
     fun cancelTerm(termId: Long) {
         synchronized(scheduleLock) {
-            // Отменяем все возможные напоминания (до 150 штук)
             for (offset in 0..MAX_REMINDER_OFFSET) {
-                cancelAlarm(termId.toInt() * 1000 + offset)
+                cancelAlarm(getRequestCode(termId, offset))
             }
             Timber.d("Cancelled all alarms for term $termId")
         }
@@ -200,19 +199,21 @@ class AlarmScheduler @Inject constructor(
         time: Long,
         title: String,
         description: String?,
-        requestCode: Int,
+        offset: Int,
         isMainAlarm: Boolean = false
     ): Boolean {
         if (time <= System.currentTimeMillis()) {
             return false
         }
         
+        val requestCode = getRequestCode(termId, offset)
+        
         val intent = Intent(context, TermAlarmReceiver::class.java).apply {
             putExtra(EXTRA_TERM_ID, termId)
             putExtra(EXTRA_TITLE, title)
             putExtra(EXTRA_DESCRIPTION, description)
             putExtra(EXTRA_IS_MAIN_ALARM, isMainAlarm)
-            putExtra(EXTRA_NOTIFICATION_OFFSET, requestCode % 1000)
+            putExtra(EXTRA_NOTIFICATION_OFFSET, offset)
         }
         
         val pendingIntent = PendingIntent.getBroadcast(
@@ -232,7 +233,6 @@ class AlarmScheduler @Inject constructor(
                     )
                     true
                 } else {
-                    // Fallback: неточный будильник
                     alarmManager.setAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
                         time,
@@ -308,7 +308,7 @@ class AlarmScheduler @Inject constructor(
         const val EXTRA_IS_MAIN_ALARM = "is_main_alarm"
         const val EXTRA_NOTIFICATION_OFFSET = "notification_offset"
         
-        // Шаблоны сообщений (TODO: перенести в string resources)
+        // Шаблоны сообщений
         private const val MSG_DAYS_2 = "2 days until: %s"
         private const val MSG_DAY_1 = "1 day until: %s"
         private const val MSG_TOMORROW = "Tomorrow: %s"
@@ -321,5 +321,10 @@ class AlarmScheduler @Inject constructor(
         private const val MSG_MIN_15 = "15 minutes until: %s"
         private const val MSG_NOW = "⏰ NOW: %s"
         private const val MSG_REMINDER = "⏰ REMINDER: %s"
+
+        // ✅ Единый генератор Request Code для планирования и отмены
+        fun getRequestCode(termId: Long, offset: Int): Int {
+            return (termId.hashCode() * 31 + offset) and Int.MAX_VALUE
+        }
     }
 }

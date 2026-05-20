@@ -645,12 +645,10 @@ class GeminiOcrService @Inject constructor(
      * - Target 1920px (Full HD достаточно)
      */
     private suspend fun compressImageUltraFast(uri: Uri): String = withContext(Dispatchers.Default) {
-        // 1. Получаем размеры без декодирования
         val options = BitmapFactory.Options().apply {
             inJustDecodeBounds = true
         }
         
-        // ✅ File I/O на IO dispatcher
         withContext(Dispatchers.IO) {
             openInputStreamForUri(uri).use { stream ->
                 BitmapFactory.decodeStream(stream, null, options)
@@ -661,40 +659,32 @@ class GeminiOcrService @Inject constructor(
             throw IOException("Failed to decode image dimensions")
         }
         
-        // 2. Рассчитываем optimal sample size
         val sampleSize = calculateOptimalSampleSize(
             options.outWidth, 
             options.outHeight
-        ).coerceAtLeast(2)  // ✅ Минимум 2x для скорости
+        ).coerceAtLeast(2)
         
-        if (BuildConfig.DEBUG) {
-            Timber.d("$TAG: Original: ${options.outWidth}x${options.outHeight}, sample=$sampleSize")
-        }
-        
-        // 3. Декодируем с downsampling
         options.inJustDecodeBounds = false
         options.inSampleSize = sampleSize
-        options.inPreferredConfig = OPTIMAL_BITMAP_CONFIG  // ✅ НОВОЕ В 4.1.0: Оптимальный config
+        options.inPreferredConfig = OPTIMAL_BITMAP_CONFIG
         
-        // ✅ File I/O на IO dispatcher
         val bitmap = withContext(Dispatchers.IO) {
             openInputStreamForUri(uri).use { stream ->
                 BitmapFactory.decodeStream(stream, null, options)
             }
         } ?: throw IOException("Failed to decode bitmap")
         
+        var scaled: Bitmap? = null
         try {
-            // 4. Масштабируем если всё ещё большое
-            val scaled = scaleBitmapIfNeeded(bitmap)
+            scaled = scaleBitmapIfNeeded(bitmap)
             
-            // 5. Сжимаем в JPEG с агрессивным quality
             val base64 = ByteArrayOutputStream().use { baos ->
                 var quality = JPEG_QUALITY
                 
                 do {
                     baos.reset()
                     scaled.compress(Bitmap.CompressFormat.JPEG, quality, baos)
-                    quality -= 15  // ✅ Агрессивное снижение (было 10)
+                    quality -= 15
                 } while (baos.size() > MAX_IMAGE_SIZE_BYTES && quality > 30)
                 
                 if (BuildConfig.DEBUG) {
@@ -705,13 +695,12 @@ class GeminiOcrService @Inject constructor(
                 Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
             }
             
-            if (scaled !== bitmap) {
-                scaled.recycle()
-            }
-            
             base64
         } finally {
             bitmap.recycle()
+            if (scaled != null && scaled !== bitmap) {
+                scaled.recycle()
+            }
         }
     }
     

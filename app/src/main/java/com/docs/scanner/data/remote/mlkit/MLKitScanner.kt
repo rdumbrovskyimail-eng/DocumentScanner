@@ -834,13 +834,28 @@ class MLKitScanner @Inject constructor(
             Timber.d("$TAG:    └─ Sample size: $sampleSize")
         }
         
-        options.inJustDecodeBounds = false
-        options.inSampleSize = sampleSize
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888
+        var bitmap: Bitmap? = null
+        var decodeAttempts = 0
         
-        val bitmap = openInputStreamForUri(uri).use { stream ->
-            BitmapFactory.decodeStream(stream, null, options)
-        } ?: throw IOException("Failed to decode bitmap from URI: $uri")
+        while (bitmap == null && decodeAttempts < 3) {
+            try {
+                options.inJustDecodeBounds = false
+                options.inSampleSize = sampleSize
+                options.inPreferredConfig = Bitmap.Config.ARGB_8888
+                
+                bitmap = openInputStreamForUri(uri).use { stream ->
+                    BitmapFactory.decodeStream(stream, null, options)
+                }
+            } catch (e: OutOfMemoryError) {
+                Timber.w("$TAG: OutOfMemory during bitmap decode, doubling sampleSize")
+                sampleSize *= 2
+                decodeAttempts++
+            }
+        }
+        
+        if (bitmap == null) {
+            throw IOException("Failed to decode bitmap from URI due to OOM or corruption: $uri")
+        }
         
         val inputImage = InputImage.fromBitmap(bitmap, 0)
         Pair(inputImage, bitmap)

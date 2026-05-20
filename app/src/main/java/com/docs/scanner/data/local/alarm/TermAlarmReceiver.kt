@@ -30,7 +30,7 @@ class TermAlarmReceiver : BroadcastReceiver() {
         isMainAlarm: Boolean
     ) {
         // ✅ УНИКАЛЬНЫЙ NOTIFICATION ID (каждое напоминание = отдельное уведомление)
-        val notificationId = (termId.toInt() * 1000 + offset)
+        val notificationId = ((termId.hashCode() * 31 + offset) and Int.MAX_VALUE)
         
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP

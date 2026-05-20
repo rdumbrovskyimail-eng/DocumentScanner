@@ -61,6 +61,7 @@ class EditorViewModel @Inject constructor(
     }
 
     private val recordId: Long = savedStateHandle.get<Long>("recordId") ?: 0L
+    private var reorderJob: kotlinx.coroutines.Job? = null
 
     // ════════════════════════════════════════════════════════════════════
     // MANAGERS
@@ -405,7 +406,9 @@ class EditorViewModel @Inject constructor(
 
         _uiState.value = currentState.copy(documents = currentDocs)
 
-        viewModelScope.launch {
+        // ✅ Отменяем предыдущую задачу записи в БД, если пользователь быстро двигает элементы дальше
+        reorderJob?.cancel()
+        reorderJob = viewModelScope.launch {
             val docIds = currentDocs.map { it.id }
             useCases.documents.reorder(RecordId(recordId), docIds)
                 .onFailure { error ->

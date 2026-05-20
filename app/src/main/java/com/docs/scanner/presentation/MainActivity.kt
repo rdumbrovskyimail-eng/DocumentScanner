@@ -95,6 +95,12 @@ class MainActivity : ComponentActivity() {
                 PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
             }
+        } else {
+            // Android 12 (API 32) and below legacy storage permission
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) !=
+                PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
         }
 
         // ✅ SCHEDULE_EXACT_ALARM (Android 12+) - отдельный Intent

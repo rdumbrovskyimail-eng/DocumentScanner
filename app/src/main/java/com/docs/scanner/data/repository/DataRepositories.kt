@@ -1476,9 +1476,23 @@ class FileRepositoryImpl @Inject constructor(
             var rotatedBitmap: Bitmap? = null
             
             runCatching {
-                val uri = Uri.parse(sourceUri)
-                val inputStream = context.contentResolver.openInputStream(uri) 
-                    ?: throw IOException("Cannot open URI: $sourceUri")
+                val uri = try {
+                    val parsed = Uri.parse(sourceUri)
+                    if (parsed.scheme.isNullOrBlank()) {
+                        Uri.fromFile(File(sourceUri))
+                    } else {
+                        parsed
+                    }
+                } catch (e: Exception) {
+                    Uri.fromFile(File(sourceUri))
+                }
+                
+                val inputStream = if (uri.scheme == "file") {
+                    FileInputStream(File(uri.path ?: throw IOException("File path is null")))
+                } else {
+                    context.contentResolver.openInputStream(uri)
+                        ?: throw IOException("Cannot open URI: $sourceUri")
+                }
                 
                 inputBitmap = BitmapFactory.decodeStream(inputStream)
                 inputStream.close()
@@ -1972,9 +1986,15 @@ class BackupRepositoryImpl @Inject constructor(
                     while (zip.nextEntry.also { entry = it } != null) {
                         when (val name = entry!!.name) {
                             "manifest.json" -> {
-                                val content = zip.bufferedReader().use { it.readText() }
+                                val output = java.io.ByteArrayOutputStream()
+                                val buffer = ByteArray(1024)
+                                var len: Int
+                                while (zip.read(buffer).also { len = it } > 0) {
+                                    output.write(buffer, 0, len)
+                                }
+                                val content = output.toString("UTF-8")
                                 val manifest = jsonSerializer.decode<BackupManifest>(content)
-                                manifestValid = manifest.dbVersion in 1..19
+                                manifestValid = manifest.dbVersion in 1..20
                                 Timber.d("📦 Restoring backup from ${manifest.backupDate}")
                             }
                             
