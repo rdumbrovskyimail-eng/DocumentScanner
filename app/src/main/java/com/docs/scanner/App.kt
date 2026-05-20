@@ -406,13 +406,13 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     override fun newImageLoader(context: PlatformContext): ImageLoader {
         return ImageLoader.Builder(context)
             .memoryCache {
-                MemoryCache.Builder()
+                MemoryCache.Builder(context)
                     .maxSizeBytes(MEMORY_CACHE_SIZE_MB * 1024 * 1024)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
-                    // ✅ FIX: Use okio.Path instead of java.nio.file.Path
+                    // Safe conversion to Okio Path for robust multiplatform file system operations
                     .directory(cacheDir.resolve("image_cache").toOkioPath())
                     .maxSizeBytes(DISK_CACHE_SIZE_MB * 1024 * 1024)
                     .build()

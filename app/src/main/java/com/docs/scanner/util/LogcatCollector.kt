@@ -69,13 +69,12 @@ class LogcatCollector private constructor(private val context: Context) {
     }
 
     private fun getLogsDir(): File {
-        val downloadsDir = Environment.getExternalStoragePublicDirectory(
-            Environment.DIRECTORY_DOWNLOADS
-        )
-        val logsDir = File(downloadsDir, "DocumentScanner_OCR_Logs")
+        val downloadsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: context.filesDir
+        val logsDir = File(downloadsDir, "DocumentScanner_Logs")
         if (!logsDir.exists()) {
             val created = logsDir.mkdirs()
-            Timber.d("📁 Logs dir created: $created at ${logsDir.absolutePath}")
+            Timber.d("📁 App-specific logs directory created: $created at ${logsDir.absolutePath}")
         }
         return logsDir
     }

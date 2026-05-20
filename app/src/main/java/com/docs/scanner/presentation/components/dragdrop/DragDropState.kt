@@ -153,9 +153,8 @@ class DragDropState(
         draggingItemHeight = 0
         
         scope.launch {
-            // ✅ Use snapTo instead of animateTo for instant reset
+            // Reset state instantly without locking translation limits
             animatedOffsetY.snapTo(0f)
-            animatedOffsetY.updateBounds(0f, 0f)
         }
     }
     

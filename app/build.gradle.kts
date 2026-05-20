@@ -17,9 +17,6 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
-
-    id("com.google.gms.google-services") version "4.4.2" apply false
-    id("com.google.firebase.crashlytics") version "3.0.2" apply false
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -245,6 +242,9 @@ dependencies {
 
     // ✅ DRAG & DROP LIBRARY - sh.calvin.reorderable (Compose 1.7+ compatible)
     implementation("sh.calvin.reorderable:reorderable:2.4.3")
+
+    // ✅ EXIF INTERFACE FOR IMAGE ROTATION AND METADATA PROCESSING
+    implementation(libs.androidx.exifinterface)
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
