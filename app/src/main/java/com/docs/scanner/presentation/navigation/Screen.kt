@@ -39,17 +39,33 @@ sealed class Screen(val route: String) {
     }
     
     /**
-     * Экран редактора документа
+     * Экран редактора документа.
+     *
+     * @param highlightDocId опциональный ID документа, к которому EditorScreen
+     * должен автоскроллнуться и кратковременно подсветить (например, при переходе
+     * из результата поиска). При отсутствии передаётся -1L (sentinel — query-параметр
+     * NavType.LongType не поддерживает null).
      */
-    data object Editor : Screen("editor/{recordId}") {
-        fun createRoute(recordId: Long): String {
+    data object Editor : Screen("editor/{recordId}?highlightDocId={highlightDocId}") {
+        const val HIGHLIGHT_NONE: Long = -1L
+
+        fun createRoute(recordId: Long, highlightDocId: Long? = null): String {
             require(recordId > 0) { "Invalid recordId: $recordId" }
-            return "editor/$recordId"
+            val highlight = highlightDocId?.takeIf { it > 0L }
+            return if (highlight != null) {
+                "editor/$recordId?highlightDocId=$highlight"
+            } else {
+                "editor/$recordId"
+            }
         }
-        
+
         fun getRecordIdFromRoute(savedStateHandle: SavedStateHandle): Long {
-            // ✅ FIX: NavGraph saves this as Long, so we must retrieve it as Long
             return savedStateHandle.get<Long>("recordId") ?: 0L
+        }
+
+        fun getHighlightDocIdFromRoute(savedStateHandle: SavedStateHandle): Long? {
+            val raw = savedStateHandle.get<Long>("highlightDocId") ?: HIGHLIGHT_NONE
+            return if (raw > 0L) raw else null
         }
     }
     

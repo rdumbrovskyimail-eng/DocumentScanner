@@ -18,6 +18,8 @@ package com.docs.scanner.presentation.screens.editor.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -116,6 +118,12 @@ fun DocumentCard(
     isSelected: Boolean,
     isSelectionMode: Boolean,
     isDragging: Boolean,
+    /**
+     * When true, the card briefly flashes a yellow background. Used to mark
+     * a document that was just deep-linked from a search result. The fade-out
+     * is driven by animateColorAsState (longer duration when going back to normal).
+     */
+    isHighlighted: Boolean = false,
 
     // Inline editing state (управляется извне через ViewModel)
     isInlineEditingOcr: Boolean = false,
@@ -187,6 +195,24 @@ fun DocumentCard(
         label = "selection_border"
     )
 
+    // ─── Search-highlight tint (yellow flash that fades out smoothly) ───
+    val isDarkTheme = isSystemInDarkTheme()
+    val highlightTint = if (isDarkTheme) {
+        Color(0xFFFBC02D).copy(alpha = 0.45f) // muted amber for dark mode
+    } else {
+        Color(0xFFFFF59D)                    // light amber for light mode
+    }
+    val baseContainerColor = if (isDragging) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val animatedContainerColor by animateColorAsState(
+        targetValue = if (isHighlighted) highlightTint else baseContainerColor,
+        animationSpec = tween(durationMillis = if (isHighlighted) 180 else 1400),
+        label = "card_highlight_color"
+    )
+
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -202,11 +228,7 @@ fun DocumentCard(
             ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isDragging) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
+            containerColor = animatedContainerColor
         )
     ) {
         Column(

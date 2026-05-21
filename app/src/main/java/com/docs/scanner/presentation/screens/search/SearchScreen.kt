@@ -35,7 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
     onBackClick: () -> Unit,
-    onDocumentClick: (Long) -> Unit
+    onDocumentClick: (recordId: Long, documentId: Long) -> Unit
 ) {
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -125,7 +125,7 @@ fun SearchScreen(
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onDocumentClick(item.recordId) }
+                                    .clickable { onDocumentClick(item.recordId, item.documentId) }
                             ) {
                                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(

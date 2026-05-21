@@ -111,22 +111,34 @@ fun NavGraph(
 
         composable(
             route = Screen.Editor.route,
-            arguments = listOf(navArgument("recordId") { type = NavType.LongType })
+            arguments = listOf(
+                navArgument("recordId") { type = NavType.LongType },
+                navArgument("highlightDocId") {
+                    type = NavType.LongType
+                    defaultValue = Screen.Editor.HIGHLIGHT_NONE
+                }
+            )
         ) { backStackEntry ->
             val recordId = backStackEntry.arguments?.getLong("recordId") ?: run {
                 Log.e(TAG, "Missing recordId parameter")
                 navController.popBackStack()
                 return@composable
             }
-            
+
             if (recordId <= 0) {
                 Log.e(TAG, "Invalid recordId: $recordId")
                 navController.popBackStack()
                 return@composable
             }
-            
+
+            val rawHighlight = backStackEntry.arguments
+                ?.getLong("highlightDocId")
+                ?: Screen.Editor.HIGHLIGHT_NONE
+            val highlightDocumentId = rawHighlight.takeIf { it > 0L }
+
             EditorScreen(
                 recordId = recordId,
+                highlightDocumentId = highlightDocumentId,
                 onBackClick = { navController.popBackStack() },
                 onImageClick = { documentId ->
                     safeNavigate(navController) {
@@ -157,9 +169,9 @@ fun NavGraph(
         composable(Screen.Search.route) {
             SearchScreen(
                 onBackClick = { navController.popBackStack() },
-                onDocumentClick = { recordId ->
+                onDocumentClick = { recordId, documentId ->
                     safeNavigate(navController) {
-                        navigate(Screen.Editor.createRoute(recordId))
+                        navigate(Screen.Editor.createRoute(recordId, documentId))
                     }
                 }
             )

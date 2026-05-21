@@ -82,6 +82,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -127,7 +128,13 @@ fun EditorScreen(
     viewModel: EditorViewModel = hiltViewModel(),
     onBackClick: () -> Unit,
     onImageClick: (Long) -> Unit,
-    onCameraClick: () -> Unit
+    onCameraClick: () -> Unit,
+    /**
+     * Optional document ID to scroll to and briefly highlight (yellow flash, ~2.5s)
+     * after the screen opens. Used for deep-linking from Search results.
+     * Pass null if no highlighting is desired.
+     */
+    highlightDocumentId: Long? = null
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -150,6 +157,15 @@ fun EditorScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val lazyListState = rememberLazyListState()
+
+    // ════════════════════════════════════════════════════════════════════
+    // SEARCH-RESULT HIGHLIGHT (deep-link from SearchScreen)
+    //  - `consumedHighlightId` survives rotation/recomposition so the
+    //    flash never plays twice for the same nav argument.
+    //  - `highlightedDocId` drives the actual yellow fade on DocumentCard.
+    // ════════════════════════════════════════════════════════════════════
+    var consumedHighlightId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var highlightedDocId by remember { mutableStateOf<Long?>(null) }
 
     // ════════════════════════════════════════════════════════════════════
     // DIALOG STATES
@@ -221,6 +237,37 @@ fun EditorScreen(
             if (state.documents.isEmpty() && !showAddDocumentDialog) {
                 showAddDocumentDialog = true
             }
+        }
+    }
+
+    LaunchedEffect(highlightDocumentId, uiState) {
+        val targetId = highlightDocumentId ?: return@LaunchedEffect
+        if (consumedHighlightId == targetId) return@LaunchedEffect
+
+        val state = uiState as? EditorUiState.Success ?: return@LaunchedEffect
+        val index = state.documents.indexOfFirst { it.id.value == targetId }
+        if (index < 0) {
+            // Document was deleted/moved between search and open — silently skip.
+            consumedHighlightId = targetId
+            return@LaunchedEffect
+        }
+
+        // Mark consumed BEFORE animations so rotation can't replay it.
+        consumedHighlightId = targetId
+
+        // Wait one frame so LazyColumn has the items measured, then scroll.
+        try {
+            lazyListState.animateScrollToItem(index)
+        } catch (e: Exception) {
+            Timber.w(e, "Could not scroll to highlighted document at index $index")
+        }
+
+        // Flash the card. The actual fade-out is driven by DocumentCard's
+        // animateColorAsState; we keep the flag on for 2.5 s.
+        highlightedDocId = targetId
+        delay(2500)
+        if (highlightedDocId == targetId) {
+            highlightedDocId = null
         }
     }
 
@@ -614,6 +661,7 @@ fun EditorScreen(
                                         docMenuExpandedId = docMenuExpandedId,
                                         onDocMenuExpandedChange = { id -> docMenuExpandedId = id },
                                         isDragging = actualDragging,
+                                        isHighlighted = highlightedDocId == document.id.value,
                                         dragModifier = if (!selectionState.isActive) {
                                             Modifier.draggableHandle(
                                                 onDragStarted = {
@@ -1040,6 +1088,7 @@ private fun DocumentCardItem(
     docMenuExpandedId: Long?,
     onDocMenuExpandedChange: (Long?) -> Unit,
     isDragging: Boolean,
+    isHighlighted: Boolean = false,
     dragModifier: Modifier
 ) {
     val ocrEditState = viewModel.inlineEditingManager.rememberEditState(document.id.value, TextEditField.OCR_TEXT)
@@ -1057,6 +1106,7 @@ private fun DocumentCardItem(
         isSelected = selectionState.selectedIds.contains(document.id.value),
         isSelectionMode = selectionState.isActive,
         isDragging = isDragging,
+        isHighlighted = isHighlighted,
 
         isInlineEditingOcr = isInlineEditingOcr,
         isInlineEditingTranslation = isInlineEditingTranslation,
