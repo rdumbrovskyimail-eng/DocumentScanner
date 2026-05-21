@@ -145,6 +145,7 @@ class DragDropState(
         currentIndexOfDraggedItem = null
         currentElement = null
         overscrollJob?.cancel()
+        overscrollJob = null
         
         draggingItemIndex = null
         initialDragIndex = -1
@@ -156,7 +157,6 @@ class DragDropState(
             // Reset state instantly without locking translation limits
             animatedOffsetY.snapTo(0f)
         }
-    }
     }
     
     private fun updateTargetIndex() {

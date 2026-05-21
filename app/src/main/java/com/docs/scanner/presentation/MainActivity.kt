@@ -22,6 +22,7 @@ import com.docs.scanner.presentation.theme.DocumentScannerTheme
 import com.docs.scanner.domain.core.ThemeMode
 import com.docs.scanner.domain.repository.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
+import timber.log.Timber
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -36,7 +37,7 @@ class MainActivity : ComponentActivity() {
     ) { results ->
         // Log results for debugging
         results.forEach { (permission, granted) ->
-            println("Permission $permission: ${if (granted) "✅ granted" else "❌ denied"}")
+            Timber.d("Permission %s: %s", permission, if (granted) "✅ granted" else "❌ denied")
         }
     }
 
@@ -109,7 +110,7 @@ class MainActivity : ComponentActivity() {
             if (!alarmManager.canScheduleExactAlarms()) {
                 // Пользователь должен включить в Settings вручную
                 // Можно показать диалог с объяснением и кнопкой открытия Settings
-                println("⚠️ Exact alarms not allowed. User must enable in Settings.")
+                Timber.w("⚠️ Exact alarms not allowed. User must enable in Settings.")
             }
         }
 

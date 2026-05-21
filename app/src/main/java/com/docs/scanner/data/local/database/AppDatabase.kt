@@ -143,9 +143,14 @@ abstract class AppDatabase : RoomDatabase() {
                     """)
                     
                     db.execSQL("""
-                        INSERT INTO translation_cache_new 
-                        SELECT cache_key, original_text, translated_text, 
-                               source_language, target_language, model, timestamp
+                        INSERT INTO translation_cache_new (
+                            cache_key, original_text, translated_text,
+                            source_language, target_language, model, timestamp
+                        )
+                        SELECT cache_key, original_text, translated_text,
+                               source_language, target_language,
+                               COALESCE(model, '${ModelConstants.DEFAULT_TRANSLATION_MODEL}'),
+                               timestamp
                         FROM translation_cache
                     """)
                     
@@ -272,14 +277,11 @@ class Converters {
 
     @TypeConverter
     fun fromStringFloatMap(map: Map<String, Float>?): String? {
-        return map?.let { 
+        return map?.let {
             json.encodeToString(
-                MapSerializer(
-                    String.serializer(), 
-                    kotlinx.serialization.builtins.serializer(Float::class)
-                ), 
+                MapSerializer(String.serializer(), Float.serializer()),
                 it
-            ) 
+            )
         }
     }
 
@@ -288,13 +290,13 @@ class Converters {
         return value?.let {
             try {
                 json.decodeFromString(
-                    MapSerializer(
-                        String.serializer(), 
-                        kotlinx.serialization.builtins.serializer(Float::class)
-                    ), 
+                    MapSerializer(String.serializer(), Float.serializer()),
                     it
                 )
-            } catch (e: Exception) { null }
+            } catch (e: Exception) {
+                Timber.w(e, "⚠️ Failed to decode string float map")
+                null
+            }
         }
     }
 }

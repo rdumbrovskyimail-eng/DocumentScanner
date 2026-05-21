@@ -233,14 +233,25 @@ private fun isValidFolderId(folderId: Long): Boolean {
 /**
  * Safe navigation wrapper that catches IllegalArgumentException
  * from Screen.createRoute() validation.
+ *
+ * On failure we don't try to show a Snackbar here (no Host accessible)
+ * — instead caller is responsible for it. Returns true on success.
  */
 private fun safeNavigate(
     navController: NavHostController,
+    onError: ((String) -> Unit)? = null,
     block: NavHostController.() -> Unit
-) {
-    try {
+): Boolean {
+    return try {
         navController.block()
+        true
     } catch (e: IllegalArgumentException) {
         Log.e(TAG, "Navigation error: ${e.message}", e)
+        onError?.invoke(e.message ?: "Cannot open destination: invalid arguments")
+        false
+    } catch (e: Exception) {
+        Log.e(TAG, "Unexpected navigation error", e)
+        onError?.invoke("Navigation failed")
+        false
     }
 }
