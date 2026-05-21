@@ -230,40 +230,75 @@ fun EditorScreen(
             viewModel.shareEvent.collect { event ->
                 when (event) {
                     is ShareEvent.File -> {
-                    try {
-                        val file = File(event.path)
+                        try {
+                            val file = File(event.path)
 
-                        if (!file.exists()) {
-                            snackbarHostState.showSnackbar("File not found")
-                            return@collect
-                        }
-                        if (file.length() == 0L) {
-                            snackbarHostState.showSnackbar("File is empty")
-                            return@collect
-                        }
-                        if (!file.canRead()) {
-                            snackbarHostState.showSnackbar("Cannot read file")
-                            return@collect
-                        }
+                            if (!file.exists()) {
+                                snackbarHostState.showSnackbar("File not found")
+                                return@collect
+                            }
+                            if (file.length() == 0L) {
+                                snackbarHostState.showSnackbar("File is empty")
+                                return@collect
+                            }
+                            if (!file.canRead()) {
+                                snackbarHostState.showSnackbar("Cannot read file")
+                                return@collect
+                            }
 
-                        val uri = try {
-                            FileProvider.getUriForFile(
-                                context,
-                                "${BuildConfig.APPLICATION_ID}.fileprovider",
-                                file
-                            )
-                        } catch (e: IllegalArgumentException) {
-                            Timber.e(e, "FileProvider paths misconfigured")
-                            snackbarHostState.showSnackbar("Cannot share file: path not allowed")
-                            return@collect
-                        }
+                            val uri = try {
+                                FileProvider.getUriForFile(
+                                    context,
+                                    "${BuildConfig.APPLICATION_ID}.fileprovider",
+                                    file
+                                )
+                            } catch (e: IllegalArgumentException) {
+                                Timber.e(e, "FileProvider paths misconfigured")
+                                snackbarHostState.showSnackbar("Cannot share file: path not allowed")
+                                return@collect
+                            }
 
-                        val intent = Intent(Intent.ACTION_SEND).apply {
-                            type = event.mimeType
-                            putExtra(Intent.EXTRA_STREAM, uri)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            event.fileName?.let { name -> putExtra(Intent.EXTRA_TITLE, name) }
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = event.mimeType
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                event.fileName?.let { name -> putExtra(Intent.EXTRA_TITLE, name) }
+                            }
+
+                            if (intent.resolveActivity(context.packageManager) != null) {
+                                context.startActivity(Intent.createChooser(intent, "Share"))
+                            } else {
+                                snackbarHostState.showSnackbar("No apps to share with")
+                            }
+
+                        } catch (e: Exception) {
+                            Timber.e(e, "Share failed")
+                            snackbarHostState.showSnackbar("Share failed: ${e.message}")
                         }
+                    }
+
+                    is ShareEvent.TextContent -> {
+                        try {
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, event.text)
+                                putExtra(Intent.EXTRA_TITLE, event.title)
+                            }
+
+                            if (sendIntent.resolveActivity(context.packageManager) != null) {
+                                context.startActivity(Intent.createChooser(sendIntent, event.title))
+                            } else {
+                                snackbarHostState.showSnackbar("No apps to share text")
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "Share text failed")
+                            snackbarHostState.showSnackbar("Share failed: ${e.message}")
+                        }
+                    }
+                }
+            }
+        }
+    }
 
                         if (intent.resolveActivity(context.packageManager) != null) {
                             context.startActivity(Intent.createChooser(intent, "Share"))

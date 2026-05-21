@@ -135,9 +135,7 @@ android {
             "-opt-in=androidx.compose.animation.ExperimentalAnimationApi",
             "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
             "-opt-in=kotlinx.coroutines.FlowPreview",
-            "-Xcontext-receivers",
             "-Xjvm-default=all",
-            "-progressive",
         )
         
         if (project.findProperty("composeCompilerReports") == "true") {
