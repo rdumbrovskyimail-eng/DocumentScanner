@@ -300,40 +300,6 @@ fun EditorScreen(
         }
     }
 
-                        if (intent.resolveActivity(context.packageManager) != null) {
-                            context.startActivity(Intent.createChooser(intent, "Share"))
-                        } else {
-                            snackbarHostState.showSnackbar("No apps to share with")
-                        }
-
-                    } catch (e: Exception) {
-                        Timber.e(e, "Share failed")
-                        snackbarHostState.showSnackbar("Share failed: ${e.message}")
-                    }
-                }
-                
-                is ShareEvent.TextContent -> {
-                    try {
-                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, event.text)
-                            putExtra(Intent.EXTRA_TITLE, event.title)
-                        }
-                        
-                        if (sendIntent.resolveActivity(context.packageManager) != null) {
-                            context.startActivity(Intent.createChooser(sendIntent, event.title))
-                        } else {
-                            snackbarHostState.showSnackbar("No apps to share text")
-                        }
-                    } catch (e: Exception) {
-                        Timber.e(e, "Share text failed")
-                        snackbarHostState.showSnackbar("Share failed: ${e.message}")
-                    }
-                }
-            }
-        }
-    }
-
     LaunchedEffect(Unit) {
         viewModel.errorEvent.collect { event ->
             val result = snackbarHostState.showSnackbar(

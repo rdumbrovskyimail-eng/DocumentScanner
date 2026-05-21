@@ -121,7 +121,6 @@ object ImageUtils {
             if (rotatedBitmap !== bitmap) {
                 bitmap.recycle()
             }
-            bitmap.recycle()
             
             Timber.d("$TAG: Image saved to ${outputFile.absolutePath} (${outputFile.length()} bytes)")
             
