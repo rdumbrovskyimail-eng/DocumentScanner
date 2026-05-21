@@ -406,7 +406,10 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     override fun newImageLoader(context: PlatformContext): ImageLoader {
         return ImageLoader.Builder(context)
             .memoryCache {
-                MemoryCache.Builder(context)
+                // ✅ Coil 3.x: MemoryCache.Builder() is no-arg.
+                // Context was removed in the Coil 2 → 3 migration because
+                // MemoryCache no longer ties itself to an Android Context.
+                MemoryCache.Builder()
                     .maxSizeBytes(MEMORY_CACHE_SIZE_MB * 1024 * 1024)
                     .build()
             }

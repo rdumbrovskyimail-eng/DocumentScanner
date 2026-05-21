@@ -822,7 +822,8 @@ class MLKitScanner @Inject constructor(
             throw IOException("Failed to decode image dimensions from URI: $uri")
         }
         
-        val sampleSize = calculateInSampleSize(
+        // ✅ Must be var: we double it in the catch (OutOfMemoryError) retry block below
+        var sampleSize = calculateInSampleSize(
             options.outWidth,
             options.outHeight,
             MAX_IMAGE_DIMENSION,
