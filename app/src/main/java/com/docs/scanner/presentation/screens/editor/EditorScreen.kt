@@ -41,7 +41,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
@@ -177,6 +177,7 @@ fun EditorScreen(
     var showTagsDialog by rememberSaveable { mutableStateOf(false) }
     var showLanguageDialog by rememberSaveable { mutableStateOf(false) }
     var showAddDocumentDialog by rememberSaveable { mutableStateOf(false) }
+    var hasAutoShownEmptyDialog by rememberSaveable { mutableStateOf(false) }
     var showSmartRetryBanner by rememberSaveable { mutableStateOf(true) }
     var showBatchDeleteConfirm by rememberSaveable { mutableStateOf(false) }
     var showBatchExportDialog by rememberSaveable { mutableStateOf(false) }
@@ -234,8 +235,9 @@ fun EditorScreen(
     LaunchedEffect(uiState) {
         val state = uiState
         if (state is EditorUiState.Success) {
-            if (state.documents.isEmpty() && !showAddDocumentDialog) {
+            if (state.documents.isEmpty() && !showAddDocumentDialog && !hasAutoShownEmptyDialog) {
                 showAddDocumentDialog = true
+                hasAutoShownEmptyDialog = true
             }
         }
     }
@@ -459,7 +461,7 @@ fun EditorScreen(
                     },
                     navigationIcon = {
                         IconButton(onClick = onBackClick) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     },
                     actions = {

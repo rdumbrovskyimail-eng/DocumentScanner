@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.core.SearchHistoryItem
 import com.docs.scanner.domain.usecase.AllUseCases
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -72,6 +73,7 @@ class SearchViewModel @Inject constructor(
         try {
             useCases.documents.search(query)
                 .catch { e ->
+                    if (e is CancellationException) throw e
                     _uiState.value = SearchUiState.Error(
                         "Search failed: ${e.message}"
                     )
@@ -101,6 +103,8 @@ class SearchViewModel @Inject constructor(
                         SearchUiState.Success(results, query)
                     }
                 }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _uiState.value = SearchUiState.Error(
                 "Search failed: ${e.message}"
@@ -157,9 +161,9 @@ class SearchViewModel @Inject constructor(
  * Session 8: Added proper state management.
  */
 sealed interface SearchUiState {
-    object Suggestions : SearchUiState
-    object QueryTooShort : SearchUiState
-    object Searching : SearchUiState
+    data object Suggestions : SearchUiState
+    data object QueryTooShort : SearchUiState
+    data object Searching : SearchUiState
     data class Success(val results: List<SearchResult>, val query: String) : SearchUiState
     data class NoResults(val query: String) : SearchUiState
     data class Error(val message: String) : SearchUiState
