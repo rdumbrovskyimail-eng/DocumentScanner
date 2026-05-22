@@ -16,12 +16,12 @@ fun FullscreenTextEditor(
     onDismiss: () -> Unit,
     onSave: (String) -> Unit
 ) {
-    var text by remember { mutableStateOf(in    Dialog(
+    var text by remember { mutableStateOf(initialText) }
+
+    Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
             usePlatformDefaultWidth = false
-        )
-    ) {false
         )
     ) {
         Scaffold(
