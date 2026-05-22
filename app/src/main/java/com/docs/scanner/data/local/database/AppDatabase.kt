@@ -36,9 +36,14 @@ import timber.log.Timber
         DocumentFtsEntity::class,
         TermEntity::class,
         TranslationCacheEntity::class,
-        SearchHistoryEntity::class
+        SearchHistoryEntity::class,
+        // ─── Analytics Center (v21) ───
+        AnalyticsTranslationEntity::class,
+        AnalyticsTranslationFtsEntity::class,
+        AnalyticsNoteEntity::class,
+        AnalyticsNoteFtsEntity::class
     ],
-    version = 20, // ✅ ИЗМЕНЕНО: было 19, стало 20
+    version = 21, // ✅ Bumped from 20 — Analytics Center tables added
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -54,6 +59,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun termDao(): TermDao
     abstract fun translationCacheDao(): TranslationCacheDao
     abstract fun searchHistoryDao(): SearchHistoryDao
+
+    // ─── Analytics Center ───
+    abstract fun analyticsTranslationDao(): AnalyticsTranslationDao
+    abstract fun analyticsNoteDao(): AnalyticsNoteDao
 
     companion object {
         const val DATABASE_NAME = "document_scanner.db"
@@ -92,7 +101,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_16_17,
                     MIGRATION_17_18,
                     MIGRATION_18_19,
-                    MIGRATION_19_20 // ✅ ДОБАВЛЕНО: новая миграция
+                    MIGRATION_19_20,
+                    MIGRATION_20_21 // ✅ Analytics Center
                 )
                 .addCallback(DatabaseCallback(context))
                 .fallbackToDestructiveMigrationOnDowngrade()
@@ -104,6 +114,137 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_19_20 = object : Migration(19, 20) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE documents ADD COLUMN word_confidences TEXT")
+            }
+        }
+
+        /**
+         * Migration 20 → 21: Analytics Center.
+         *
+         * Creates two autonomous storage areas:
+         *   - analytics_translations  — mirror of every translation event
+         *   - analytics_notes         — free-form notes ("Information Analysis")
+         *
+         * Each gets an FTS4 virtual table and four Room-style content-sync
+         * triggers (matching the convention Room uses for documents_fts).
+         *
+         * No foreign keys: Analytics Center entries survive deletion of the
+         * source documents/records by design.
+         */
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Timber.d("🔄 Running migration 20 → 21: Analytics Center")
+
+                // ─── 1. analytics_translations ────────────────────────────
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `analytics_translations` (
+                        `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        `translated_text` TEXT NOT NULL,
+                        `original_text` TEXT,
+                        `source_language` TEXT NOT NULL DEFAULT 'auto',
+                        `target_language` TEXT NOT NULL DEFAULT 'ru',
+                        `source_document_id` INTEGER,
+                        `source_record_id` INTEGER,
+                        `source_record_name` TEXT,
+                        `source_folder_name` TEXT,
+                        `user_modified` INTEGER NOT NULL DEFAULT 0,
+                        `word_count` INTEGER NOT NULL DEFAULT 0,
+                        `created_at` INTEGER NOT NULL DEFAULT 0,
+                        `updated_at` INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_translations_created_at` ON `analytics_translations` (`created_at`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_translations_updated_at` ON `analytics_translations` (`updated_at`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_translations_target_language` ON `analytics_translations` (`target_language`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_translations_source_record_id` ON `analytics_translations` (`source_record_id`)")
+
+                db.execSQL("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS `analytics_translations_fts`
+                    USING FTS4(`translated_text` TEXT, `original_text` TEXT, content=`analytics_translations`)
+                """.trimIndent())
+
+                // Room-style FTS content sync triggers (same naming pattern as documents_fts).
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_translations_fts_BEFORE_UPDATE`
+                    BEFORE UPDATE ON `analytics_translations`
+                    BEGIN DELETE FROM `analytics_translations_fts` WHERE `docid`=OLD.`rowid`; END
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_translations_fts_BEFORE_DELETE`
+                    BEFORE DELETE ON `analytics_translations`
+                    BEGIN DELETE FROM `analytics_translations_fts` WHERE `docid`=OLD.`rowid`; END
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_translations_fts_AFTER_UPDATE`
+                    AFTER UPDATE ON `analytics_translations`
+                    BEGIN INSERT INTO `analytics_translations_fts`(`docid`, `translated_text`, `original_text`)
+                        VALUES (NEW.`rowid`, NEW.`translated_text`, NEW.`original_text`); END
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_translations_fts_AFTER_INSERT`
+                    AFTER INSERT ON `analytics_translations`
+                    BEGIN INSERT INTO `analytics_translations_fts`(`docid`, `translated_text`, `original_text`)
+                        VALUES (NEW.`rowid`, NEW.`translated_text`, NEW.`original_text`); END
+                """.trimIndent())
+
+                Timber.d("  ↳ analytics_translations + FTS created")
+
+                // ─── 2. analytics_notes ───────────────────────────────────
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `analytics_notes` (
+                        `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        `title` TEXT NOT NULL DEFAULT '',
+                        `content` TEXT NOT NULL DEFAULT '',
+                        `tags` TEXT NOT NULL DEFAULT '[]',
+                        `color` TEXT,
+                        `is_pinned` INTEGER NOT NULL DEFAULT 0,
+                        `is_archived` INTEGER NOT NULL DEFAULT 0,
+                        `created_at` INTEGER NOT NULL DEFAULT 0,
+                        `updated_at` INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_notes_created_at` ON `analytics_notes` (`created_at`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_notes_updated_at` ON `analytics_notes` (`updated_at`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_notes_is_pinned` ON `analytics_notes` (`is_pinned`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_notes_is_archived` ON `analytics_notes` (`is_archived`)")
+
+                db.execSQL("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS `analytics_notes_fts`
+                    USING FTS4(`title` TEXT, `content` TEXT, content=`analytics_notes`)
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_notes_fts_BEFORE_UPDATE`
+                    BEFORE UPDATE ON `analytics_notes`
+                    BEGIN DELETE FROM `analytics_notes_fts` WHERE `docid`=OLD.`rowid`; END
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_notes_fts_BEFORE_DELETE`
+                    BEFORE DELETE ON `analytics_notes`
+                    BEGIN DELETE FROM `analytics_notes_fts` WHERE `docid`=OLD.`rowid`; END
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_notes_fts_AFTER_UPDATE`
+                    AFTER UPDATE ON `analytics_notes`
+                    BEGIN INSERT INTO `analytics_notes_fts`(`docid`, `title`, `content`)
+                        VALUES (NEW.`rowid`, NEW.`title`, NEW.`content`); END
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_notes_fts_AFTER_INSERT`
+                    AFTER INSERT ON `analytics_notes`
+                    BEGIN INSERT INTO `analytics_notes_fts`(`docid`, `title`, `content`)
+                        VALUES (NEW.`rowid`, NEW.`title`, NEW.`content`); END
+                """.trimIndent())
+
+                Timber.d("  ↳ analytics_notes + FTS created")
+                Timber.d("✅ Migration 20 → 21 completed")
             }
         }
 
