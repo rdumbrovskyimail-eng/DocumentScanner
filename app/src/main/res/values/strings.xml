@@ -324,4 +324,36 @@
         <item quantity="one">%d folder</item>
         <item quantity="other">%d folders</item>
     </plurals>
+
+    <!-- Analytics Center -->
+    <string name="analytics_center">Analytics Center</string>
+    <string name="analytics_hub_subtitle">Manage translations and your information analysis</string>
+    <string name="analytics_translation_archive">Translation Archive</string>
+    <string name="analytics_translation_archive_desc">Every translation from your documents</string>
+    <string name="analytics_notes">Notes</string>
+    <string name="analytics_notes_desc">Information analysis &amp; free-form notes</string>
+
+    <!-- Translation archive -->
+    <string name="archive_search_hint">Search translations…</string>
+    <string name="archive_empty">No translations yet.
+They appear here after each document is translated.</string>
+    <string name="archive_empty_search">No translations match your search</string>
+    <string name="archive_edit_title">Edit translation</string>
+    <string name="archive_edited_badge">edited</string>
+    <string name="archive_delete_title">Delete translation?</string>
+    <string name="archive_delete_message">This will remove the entry from the archive. The original document is not affected.</string>
+
+    <!-- Notes -->
+    <string name="notes_search_hint">Search notes…</string>
+    <string name="notes_empty">No notes yet.
+Tap + to create one.</string>
+    <string name="notes_empty_search">No notes match your search</string>
+    <string name="note_editor_new">New note</string>
+    <string name="note_editor_edit">Edit note</string>
+    <string name="note_title_label">Title</string>
+    <string name="note_content_label">Content</string>
+    <string name="note_color_label">Color</string>
+    <string name="note_add_tag">Add tag</string>
+    <string name="note_delete_title">Delete note?</string>
+    <string name="note_delete_message">This note will be permanently removed.</string>
 </resources>
