@@ -1,28 +1,34 @@
-/*
- * DocumentScanner - Analytics Center DAOs
- * Version: 1.0.0 (Build 720) - PRODUCTION READY 2026
- *
- * Two autonomous surfaces:
- *   1. AnalyticsTranslationDao — archived translation events + FTS search
- *   2. AnalyticsNoteDao        — free-form notes ("Information Analysis") + FTS search
- *
- * Both surfaces are independent of documents/records (no FKs).
- */
-
 package com.docs.scanner.data.local.database.dao
 
-import androidx.room.*
-import com.docs.scanner.data.local.database.entity.*
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
+import com.docs.scanner.data.local.database.entity.AnalyticsNoteEntity
+import com.docs.scanner.data.local.database.entity.AnalyticsTranslationEntity
 import kotlinx.coroutines.flow.Flow
 
-// ══════════════════════════════════════════════════════════════════════════════
-// ANALYTICS TRANSLATION DAO
-// ══════════════════════════════════════════════════════════════════════════════
+/*
+ * ════════════════════════════════════════════════════════════════════════════════
+ * ANALYTICS CENTER — DATA ACCESS OBJECTS
+ * ════════════════════════════════════════════════════════════════════════════════
+ *
+ * Conventions used (matches the rest of the project):
+ *   - Reactive reads return Flow<...>.
+ *   - One-shot reads are suspend.
+ *   - Writes are suspend; bulk writes use @Transaction in repository layer.
+ *   - FTS search uses MATCH against the mirror tables. The fallback LIKE path
+ *     lives in the repository (consistent with DocumentRepositoryImpl).
+ * ════════════════════════════════════════════════════════════════════════════════
+ */
+
+// ──────────────────────────────────────────────────────────────────────────────
+// TRANSLATION ARCHIVE
+// ──────────────────────────────────────────────────────────────────────────────
 
 @Dao
 interface AnalyticsTranslationDao {
-
-    // ─── INSERT / UPDATE / DELETE ─────────────────────────────────────────────
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entry: AnalyticsTranslationEntity): Long
@@ -33,26 +39,14 @@ interface AnalyticsTranslationDao {
     @Update
     suspend fun update(entry: AnalyticsTranslationEntity)
 
-    @Query("""
-        UPDATE analytics_translations
-        SET translated_text = :text,
-            user_modified = 1,
-            word_count = :wordCount,
-            updated_at = :timestamp
-        WHERE id = :id
-    """)
-    suspend fun updateText(id: Long, text: String, wordCount: Int, timestamp: Long)
-
     @Query("DELETE FROM analytics_translations WHERE id = :id")
     suspend fun deleteById(id: Long)
 
     @Query("DELETE FROM analytics_translations WHERE id IN (:ids)")
-    suspend fun deleteByIds(ids: List<Long>): Int
+    suspend fun deleteByIds(ids: List<Long>)
 
     @Query("DELETE FROM analytics_translations")
     suspend fun clearAll()
-
-    // ─── READ ────────────────────────────────────────────────────────────────
 
     @Query("SELECT * FROM analytics_translations WHERE id = :id")
     suspend fun getById(id: Long): AnalyticsTranslationEntity?
@@ -60,74 +54,67 @@ interface AnalyticsTranslationDao {
     @Query("SELECT * FROM analytics_translations WHERE id = :id")
     fun observeById(id: Long): Flow<AnalyticsTranslationEntity?>
 
-    @Query("SELECT * FROM analytics_translations ORDER BY updated_at DESC")
+    @Query("SELECT * FROM analytics_translations ORDER BY updated_at DESC, id DESC")
     fun observeAll(): Flow<List<AnalyticsTranslationEntity>>
 
-    @Query("SELECT * FROM analytics_translations ORDER BY updated_at DESC LIMIT :limit")
-    fun observeRecent(limit: Int = 50): Flow<List<AnalyticsTranslationEntity>>
+    @Query("SELECT * FROM analytics_translations ORDER BY updated_at DESC, id DESC LIMIT :limit OFFSET :offset")
+    suspend fun getPage(limit: Int, offset: Int): List<AnalyticsTranslationEntity>
 
-    @Query("""
-        SELECT * FROM analytics_translations
-        WHERE source_record_id = :recordId
-        ORDER BY updated_at DESC
-    """)
-    fun observeByRecord(recordId: Long): Flow<List<AnalyticsTranslationEntity>>
-
-    @Query("""
-        SELECT * FROM analytics_translations
-        WHERE target_language = :targetLang
-        ORDER BY updated_at DESC
-    """)
-    fun observeByTargetLanguage(targetLang: String): Flow<List<AnalyticsTranslationEntity>>
-
-    // ─── SEARCH ──────────────────────────────────────────────────────────────
-
-    @Query("""
-        SELECT * FROM analytics_translations
-        WHERE LOWER(translated_text) LIKE LOWER('%' || :query || '%')
-           OR LOWER(original_text) LIKE LOWER('%' || :query || '%')
-        ORDER BY updated_at DESC
-        LIMIT :limit
-    """)
-    fun searchLike(query: String, limit: Int = 50): Flow<List<AnalyticsTranslationEntity>>
-
-    @Query("""
-        SELECT t.* FROM analytics_translations t
-        INNER JOIN analytics_translations_fts fts ON t.id = fts.rowid
-        WHERE analytics_translations_fts MATCH :ftsQuery
-        ORDER BY t.updated_at DESC
-        LIMIT :limit
-    """)
-    fun searchFts(ftsQuery: String, limit: Int = 50): Flow<List<AnalyticsTranslationEntity>>
-
-    // ─── COUNTERS ────────────────────────────────────────────────────────────
+    @Query("SELECT COUNT(*) FROM analytics_translations")
+    fun observeCount(): Flow<Int>
 
     @Query("SELECT COUNT(*) FROM analytics_translations")
     suspend fun getCount(): Int
 
-    @Query("SELECT COUNT(*) FROM analytics_translations WHERE user_modified = 1")
-    suspend fun getModifiedCount(): Int
+    @Query("SELECT MAX(updated_at) FROM analytics_translations")
+    suspend fun getMaxUpdatedAt(): Long?
 
-    @Query("SELECT EXISTS(SELECT 1 FROM analytics_translations WHERE id = :id)")
-    suspend fun exists(id: Long): Boolean
-
+    /**
+     * FTS4 search. The mirror table column order is (translated_text, original_text).
+     * We MATCH the whole document to support both phrase and prefix queries.
+     */
     @Query("""
-        SELECT EXISTS(
-            SELECT 1 FROM analytics_translations
-            WHERE source_document_id = :documentId
-        )
+        SELECT t.* FROM analytics_translations AS t
+        JOIN analytics_translations_fts AS fts ON t.id = fts.docid
+        WHERE analytics_translations_fts MATCH :ftsQuery
+        ORDER BY t.updated_at DESC, t.id DESC
+        LIMIT :limit
     """)
-    suspend fun existsForDocument(documentId: Long): Boolean
+    fun searchFts(ftsQuery: String, limit: Int = 50): Flow<List<AnalyticsTranslationEntity>>
+
+    /** Fallback for queries that break FTS syntax. */
+    @Query("""
+        SELECT * FROM analytics_translations
+        WHERE translated_text LIKE '%' || :query || '%'
+           OR original_text   LIKE '%' || :query || '%'
+        ORDER BY updated_at DESC, id DESC
+        LIMIT :limit
+    """)
+    fun searchLike(query: String, limit: Int = 50): Flow<List<AnalyticsTranslationEntity>>
+
+    /**
+     * Optional filter by source record — used by "View archive entries from this record".
+     * NULL `recordId` returns all archive entries (untraced ones included).
+     */
+    @Query("""
+        SELECT * FROM analytics_translations
+        WHERE (:recordId IS NULL) OR (source_record_id = :recordId)
+        ORDER BY updated_at DESC, id DESC
+    """)
+    fun observeByRecord(recordId: Long?): Flow<List<AnalyticsTranslationEntity>>
+
+    /** Used by incremental backup. */
+    @Query("SELECT * FROM analytics_translations WHERE updated_at > :sinceTimestamp")
+    suspend fun getAllModifiedSince(sinceTimestamp: Long): List<AnalyticsTranslationEntity>
+
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// ANALYTICS NOTE DAO
-// ══════════════════════════════════════════════════════════════════════════════
+// ──────────────────────────────────────────────────────────────────────────────
+// NOTES
+// ──────────────────────────────────────────────────────────────────────────────
 
 @Dao
 interface AnalyticsNoteDao {
-
-    // ─── INSERT / UPDATE / DELETE ─────────────────────────────────────────────
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(note: AnalyticsNoteEntity): Long
@@ -138,43 +125,20 @@ interface AnalyticsNoteDao {
     @Update
     suspend fun update(note: AnalyticsNoteEntity)
 
-    @Query("""
-        UPDATE analytics_notes
-        SET title = :title,
-            content = :content,
-            updated_at = :timestamp
-        WHERE id = :id
-    """)
-    suspend fun updateContent(id: Long, title: String, content: String, timestamp: Long)
-
-    @Query("UPDATE analytics_notes SET tags = :tags, updated_at = :timestamp WHERE id = :id")
-    suspend fun updateTags(id: Long, tags: String, timestamp: Long)
-
-    @Query("UPDATE analytics_notes SET color = :color, updated_at = :timestamp WHERE id = :id")
-    suspend fun updateColor(id: Long, color: String?, timestamp: Long)
-
     @Query("UPDATE analytics_notes SET is_pinned = :pinned, updated_at = :timestamp WHERE id = :id")
     suspend fun setPinned(id: Long, pinned: Boolean, timestamp: Long)
 
-    @Query("UPDATE analytics_notes SET is_archived = 1, updated_at = :timestamp WHERE id = :id")
-    suspend fun archive(id: Long, timestamp: Long)
-
-    @Query("UPDATE analytics_notes SET is_archived = 0, updated_at = :timestamp WHERE id = :id")
-    suspend fun unarchive(id: Long, timestamp: Long)
+    @Query("UPDATE analytics_notes SET is_archived = :archived, updated_at = :timestamp WHERE id = :id")
+    suspend fun setArchived(id: Long, archived: Boolean, timestamp: Long)
 
     @Query("DELETE FROM analytics_notes WHERE id = :id")
     suspend fun deleteById(id: Long)
 
     @Query("DELETE FROM analytics_notes WHERE id IN (:ids)")
-    suspend fun deleteByIds(ids: List<Long>): Int
-
-    @Query("DELETE FROM analytics_notes WHERE is_archived = 1")
-    suspend fun deleteAllArchived(): Int
+    suspend fun deleteByIds(ids: List<Long>)
 
     @Query("DELETE FROM analytics_notes")
     suspend fun clearAll()
-
-    // ─── READ ────────────────────────────────────────────────────────────────
 
     @Query("SELECT * FROM analytics_notes WHERE id = :id")
     suspend fun getById(id: Long): AnalyticsNoteEntity?
@@ -182,81 +146,59 @@ interface AnalyticsNoteDao {
     @Query("SELECT * FROM analytics_notes WHERE id = :id")
     fun observeById(id: Long): Flow<AnalyticsNoteEntity?>
 
+    /**
+     * Default list view: non-archived notes, pinned first, then most recent.
+     */
     @Query("""
         SELECT * FROM analytics_notes
         WHERE is_archived = 0
-        ORDER BY is_pinned DESC, updated_at DESC
+        ORDER BY is_pinned DESC, updated_at DESC, id DESC
     """)
-    fun observeAll(): Flow<List<AnalyticsNoteEntity>>
-
-    @Query("""
-        SELECT * FROM analytics_notes
-        ORDER BY is_pinned DESC, updated_at DESC
-    """)
-    fun observeAllIncludingArchived(): Flow<List<AnalyticsNoteEntity>>
+    fun observeActive(): Flow<List<AnalyticsNoteEntity>>
 
     @Query("""
         SELECT * FROM analytics_notes
         WHERE is_archived = 1
-        ORDER BY updated_at DESC
+        ORDER BY updated_at DESC, id DESC
     """)
     fun observeArchived(): Flow<List<AnalyticsNoteEntity>>
 
-    @Query("""
-        SELECT * FROM analytics_notes
-        WHERE is_pinned = 1 AND is_archived = 0
-        ORDER BY updated_at DESC
-    """)
-    fun observePinned(): Flow<List<AnalyticsNoteEntity>>
+    @Query("SELECT * FROM analytics_notes ORDER BY is_pinned DESC, updated_at DESC, id DESC")
+    fun observeAll(): Flow<List<AnalyticsNoteEntity>>
 
-    @Query("""
-        SELECT * FROM analytics_notes
-        WHERE is_archived = 0 AND tags LIKE '%' || :tag || '%'
-        ORDER BY is_pinned DESC, updated_at DESC
-    """)
-    fun observeByTag(tag: String): Flow<List<AnalyticsNoteEntity>>
+    @Query("SELECT COUNT(*) FROM analytics_notes WHERE is_archived = 0")
+    fun observeActiveCount(): Flow<Int>
 
-    // ─── SEARCH ──────────────────────────────────────────────────────────────
+    @Query("SELECT COUNT(*) FROM analytics_notes")
+    suspend fun getCount(): Int
 
+    /**
+     * FTS4 search across notes. Mirror columns: (title, content).
+     */
     @Query("""
-        SELECT * FROM analytics_notes
-        WHERE is_archived = 0
-          AND (LOWER(title) LIKE LOWER('%' || :query || '%')
-               OR LOWER(content) LIKE LOWER('%' || :query || '%'))
-        ORDER BY is_pinned DESC, updated_at DESC
-        LIMIT :limit
-    """)
-    fun searchLike(query: String, limit: Int = 50): Flow<List<AnalyticsNoteEntity>>
-
-    @Query("""
-        SELECT n.* FROM analytics_notes n
-        INNER JOIN analytics_notes_fts fts ON n.id = fts.rowid
+        SELECT n.* FROM analytics_notes AS n
+        JOIN analytics_notes_fts AS fts ON n.id = fts.docid
         WHERE analytics_notes_fts MATCH :ftsQuery
           AND n.is_archived = 0
-        ORDER BY n.is_pinned DESC, n.updated_at DESC
+        ORDER BY n.is_pinned DESC, n.updated_at DESC, n.id DESC
         LIMIT :limit
     """)
     fun searchFts(ftsQuery: String, limit: Int = 50): Flow<List<AnalyticsNoteEntity>>
 
-    // ─── COUNTERS ────────────────────────────────────────────────────────────
-
-    @Query("SELECT COUNT(*) FROM analytics_notes WHERE is_archived = 0")
-    suspend fun getCount(): Int
-
-    @Query("SELECT COUNT(*) FROM analytics_notes WHERE is_archived = 1")
-    suspend fun getArchivedCount(): Int
-
-    @Query("SELECT COUNT(*) FROM analytics_notes WHERE is_pinned = 1 AND is_archived = 0")
-    suspend fun getPinnedCount(): Int
-
-    @Query("SELECT EXISTS(SELECT 1 FROM analytics_notes WHERE id = :id)")
-    suspend fun exists(id: Long): Boolean
-
-    // ─── TAGS ────────────────────────────────────────────────────────────────
-
+    /** Fallback for queries that break FTS syntax. */
     @Query("""
-        SELECT DISTINCT tags FROM analytics_notes
-        WHERE tags IS NOT NULL AND tags != '' AND tags != '[]'
+        SELECT * FROM analytics_notes
+        WHERE is_archived = 0
+          AND (title   LIKE '%' || :query || '%'
+            OR content LIKE '%' || :query || '%'
+            OR tags    LIKE '%' || :query || '%')
+        ORDER BY is_pinned DESC, updated_at DESC, id DESC
+        LIMIT :limit
     """)
-    suspend fun getAllTagsJson(): List<String>
+    fun searchLike(query: String, limit: Int = 50): Flow<List<AnalyticsNoteEntity>>
+
+    /** Used by incremental backup. */
+    @Query("SELECT * FROM analytics_notes WHERE updated_at > :sinceTimestamp")
+    suspend fun getAllModifiedSince(sinceTimestamp: Long): List<AnalyticsNoteEntity>
+
 }
