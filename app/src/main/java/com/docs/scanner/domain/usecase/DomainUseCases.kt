@@ -965,7 +965,10 @@ class AllUseCases @Inject constructor(
     val terms: TermUseCases,
     val translation: TranslationUseCases,
     val settings: SettingsUseCases,
-    val backup: BackupUseCases
+    val backup: BackupUseCases,
+    // ─── Analytics Center ───
+    val analyticsTranslations: AnalyticsTranslationUseCases,
+    val analyticsNotes: AnalyticsNoteUseCases
 ) {
     suspend operator fun <R> invoke(block: suspend AllUseCases.() -> R): R = block(this)
 
