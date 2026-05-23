@@ -372,3 +372,76 @@ sealed class BackupProgress {
     data class Completed(val info: BackupInfo) : BackupProgress()
     data class Failed(val error: DomainError) : BackupProgress()
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ANALYTICS CENTER — TRANSLATION ARCHIVE
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Read/write access to the translation archive.
+ *
+ * Implementations are expected to mirror every editor-side translation via
+ * `create(NewAnalyticsTranslation)`. The UI never calls `create` directly —
+ * it edits/deletes existing entries through `update`/`delete`.
+ *
+ * `observeByRecord(null)` returns all entries (used by the unfiltered list view).
+ */
+interface AnalyticsTranslationRepository {
+    // Observe
+    fun observeAll(): Flow<List<AnalyticsTranslation>>
+    fun observeByRecord(recordId: RecordId?): Flow<List<AnalyticsTranslation>>
+    fun observeById(id: AnalyticsTranslationId): Flow<AnalyticsTranslation?>
+    fun observeCount(): Flow<Int>
+
+    // Query
+    suspend fun getById(id: AnalyticsTranslationId): DomainResult<AnalyticsTranslation>
+    suspend fun getCount(): Int
+
+    // Search (FTS with LIKE fallback)
+    fun search(query: String, limit: Int = 50): Flow<List<AnalyticsTranslation>>
+
+    // Mutate
+    suspend fun create(entry: NewAnalyticsTranslation): DomainResult<AnalyticsTranslationId>
+    suspend fun update(entry: AnalyticsTranslation): DomainResult<Unit>
+    suspend fun delete(id: AnalyticsTranslationId): DomainResult<Unit>
+    suspend fun deleteAll(): DomainResult<Unit>
+
+    // Backup
+    suspend fun getModifiedSince(sinceTimestamp: Long): List<AnalyticsTranslation>
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ANALYTICS CENTER — NOTES
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Read/write access to free-form analytics notes.
+ *
+ * `observeActive` is the default list (non-archived, pinned first).
+ * Archive/unarchive is a soft delete — entries can be restored.
+ */
+interface AnalyticsNoteRepository {
+    // Observe
+    fun observeActive(): Flow<List<AnalyticsNote>>
+    fun observeArchived(): Flow<List<AnalyticsNote>>
+    fun observeById(id: AnalyticsNoteId): Flow<AnalyticsNote?>
+    fun observeActiveCount(): Flow<Int>
+
+    // Query
+    suspend fun getById(id: AnalyticsNoteId): DomainResult<AnalyticsNote>
+    suspend fun getCount(): Int
+
+    // Search
+    fun search(query: String, limit: Int = 50): Flow<List<AnalyticsNote>>
+
+    // Mutate
+    suspend fun create(note: NewAnalyticsNote): DomainResult<AnalyticsNoteId>
+    suspend fun update(note: AnalyticsNote): DomainResult<Unit>
+    suspend fun delete(id: AnalyticsNoteId): DomainResult<Unit>
+    suspend fun deleteAll(): DomainResult<Unit>
+    suspend fun setPinned(id: AnalyticsNoteId, pinned: Boolean): DomainResult<Unit>
+    suspend fun setArchived(id: AnalyticsNoteId, archived: Boolean): DomainResult<Unit>
+
+    // Backup
+    suspend fun getModifiedSince(sinceTimestamp: Long): List<AnalyticsNote>
+}
