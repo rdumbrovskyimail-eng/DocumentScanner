@@ -25,6 +25,8 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.docs.scanner.data.local.database.AppDatabase
+import com.docs.scanner.data.local.database.dao.AnalyticsNoteDao
+import com.docs.scanner.data.local.database.dao.AnalyticsTranslationDao
 import com.docs.scanner.data.local.database.dao.DocumentDao
 import com.docs.scanner.data.local.database.dao.FolderDao
 import com.docs.scanner.data.local.database.dao.RecordDao
@@ -136,5 +138,19 @@ object DatabaseModule {
     @Singleton
     fun provideSearchHistoryDao(database: AppDatabase): SearchHistoryDao {
         return database.searchHistoryDao()
+    }
+
+    // ─── Analytics Center DAOs ──────────────────────────────────────────
+
+    @Provides
+    @Singleton
+    fun provideAnalyticsTranslationDao(database: AppDatabase): AnalyticsTranslationDao {
+        return database.analyticsTranslationDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideAnalyticsNoteDao(database: AppDatabase): AnalyticsNoteDao {
+        return database.analyticsNoteDao()
     }
 }
