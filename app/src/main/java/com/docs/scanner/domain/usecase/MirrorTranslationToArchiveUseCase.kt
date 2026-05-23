@@ -63,8 +63,8 @@ class MirrorTranslationToArchiveUseCase @Inject constructor(
                 targetLanguage = targetLang.code,
                 sourceDocumentId = docId.value,
                 sourceRecordId = record?.id?.value,
-                sourceRecordName = record?.name?.value,
-                sourceFolderName = folder?.name?.value
+                sourceRecordName = record?.name,
+                sourceFolderName = folder?.name
             )
 
             when (val r = archiveRepo.create(payload)) {
