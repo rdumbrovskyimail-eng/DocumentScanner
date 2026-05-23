@@ -12,6 +12,9 @@ import com.docs.scanner.domain.core.FolderId
 import com.docs.scanner.presentation.screens.camera.CameraScreen
 import com.docs.scanner.presentation.screens.editor.EditorScreen
 import com.docs.scanner.presentation.screens.folders.FoldersScreen
+import com.docs.scanner.presentation.screens.analytics.hub.AnalyticsHubScreen
+import com.docs.scanner.presentation.screens.analytics.archive.TranslationsArchiveScreen
+import com.docs.scanner.presentation.screens.analytics.notes.NotesScreen
 import com.docs.scanner.presentation.screens.imageviewer.ImageViewerScreen
 import com.docs.scanner.presentation.screens.onboarding.OnboardingScreen
 import com.docs.scanner.presentation.screens.records.RecordsScreen
@@ -70,6 +73,9 @@ fun NavGraph(
                 },
                 onCameraClick = {
                     navController.navigate(Screen.Camera.route)
+                },
+                onAnalyticsClick = {
+                    navController.navigate(Screen.AnalyticsHub.route)
                 },
                 onQuickScanComplete = { recordId ->
                     safeNavigate(navController) {
@@ -221,6 +227,36 @@ fun NavGraph(
             
             ImageViewerScreen(
                 documentId = documentId,
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        // ─── Analytics Center ────────────────────────────────────────────
+
+        composable(Screen.AnalyticsHub.route) {
+            AnalyticsHubScreen(
+                onBackClick = { navController.popBackStack() },
+                onOpenArchive = {
+                    safeNavigate(navController) {
+                        navigate(Screen.TranslationsArchive.route)
+                    }
+                },
+                onOpenNotes = {
+                    safeNavigate(navController) {
+                        navigate(Screen.AnalyticsNotes.route)
+                    }
+                }
+            )
+        }
+
+        composable(Screen.TranslationsArchive.route) {
+            TranslationsArchiveScreen(
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.AnalyticsNotes.route) {
+            NotesScreen(
                 onBackClick = { navController.popBackStack() }
             )
         }

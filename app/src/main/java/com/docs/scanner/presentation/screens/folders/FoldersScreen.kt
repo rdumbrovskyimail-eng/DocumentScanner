@@ -32,6 +32,7 @@ fun FoldersScreen(
     onSearchClick: () -> Unit,
     onTermsClick: () -> Unit,
     onCameraClick: () -> Unit,
+    onAnalyticsClick: () -> Unit,
     onQuickScanComplete: (Long) -> Unit
 ) {
     val context = LocalContext.current
@@ -98,6 +99,9 @@ fun FoldersScreen(
                         Icon(Icons.Default.Inventory2, "Archive", tint = if (showArchived) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     IconButton(onClick = onSearchClick) { Icon(Icons.Default.Search, "Search") }
+                    IconButton(onClick = onAnalyticsClick) {
+                        Icon(Icons.Default.Insights, "Analytics Center")
+                    }
                     IconButton(onClick = onTermsClick) { Icon(Icons.Default.Event, "Terms") }
                     IconButton(onClick = onCameraClick) { Icon(Icons.Default.CameraAlt, "Camera") }
                     IconButton(onClick = {

@@ -100,7 +100,8 @@ class ProcessDocumentUseCase @Inject constructor(
     private val transRepo: TranslationRepository,
     private val settings: SettingsRepository,
     private val settingsDataStore: SettingsDataStore,
-    private val modelManager: GeminiModelManager
+    private val modelManager: GeminiModelManager,
+    private val mirrorToArchive: MirrorTranslationToArchiveUseCase
 ) {
     operator fun invoke(id: DocumentId): Flow<ProcessingState> = flow {
         val doc = when (val res = docRepo.getDocumentById(id)) {
@@ -159,6 +160,7 @@ class ProcessDocumentUseCase @Inject constructor(
             }
             
             docRepo.updateTranslationResult(id, transResult.translatedText, ProcessingStatus.Complete)
+            mirrorToArchive(id, transResult.translatedText, sourceLang, targetLang)
             emit(ProcessingState.Complete(ocrResult.text, transResult.translatedText))
         } else {
             docRepo.updateProcessingStatus(id, ProcessingStatus.Complete)
@@ -688,7 +690,8 @@ class TranslationUseCases @Inject constructor(
     private val repo: TranslationRepository,
     private val docRepo: DocumentRepository,
     private val settingsDataStore: SettingsDataStore,
-    private val modelManager: GeminiModelManager
+    private val modelManager: GeminiModelManager,
+    private val mirrorToArchive: MirrorTranslationToArchiveUseCase
 ) {
     suspend fun translateText(
         text: String, 
@@ -842,6 +845,7 @@ class TranslationUseCases @Inject constructor(
                     result.translatedText,
                     ProcessingStatus.Translation.Complete
                 )
+                mirrorToArchive(docId, result.translatedText, source, target)
             }
             .onFailure { error ->
                 docRepo.updateProcessingStatus(

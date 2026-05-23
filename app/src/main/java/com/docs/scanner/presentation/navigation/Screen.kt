@@ -83,4 +83,15 @@ sealed class Screen(val route: String) {
             return savedStateHandle.get<Long>("documentId") ?: 0L
         }
     }
+
+    // ─── Analytics Center ────────────────────────────────────────────────
+
+    /** Hub screen — two tiles: Translation Archive + Notes. */
+    data object AnalyticsHub : Screen("analytics")
+
+    /** Translation Archive — list of mirrored translations. */
+    data object TranslationsArchive : Screen("analytics/archive")
+
+    /** Notes — free-form information-analysis notes. */
+    data object AnalyticsNotes : Screen("analytics/notes")
 }
