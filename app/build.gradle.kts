@@ -8,8 +8,6 @@
  * ✅ UPDATED: sh.calvin.reorderable to 2.4.3 (Compose 1.7+ compatible)
  */
 
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -18,24 +16,6 @@ plugins {
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
 }
-
-// ════════════════════════════════════════════════════════════════════════════════
-// 🔐 SECRETS MANAGEMENT (Configuration Cache Safe)
-// ════════════════════════════════════════════════════════════════════════════════
-val secrets = providers.provider {
-    val props = Properties()
-    val localPropertiesFile = rootProject.layout.projectDirectory.file("local.properties").asFile
-    if (localPropertiesFile.exists()) {
-        localPropertiesFile.inputStream().use { props.load(it) }
-    }
-    props
-}
-
-fun getSecret(key: String): String = 
-    secrets.orNull?.getProperty(key) ?: System.getenv(key) ?: ""
-
-fun String.escapeForBuildConfigString(): String =
-    replace("\\", "\\\\").replace("\"", "\\\"")
 
 // ════════════════════════════════════════════════════════════════════════════════
 // 🏗️ ANDROID CONFIGURATION
@@ -57,11 +37,10 @@ android {
         
         resourceConfigurations += setOf("en", "ru", "es", "de", "fr", "it", "pt", "zh")
 
-        // 🔐 SECRETS INJECTION
-        buildConfigField("String", "GEMINI_API_KEY", "\"${getSecret("GEMINI_API_KEY").escapeForBuildConfigString()}\"")
-        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${getSecret("GOOGLE_DRIVE_CLIENT_ID").escapeForBuildConfigString()}\"")
-        
-        manifestPlaceholders["googleClientId"] = getSecret("GOOGLE_DRIVE_CLIENT_ID")
+        // 🔐 NO BUILD-TIME SECRETS
+        // Gemini API key is entered by the user in Settings → API Key
+        // and stored encrypted on-device via EncryptedKeyStorage.
+        // Google Drive uses DEFAULT_SIGN_IN — no custom Client ID needed.
 
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
@@ -74,19 +53,9 @@ android {
         }
     }
 
-    signingConfigs {
-        create("release") {
-            val path = getSecret("RELEASE_STORE_FILE")
-            if (path.isNotEmpty() && file(path).exists()) {
-                storeFile = file(path)
-                storePassword = getSecret("RELEASE_STORE_PASSWORD")
-                keyAlias = getSecret("RELEASE_KEY_ALIAS")
-                keyPassword = getSecret("RELEASE_KEY_PASSWORD")
-                enableV3Signing = true
-                enableV4Signing = true
-            }
-        }
-    }
+    // No custom signingConfigs.
+    // Debug builds use AGP's auto-generated ~/.android/debug.keystore.
+    // For release builds, configure signing manually when you actually need it.
 
     buildTypes {
         release {
@@ -97,7 +66,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.findByName("release")
+            // No signing config here — release builds (when needed) should
+            // explicitly configure their own keystore outside this file
+            // (e.g. via ~/.gradle/gradle.properties or environment variables
+            // in a separate release workflow).
         }
         
         debug {
