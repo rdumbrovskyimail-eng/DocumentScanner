@@ -1,5 +1,7 @@
 package com.docs.scanner.di
 
+import com.docs.scanner.data.repository.AnalyticsNoteRepositoryImpl
+import com.docs.scanner.data.repository.AnalyticsTranslationRepositoryImpl
 import com.docs.scanner.data.repository.BackupRepositoryImpl
 import com.docs.scanner.data.repository.DocumentRepositoryImpl
 import com.docs.scanner.data.repository.FileRepositoryImpl
@@ -9,6 +11,8 @@ import com.docs.scanner.data.repository.RecordRepositoryImpl
 import com.docs.scanner.data.repository.SettingsRepositoryImpl
 import com.docs.scanner.data.repository.TermRepositoryImpl
 import com.docs.scanner.data.repository.TranslationRepositoryImpl
+import com.docs.scanner.domain.repository.AnalyticsNoteRepository
+import com.docs.scanner.domain.repository.AnalyticsTranslationRepository
 import com.docs.scanner.domain.repository.BackupRepository
 import com.docs.scanner.domain.repository.DocumentRepository
 import com.docs.scanner.domain.repository.FileRepository
@@ -127,12 +131,32 @@ abstract class RepositoryModule {
     /**
      * Binds BackupRepository interface to implementation.
      * Used by: CreateBackupUseCase, RestoreBackupUseCase, Google Drive sync
-     * 
-     * FIXED: 🟠 Серьёзная #7 - Added missing binding
      */
     @Binds
     @Singleton
     abstract fun bindBackupRepository(
         impl: BackupRepositoryImpl
     ): BackupRepository
+
+    // ─── Analytics Center ──────────────────────────────────────────────
+
+    /**
+     * Binds AnalyticsTranslationRepository for the Translation Archive.
+     * Used by: AnalyticsViewModel, EditorViewModel (mirror), BackupRepositoryImpl.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindAnalyticsTranslationRepository(
+        impl: AnalyticsTranslationRepositoryImpl
+    ): AnalyticsTranslationRepository
+
+    /**
+     * Binds AnalyticsNoteRepository for free-form notes (Information Analysis).
+     * Used by: AnalyticsViewModel, BackupRepositoryImpl.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindAnalyticsNoteRepository(
+        impl: AnalyticsNoteRepositoryImpl
+    ): AnalyticsNoteRepository
 }
