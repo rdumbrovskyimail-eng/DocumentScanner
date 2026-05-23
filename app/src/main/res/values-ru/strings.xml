@@ -30,5 +30,35 @@
     <string name="folders_empty_message">Создайте первую папку для организации документов</string>
     <string name="folders_create_action">Создать папку</string>
     
-    <!-- ... остальные переводы по аналогии -->
+    <!-- Аналитический центр -->
+    <string name="analytics_center">Аналитический центр</string>
+    <string name="analytics_hub_subtitle">Управление переводами и заметками</string>
+    <string name="analytics_translation_archive">Архив переводов</string>
+    <string name="analytics_translation_archive_desc">Все переводы из ваших документов</string>
+    <string name="analytics_notes">Заметки</string>
+    <string name="analytics_notes_desc">Анализ информации и заметки</string>
+
+    <!-- Архив переводов -->
+    <string name="archive_search_hint">Поиск переводов…</string>
+    <string name="archive_empty">Архив пуст.
+Переводы появляются здесь после перевода каждого документа.</string>
+    <string name="archive_empty_search">Ничего не найдено</string>
+    <string name="archive_edit_title">Редактирование перевода</string>
+    <string name="archive_edited_badge">изменено</string>
+    <string name="archive_delete_title">Удалить перевод?</string>
+    <string name="archive_delete_message">Запись будет удалена из архива. Оригинальный документ не пострадает.</string>
+
+    <!-- Заметки -->
+    <string name="notes_search_hint">Поиск заметок…</string>
+    <string name="notes_empty">Заметок пока нет.
+Нажмите +, чтобы создать.</string>
+    <string name="notes_empty_search">Ничего не найдено</string>
+    <string name="note_editor_new">Новая заметка</string>
+    <string name="note_editor_edit">Редактирование</string>
+    <string name="note_title_label">Заголовок</string>
+    <string name="note_content_label">Содержание</string>
+    <string name="note_color_label">Цвет</string>
+    <string name="note_add_tag">Добавить тег</string>
+    <string name="note_delete_title">Удалить заметку?</string>
+    <string name="note_delete_message">Заметка будет удалена навсегда.</string>
 </resources>
