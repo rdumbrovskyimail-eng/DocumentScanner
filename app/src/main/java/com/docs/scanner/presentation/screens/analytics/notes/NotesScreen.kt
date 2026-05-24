@@ -273,7 +273,11 @@ private fun NoteCard(
                         )
                     }
                     IconButton(onClick = onArchive, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Archive, contentDescription = "Archive")
+                        Icon(
+                            Icons.Default.Archive,
+                            contentDescription = "Archive",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                     IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                         Icon(

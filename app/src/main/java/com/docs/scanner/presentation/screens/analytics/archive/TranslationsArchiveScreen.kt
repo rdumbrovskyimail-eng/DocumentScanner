@@ -249,6 +249,20 @@ private fun TranslationRow(
                     )
                     Spacer(Modifier.size(4.dp))
                 }
+                IconButton(onClick = {
+                    clipboard.setText(AnnotatedString(translation.translatedText))
+                }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = {
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, translation.translatedText)
+                    }
+                    context.startActivity(Intent.createChooser(send, "Share translation"))
+                }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Share, contentDescription = "Share", modifier = Modifier.size(20.dp))
+                }
                 IconButton(onClick = onMenuClick, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Default.MoreVert, contentDescription = "More options")
                 }
@@ -300,6 +314,7 @@ private fun TranslationEditorSheet(
     var text by rememberSaveable(translation.id.value) { mutableStateOf(translation.translatedText) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val isDirty = text != translation.translatedText
 
     ModalBottomSheet(
