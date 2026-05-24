@@ -1,11 +1,15 @@
 package com.docs.scanner.presentation.screens.records
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.domain.core.FolderId
+import com.docs.scanner.domain.core.RecordId
+import com.docs.scanner.domain.core.DomainResult
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.domain.model.Record
 import com.docs.scanner.domain.usecase.AllUseCases
+import com.docs.scanner.domain.usecase.QuickScanState
 import com.docs.scanner.presentation.screens.folders.SortMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -14,7 +18,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class RecordsViewModel @Inject constructor(
-    private val useCases: AllUseCases
+    private val useCases: AllUseCases,
+    private val settingsDataStore: com.docs.scanner.data.local.preferences.SettingsDataStore
 ) : ViewModel() {
 
     private val _currentFolderId = MutableStateFlow(0L)
@@ -26,9 +31,14 @@ class RecordsViewModel @Inject constructor(
     private val _sortMode = MutableStateFlow(SortMode.BY_DATE)
     val sortMode: StateFlow<SortMode> = _sortMode.asStateFlow()
     
-    // Для drag & drop
     private val _isDragging = MutableStateFlow(false)
     val isDragging: StateFlow<Boolean> = _isDragging.asStateFlow()
+    
+    private val _errorMessage = MutableSharedFlow<String>()
+    val errorMessage = _errorMessage.asSharedFlow()
+
+    private val _navigationEvent = MutableSharedFlow<NavigationEvent>()
+    val navigationEvent = _navigationEvent.asSharedFlow()
     
     private var _localRecords: List<Record> = emptyList()
 
@@ -38,6 +48,16 @@ class RecordsViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    init {
+        viewModelScope.launch {
+            settingsDataStore.recordSortMode
+                .map { 
+                    runCatching { SortMode.valueOf(it) }.getOrDefault(SortMode.BY_DATE) 
+                }
+                .collect { _sortMode.value = it }
+        }
+    }
 
     fun loadRecords(folderId: Long) {
         if (folderId == 0L) {
@@ -111,7 +131,9 @@ class RecordsViewModel @Inject constructor(
     // ═══════════════════════════════════════════════════════════════════════════
     
     fun setSortMode(mode: SortMode) {
-        _sortMode.value = mode
+        viewModelScope.launch {
+            settingsDataStore.setRecordSortMode(mode.name)
+        }
     }
     
     // ═══════════════════════════════════════════════════════════════════════════
@@ -182,12 +204,10 @@ class RecordsViewModel @Inject constructor(
         }
 
         val folderId = _currentFolderId.value
-        
         if (folderId == 0L) {
             updateErrorMessage("No folder selected")
             return
         }
-        
         if (folderId == FolderId.QUICK_SCANS_ID) {
             updateErrorMessage("Cannot create records manually in Quick Scans")
             return
@@ -195,9 +215,7 @@ class RecordsViewModel @Inject constructor(
 
         viewModelScope.launch {
             when (val result = useCases.createRecord(folderId, name.trim(), description)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    // Auto-refresh via Flow
-                }
+                is com.docs.scanner.domain.model.Result.Success -> { }
                 is com.docs.scanner.domain.model.Result.Error -> {
                     updateErrorMessage("Failed to create record: ${result.exception.message}")
                 }
@@ -209,9 +227,7 @@ class RecordsViewModel @Inject constructor(
     fun updateRecord(record: Record) {
         viewModelScope.launch {
             when (val result = useCases.updateRecord(record)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    // Auto-refresh via Flow
-                }
+                is com.docs.scanner.domain.model.Result.Success -> { }
                 is com.docs.scanner.domain.model.Result.Error -> {
                     updateErrorMessage("Failed to update record: ${result.exception.message}")
                 }
@@ -223,9 +239,7 @@ class RecordsViewModel @Inject constructor(
     fun deleteRecord(recordId: Long) {
         viewModelScope.launch {
             when (val result = useCases.deleteRecord(recordId)) {
-                is com.docs.scanner.domain.model.Result.Success -> {
-                    // Auto-refresh via Flow
-                }
+                is com.docs.scanner.domain.model.Result.Success -> { }
                 is com.docs.scanner.domain.model.Result.Error -> {
                     updateErrorMessage("Failed to delete record: ${result.exception.message}")
                 }
@@ -236,7 +250,6 @@ class RecordsViewModel @Inject constructor(
 
     fun moveRecord(recordId: Long, targetFolderId: Long) {
         val currentFolderId = _currentFolderId.value
-        
         if (currentFolderId == targetFolderId) {
             updateErrorMessage("Record is already in this folder")
             return
@@ -255,9 +268,97 @@ class RecordsViewModel @Inject constructor(
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // HELPERS
-    // ═══════════════════════════════════════════════════════════════════════════
+    fun setPinned(recordId: Long, pinned: Boolean) {
+        viewModelScope.launch {
+            when (val result = useCases.records.pin(RecordId(recordId), pinned)) {
+                is DomainResult.Success -> { }
+                is DomainResult.Failure -> {
+                    updateErrorMessage("Failed to update pin: ${result.error.message}")
+                }
+            }
+        }
+    }
+
+    fun archiveRecord(recordId: Long) {
+        viewModelScope.launch {
+            when (val result = useCases.records.archive(RecordId(recordId))) {
+                is DomainResult.Success -> { }
+                is DomainResult.Failure -> {
+                    updateErrorMessage("Failed to archive record: ${result.error.message}")
+                }
+            }
+        }
+    }
+
+    fun unarchiveRecord(recordId: Long) {
+        viewModelScope.launch {
+            when (val result = useCases.records.unarchive(RecordId(recordId))) {
+                is DomainResult.Success -> { }
+                is DomainResult.Failure -> {
+                    updateErrorMessage("Failed to unarchive record: ${result.error.message}")
+                }
+            }
+        }
+    }
+
+    fun clearQuickScans() {
+        viewModelScope.launch {
+            try {
+                val quickScansId = FolderId.QUICK_SCANS
+                useCases.records.observeByFolder(quickScansId)
+                    .first()
+                    .forEach { record ->
+                        useCases.records.delete(record.id)
+                    }
+            } catch (e: Exception) {
+                showError("Failed to clear Quick Scans: ${e.message}")
+            }
+        }
+    }
+
+    fun quickScan(imageUri: Uri) {
+        viewModelScope.launch {
+            _uiState.value = RecordsUiState.Processing(progress = 0, message = "Starting quick scan...")
+
+            try {
+                useCases.quickScan(imageUri.toString())
+                    .catch { e ->
+                        showError("Quick scan failed: ${e.message}")
+                        loadRecords(_currentFolderId.value)
+                    }
+                    .collect { state ->
+                        when (state) {
+                            is QuickScanState.Preparing -> {
+                                _uiState.value = RecordsUiState.Processing(5, "Preparing...")
+                            }
+                            is QuickScanState.CreatingRecord -> {
+                                _uiState.value = RecordsUiState.Processing(20, "Creating record...")
+                            }
+                            is QuickScanState.SavingImage -> {
+                                _uiState.value = RecordsUiState.Processing(
+                                    40 + (state.progress.coerceIn(0, 100) * 20 / 100),
+                                    "Saving image..."
+                                )
+                            }
+                            is QuickScanState.Processing -> {
+                                _uiState.value = RecordsUiState.Processing(70, "Processing OCR...")
+                            }
+                            is QuickScanState.Success -> {
+                                _navigationEvent.emit(NavigationEvent.NavigateToEditor(state.recordId.value))
+                                loadRecords(_currentFolderId.value)
+                            }
+                            is QuickScanState.Error -> {
+                                showError("${state.stage}: ${state.error.message}")
+                                loadRecords(_currentFolderId.value)
+                            }
+                        }
+                    }
+            } catch (e: Exception) {
+                showError("Quick scan error: ${e.message}")
+                loadRecords(_currentFolderId.value)
+            }
+        }
+    }
 
     fun clearError() {
         val currentState = _uiState.value
@@ -274,15 +375,16 @@ class RecordsViewModel @Inject constructor(
             _uiState.value = RecordsUiState.Error(message)
         }
     }
-}
 
-// ══════════════════════════════════════════════════════════════════════════════
-// UI STATE
-// ══════════════════════════════════════════════════════════════════════════════
+    private fun showError(message: String) {
+        viewModelScope.launch {
+            _errorMessage.emit(message)
+        }
+    }
+}
 
 sealed interface RecordsUiState {
     data object Loading : RecordsUiState
-    
     data class Success(
         val folderId: Long,
         val folderName: String,
@@ -290,6 +392,13 @@ sealed interface RecordsUiState {
         val isQuickScansFolder: Boolean = false,
         val errorMessage: String? = null
     ) : RecordsUiState
-    
+    data class Processing(
+        val progress: Int,
+        val message: String
+    ) : RecordsUiState
     data class Error(val message: String) : RecordsUiState
+}
+
+sealed interface NavigationEvent {
+    data class NavigateToEditor(val recordId: Long) : NavigationEvent
 }

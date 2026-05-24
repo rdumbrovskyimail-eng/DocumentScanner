@@ -431,7 +431,7 @@ private fun RecordMenu(
                     leadingContent = { Icon(Icons.Default.Edit, null) },
                     modifier = Modifier.clickable { onRename() }
                 )
-                // ✅ Исправлено: Вызов существующих методов setPinned, archiveRecord, unarchiveRecord
+                // ✅ СИНХРОНИЗИРОВАНО: Корректный вызов обновленной вьюмодели
                 ListItem(
                     headlineContent = { Text(if (record.isPinned) "Unpin" else "Pin to top") },
                     leadingContent = { Icon(Icons.Default.PushPin, null) },
