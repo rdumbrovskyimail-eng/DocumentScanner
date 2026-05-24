@@ -1,51 +1,73 @@
 package com.docs.scanner.data.local.alarm
 
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.media.RingtoneManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import com.docs.scanner.data.local.entity.TermEntity
-import com.docs.scanner.domain.alarm.AlarmScheduler
-import com.docs.scanner.domain.repository.TermRepository
 import com.docs.scanner.presentation.MainActivity
-import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
+import com.docs.scanner.data.local.database.entity.TermEntity // ✅ Исправлен импорт сущности
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first // ✅ Добавлен импорт для Flow.first()
+import timber.log.Timber
 
-@AndroidEntryPoint
 class TermAlarmReceiver : BroadcastReceiver() {
-    @Inject lateinit var termRepo: TermRepository
-    @Inject lateinit var alarmScheduler: AlarmScheduler
+
+    @EntryPoint
+    @InstallIn(SingletonComponent::class)
+    interface ReceiverEntryPoint {
+        fun appDatabase(): com.docs.scanner.data.local.database.AppDatabase
+        fun alarmScheduler(): com.docs.scanner.data.local.alarm.AlarmScheduler
+    }
 
     override fun onReceive(context: Context, intent: Intent) {
-        when (intent.action) {
-            Intent.ACTION_BOOT_COMPLETED,
-            "android.intent.action.QUICKBOOT_POWERON",
-            "com.htc.intent.action.QUICKBOOT_POWERON" -> {
-                val pending = goAsync()
-                CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        termRepo.getAllActive().forEach { term ->
-                            if (!term.isCompleted && !term.isCancelled && term.dueDate > System.currentTimeMillis()) {
-                                alarmScheduler.scheduleTerm(TermEntity.fromDomain(term))
-                            }
-                        }
-                    } finally { pending.finish() }
+        val action = intent.action
+        
+        if (action == Intent.ACTION_BOOT_COMPLETED || 
+            action == "android.intent.action.QUICKBOOT_POWERON" || 
+            action == "com.htc.intent.action.QUICKBOOT_POWERON") {
+            
+            val pendingResult = goAsync()
+            
+            CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                try {
+                    val entryPoint = EntryPointAccessors.fromApplication(
+                        context.applicationContext,
+                        ReceiverEntryPoint::class.java
+                    )
+                    val database = entryPoint.appDatabase()
+                    val scheduler = entryPoint.alarmScheduler()
+
+                    // ✅ Исправлено: задействуем существующий метод observeActive().first()
+                    val activeTerms = database.termDao().observeActive().first()
+                    
+                    activeTerms.forEach { termEntity ->
+                        scheduler.scheduleTerm(termEntity)
+                    }
+                    Timber.i("✅ Rescheduled ${activeTerms.size} terms after system reboot")
+                } catch (e: Exception) {
+                    if (e !is CancellationException) {
+                        Timber.e(e, "❌ Failed to reschedule terms on boot")
+                    }
+                } finally {
+                    pendingResult.finish()
                 }
             }
-            else -> {
-                val termId = intent.getLongExtra("term_id", -1)
-                if (termId <= 0) return
-                val title = intent.getStringExtra("title") ?: return
-                val description = intent.getStringExtra("description")
-                val isMain = intent.getBooleanExtra("is_main_alarm", false)
-                val offset = intent.getIntExtra("notification_offset", 0)
-                showNotification(context, termId, offset, title, description, isMain)
-            }
+            return
         }
+
+        val termId = intent.getLongExtra("term_id", -1)
+        val title = intent.getStringExtra("title") ?: "Term Reminder"
+        val description = intent.getStringExtra("description")
+        val isMainAlarm = intent.getBooleanExtra("is_main_alarm", false)
+        val offset = intent.getIntExtra("notification_offset", 0)
+        
+        showNotification(context, termId, offset, title, description, isMainAlarm)
     }
 
     private fun showNotification(
@@ -56,7 +78,6 @@ class TermAlarmReceiver : BroadcastReceiver() {
         description: String?,
         isMainAlarm: Boolean
     ) {
-        // ✅ УНИКАЛЬНЫЙ NOTIFICATION ID (каждое напоминание = отдельное уведомление)
         val notificationId = ((termId.hashCode() * 31 + offset) and Int.MAX_VALUE)
         
         val openIntent = Intent(context, MainActivity::class.java).apply {
@@ -89,9 +110,9 @@ class TermAlarmReceiver : BroadcastReceiver() {
         
         try {
             NotificationManagerCompat.from(context).notify(notificationId, builder.build())
-            println("✅ Notification shown: ID=$notificationId, main=$isMainAlarm")
+            Timber.d("✅ Notification shown: ID=$notificationId, main=$isMainAlarm")
         } catch (e: SecurityException) {
-            println("❌ Notification permission denied: ${e.message}")
+            Timber.e(e, "❌ Notification permission denied")
         }
     }
     

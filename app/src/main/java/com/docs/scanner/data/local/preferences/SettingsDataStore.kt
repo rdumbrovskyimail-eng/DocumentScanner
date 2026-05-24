@@ -54,7 +54,8 @@ class SettingsDataStore @Inject constructor(
         // UI Settings
         private val KEY_THEME = stringPreferencesKey("theme")
         private val KEY_LANGUAGE = stringPreferencesKey("language")
-        private val KEY_FOLDER_SORT_MODE = intPreferencesKey("folder_sort_mode")
+        private val KEY_FOLDER_SORT_MODE = stringPreferencesKey("folder_sort_mode")
+        private val KEY_RECORD_SORT_MODE = stringPreferencesKey("record_sort_mode")
         
         // OCR Settings
         private val KEY_OCR_LANGUAGE = stringPreferencesKey("ocr_language")
@@ -278,12 +279,35 @@ class SettingsDataStore @Inject constructor(
         }
     }
 
-    val folderSortMode: Flow<SortMode> = dataStore.data.map { 
-        SortMode.entries.getOrElse(it[KEY_FOLDER_SORT_MODE] ?: 0) { SortMode.BY_DATE }
+    // ✅ Полное исправление SortMode в DataStore — работа с чистыми String
+    val folderSortMode: Flow<String> = dataStore.data
+        .catch { exception ->
+            Timber.e(exception, "Error reading folder sort mode")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_FOLDER_SORT_MODE] ?: "BY_DATE" }
+
+    suspend fun setFolderSortMode(mode: String) {
+        try {
+            dataStore.edit { prefs -> prefs[KEY_FOLDER_SORT_MODE] = mode }
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting folder sort mode")
+        }
     }
 
-    suspend fun setFolderSortMode(mode: SortMode) {
-        dataStore.edit { it[KEY_FOLDER_SORT_MODE] = mode.ordinal }
+    val recordSortMode: Flow<String> = dataStore.data
+        .catch { exception ->
+            Timber.e(exception, "Error reading record sort mode")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_RECORD_SORT_MODE] ?: "BY_DATE" }
+
+    suspend fun setRecordSortMode(mode: String) {
+        try {
+            dataStore.edit { prefs -> prefs[KEY_RECORD_SORT_MODE] = mode }
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting record sort mode")
+        }
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
