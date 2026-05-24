@@ -7,20 +7,47 @@ import android.content.Intent
 import android.media.RingtoneManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import com.docs.scanner.data.local.entity.TermEntity
+import com.docs.scanner.domain.alarm.AlarmScheduler
+import com.docs.scanner.domain.repository.TermRepository
 import com.docs.scanner.presentation.MainActivity
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import kotlinx.coroutines.*
 
+@AndroidEntryPoint
 class TermAlarmReceiver : BroadcastReceiver() {
-    
+    @Inject lateinit var termRepo: TermRepository
+    @Inject lateinit var alarmScheduler: AlarmScheduler
+
     override fun onReceive(context: Context, intent: Intent) {
-        val termId = intent.getLongExtra("term_id", -1)
-        val title = intent.getStringExtra("title") ?: "Term Reminder"
-        val description = intent.getStringExtra("description")
-        val isMainAlarm = intent.getBooleanExtra("is_main_alarm", false)
-        val offset = intent.getIntExtra("notification_offset", 0) // ✅ Уникальный offset
-        
-        showNotification(context, termId, offset, title, description, isMainAlarm)
+        when (intent.action) {
+            Intent.ACTION_BOOT_COMPLETED,
+            "android.intent.action.QUICKBOOT_POWERON",
+            "com.htc.intent.action.QUICKBOOT_POWERON" -> {
+                val pending = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        termRepo.getAllActive().forEach { term ->
+                            if (!term.isCompleted && !term.isCancelled && term.dueDate > System.currentTimeMillis()) {
+                                alarmScheduler.scheduleTerm(TermEntity.fromDomain(term))
+                            }
+                        }
+                    } finally { pending.finish() }
+                }
+            }
+            else -> {
+                val termId = intent.getLongExtra("term_id", -1)
+                if (termId <= 0) return
+                val title = intent.getStringExtra("title") ?: return
+                val description = intent.getStringExtra("description")
+                val isMain = intent.getBooleanExtra("is_main_alarm", false)
+                val offset = intent.getIntExtra("notification_offset", 0)
+                showNotification(context, termId, offset, title, description, isMain)
+            }
+        }
     }
-    
+
     private fun showNotification(
         context: Context,
         termId: Long,

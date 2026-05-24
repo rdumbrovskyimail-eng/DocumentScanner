@@ -54,6 +54,7 @@ class SettingsDataStore @Inject constructor(
         // UI Settings
         private val KEY_THEME = stringPreferencesKey("theme")
         private val KEY_LANGUAGE = stringPreferencesKey("language")
+        private val KEY_FOLDER_SORT_MODE = intPreferencesKey("folder_sort_mode")
         
         // OCR Settings
         private val KEY_OCR_LANGUAGE = stringPreferencesKey("ocr_language")
@@ -275,6 +276,14 @@ class SettingsDataStore @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "Error setting app language")
         }
+    }
+
+    val folderSortMode: Flow<SortMode> = dataStore.data.map { 
+        SortMode.entries.getOrElse(it[KEY_FOLDER_SORT_MODE] ?: 0) { SortMode.BY_DATE }
+    }
+
+    suspend fun setFolderSortMode(mode: SortMode) {
+        dataStore.edit { it[KEY_FOLDER_SORT_MODE] = mode.ordinal }
     }
     
     // ════════════════════════════════════════════════════════════════════════════════

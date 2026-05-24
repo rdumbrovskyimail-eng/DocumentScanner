@@ -550,8 +550,12 @@ private fun DeleteFolderDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text("Delete", color = MaterialTheme.colorScheme.error)
+            val canConfirm = folder.recordCount == 0 || deleteContents
+            TextButton(
+                onClick = onConfirm,
+                enabled = canConfirm
+            ) {
+                Text("Delete", color = if (canConfirm) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
             }
         },
         dismissButton = {

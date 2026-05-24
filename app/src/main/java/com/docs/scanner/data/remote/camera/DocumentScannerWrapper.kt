@@ -35,7 +35,17 @@ class DocumentScannerWrapper @Inject constructor(
 
     private val client = GmsDocumentScanning.getClient(options)
 
-    fun isAvailable(): Boolean = true
+    fun isAvailable(): Boolean {
+        return try {
+            val result = com.google.android.gms.common.GoogleApiAvailability
+                .getInstance()
+                .isGooglePlayServicesAvailable(context)
+            result == com.google.android.gms.common.ConnectionResult.SUCCESS
+        } catch (e: Throwable) {
+            Timber.w(e, "Failed to check GMS availability")
+            false
+        }
+    }
 
     fun startScan(
         activity: Activity,

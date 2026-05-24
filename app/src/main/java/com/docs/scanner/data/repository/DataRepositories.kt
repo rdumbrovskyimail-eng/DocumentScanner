@@ -772,7 +772,7 @@ class DocumentRepositoryImpl @Inject constructor(
                         timestamp = System.currentTimeMillis()
                     )
                 )
-                searchHistoryDao.trimToLimit(50)
+                searchHistoryDao.trimToLimit(20)
             }.toDomainResult()
         }
 
@@ -1456,7 +1456,7 @@ class FileRepositoryImpl @Inject constructor(
     private val thumbnailsDir = File(context.cacheDir, "thumbnails").apply { mkdirs() }
     
     companion object {
-        private const val THUMBNAIL_MAX_SIZE = 512
+        private const val THUMBNAIL_MAX_SIZE = 256
         private const val THUMBNAIL_QUALITY = 70
     }
 

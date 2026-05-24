@@ -1,8 +1,8 @@
 /*
  * DocumentScanner - App Database
- * Version: 7.2.0 (Build 720) - PRODUCTION READY 2026
+ * Version: 7.2.1 (Build 721) - PRODUCTION READY 2026
  *
- * ✅ CRITICAL FIXES (Session 14):
+ * ✅ CRITICAL FIXES (Session 15):
  * - Added MIGRATION_18_19 for model column in translation_cache
  * - Schema version updated to 19
  * - ModelConstants integration
@@ -465,6 +465,8 @@ class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
         } catch (e: Exception) {
             Timber.w(e, "⚠️ Failed to set mmap_size")
         }
+
+        try { db.execSQL("PRAGMA foreign_keys=ON") } catch (_: Exception) {}
 
         // Performance PRAGMAs
         try {

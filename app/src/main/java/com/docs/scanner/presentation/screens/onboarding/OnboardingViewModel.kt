@@ -40,7 +40,10 @@ class OnboardingViewModel @Inject constructor(
             try {
                 val key = _apiKey.value.trim()
                 if (key.isNotEmpty()) {
-                    encryptedKeyStorage.setActiveApiKey(key)
+                    val ok = encryptedKeyStorage.addApiKey(key, label = "Primary")
+                    if (!ok) {
+                        // обработать: дубликат или лимит 5
+                    }
                 }
                 settingsRepository.setOnboardingCompleted(true)
                 onComplete()

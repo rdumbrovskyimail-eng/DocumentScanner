@@ -114,12 +114,19 @@ fun OnboardingScreen(
                     Spacer(modifier = Modifier.height(16.dp)) // Исправлено 12
                     
                     var showPassword by rememberSaveable { mutableStateOf(false) } // Исправлено 13
+                    val keyRegex = remember { Regex("^AIza[A-Za-z0-9_-]{35}$") }
+                    val isKeyValid = keyRegex.matches(apiKey)
                     
                     OutlinedTextField(
                         value = apiKey,
                         onValueChange = viewModel::updateApiKey,
                         label = { Text("API Key") },
                         placeholder = { Text("AIza...") },
+                        isError = apiKey.isNotBlank() && !isKeyValid,
+                        supportingText = {
+                            if (apiKey.isNotBlank() && !isKeyValid)
+                                Text("Key must start with AIza and be 39 chars")
+                        },
                         visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(), // Исправлено 14
                         trailingIcon = {
                             IconButton(onClick = { showPassword = !showPassword }) {
@@ -155,7 +162,7 @@ fun OnboardingScreen(
                         
                         Button(
                             onClick = { viewModel.saveAndContinue(onComplete) },
-                            enabled = apiKey.isNotBlank() && !isLoading // Исправлено 18
+                            enabled = isKeyValid && !isLoading // Исправлено 18
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(

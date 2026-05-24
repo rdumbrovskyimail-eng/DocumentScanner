@@ -180,6 +180,14 @@ fun RecordsScreen(
                 menuRecord = null
                 editingRecord = record
             },
+            onPin = {
+                viewModel.togglePin(record)
+                menuRecord = null
+            },
+            onArchive = {
+                viewModel.toggleArchive(record)
+                menuRecord = null
+            },
             onMove = {
                 menuRecord = null
                 showMoveDialog = record
@@ -417,6 +425,8 @@ private fun RecordMenu(
     record: Record,
     onDismiss: () -> Unit,
     onRename: () -> Unit,
+    onPin: () -> Unit,
+    onArchive: () -> Unit,
     onMove: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -426,6 +436,8 @@ private fun RecordMenu(
                 Text(record.name, Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
                 HorizontalDivider()
                 ListItem(headlineContent = { Text("Rename") }, leadingContent = { Icon(Icons.Default.Edit, null) }, modifier = Modifier.clickable(onClick = onRename))
+                ListItem(headlineContent = { Text(if (record.isPinned) "Unpin" else "Pin to top") }, leadingContent = { Icon(Icons.Default.PushPin, null) }, modifier = Modifier.clickable(onClick = onPin))
+                ListItem(headlineContent = { Text(if (record.isArchived) "Unarchive" else "Archive") }, leadingContent = { Icon(if (record.isArchived) Icons.Default.Unarchive else Icons.Default.Archive, null) }, modifier = Modifier.clickable(onClick = onArchive))
                 ListItem(headlineContent = { Text("Move") }, leadingContent = { Icon(Icons.Default.DriveFileMove, null) }, modifier = Modifier.clickable(onClick = onMove))
                 ListItem(headlineContent = { Text("Delete") }, leadingContent = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }, modifier = Modifier.clickable(onClick = onDelete))
             }
