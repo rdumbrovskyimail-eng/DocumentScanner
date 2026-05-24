@@ -78,7 +78,12 @@ import android.content.Intent
 @Composable
 fun TranslationsArchiveScreen(
     viewModel: TranslationsArchiveViewModel = hiltViewModel(),
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    /**
+     * Optional translation ID to auto-open in the editor sheet right after
+     * the screen loads. Used as a deep-link target from SearchScreen.
+     */
+    highlightTranslationId: Long? = null
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
@@ -91,6 +96,17 @@ fun TranslationsArchiveScreen(
 
     LaunchedEffect(Unit) {
         viewModel.snackbarEvents.collect { msg -> snackbarHostState.showSnackbar(msg) }
+    }
+
+    // ── Deep-link from Search: auto-open editor for highlightTranslationId ──
+    var consumedHighlight by rememberSaveable { mutableStateOf<Long?>(null) }
+    LaunchedEffect(highlightTranslationId, uiState.translations) {
+        val target = highlightTranslationId ?: return@LaunchedEffect
+        if (consumedHighlight == target) return@LaunchedEffect
+        val found = uiState.translations.firstOrNull { it.id.value == target }
+            ?: return@LaunchedEffect
+        consumedHighlight = target
+        editing = found
     }
 
     Scaffold(
@@ -185,7 +201,7 @@ fun TranslationsArchiveScreen(
             translation = target,
             onDismiss = { menuTarget = null },
             onEdit = { menuTarget = null; editing = target },
-            onShare = { menuTarget = null },
+            onShared = { menuTarget = null },
             onDelete = { menuTarget = null; pendingDelete = target }
         )
     }
@@ -249,20 +265,6 @@ private fun TranslationRow(
                     )
                     Spacer(Modifier.size(4.dp))
                 }
-                IconButton(onClick = {
-                    clipboard.setText(AnnotatedString(translation.translatedText))
-                }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = {
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, translation.translatedText)
-                    }
-                    context.startActivity(Intent.createChooser(send, "Share translation"))
-                }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Share, contentDescription = "Share", modifier = Modifier.size(20.dp))
-                }
                 IconButton(onClick = onMenuClick, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Default.MoreVert, contentDescription = "More options")
                 }
@@ -311,10 +313,11 @@ private fun TranslationEditorSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    var text by rememberSaveable(translation.id.value) { mutableStateOf(translation.translatedText) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
+    var text by rememberSaveable(translation.id.value) {
+        mutableStateOf(translation.translatedText)
+    }
     val isDirty = text != translation.translatedText
 
     ModalBottomSheet(
@@ -391,7 +394,7 @@ private fun TranslationItemMenu(
     translation: AnalyticsTranslation,
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
-    onShare: () -> Unit,
+    onShared: () -> Unit,
     onDelete: () -> Unit
 ) {
     val context = LocalContext.current
@@ -421,7 +424,7 @@ private fun TranslationItemMenu(
                 runCatching {
                     context.startActivity(Intent.createChooser(send, "Share translation"))
                 }
-                onShare()
+                onShared()
             }
         )
         DropdownMenuItem(
