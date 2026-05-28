@@ -9,13 +9,12 @@ import android.media.RingtoneManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.docs.scanner.presentation.MainActivity
-import com.docs.scanner.data.local.database.entity.TermEntity // ✅ Исправлен импорт сущности
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.first // ✅ Добавлен импорт для Flow.first()
+import kotlinx.coroutines.flow.first
 import timber.log.Timber
 
 class TermAlarmReceiver : BroadcastReceiver() {
@@ -27,8 +26,26 @@ class TermAlarmReceiver : BroadcastReceiver() {
         fun alarmScheduler(): com.docs.scanner.data.local.alarm.AlarmScheduler
     }
 
+    companion object {
+        private const val CHANNEL_ID = "term_reminders"
+        // Константы для обработки ручного сброса будильника
+        const val ACTION_DISMISS_ALARM = "com.docs.scanner.ACTION_DISMISS_ALARM"
+        const val EXTRA_NOTIFICATION_ID = "notification_id"
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
+        
+        // ⏰ Обработка клика по кнопке "Dismiss" (Сбросить) прямо на уведомлении
+        if (action == ACTION_DISMISS_ALARM) {
+            val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
+            if (notificationId != -1) {
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancel(notificationId)
+                Timber.d("⏰ Будильник $notificationId успешно отключен пользователем")
+            }
+            return
+        }
         
         if (action == Intent.ACTION_BOOT_COMPLETED || 
             action == "android.intent.action.QUICKBOOT_POWERON" || 
@@ -45,16 +62,15 @@ class TermAlarmReceiver : BroadcastReceiver() {
                     val database = entryPoint.appDatabase()
                     val scheduler = entryPoint.alarmScheduler()
 
-                    // ✅ Исправлено: задействуем существующий метод observeActive().first()
                     val activeTerms = database.termDao().observeActive().first()
                     
                     activeTerms.forEach { termEntity ->
                         scheduler.scheduleTerm(termEntity)
                     }
-                    Timber.i("✅ Rescheduled ${activeTerms.size} terms after system reboot")
+                    Timber.i("✅ Восстановлено будильников после перезагрузки: ${activeTerms.size}")
                 } catch (e: Exception) {
                     if (e !is CancellationException) {
-                        Timber.e(e, "❌ Failed to reschedule terms on boot")
+                        Timber.e(e, "❌ Ошибка восстановления будильников")
                     }
                 } finally {
                     pendingResult.finish()
@@ -138,65 +154,4 @@ class TermAlarmReceiver : BroadcastReceiver() {
             Timber.e(e, "❌ Ошибка запуска: нет разрешения на уведомления")
         }
     }
-    
-    companion object {
-        private const val CHANNEL_ID = "term_reminders"
-        // Константы для обработки ручного сброса будильника
-        const val ACTION_DISMISS_ALARM = "com.docs.scanner.ACTION_DISMISS_ALARM"
-        const val EXTRA_NOTIFICATION_ID = "notification_id"
-    }
-
-    override fun onReceive(context: Context, intent: Intent) {
-        val action = intent.action
-        
-        // ⏰ Обработка клика по кнопке "Dismiss" (Сбросить) прямо на уведомлении
-        if (action == ACTION_DISMISS_ALARM) {
-            val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
-            if (notificationId != -1) {
-                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.cancel(notificationId)
-                Timber.d("⏰ Будильник $notificationId успешно отключен пользователем")
-            }
-            return
-        }
-        
-        if (action == Intent.ACTION_BOOT_COMPLETED || 
-            action == "android.intent.action.QUICKBOOT_POWERON" || 
-            action == "com.htc.intent.action.QUICKBOOT_POWERON") {
-            
-            val pendingResult = goAsync()
-            
-            CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
-                try {
-                    val entryPoint = EntryPointAccessors.fromApplication(
-                        context.applicationContext,
-                        ReceiverEntryPoint::class.java
-                    )
-                    val database = entryPoint.appDatabase()
-                    val scheduler = entryPoint.alarmScheduler()
-
-                    val activeTerms = database.termDao().observeActive().first()
-                    
-                    activeTerms.forEach { termEntity ->
-                        scheduler.scheduleTerm(termEntity)
-                    }
-                    Timber.i("✅ Восстановлено будильников после перезагрузки: ${activeTerms.size}")
-                } catch (e: Exception) {
-                    if (e !is CancellationException) {
-                        Timber.e(e, "❌ Ошибка восстановления будильников")
-                    }
-                } finally {
-                    pendingResult.finish()
-                }
-            }
-            return
-        }
-
-        val termId = intent.getLongExtra("term_id", -1)
-        val title = intent.getStringExtra("title") ?: "Term Reminder"
-        val description = intent.getStringExtra("description")
-        val isMainAlarm = intent.getBooleanExtra("is_main_alarm", false)
-        val offset = intent.getIntExtra("notification_offset", 0)
-        
-        showNotification(context, termId, offset, title, description, isMainAlarm)
-    }
+}
