@@ -1994,7 +1994,7 @@ class BackupRepositoryImpl @Inject constructor(
                                 }
                                 val content = output.toString("UTF-8")
                                 val manifest = jsonSerializer.decode<BackupManifest>(content)
-                                manifestValid = manifest.dbVersion in 1..20
+                                manifestValid = manifest.dbVersion in 1..AppDatabase.DATABASE_VERSION
                                 Timber.d("📦 Restoring backup from ${manifest.backupDate}")
                             }
                             
