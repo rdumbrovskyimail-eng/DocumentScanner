@@ -186,6 +186,8 @@ class QuickScanUseCase @Inject constructor(
     private val processDoc: ProcessDocumentUseCase,
     private val time: TimeProvider
 ) {
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     operator fun invoke(
         imageUri: String,
         quickScansFolderName: String = "Quick Scans",
@@ -206,17 +208,21 @@ class QuickScanUseCase @Inject constructor(
             )
             val recordId = recordRepo.createRecord(newRecord).getOrThrow()
             
-            emit(QuickScanState.SavingImage(0))
+            emit(QuickScanState.SavingImage(100))
             val docId = createDoc(recordId, imageUri, lang).getOrThrow()
             
-            processDoc(docId).collect { processingState ->
-                emit(QuickScanState.Processing(processingState))
-                when (processingState) {
-                    is ProcessingState.Complete -> emit(QuickScanState.Success(recordId, docId))
-                    is ProcessingState.Failed -> emit(QuickScanState.Error(processingState.error, processingState.stage.name))
-                    else -> {}
+            // Запуск OCR и перевода в фоновом режиме, не блокируя UI
+            backgroundScope.launch {
+                try {
+                    processDoc(docId).collect()
+                } catch (e: Exception) {
+                    if (e !is CancellationException) {
+                        Timber.e(e, "Background processing failed for doc ${docId.value}")
+                    }
                 }
             }
+            
+            emit(QuickScanState.Success(recordId, docId))
         } catch (e: Exception) {
             val error = if (e is DomainException) e.error else DomainError.Unknown(e)
             emit(QuickScanState.Error(error, "SETUP"))
@@ -247,6 +253,8 @@ class MultiPageScanUseCase @Inject constructor(
     private val processDoc: ProcessDocumentUseCase,
     private val time: TimeProvider
 ) {
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     operator fun invoke(
         imageUris: List<String>,
         targetFolderId: FolderId? = null,
@@ -295,14 +303,19 @@ class MultiPageScanUseCase @Inject constructor(
                 }
                 docIds.add(docId)
 
-                processDoc(docId).collect { state ->
-                    emit(MultiPageScanState.Processing(index = index + 1, total = total, state = state))
-                    if (state is ProcessingState.Failed) {
-                        emit(MultiPageScanState.PageFailed(index + 1, total, state.error, state.stage.name))
+                // Запуск фоновой обработки для каждого сохраненного документа
+                backgroundScope.launch {
+                    try {
+                        processDoc(docId).collect() // OCR и перевод в фоновом режиме
+                    } catch (e: Exception) {
+                        if (e !is CancellationException) {
+                            Timber.e(e, "Background processing failed for doc ${docId.value}")
+                        }
                     }
                 }
             }
 
+            // Мгновенный переход к экрану редактора после сохранения файлов
             emit(MultiPageScanState.Success(recordId, docIds))
         } catch (e: Exception) {
             val err = if (e is DomainException) e.error else DomainError.Unknown(e)
