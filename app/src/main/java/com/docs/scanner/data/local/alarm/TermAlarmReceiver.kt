@@ -1,5 +1,6 @@
 package com.docs.scanner.data.local.alarm
 
+import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -137,9 +138,7 @@ class TermAlarmReceiver : BroadcastReceiver() {
                 .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
                 .setFullScreenIntent(pendingIntent, true)
                 .setOngoing(true)
-                // FLAG_INSISTENT заставляет звук и вибрацию повторяться непрерывно (режим будильника)
-                .setFlag(NotificationCompat.FLAG_INSISTENT, true)
-                // Кнопка быстрого отключения на шторке
+                // Добавление кнопки быстрого отключения на шторке
                 .addAction(
                     android.R.drawable.ic_menu_close_clear_cancel,
                     "Dismiss",
@@ -148,7 +147,11 @@ class TermAlarmReceiver : BroadcastReceiver() {
         }
         
         try {
-            NotificationManagerCompat.from(context).notify(notificationId, builder.build())
+            val notification = builder.build().apply {
+                // Изменение флага у готового объекта Notification через побитовое OR
+                flags = flags or Notification.FLAG_INSISTENT
+            }
+            NotificationManagerCompat.from(context).notify(notificationId, notification)
             Timber.d("⏰ Будильник запущен: ID=$notificationId, Looping=true")
         } catch (e: SecurityException) {
             Timber.e(e, "❌ Ошибка запуска: нет разрешения на уведомления")
