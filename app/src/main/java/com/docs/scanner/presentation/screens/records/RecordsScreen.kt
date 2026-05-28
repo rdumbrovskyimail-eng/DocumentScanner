@@ -167,6 +167,25 @@ fun RecordsScreen(
                         onRetry = { viewModel.loadRecords(folderId) }
                     )
                 }
+
+                is RecordsUiState.Processing -> {
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        val progress = state.progress / 100f
+                        if (progress > 0f) {
+                            CircularProgressIndicator(progress = { progress })
+                        } else {
+                            CircularProgressIndicator()
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = state.message,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
             }
         }
     }
