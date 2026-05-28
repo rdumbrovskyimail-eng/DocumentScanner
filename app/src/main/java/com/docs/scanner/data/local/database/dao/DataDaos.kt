@@ -355,8 +355,8 @@ interface RecordDao {
     @Query("""
         SELECT * FROM records
         WHERE is_archived = 0 
-        AND (LOWER(name) LIKE LOWER('%' || :query || '%')
-             OR LOWER(description) LIKE LOWER('%' || :query || '%'))
+        AND (LOWER(name) LIKE LOWER('%' || :query || '%') ESCAPE '\'
+             OR LOWER(description) LIKE LOWER('%' || :query || '%') ESCAPE '\')
         ORDER BY updated_at DESC
         LIMIT :limit
     """)
@@ -454,8 +454,8 @@ interface DocumentDao {
 
     @Query("""
         SELECT * FROM documents
-        WHERE (original_text IS NOT NULL AND LOWER(original_text) LIKE LOWER('%' || :query || '%'))
-           OR (translated_text IS NOT NULL AND LOWER(translated_text) LIKE LOWER('%' || :query || '%'))
+        WHERE (original_text IS NOT NULL AND LOWER(original_text) LIKE LOWER('%' || :query || '%') ESCAPE '\')
+           OR (translated_text IS NOT NULL AND LOWER(translated_text) LIKE LOWER('%' || :query || '%') ESCAPE '\')
         ORDER BY created_at DESC
         LIMIT :limit
     """)
@@ -472,8 +472,8 @@ interface DocumentDao {
         FROM documents d
         INNER JOIN records r ON d.record_id = r.id
         INNER JOIN folders f ON r.folder_id = f.id
-        WHERE (d.original_text IS NOT NULL AND LOWER(d.original_text) LIKE LOWER('%' || :query || '%'))
-           OR (d.translated_text IS NOT NULL AND LOWER(d.translated_text) LIKE LOWER('%' || :query || '%'))
+        WHERE (d.original_text IS NOT NULL AND LOWER(d.original_text) LIKE LOWER('%' || :query || '%') ESCAPE '\')
+           OR (d.translated_text IS NOT NULL AND LOWER(d.translated_text) LIKE LOWER('%' || :query || '%') ESCAPE '\')
         ORDER BY d.created_at DESC
         LIMIT :limit
     """)

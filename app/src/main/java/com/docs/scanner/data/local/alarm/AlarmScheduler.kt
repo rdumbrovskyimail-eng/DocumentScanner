@@ -64,13 +64,6 @@ class AlarmScheduler @Inject constructor(
     }
     
     private fun scheduleTermInternal(term: TermEntity) {
-        // Проверка разрешения
-        if (!canScheduleExactAlarms()) {
-            Timber.w("Cannot schedule exact alarms - permission denied for term ${term.id}")
-            // TODO: Показать пользователю диалог с просьбой включить в Settings
-            return
-        }
-        
         val now = System.currentTimeMillis()
         val termTime = term.dueDate
         val timeUntilTerm = termTime - now
@@ -82,7 +75,7 @@ class AlarmScheduler @Inject constructor(
         
         val reminders = buildReminderList(term, termTime, timeUntilTerm)
         
-        // Планируем все напоминания
+        // Планируем все напоминания. Метод scheduleAlarm сам выберет точный или неточный запуск.
         var successCount = 0
         reminders.forEach { reminder ->
             if (scheduleAlarm(

@@ -81,7 +81,7 @@ object ProcessingStatusMapper {
 @Entity(
     tableName = "folders",
     indices = [
-        Index(value = ["name"], unique = true),
+        Index(value = ["name"]),
         Index(value = ["is_pinned"]),
         Index(value = ["is_archived"]),
         Index(value = ["created_at"]),

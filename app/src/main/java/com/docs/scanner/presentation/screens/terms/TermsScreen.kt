@@ -523,7 +523,7 @@ private fun TermEditorDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = termTitle.trim().isNotBlank() && dueMillis > now,
+                enabled = termTitle.trim().isNotBlank() && (initial != null || dueMillis > now),
                 onClick = {
                     onSave(
                         TermEditorData(

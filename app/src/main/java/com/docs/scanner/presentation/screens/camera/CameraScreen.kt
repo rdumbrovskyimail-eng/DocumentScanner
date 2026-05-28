@@ -223,7 +223,7 @@ private fun PreviewContent(
                     onSelectFolder(null)
                 }
             )
-            folders.forEach { f ->
+            folders.filter { !it.isQuickScans }.forEach { f ->
                 DropdownMenuItem(
                     text = { Text(f.name) },
                     onClick = {

@@ -319,10 +319,11 @@ private fun FolderCard(
                     contentDescription = "Reorder",
                     tint = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
+                        .padding(10.dp)
                         .size(24.dp)
                         .then(dragModifier)
                 )
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(4.dp))
             }
             
             Column(Modifier.weight(1f)) {

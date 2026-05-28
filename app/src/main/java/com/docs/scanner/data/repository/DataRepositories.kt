@@ -727,18 +727,23 @@ class DocumentRepositoryImpl @Inject constructor(
     override fun searchDocuments(query: String): Flow<List<Document>> =
         searchDocumentsWithPath(query)
 
-    override fun searchDocumentsWithPath(query: String): Flow<List<Document>> =
-        documentDao.searchFtsWithPath(buildFtsQuery(query), limit = 50)
+    override fun searchDocumentsWithPath(query: String): Flow<List<Document>> {
+        // Экранируем спецсимволы SQL LIKE
+        val sanitizedQuery = query
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+
+        return documentDao.searchFtsWithPath(buildFtsQuery(query), limit = 50)
             .map { list -> list.map { it.toDomain() } }
             .catch { e ->
-                // Fallback for queries that break FTS syntax.
                 Timber.w(e, "⚠️ FTS query failed, falling back to LIKE")
                 emitAll(
-                    documentDao.searchWithPath(query, limit = 50)
+                    documentDao.searchWithPath(sanitizedQuery, limit = 50)
                         .map { list -> list.map { it.toDomain() } }
                 )
             }
             .flowOn(Dispatchers.IO)
+    }
 
     override fun observeSearchHistory(limit: Int): Flow<List<com.docs.scanner.domain.core.SearchHistoryItem>> =
         searchHistoryDao.observeRecent(limit)

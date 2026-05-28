@@ -85,8 +85,8 @@ interface AnalyticsTranslationDao {
     /** Fallback for queries that break FTS syntax. */
     @Query("""
         SELECT * FROM analytics_translations
-        WHERE translated_text LIKE '%' || :query || '%'
-           OR original_text   LIKE '%' || :query || '%'
+        WHERE translated_text LIKE '%' || :query || '%' ESCAPE '\'
+           OR original_text   LIKE '%' || :query || '%' ESCAPE '\'
         ORDER BY updated_at DESC, id DESC
         LIMIT :limit
     """)
@@ -189,9 +189,9 @@ interface AnalyticsNoteDao {
     @Query("""
         SELECT * FROM analytics_notes
         WHERE is_archived = 0
-          AND (title   LIKE '%' || :query || '%'
-            OR content LIKE '%' || :query || '%'
-            OR tags    LIKE '%' || :query || '%')
+          AND (title   LIKE '%' || :query || '%' ESCAPE '\'
+            OR content LIKE '%' || :query || '%' ESCAPE '\'
+            OR tags    LIKE '%' || :query || '%' ESCAPE '\')
         ORDER BY is_pinned DESC, updated_at DESC, id DESC
         LIMIT :limit
     """)

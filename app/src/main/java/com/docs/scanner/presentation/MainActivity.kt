@@ -78,15 +78,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestNecessaryPermissions() {
+        val prefs = getSharedPreferences("app_permissions_prefs", MODE_PRIVATE)
+        val alreadyRequested = prefs.getBoolean("permissions_requested", false)
+        if (alreadyRequested) return // Запрашиваем системно только один раз при первом старте
+
         val permissions = mutableListOf<String>()
 
-        // ✅ CAMERA permission (КРИТИЧНО!)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) !=
             PackageManager.PERMISSION_GRANTED) {
             permissions.add(Manifest.permission.CAMERA)
         }
 
-        // Notifications (Android 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED) {
@@ -97,25 +99,15 @@ class MainActivity : ComponentActivity() {
                 permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
             }
         } else {
-            // Android 12 (API 32) and below legacy storage permission
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) !=
                 PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
         }
 
-        // ✅ SCHEDULE_EXACT_ALARM (Android 12+) - отдельный Intent
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val alarmManager = getSystemService(ALARM_SERVICE) as android.app.AlarmManager
-            if (!alarmManager.canScheduleExactAlarms()) {
-                // Пользователь должен включить в Settings вручную
-                // Можно показать диалог с объяснением и кнопкой открытия Settings
-                Timber.w("⚠️ Exact alarms not allowed. User must enable in Settings.")
-            }
-        }
-
         if (permissions.isNotEmpty()) {
             permissionLauncher.launch(permissions.toTypedArray())
         }
+        prefs.edit().putBoolean("permissions_requested", true).apply()
     }
 }

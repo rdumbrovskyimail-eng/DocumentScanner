@@ -93,10 +93,9 @@ class GeminiOcrService @Inject constructor(
         private const val NO_TEXT_MARKER = "[NO_TEXT_FOUND]"
         
         /**
-         * ✅ MINIMALIST: Сокращён до 20 токенов (было ~30)
-         * "Fast" намекает модели работать быстрее
+         * ✅ IMPROVED: Добавлена инструкция для обработки пустых документов
          */
-        private const val OCR_PROMPT = "Extract text. Return ONLY text."
+        private const val OCR_PROMPT = "Extract all readable text from the image. Return ONLY the extracted text. If the image contains no readable text, return [NO_TEXT_FOUND] and nothing else."
         
         // ✅ НОВОЕ: Параметры LRU Cache
         private const val IMAGE_CACHE_MAX_SIZE = 5           // Максимум 5 изображений в памяти
