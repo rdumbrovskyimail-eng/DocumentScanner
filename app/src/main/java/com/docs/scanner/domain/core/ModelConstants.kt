@@ -10,14 +10,13 @@ package com.docs.scanner.domain.core
  */
 object ModelConstants {
     /**
-     * Список всех поддерживаемых моделей Gemini (январь 2026).
-     * 
-     * ⚠️ КРИТИЧНО: При добавлении/удалении модели обновить ТОЛЬКО здесь!
+     * Список всех поддерживаемых моделей Gemini (май 2026).
      */
     val VALID_MODELS = listOf(
+        "gemini-3.5-flash",              // ⚡ Добавлена новая флагманская Flash
+        "gemini-3.1-flash-lite",         // 🚀 Добавлена стабильная Flash-Lite
         "gemini-3.1-pro-preview",
         "gemini-3.0-flash-preview",
-        "gemini-3.1-flash-lite",
         "gemini-3.1-flash-lite-preview",
         "gemini-3.1-flash-live-preview",
         "gemini-3.1-flash-tts-preview",
@@ -30,21 +29,22 @@ object ModelConstants {
     )
     
     /**
-     * Дефолтная модель для OCR операций.
+     * Дефолтная модель для OCR операций (Стабильная и дешевая 3.1 Flash-Lite)
      */
-    const val DEFAULT_OCR_MODEL = "gemini-2.5-flash-lite"
+    const val DEFAULT_OCR_MODEL = "gemini-3.1-flash-lite"
     
     /**
-     * Дефолтная модель для Translation операций.
+     * Дефолтная модель для Translation операций (Стабильная 3.1 Flash-Lite)
      */
-    const val DEFAULT_TRANSLATION_MODEL = "gemini-2.5-flash-lite"
+    const val DEFAULT_TRANSLATION_MODEL = "gemini-3.1-flash-lite"
     
     /**
      * Fallback модели для каждой primary модели.
      */
     fun getFallbackModels(primaryModel: String): List<String> {
         return when (primaryModel) {
-            "gemini-3.1-pro-preview" -> listOf("gemini-3.1-flash-lite", "gemini-2.5-flash")
+            "gemini-3.5-flash" -> listOf("gemini-3.1-flash-lite", "gemini-2.5-flash-lite")
+            "gemini-3.1-pro-preview" -> listOf("gemini-3.5-flash", "gemini-3.1-flash-lite")
             "gemini-3.0-flash-preview" -> listOf("gemini-3.1-flash-lite", "gemini-2.5-flash-lite")
             "gemini-2.5-pro" -> listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")
             "gemini-2.5-flash" -> listOf("gemini-2.5-flash-lite")

@@ -1,5 +1,6 @@
 package com.docs.scanner.data.local.alarm
 
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -93,6 +94,18 @@ class TermAlarmReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
+        // Настройка интента для кнопки быстрого сброса будильника
+        val dismissIntent = Intent(context, TermAlarmReceiver::class.java).apply {
+            action = ACTION_DISMISS_ALARM
+            putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+        }
+        val dismissPendingIntent = PendingIntent.getBroadcast(
+            context,
+            notificationId,
+            dismissIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(description ?: "You have a term scheduled")
@@ -107,17 +120,83 @@ class TermAlarmReceiver : BroadcastReceiver() {
                 .setVibrate(longArrayOf(0, 500, 250, 500, 250, 500))
                 .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
                 .setFullScreenIntent(pendingIntent, true)
+                .setOngoing(true)
+                // FLAG_INSISTENT заставляет звук и вибрацию повторяться непрерывно (режим будильника)
+                .setFlag(NotificationCompat.FLAG_INSISTENT, true)
+                // Кнопка быстрого отключения на шторке
+                .addAction(
+                    android.R.drawable.ic_menu_close_clear_cancel,
+                    "Dismiss",
+                    dismissPendingIntent
+                )
         }
         
         try {
             NotificationManagerCompat.from(context).notify(notificationId, builder.build())
-            Timber.d("✅ Notification shown: ID=$notificationId, main=$isMainAlarm")
+            Timber.d("⏰ Будильник запущен: ID=$notificationId, Looping=true")
         } catch (e: SecurityException) {
-            Timber.e(e, "❌ Notification permission denied")
+            Timber.e(e, "❌ Ошибка запуска: нет разрешения на уведомления")
         }
     }
     
     companion object {
         private const val CHANNEL_ID = "term_reminders"
+        // Константы для обработки ручного сброса будильника
+        const val ACTION_DISMISS_ALARM = "com.docs.scanner.ACTION_DISMISS_ALARM"
+        const val EXTRA_NOTIFICATION_ID = "notification_id"
     }
-}
+
+    override fun onReceive(context: Context, intent: Intent) {
+        val action = intent.action
+        
+        // ⏰ Обработка клика по кнопке "Dismiss" (Сбросить) прямо на уведомлении
+        if (action == ACTION_DISMISS_ALARM) {
+            val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
+            if (notificationId != -1) {
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancel(notificationId)
+                Timber.d("⏰ Будильник $notificationId успешно отключен пользователем")
+            }
+            return
+        }
+        
+        if (action == Intent.ACTION_BOOT_COMPLETED || 
+            action == "android.intent.action.QUICKBOOT_POWERON" || 
+            action == "com.htc.intent.action.QUICKBOOT_POWERON") {
+            
+            val pendingResult = goAsync()
+            
+            CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                try {
+                    val entryPoint = EntryPointAccessors.fromApplication(
+                        context.applicationContext,
+                        ReceiverEntryPoint::class.java
+                    )
+                    val database = entryPoint.appDatabase()
+                    val scheduler = entryPoint.alarmScheduler()
+
+                    val activeTerms = database.termDao().observeActive().first()
+                    
+                    activeTerms.forEach { termEntity ->
+                        scheduler.scheduleTerm(termEntity)
+                    }
+                    Timber.i("✅ Восстановлено будильников после перезагрузки: ${activeTerms.size}")
+                } catch (e: Exception) {
+                    if (e !is CancellationException) {
+                        Timber.e(e, "❌ Ошибка восстановления будильников")
+                    }
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+            return
+        }
+
+        val termId = intent.getLongExtra("term_id", -1)
+        val title = intent.getStringExtra("title") ?: "Term Reminder"
+        val description = intent.getStringExtra("description")
+        val isMainAlarm = intent.getBooleanExtra("is_main_alarm", false)
+        val offset = intent.getIntExtra("notification_offset", 0)
+        
+        showNotification(context, termId, offset, title, description, isMainAlarm)
+    }

@@ -132,41 +132,33 @@ class GeminiModelManager @Inject constructor(
         // RECOMMENDED (Fast + Stable)
         // ═══════════════════════════════════════════════════════════════
         GeminiModelOption(
-            id = "gemini-2.5-flash-lite",
-            displayName = "Gemini 2.5 Flash Lite 🚀",
-            description = "Ultra-fast • Stable • Best for OCR & Translation",
+            id = "gemini-3.1-flash-lite",
+            displayName = "Gemini 3.1 Flash Lite 🚀",
+            description = "Stable • Blazing Fast • Minimum latency and cost",
+            isRecommended = true
+        ),
+        GeminiModelOption(
+            id = "gemini-3.5-flash",
+            displayName = "Gemini 3.5 Flash ⚡",
+            description = "May 2026 Stable • Near-Pro level intelligence",
             isRecommended = true
         ),
         GeminiModelOption(
             id = "gemini-2.5-flash",
-            displayName = "Gemini 2.5 Flash ⚡",
+            displayName = "Gemini 2.5 Flash",
             description = "Very fast • Great balance",
             isRecommended = false
         ),
-        
-        // ═══════════════════════════════════════════════════════════════
-        // GEMINI 3 PREVIEW (Latest)
-        // ═══════════════════════════════════════════════════════════════
         GeminiModelOption(
-            id = "gemini-3-flash-preview",
-            displayName = "Gemini 3 Flash (Preview)",
-            description = "Latest • May have rate limits",
+            id = "gemini-3.1-pro-preview",
+            displayName = "Gemini 3.1 Pro (Preview) 💰",
+            description = "Complex reasoning • Slow • High cost",
             isRecommended = false
         ),
-        GeminiModelOption(
-            id = "gemini-3-pro-preview",
-            displayName = "Gemini 3 Pro (Preview) 💰",
-            description = "PAID ONLY • Highest quality • Slower",
-            isRecommended = false
-        ),
-        
-        // ═══════════════════════════════════════════════════════════════
-        // SLOWER BUT ACCURATE
-        // ═══════════════════════════════════════════════════════════════
         GeminiModelOption(
             id = "gemini-2.5-pro",
             displayName = "Gemini 2.5 Pro 🐌",
-            description = "Slow (4-7s) • Complex text only",
+            description = "Slow • Complex tasks only",
             isRecommended = false
         )
     )

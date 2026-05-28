@@ -632,9 +632,11 @@ interface TranslationCacheDao {
     @Query("""
         DELETE FROM translation_cache 
         WHERE cache_key IN (
-            SELECT cache_key FROM translation_cache 
-            ORDER BY timestamp ASC 
-            LIMIT :count
+            SELECT cache_key FROM (
+                SELECT cache_key FROM translation_cache 
+                ORDER BY timestamp ASC 
+                LIMIT :count
+            )
         )
     """)
     suspend fun deleteOldest(count: Int)
@@ -695,7 +697,13 @@ interface SearchHistoryDao {
 
     @Query("""
         DELETE FROM search_history
-        WHERE id NOT IN (SELECT id FROM search_history ORDER BY timestamp DESC LIMIT :limit)
+        WHERE id NOT IN (
+            SELECT id FROM (
+                SELECT id FROM search_history 
+                ORDER BY timestamp DESC 
+                LIMIT :limit
+            )
+        )
     """)
     suspend fun trimToLimit(limit: Int)
 
