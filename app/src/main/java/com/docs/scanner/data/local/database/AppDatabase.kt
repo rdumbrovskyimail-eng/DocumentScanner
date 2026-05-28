@@ -66,6 +66,7 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "document_scanner.db"
+        const val DATABASE_VERSION = 21
 
         @Volatile
         private var INSTANCE: AppDatabase? = null

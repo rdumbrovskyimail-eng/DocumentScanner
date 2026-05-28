@@ -7,7 +7,7 @@
 # NOTE: This project does NOT use any build-time secrets.
 #  - Gemini API key is entered in-app under Settings → API Key and stored
 #    encrypted on-device via EncryptedKeyStorage. Get a key at:
-#    https://aistudio.google.com/apikey
+#    https://aistudio.google.com/app/apikey
 #  - Google Drive integration uses GoogleSignIn.DEFAULT_SIGN_IN, no custom
 #    OAuth Client ID is required.
 #  - Debug builds use AGP's auto-generated ~/.android/debug.keystore.

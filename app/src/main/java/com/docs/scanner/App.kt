@@ -94,12 +94,15 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
         // 1. Logging - должен быть первым
         initializeTimber()
         
-        // 2. ✅ NEW: LogcatCollector initialization
+        // 2. ✅ NEW: Crash handler initialization
+        CrashLogHandler.install(this)
+
+        // 3. ✅ NEW: Debug tools initialization
         if (BuildConfig.DEBUG) {
             initializeDebugTools()
         }
 
-        // 3. Locale - в фоне, чтобы не блокировать onCreate
+        // 4. Locale - в фоне, чтобы не блокировать onCreate
         applicationScope.launch {
             initializeAppLocale()
         }
@@ -175,9 +178,6 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     
     private fun initializeDebugTools() {
         try {
-            // ✅ Install crash handler FIRST - перехватывает ЛЮБЫЕ крэши
-            CrashLogHandler.install(this)
-            
             // ✅ Initialize LogcatCollector
             logcatCollector = LogcatCollector.getInstance(this).apply {
                 startCollecting()
@@ -185,7 +185,7 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
             Timber.d("📝 LogcatCollector started")
             
             enableStrictMode()
-            Timber.d("🔧 Debug tools initialized (crash handler active)")
+            Timber.d("🔧 Debug tools initialized")
         } catch (e: Exception) {
             Timber.e(e, "Failed to initialize debug tools")
         }

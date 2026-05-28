@@ -1096,6 +1096,9 @@ private fun InfoRow(label: String, value: String) {
 private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (String, String?) -> Unit, onTest: (String) -> Unit) {
     var key by remember { mutableStateOf("") }
     var label by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val keyRegex = remember { Regex("^AIza[A-Za-z0-9_-]{35}$") }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add Gemini API Key") },
@@ -1110,16 +1113,26 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (String, String?) -> 
                 )
                 OutlinedTextField(
                     value = key,
-                    onValueChange = { key = it },
+                    onValueChange = {
+                        key = it
+                        error = null
+                    },
                     label = { Text("API Key") },
+                    isError = error != null,
+                    supportingText = { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(key, label.ifBlank { null }) },
-                enabled = key.isNotBlank()
+                onClick = {
+                    when {
+                        key.isBlank() -> error = "API key is required"
+                        !keyRegex.matches(key.trim()) -> error = "Key must start with AIza and be 39 chars total"
+                        else -> onSave(key.trim(), label.ifBlank { null })
+                    }
+                }
             ) { 
                 Text("Save") 
             }

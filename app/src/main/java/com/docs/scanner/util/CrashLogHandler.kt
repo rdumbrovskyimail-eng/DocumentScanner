@@ -45,12 +45,12 @@ class CrashLogHandler private constructor(
     }
 
     private fun installHandler() {
-        if (!BuildConfig.DEBUG || isInstalled) return
+        if (isInstalled) return
 
         try {
             Thread.setDefaultUncaughtExceptionHandler(this)
             isInstalled = true
-            Timber.i("💾 CrashLogHandler installed - auto-save on crash enabled")
+            Timber.i("💾 CrashLogHandler installed")
         } catch (e: Exception) {
             Timber.e(e, "Failed to install crash handler")
         }
