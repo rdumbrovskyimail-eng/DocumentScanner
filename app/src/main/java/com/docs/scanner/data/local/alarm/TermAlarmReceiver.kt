@@ -132,12 +132,17 @@ class TermAlarmReceiver : BroadcastReceiver() {
             .setContentIntent(pendingIntent)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
         
+        val canFullScreen = if (Build.VERSION.SDK_INT >= 34) {
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .canUseFullScreenIntent()
+        } else true
+
         if (isMainAlarm) {
             builder
                 .setVibrate(longArrayOf(0, 500, 250, 500, 250, 500))
                 .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
-                .setFullScreenIntent(pendingIntent, true)
                 .setOngoing(true)
+            if (canFullScreen) builder.setFullScreenIntent(pendingIntent, true)
                 // Добавление кнопки быстрого отключения на шторке
                 .addAction(
                     android.R.drawable.ic_menu_close_clear_cancel,
@@ -147,11 +152,15 @@ class TermAlarmReceiver : BroadcastReceiver() {
         }
         
         try {
+            val nmc = NotificationManagerCompat.from(context)
+            if (!nmc.areNotificationsEnabled()) {
+                Timber.w("⚠️ Уведомления выключены пользователем — аларм $notificationId не показан")
+                return
+            }
             val notification = builder.build().apply {
-                // Изменение флага у готового объекта Notification через побитовое OR
                 flags = flags or Notification.FLAG_INSISTENT
             }
-            NotificationManagerCompat.from(context).notify(notificationId, notification)
+            nmc.notify(notificationId, notification)
             Timber.d("⏰ Будильник запущен: ID=$notificationId, Looping=true")
         } catch (e: SecurityException) {
             Timber.e(e, "❌ Ошибка запуска: нет разрешения на уведомления")

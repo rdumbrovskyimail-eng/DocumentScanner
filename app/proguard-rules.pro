@@ -105,6 +105,7 @@
 -keep class * extends androidx.room.RoomDatabase
 -keep @androidx.room.Entity class *
 -keep @androidx.room.Dao class *
+-keepclassmembers class com.docs.scanner.data.local.database.entity.** { *; }
 
 -dontwarn androidx.room.paging.**
 
@@ -195,6 +196,7 @@
 
 # Keep MLKitScanner class
 -keep class com.docs.scanner.data.remote.mlkit.MLKitScanner { *; }
+-keep class com.docs.scanner.data.remote.gemini.** { *; }
 
 # Keep Settings ViewModels and UI state
 -keep class com.docs.scanner.presentation.screens.settings.SettingsViewModel { *; }

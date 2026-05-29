@@ -111,10 +111,6 @@ class SettingsViewModel @Inject constructor(
         useCases.settings.observeThemeMode()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThemeMode.SYSTEM)
 
-    val appLanguage: StateFlow<String> =
-        useCases.settings.observeAppLanguage()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SYSTEM_LANGUAGE)
-
     val autoTranslate: StateFlow<Boolean> =
         useCases.settings.observeAutoTranslate()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
@@ -394,17 +390,6 @@ class SettingsViewModel @Inject constructor(
             when (val r = useCases.settings.setThemeMode(mode)) {
                 is DomainResult.Failure -> {
                     _saveMessage.value = "✗ Theme: ${r.error.message}"
-                }
-                is DomainResult.Success -> {}
-            }
-        }
-    }
-
-    fun setAppLanguage(code: String) {
-        viewModelScope.launch {
-            when (val r = useCases.settings.setAppLanguage(code)) {
-                is DomainResult.Failure -> {
-                    _saveMessage.value = "✗ Language: ${r.error.message}"
                 }
                 is DomainResult.Success -> {}
             }
@@ -742,58 +727,6 @@ class SettingsViewModel @Inject constructor(
                 Timber.e(e, "Failed to sign out")
             }
         }
-    }
-
-    fun setMlkitScriptMode(mode: OcrScriptMode) {
-        viewModelScope.launch {
-            _mlkitSettings.update { it.copy(scriptMode = mode) }
-            
-            val modeStr = when (mode) {
-                OcrScriptMode.LATIN -> "LATIN"
-                OcrScriptMode.CHINESE -> "CHINESE"
-                OcrScriptMode.JAPANESE -> "JAPANESE"
-                OcrScriptMode.KOREAN -> "KOREAN"
-                OcrScriptMode.DEVANAGARI -> "DEVANAGARI"
-                else -> "LATIN"
-            }
-            
-            try {
-                settingsDataStore.setOcrLanguage(modeStr)
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to save MLKit script mode")
-                _saveMessage.value = "✗ Failed to save OCR settings"
-            }
-        }
-    }
-
-    fun setMlkitAutoDetect(enabled: Boolean) {
-        _mlkitSettings.update { it.copy(autoDetectLanguage = enabled) }
-        viewModelScope.launch {
-            try {
-                settingsDataStore.setAutoDetectLanguage(enabled)
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to save auto-detect setting")
-            }
-        }
-    }
-
-    fun setMlkitConfidenceThreshold(threshold: Float) {
-        _mlkitSettings.update { it.copy(confidenceThreshold = threshold) }
-        viewModelScope.launch {
-            try {
-                settingsDataStore.setConfidenceThreshold(threshold)
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to save confidence threshold")
-            }
-        }
-    }
-
-    fun setMlkitHighlightLowConfidence(enabled: Boolean) {
-        _mlkitSettings.update { it.copy(highlightLowConfidence = enabled) }
-    }
-
-    fun setMlkitShowWordConfidences(enabled: Boolean) {
-        _mlkitSettings.update { it.copy(showWordConfidences = enabled) }
     }
 
     fun setMlkitSelectedImage(uri: Uri?) {

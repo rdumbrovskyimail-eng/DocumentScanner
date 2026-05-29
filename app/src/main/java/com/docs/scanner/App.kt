@@ -107,10 +107,8 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
             initializeAppLocale()
         }
         
-        // 4. Notification Channels - в фоне
-        applicationScope.launch(Dispatchers.IO) {
-            createNotificationChannels()
-        }
+        // 4. Notification Channels — синхронно, до первого возможного аларма
+        createNotificationChannels()
         
         // 5. ✅ Quick Scans folder - в фоне
         applicationScope.launch(Dispatchers.IO) {
@@ -119,6 +117,15 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
         
         // 6. Lifecycle Observer
         setupLifecycleObserver()
+
+        // 7. Перепланирование будильников каждые 6 ч (Doze/kill-proof)
+        androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "reschedule_alarms",
+            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            androidx.work.PeriodicWorkRequestBuilder<com.docs.scanner.data.local.alarm.RescheduleAlarmsWorker>(
+                6, java.util.concurrent.TimeUnit.HOURS
+            ).build()
+        )
 
         Timber.i("🚀 App initialized. Device: ${Build.MANUFACTURER} ${Build.MODEL}, SDK: ${Build.VERSION.SDK_INT}")
     }

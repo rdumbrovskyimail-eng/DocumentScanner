@@ -394,7 +394,11 @@ class SettingsDataStore @Inject constructor(
             Timber.e(exception, "Error reading translation target")
             emit(emptyPreferences())
         }
-        .map { prefs -> prefs[KEY_TRANSLATION_TARGET] ?: "en" }
+        .map { prefs ->
+            prefs[KEY_TRANSLATION_TARGET]
+                ?: java.util.Locale.getDefault().language.takeIf { it in listOf("ru","en","es","de","fr","it","pt","zh") }
+                ?: "en"
+        }
     
     suspend fun setTranslationTarget(language: String) {
         try {

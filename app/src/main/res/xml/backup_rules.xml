@@ -4,6 +4,8 @@
     <include domain="database" path="." />
     <include domain="file" path="documents/" />
     
+    <exclude domain="sharedpref" path="encrypted_api_keys.xml"/>
+    
     <!-- НЕТ exclude - просто не включаем то, что не нужно -->
     <!-- sharedpref, datastore, cache НЕ включены = НЕ бэкапятся -->
 </full-backup-content>

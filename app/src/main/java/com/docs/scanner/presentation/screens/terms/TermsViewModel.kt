@@ -113,11 +113,11 @@ class TermsViewModel @Inject constructor(
         folderId: Long?
     ) {
         if (title.isBlank()) {
-            _message.value = "Title cannot be empty"
+            _message.value = "Введите название"
             return
         }
         if (dueDate <= System.currentTimeMillis()) {
-            _message.value = "Due date must be in the future"
+            _message.value = "Дата должна быть в будущем"
             return
         }
 
@@ -132,8 +132,8 @@ class TermsViewModel @Inject constructor(
                     folderId = folderId?.let { FolderId(it) }
                 )
             ) {
-                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Term created"
-                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Create failed: ${r.error.message}"
+                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Срок создан"
+                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Не удалось создать: ${r.error.message}"
             }
         }
     }
@@ -141,8 +141,8 @@ class TermsViewModel @Inject constructor(
     fun updateTerm(term: Term) {
         viewModelScope.launch {
             when (val r = useCases.terms.update(term)) {
-                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Saved"
-                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Save failed: ${r.error.message}"
+                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Сохранено"
+                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Не удалось сохранить: ${r.error.message}"
             }
         }
     }
@@ -150,8 +150,8 @@ class TermsViewModel @Inject constructor(
     fun completeTerm(termId: Long) {
         viewModelScope.launch {
             when (val r = useCases.terms.complete(TermId(termId))) {
-                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Completed"
-                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Complete failed: ${r.error.message}"
+                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Завершено"
+                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Не удалось завершить: ${r.error.message}"
             }
         }
     }
@@ -159,8 +159,8 @@ class TermsViewModel @Inject constructor(
     fun uncompleteTerm(termId: Long) {
         viewModelScope.launch {
             when (val r = useCases.terms.uncomplete(TermId(termId))) {
-                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Restored"
-                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Restore failed: ${r.error.message}"
+                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Восстановлено"
+                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Не удалось восстановить: ${r.error.message}"
             }
         }
     }
@@ -168,8 +168,8 @@ class TermsViewModel @Inject constructor(
     fun cancelTerm(termId: Long) {
         viewModelScope.launch {
             when (val r = useCases.terms.cancel(TermId(termId))) {
-                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Cancelled"
-                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Cancel failed: ${r.error.message}"
+                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Отменено"
+                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Не удалось отменить: ${r.error.message}"
             }
         }
     }
@@ -177,8 +177,8 @@ class TermsViewModel @Inject constructor(
     fun restoreTerm(termId: Long) {
         viewModelScope.launch {
             when (val r = useCases.terms.restore(TermId(termId))) {
-                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Restored"
-                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Restore failed: ${r.error.message}"
+                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Восстановлено"
+                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Не удалось восстановить: ${r.error.message}"
             }
         }
     }
@@ -186,8 +186,8 @@ class TermsViewModel @Inject constructor(
     fun deleteTerm(termId: Long) {
         viewModelScope.launch {
             when (val r = useCases.terms.delete(TermId(termId))) {
-                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Deleted"
-                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Delete failed: ${r.error.message}"
+                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Удалено"
+                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Не удалось удалить: ${r.error.message}"
             }
         }
     }
@@ -195,8 +195,8 @@ class TermsViewModel @Inject constructor(
     fun deleteAllCompleted() {
         viewModelScope.launch {
             when (val r = useCases.terms.deleteAllCompleted()) {
-                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Deleted ${r.data} completed terms"
-                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Delete failed: ${r.error.message}"
+                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Удалено завершённых: ${r.data}"
+                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Не удалось удалить: ${r.error.message}"
             }
         }
     }
@@ -204,8 +204,8 @@ class TermsViewModel @Inject constructor(
     fun deleteAllCancelled() {
         viewModelScope.launch {
             when (val r = useCases.terms.deleteAllCancelled()) {
-                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Deleted ${r.data} cancelled terms"
-                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Delete failed: ${r.error.message}"
+                is com.docs.scanner.domain.core.DomainResult.Success -> _message.value = "✓ Удалено отменённых: ${r.data}"
+                is com.docs.scanner.domain.core.DomainResult.Failure -> _message.value = "✗ Не удалось удалить: ${r.error.message}"
             }
         }
     }

@@ -85,7 +85,6 @@ fun SettingsScreen(
     val backupMessage by viewModel.backupMessage.collectAsStateWithLifecycle()
     val isBackingUp by viewModel.isBackingUp.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
-    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val targetLanguage by viewModel.targetLanguage.collectAsStateWithLifecycle()
     val autoTranslate by viewModel.autoTranslate.collectAsStateWithLifecycle()
     val cacheEnabled by viewModel.cacheEnabled.collectAsStateWithLifecycle()
@@ -103,7 +102,15 @@ fun SettingsScreen(
     var showDriveDeleteDialog by remember { mutableStateOf<BackupInfo?>(null) }
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val pagerState = rememberPagerState(pageCount = { SettingsTab.entries.size })
+    val tabs = remember {
+        buildList {
+            add(SettingsTab.AI_OCR)
+            if (BuildConfig.DEBUG) add(SettingsTab.TESTING)
+            add(SettingsTab.GENERAL)
+            add(SettingsTab.BACKUP)
+        }
+    }
+    val pagerState = rememberPagerState(pageCount = { tabs.size })
 
     LaunchedEffect(saveMessage, keyTestMessage, backupMessage) {
         val msg = listOf(saveMessage, keyTestMessage, backupMessage).firstOrNull { it.isNotBlank() }
@@ -142,7 +149,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 edgePadding = 16.dp
             ) {
-                SettingsTab.entries.forEachIndexed { index, tab ->
+                tabs.forEachIndexed { index, tab ->
                     Tab(
                         selected = pagerState.currentPage == index,
                         onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
@@ -156,7 +163,7 @@ fun SettingsScreen(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
             ) { page ->
-                when (SettingsTab.entries[page]) {
+                when (tabs[page]) {
                     SettingsTab.AI_OCR -> AiOcrTab(
                         apiKeys = apiKeys,
                         isLoadingKeys = isLoadingKeys,
@@ -167,11 +174,6 @@ fun SettingsScreen(
                         onRemoveApiKey = { viewModel.deleteKey(it) },
                         onSetPrimaryApiKey = { viewModel.activateKey(it) },
                         onResetApiKeyErrors = viewModel::resetApiKeyErrors,
-                        onScriptModeChange = viewModel::setMlkitScriptMode,
-                        onAutoDetectChange = viewModel::setMlkitAutoDetect,
-                        onConfidenceThresholdChange = viewModel::setMlkitConfidenceThreshold,
-                        onHighlightLowConfidenceChange = viewModel::setMlkitHighlightLowConfidence,
-                        onShowWordConfidencesChange = viewModel::setMlkitShowWordConfidences,
                         onGeminiOcrEnabledChange = viewModel::setGeminiOcrEnabled,
                         onGeminiOcrThresholdChange = viewModel::setGeminiOcrThreshold,
                         onGeminiOcrAlwaysChange = viewModel::setGeminiOcrAlways,
@@ -199,16 +201,11 @@ fun SettingsScreen(
 
                     SettingsTab.GENERAL -> GeneralTab(
                         themeMode = themeMode,
-                        appLanguage = appLanguage,
                         cacheEnabled = cacheEnabled,
                         cacheTtlDays = cacheTtlDays,
                         cacheStats = cacheStats,
                         storageUsage = storageUsage,
                         onThemeModeChange = viewModel::setThemeMode,
-                        onAppLanguageChange = { code ->
-                            viewModel.setAppLanguage(code)
-                            (context.applicationContext as? App)?.setAppLocale(code)
-                        },
                         onCacheEnabledChange = viewModel::setCacheEnabled,
                         onCacheTtlChange = viewModel::setCacheTtl,
                         onRefreshCacheStats = viewModel::refreshCacheStats,
@@ -353,11 +350,6 @@ private fun AiOcrTab(
     onRemoveApiKey: (String) -> Unit,
     onSetPrimaryApiKey: (String) -> Unit,
     onResetApiKeyErrors: () -> Unit,
-    onScriptModeChange: (com.docs.scanner.data.remote.mlkit.OcrScriptMode) -> Unit,
-    onAutoDetectChange: (Boolean) -> Unit,
-    onConfidenceThresholdChange: (Float) -> Unit,
-    onHighlightLowConfidenceChange: (Boolean) -> Unit,
-    onShowWordConfidencesChange: (Boolean) -> Unit,
     onGeminiOcrEnabledChange: (Boolean) -> Unit,
     onGeminiOcrThresholdChange: (Int) -> Unit,
     onGeminiOcrAlwaysChange: (Boolean) -> Unit,
@@ -373,82 +365,6 @@ private fun AiOcrTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        SettingsCard(title = "ML Kit OCR", icon = Icons.Default.TextFields) {
-            Text(
-                "On-device text recognition", 
-                style = MaterialTheme.typography.bodySmall, 
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(12.dp))
-            
-            ScriptModeSelector(mlkitSettings.scriptMode, onScriptModeChange)
-            
-            Spacer(Modifier.height(12.dp))
-            
-            SettingToggleRow(
-                "Auto-detect language", 
-                "Automatically detect script and language", 
-                mlkitSettings.autoDetectLanguage, 
-                onAutoDetectChange, 
-                Icons.Default.AutoAwesome
-            )
-            
-            Spacer(Modifier.height(12.dp))
-            
-            Column {
-                Row(
-                    Modifier.fillMaxWidth(), 
-                    Arrangement.SpaceBetween, 
-                    Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("Confidence threshold", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "Words below this are marked as low confidence", 
-                            style = MaterialTheme.typography.bodySmall, 
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Text(
-                        "${(mlkitSettings.confidenceThreshold * 100).toInt()}%", 
-                        style = MaterialTheme.typography.titleMedium, 
-                        fontWeight = FontWeight.Bold, 
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Slider(
-                    value = mlkitSettings.confidenceThreshold,
-                    onValueChange = onConfidenceThresholdChange,
-                    valueRange = 0.3f..0.95f,
-                    steps = 12
-                )
-                Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                    Text("30%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("95%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            
-            Spacer(Modifier.height(12.dp))
-            
-            SettingToggleRow(
-                "Highlight low confidence words", 
-                "Show red highlighting on uncertain words", 
-                mlkitSettings.highlightLowConfidence, 
-                onHighlightLowConfidenceChange, 
-                Icons.Default.Highlight
-            )
-            
-            Spacer(Modifier.height(12.dp))
-            
-            SettingToggleRow(
-                "Show word confidence scores", 
-                "Display confidence % for each word", 
-                mlkitSettings.showWordConfidences, 
-                onShowWordConfidencesChange, 
-                Icons.Default.Analytics
-            )
-        }
-
         SettingsCard(title = "Gemini AI Fallback", icon = Icons.Default.AutoAwesome) {
             GeminiOcrSettingsSection(
                 enabled = mlkitSettings.geminiOcrEnabled,
@@ -701,13 +617,11 @@ private fun ModelSpeedBadge(modelId: String) {
 @Composable
 private fun GeneralTab(
     themeMode: ThemeMode,
-    appLanguage: String,
     cacheEnabled: Boolean,
     cacheTtlDays: Int,
     cacheStats: com.docs.scanner.domain.core.TranslationCacheStats?,
     storageUsage: com.docs.scanner.domain.repository.StorageUsage?,
     onThemeModeChange: (ThemeMode) -> Unit,
-    onAppLanguageChange: (String) -> Unit,
     onCacheEnabledChange: (Boolean) -> Unit,
     onCacheTtlChange: (Int) -> Unit,
     onRefreshCacheStats: () -> Unit,
@@ -726,8 +640,6 @@ private fun GeneralTab(
     ) {
         SettingsCard(title = "Appearance", icon = Icons.Default.Palette) {
             SettingDropdown("Theme", themeMode.name, ThemeMode.entries.map { it.name }) { onThemeModeChange(ThemeMode.valueOf(it)) }
-            Spacer(Modifier.height(12.dp))
-            SettingDropdown("App Language", if (appLanguage.isBlank() || appLanguage == "system") "System" else appLanguage.uppercase(), listOf("System", "EN", "RU", "ES", "DE", "FR", "IT", "PT", "ZH")) { onAppLanguageChange(if (it == "System") "" else it.lowercase()) }
         }
 
         SettingsCard(title = "Translation Cache", icon = Icons.Default.Cached) {

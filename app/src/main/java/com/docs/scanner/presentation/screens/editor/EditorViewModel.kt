@@ -117,6 +117,10 @@ class EditorViewModel @Inject constructor(
     private val _errorEvent = Channel<ErrorEvent>(Channel.BUFFERED)
     val errorEvent: Flow<ErrorEvent> = _errorEvent.receiveAsFlow()
 
+    private val _scrollToTranslation =
+        kotlinx.coroutines.flow.MutableSharedFlow<Long>(extraBufferCapacity = 1)
+    val scrollToTranslation = _scrollToTranslation.asSharedFlow()
+
     // ════════════════════════════════════════════════════════════════════
     // SETTINGS
     // ════════════════════════════════════════════════════════════════════
@@ -611,6 +615,9 @@ class EditorViewModel @Inject constructor(
         when (result) {
             is DomainResult.Success<*> -> {
                 Timber.d("✅ Saved ${field.name} for document $documentId")
+                if (field == TextEditField.TRANSLATED_TEXT) {
+                    _scrollToTranslation.tryEmit(documentId)
+                }
             }
             is DomainResult.Failure<*> -> {
                 sendError("Save failed: ${result.error.message}")

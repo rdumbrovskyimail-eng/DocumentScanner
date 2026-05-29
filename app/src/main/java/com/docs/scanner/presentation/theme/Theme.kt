@@ -68,7 +68,7 @@ private val DarkColorScheme = darkColorScheme(
 @Composable
 fun DocumentScannerTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,  // ✅ ДОБАВЛЕНО: Dynamic color support (Session 11 Problem #5)
+    dynamicColor: Boolean = false, // бренд-палитра важнее обоев устройства
     content: @Composable () -> Unit
 ) {
     // ✅ ДОБАВЛЕНО: Material You dynamic colors для Android 12+ (Session 11 Problem #5)

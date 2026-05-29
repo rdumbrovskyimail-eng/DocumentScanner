@@ -259,7 +259,7 @@ fun EditorScreen(
 
         // Wait one frame so LazyColumn has the items measured, then scroll.
         try {
-            lazyListState.animateScrollToItem(index)
+            lazyListState.animateScrollToItem(index, scrollOffset = -48)
         } catch (e: Exception) {
             Timber.w(e, "Could not scroll to highlighted document at index $index")
         }
@@ -270,6 +270,17 @@ fun EditorScreen(
         delay(2500)
         if (highlightedDocId == targetId) {
             highlightedDocId = null
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.scrollToTranslation.collect { docId ->
+            val state = uiState as? EditorUiState.Success ?: return@collect
+            val index = state.documents.indexOfFirst { it.id.value == docId }
+            if (index >= 0) {
+                androidx.compose.runtime.withFrameNanos {}                       // кадр на перекомпоновку выросшей карточки
+                lazyListState.animateScrollToItem(index, scrollOffset = -48)
+            }
         }
     }
 
