@@ -178,6 +178,7 @@ fun SettingsScreen(
                         onGeminiOcrThresholdChange = viewModel::setGeminiOcrThreshold,
                         onGeminiOcrAlwaysChange = viewModel::setGeminiOcrAlways,
                         onGeminiOcrModelChange = viewModel::setGeminiOcrModel,
+                        onAddNewOcrModel = viewModel::addNewOcrModel,
                         onTranslationModelChange = viewModel::setTranslationModel,
                         onAutoTranslateChange = viewModel::setAutoTranslate,
                         onTargetLanguageChange = viewModel::setTargetLanguage
@@ -354,6 +355,7 @@ private fun AiOcrTab(
     onGeminiOcrThresholdChange: (Int) -> Unit,
     onGeminiOcrAlwaysChange: (Boolean) -> Unit,
     onGeminiOcrModelChange: (String) -> Unit,
+    onAddNewOcrModel: (String) -> Unit,
     onTranslationModelChange: (String) -> Unit,
     onAutoTranslateChange: (Boolean) -> Unit,
     onTargetLanguageChange: (Language) -> Unit
@@ -375,7 +377,8 @@ private fun AiOcrTab(
                 onEnabledChange = onGeminiOcrEnabledChange,
                 onThresholdChange = onGeminiOcrThresholdChange,
                 onAlwaysUseGeminiChange = onGeminiOcrAlwaysChange,
-                onModelChange = onGeminiOcrModelChange
+                onModelChange = onGeminiOcrModelChange,
+                onAddNewModel = onAddNewOcrModel
             )
         }
 

@@ -5,7 +5,6 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import com.docs.scanner.data.local.preferences.SettingsDataStore
-import com.docs.scanner.data.local.preferences.GeminiModelManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -35,13 +34,5 @@ object DataStoreModule {
         dataStore: DataStore<Preferences>
     ): SettingsDataStore {
         return SettingsDataStore(dataStore)
-    }
-    
-    @Provides
-    @Singleton
-    fun provideGeminiModelManager(
-        settingsDataStore: SettingsDataStore
-    ): GeminiModelManager {
-        return GeminiModelManager(settingsDataStore)
     }
 }

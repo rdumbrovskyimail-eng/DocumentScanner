@@ -13,11 +13,6 @@
 
 package com.docs.scanner.presentation.screens.settings.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,23 +25,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -60,44 +50,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.docs.scanner.data.local.preferences.GeminiModelOption
 
-/**
- * Unified Gemini OCR settings section with speed indicators.
- * 
- * ✅ PUBLIC function - accessible from both SettingsScreen and MlkitSettingsSection
- * ✅ Includes ModelSpeedBadge for visual speed indication
- * ✅ Shows warning card for slow models (gemini-3-pro, gemini-2.5-pro)
- * 
- * @param enabled Whether Gemini fallback is enabled
- * @param threshold ML Kit confidence threshold (30-90%)
- * @param alwaysUseGemini Skip ML Kit entirely
- * @param selectedModel Currently selected Gemini model ID
- * @param availableModels List of available models with metadata
- * @param onEnabledChange Callback when toggle changes
- * @param onThresholdChange Callback when slider changes
- * @param onAlwaysUseGeminiChange Callback when "always use" toggle changes
- * @param onModelChange Callback when model selection changes
- * @param modifier Optional modifier for the entire section
- */
 @Composable
 fun GeminiOcrSettingsSection(
-    enabled: Boolean,
-    threshold: Int,
-    alwaysUseGemini: Boolean,
     selectedModel: String,
     availableModels: List<GeminiModelOption>,
-    onEnabledChange: (Boolean) -> Unit,
-    onThresholdChange: (Int) -> Unit,
-    onAlwaysUseGeminiChange: (Boolean) -> Unit,
     onModelChange: (String) -> Unit,
+    onAddNewModel: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var newModelInput by remember { mutableStateOf("") }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // ═══════════════════════════════════════════════════════════════
         // HEADER
-        // ═══════════════════════════════════════════════════════════════
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -115,153 +82,70 @@ fun GeminiOcrSettingsSection(
         }
 
         Text(
-            text = "Use Gemini AI when ML Kit confidence is low or for handwritten text",
+            text = "Fallback-распознавание текста через Gemini автоматически активно при качестве сканирования ниже 60%.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        // ═══════════════════════════════════════════════════════════════
-        // ENABLE TOGGLE
-        // ═══════════════════════════════════════════════════════════════
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Enable Gemini fallback",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = "Automatically use Gemini for low-quality scans",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(
-                checked = enabled,
-                onCheckedChange = onEnabledChange
-            )
-        }
+        // MODEL SELECTOR
+        Text(
+            text = "Выбранная модель",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        
+        ModelSelectorWithSpeedBadge(
+            selectedModel = selectedModel,
+            availableModels = availableModels,
+            onModelChange = onModelChange
+        )
 
-        // ═══════════════════════════════════════════════════════════════
-        // EXPANDED SETTINGS (when enabled)
-        // ═══════════════════════════════════════════════════════════════
-        AnimatedVisibility(
-            visible = enabled,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
+        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+        // ADD NEW MODEL
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                
-                // ───────────────────────────────────────────────────────
-                // MODEL SELECTOR with Speed Badges
-                // ───────────────────────────────────────────────────────
-                Text(
-                    text = "Gemini Model",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            Text(
+                text = "Зарегистрировать новую модель",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "Укажите точный системный идентификатор модели (например: gemini-3.5-flash-custom)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = newModelInput,
+                    onValueChange = { newModelInput = it.replace(" ", "") },
+                    placeholder = { Text("Идентификатор модели") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
                 )
                 
-                ModelSelectorWithSpeedBadge(
-                    selectedModel = selectedModel,
-                    availableModels = availableModels,
-                    onModelChange = onModelChange
-                )
-                
-                // ───────────────────────────────────────────────────────
-                // WARNING for slow models
-                // ───────────────────────────────────────────────────────
-                AnimatedVisibility(
-                    visible = selectedModel in listOf("gemini-3-pro", "gemini-2.5-pro"),
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-                        ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = "⚠️ This model is slow (4-7s per image). For real-time OCR, use Gemini 3 Flash or Flash Lite.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
+                Button(
+                    onClick = {
+                        if (newModelInput.isNotBlank()) {
+                            onAddNewModel(newModelInput.trim())
+                            newModelInput = ""
                         }
-                    }
-                }
-                
-                // ───────────────────────────────────────────────────────
-                // ALWAYS USE GEMINI toggle
-                // ───────────────────────────────────────────────────────
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    },
+                    enabled = newModelInput.isNotBlank()
                 ) {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Psychology,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Always use Gemini",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = "Skip ML Kit entirely (slower but more accurate)",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Switch(
-                        checked = alwaysUseGemini,
-                        onCheckedChange = onAlwaysUseGeminiChange
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Добавить"
                     )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Добавить")
                 }
-                
-                // ───────────────────────────────────────────────────────
-                // THRESHOLD SLIDER (only when not "always")
-                // ───────────────────────────────────────────────────────
-                AnimatedVisibility(
-                    visible = !alwaysUseGemini,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    ThresholdSlider(
-                        threshold = threshold,
-                        onThresholdChange = onThresholdChange
-                    )
-                }
-                
-                // ───────────────────────────────────────────────────────
-                // INFO CARD
-                // ───────────────────────────────────────────────────────
-                InfoCard(
-                    alwaysUseGemini = alwaysUseGemini,
-                    threshold = threshold
-                )
             }
         }
     }
@@ -398,110 +282,3 @@ private fun ModelSpeedBadge(modelId: String) {
     }
 }
 
-@Composable
-private fun ThresholdSlider(
-    threshold: Int,
-    onThresholdChange: (Int) -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Speed,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
-            )
-            
-            Spacer(modifier = Modifier.width(12.dp))
-            
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Quality threshold",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    text = "Trigger Gemini when ML Kit confidence below this",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            
-            Text(
-                text = "$threshold%",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-        
-        Slider(
-            value = threshold.toFloat(),
-            onValueChange = { onThresholdChange(it.toInt()) },
-            valueRange = 30f..80f,
-            steps = 9,
-            modifier = Modifier.padding(horizontal = 4.dp)
-        )
-        
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "More ML Kit",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = "More Gemini",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun InfoCard(
-    alwaysUseGemini: Boolean,
-    threshold: Int
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-        )
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = if (alwaysUseGemini) "🤖 Gemini-only mode" else "⚡ Hybrid mode",
-                style = MaterialTheme.typography.titleSmall
-            )
-            
-            Spacer(modifier = Modifier.height(4.dp))
-            
-            Text(
-                text = if (alwaysUseGemini) {
-                    "All text recognition uses Gemini Vision API. Best for handwritten documents, but slower and uses API quota."
-                } else {
-                    "ML Kit runs first (fast, offline). If quality is below $threshold%, Gemini takes over. Best balance of speed and accuracy."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            
-            if (!alwaysUseGemini) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = when {
-                        threshold <= 40 -> "💨 Mostly ML Kit — faster, less API usage"
-                        threshold >= 60 -> "🎯 Mostly Gemini — better for handwriting"
-                        else -> "⚖️ Balanced — good for mixed documents"
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    }
-}

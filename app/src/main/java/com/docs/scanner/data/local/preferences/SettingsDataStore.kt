@@ -79,6 +79,7 @@ class SettingsDataStore @Inject constructor(
         private val KEY_GEMINI_OCR_ENABLED = booleanPreferencesKey("gemini_ocr_enabled")
         private val KEY_GEMINI_OCR_THRESHOLD = intPreferencesKey("gemini_ocr_threshold")
         private val KEY_GEMINI_OCR_ALWAYS = booleanPreferencesKey("gemini_ocr_always")
+        private val KEY_CUSTOM_MODELS = stringPreferencesKey("custom_models")
         
         // Gemini Model Selection
         private val KEY_GEMINI_OCR_MODEL = stringPreferencesKey("gemini_ocr_model")
@@ -525,7 +526,7 @@ class SettingsDataStore @Inject constructor(
             Timber.e(e, "Error reading geminiOcrThreshold")
             emit(emptyPreferences())
         }
-        .map { prefs -> prefs[KEY_GEMINI_OCR_THRESHOLD] ?: 65 }
+        .map { prefs -> prefs[KEY_GEMINI_OCR_THRESHOLD] ?: 60 }
     
     val geminiOcrAlways: Flow<Boolean> = dataStore.data
         .catch { e ->
@@ -552,14 +553,46 @@ class SettingsDataStore @Inject constructor(
         }
     }
     
+    val customModels: Flow<List<String>> = dataStore.data
+        .catch { exception ->
+            Timber.e(exception, "Error reading custom models")
+            emit(emptyPreferences())
+        }
+        .map { prefs ->
+            val json = prefs[KEY_CUSTOM_MODELS] ?: "[]"
+            try {
+                kotlinx.serialization.json.Json.decodeFromString<List<String>>(json)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+
+    suspend fun addCustomModel(modelId: String) {
+        try {
+            dataStore.edit { prefs ->
+                val currentJson = prefs[KEY_CUSTOM_MODELS] ?: "[]"
+                val currentList = try {
+                    kotlinx.serialization.json.Json.decodeFromString<List<String>>(currentJson)
+                } catch (e: Exception) {
+                    emptyList()
+                }
+                if (modelId !in currentList) {
+                    val newList = currentList + modelId
+                    prefs[KEY_CUSTOM_MODELS] = kotlinx.serialization.json.Json.encodeToString(newList)
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to save custom model to DataStore")
+        }
+    }
+    
     suspend fun getOcrQualityThresholds(): OcrQualityThresholds {
-        val enabled = geminiOcrEnabled.first()
         val threshold = geminiOcrThreshold.first()
         val always = geminiOcrAlways.first()
         
         return OcrQualityThresholds(
             minConfidenceForSuccess = threshold / 100f,
-            geminiOcrEnabled = enabled,
+            geminiOcrEnabled = true,
             alwaysUseGemini = always
         )
     }

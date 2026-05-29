@@ -29,308 +29,179 @@
 
 package com.docs.scanner.data.local.preferences
 
+import com.docs.scanner.data.remote.gemini.GeminiApi
+import com.docs.scanner.domain.core.DomainResult
 import com.docs.scanner.domain.core.ModelConstants
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
-/**
- * Unified manager for all Gemini models in the project.
- * 
- * ✅ CRITICAL: Uses ModelConstants as the SINGLE SOURCE OF TRUTH!
- * ✅ All UI dropdowns, API calls, and settings MUST use this manager.
- * 
- * WHY SINGLETON:
- * - Prevents model list duplication
- * - Ensures consistency across the app
- * - Single source of truth for model selection
- * 
- * DEPENDENCY FLOW (Safe, no circular dependency):
- * ModelConstants (no deps) ← GeminiModelManager → SettingsDataStore → DataStore
- */
 @Singleton
 class GeminiModelManager @Inject constructor(
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    // Используем Provider для исключения циклической зависимости при инициализации Hilt-графа
+    private val geminiApiProvider: Provider<GeminiApi>
 ) {
-    
-    companion object {
-        /**
-         * ✅ PRODUCTION MODELS (January 2026)
-         * 
-         * ⚠️ CRITICAL: Now uses ModelConstants.VALID_MODELS!
-         * This ensures perfect synchronization across the entire app.
-         */
-        private val PRODUCTION_MODELS = ModelConstants.VALID_MODELS
-        
-        /**
-         * Default model for OCR operations.
-         * 
-         * ⚠️ CRITICAL: Now uses ModelConstants.DEFAULT_OCR_MODEL!
-         */
-        const val DEFAULT_OCR_MODEL = ModelConstants.DEFAULT_OCR_MODEL
-        
-        /**
-         * Default model for Translation operations.
-         * 
-         * ⚠️ CRITICAL: Now uses ModelConstants.DEFAULT_TRANSLATION_MODEL!
-         */
-        const val DEFAULT_TRANSLATION_MODEL = ModelConstants.DEFAULT_TRANSLATION_MODEL
-    }
-    
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     init {
-        // ✅ Runtime validation: Ensure constants are synchronized
         validateSyncWithDataStore()
     }
-    
-    /**
-     * ✅ Validates that GeminiModelManager constants match SettingsDataStore.
-     * 
-     * This prevents bugs where models are out of sync between the two classes.
-     */
+
     private fun validateSyncWithDataStore() {
-        // Validate VALID_MODELS synchronization
-        if (PRODUCTION_MODELS != ModelConstants.VALID_MODELS) {
-            Timber.e("""
-                ❌ CRITICAL: Model lists are OUT OF SYNC!
-                
-                ModelConstants.VALID_MODELS: ${ModelConstants.VALID_MODELS}
-                GeminiModelManager.PRODUCTION_MODELS: $PRODUCTION_MODELS
-                
-                This should NEVER happen! Check ModelConstants.kt
-            """.trimIndent())
-        }
-        
-        // Validate DEFAULT_OCR_MODEL synchronization
         if (DEFAULT_OCR_MODEL != ModelConstants.DEFAULT_OCR_MODEL) {
             Timber.e("❌ DEFAULT_OCR_MODEL mismatch!")
         }
-        
-        // Validate DEFAULT_TRANSLATION_MODEL synchronization
-        if (DEFAULT_TRANSLATION_MODEL != ModelConstants.DEFAULT_TRANSLATION_MODEL) {
-            Timber.e("❌ DEFAULT_TRANSLATION_MODEL mismatch!")
-        }
     }
-    
-    // ════════════════════════════════════════════════════════════════════════════════
-    // PUBLIC API - Model Lists
-    // ════════════════════════════════════════════════════════════════════════════════
-    
-    /**
-     * Returns all available Gemini models for UI display.
-     * 
-     * Used in:
-     * - Settings → AI & OCR Tab → Gemini Fallback dropdown
-     * - Settings → AI & OCR Tab → Translation dropdown
-     * - Settings → Testing Tab → OCR Test dropdown
-     * - Settings → Testing Tab → Translation Test dropdown
-     * 
-     * @return List of GeminiModelOption with display names and descriptions
-     */
-    fun getAvailableModels(): List<GeminiModelOption> = listOf(
-        // ═══════════════════════════════════════════════════════════════
-        // RECOMMENDED (Fast + Stable)
-        // ═══════════════════════════════════════════════════════════════
-        GeminiModelOption(
-            id = "gemini-3.1-flash-lite",
-            displayName = "Gemini 3.1 Flash Lite 🚀",
-            description = "Stable • Blazing Fast • Minimum latency and cost",
-            isRecommended = true
-        ),
-        GeminiModelOption(
-            id = "gemini-3.5-flash",
-            displayName = "Gemini 3.5 Flash ⚡",
-            description = "May 2026 Stable • Near-Pro level intelligence",
-            isRecommended = true
-        ),
-        GeminiModelOption(
-            id = "gemini-2.5-flash",
-            displayName = "Gemini 2.5 Flash",
-            description = "Very fast • Great balance",
-            isRecommended = false
-        ),
-        GeminiModelOption(
-            id = "gemini-3.1-pro-preview",
-            displayName = "Gemini 3.1 Pro (Preview) 💰",
-            description = "Complex reasoning • Slow • High cost",
-            isRecommended = false
-        ),
-        GeminiModelOption(
-            id = "gemini-2.5-pro",
-            displayName = "Gemini 2.5 Pro 🐌",
-            description = "Slow • Complex tasks only",
-            isRecommended = false
+
+    // Возвращает объединенный список заводских и кастомных моделей
+    suspend fun getModelIds(): List<String> {
+        val custom = settingsDataStore.customModels.first()
+        return (ModelConstants.VALID_MODELS + custom).distinct()
+    }
+
+    suspend fun isValidModel(modelId: String): Boolean {
+        return modelId in getModelIds()
+    }
+
+    // Генерирует опции для интерфейса с индикаторами скорости
+    suspend fun getAvailableModels(): List<GeminiModelOption> {
+        val custom = settingsDataStore.customModels.first()
+        val staticOptions = listOf(
+            GeminiModelOption(
+                id = "gemini-3.1-flash-lite",
+                displayName = "Gemini 3.1 Flash Lite 🚀",
+                description = "Stable • Blazing Fast • Minimum latency and cost",
+                isRecommended = true
+            ),
+            GeminiModelOption(
+                id = "gemini-3.5-flash",
+                displayName = "Gemini 3.5 Flash ⚡",
+                description = "May 2026 Stable • Near-Pro level intelligence",
+                isRecommended = true
+            ),
+            GeminiModelOption(
+                id = "gemini-2.5-flash",
+                displayName = "Gemini 2.5 Flash",
+                description = "Very fast • Great balance",
+                isRecommended = false
+            ),
+            GeminiModelOption(
+                id = "gemini-3.1-pro-preview",
+                displayName = "Gemini 3.1 Pro (Preview) 💰",
+                description = "Complex reasoning • Slow • High cost",
+                isRecommended = false
+            ),
+            GeminiModelOption(
+                id = "gemini-2.5-pro",
+                displayName = "Gemini 2.5 Pro 🐌",
+                description = "Slow • Complex tasks only",
+                isRecommended = false
+            )
         )
-    )
-    
-    /**
-     * Returns raw model IDs (for validation).
-     * 
-     * @return List of model ID strings
-     */
-    fun getModelIds(): List<String> = PRODUCTION_MODELS
-    
-    /**
-     * Validates if a model ID is supported.
-     * 
-     * @param modelId Model identifier to validate
-     * @return true if model exists in PRODUCTION_MODELS
-     */
-    fun isValidModel(modelId: String): Boolean {
-        return modelId in PRODUCTION_MODELS
+
+        val customOptions = custom.map { modelId ->
+            GeminiModelOption(
+                id = modelId,
+                displayName = "$modelId 🛠️",
+                description = "Custom User Added Model",
+                isRecommended = false
+            )
+        }
+
+        return (staticOptions + customOptions).distinctBy { it.id }
     }
-    
-    // ════════════════════════════════════════════════════════════════════════════════
-    // GLOBAL SETTINGS - OCR
-    // ════════════════════════════════════════════════════════════════════════════════
-    
-    /**
-     * Returns the globally selected OCR model from DataStore.
-     * 
-     * Used in:
-     * - EditorViewModel (when processing documents)
-     * - MLKitScanner (for Gemini fallback)
-     * - OCR pipeline
-     * 
-     * @return Model ID (e.g., "gemini-2.5-flash-lite")
-     */
+
     suspend fun getGlobalOcrModel(): String {
         return try {
             val model = settingsDataStore.geminiOcrModel.first()
-            
             if (!isValidModel(model)) {
-                Timber.w("⚠️ Invalid OCR model in DataStore: $model, using default")
                 DEFAULT_OCR_MODEL
             } else {
-                Timber.d("✅ Global OCR model loaded: $model")
                 model
             }
         } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to read OCR model from DataStore")
             DEFAULT_OCR_MODEL
         }
     }
-    
-    /**
-     * Sets the global OCR model (saves to DataStore).
-     * 
-     * @param modelId Model identifier
-     * @throws IllegalArgumentException if model is not valid
-     */
+
     suspend fun setGlobalOcrModel(modelId: String) {
         require(isValidModel(modelId)) {
-            "Invalid model: $modelId. Valid models: $PRODUCTION_MODELS"
+            "Invalid model: $modelId"
         }
-        
         try {
             settingsDataStore.setGeminiOcrModel(modelId)
-            Timber.i("✅ Global OCR model set to: $modelId")
         } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to save OCR model")
+            Timber.e(e, "Failed to save OCR model")
             throw e
         }
     }
-    
-    // ════════════════════════════════════════════════════════════════════════════════
-    // GLOBAL SETTINGS - TRANSLATION
-    // ════════════════════════════════════════════════════════════════════════════════
-    
-    /**
-     * Returns the globally selected Translation model from DataStore.
-     * 
-     * Used in:
-     * - EditorViewModel (when translating documents)
-     * - GeminiTranslator
-     * - Translation pipeline
-     * 
-     * @return Model ID (e.g., "gemini-2.5-flash-lite")
-     */
+
     suspend fun getGlobalTranslationModel(): String {
         return try {
             val model = settingsDataStore.translationModel.first()
-            
             if (!isValidModel(model)) {
-                Timber.w("⚠️ Invalid Translation model in DataStore: $model, using default")
                 DEFAULT_TRANSLATION_MODEL
             } else {
-                Timber.d("✅ Global Translation model loaded: $model")
                 model
             }
         } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to read Translation model from DataStore")
             DEFAULT_TRANSLATION_MODEL
         }
     }
-    
-    /**
-     * Sets the global Translation model (saves to DataStore).
-     * 
-     * @param modelId Model identifier
-     * @throws IllegalArgumentException if model is not valid
-     */
+
     suspend fun setGlobalTranslationModel(modelId: String) {
         require(isValidModel(modelId)) {
-            "Invalid model: $modelId. Valid models: $PRODUCTION_MODELS"
+            "Invalid model: $modelId"
         }
-        
         try {
             settingsDataStore.setTranslationModel(modelId)
-            Timber.i("✅ Global Translation model set to: $modelId")
         } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to save Translation model")
+            Timber.e(e, "Failed to save Translation model")
             throw e
         }
     }
-    
-    // ════════════════════════════════════════════════════════════════════════════════
-    // TESTING - LOCAL OVERRIDES (не сохраняются)
-    // ════════════════════════════════════════════════════════════════════════════════
-    
+
     /**
-     * Creates a local model option for Testing Tab.
-     * 
-     * This does NOT save to DataStore - only for temporary testing.
-     * 
-     * @param initialModel Initial model to use (defaults to global OCR model)
-     * @return LocalModelState for use in Testing Tab
+     * 🚀 Фоновый прогрев (Warm-up) модели при старте или смене настроек.
+     * Отправляет легкий пинг-запрос для кэширования DNS и инициализации контейнера модели.
      */
-    suspend fun createLocalOcrTestModel(initialModel: String? = null): String {
-        return initialModel ?: getGlobalOcrModel()
+    fun warmUpModel(modelId: String) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                Timber.d("🔥 Starting model warm-up/ping for: $modelId")
+                val api = geminiApiProvider.get()
+                val result = api.generateText(
+                    prompt = "Ping. Reply with 'OK'.",
+                    model = modelId,
+                    fallbackModels = emptyList()
+                )
+                when (result) {
+                    is DomainResult.Success -> {
+                        Timber.i("✅ Model $modelId is WARM. Response: ${result.data}")
+                    }
+                    is DomainResult.Failure -> {
+                        Timber.w("⚠️ Model $modelId warm-up ping failed: ${result.error.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "⚠️ Silent fallback on warm-up failure for: $modelId")
+            }
+        }
     }
-    
-    /**
-     * Creates a local model option for Translation Test.
-     * 
-     * This does NOT save to DataStore - only for temporary testing.
-     * 
-     * @param initialModel Initial model to use (defaults to global translation model)
-     * @return LocalModelState for use in Testing Tab
-     */
-    suspend fun createLocalTranslationTestModel(initialModel: String? = null): String {
-        return initialModel ?: getGlobalTranslationModel()
+
+    fun findModelById(modelId: String, available: List<GeminiModelOption>): GeminiModelOption? {
+        return available.find { it.id == modelId }
     }
-    
-    // ════════════════════════════════════════════════════════════════════════════════
-    // UTILITY
-    // ════════════════════════════════════════════════════════════════════════════════
-    
-    /**
-     * Finds a model option by ID.
-     * 
-     * @param modelId Model identifier
-     * @return GeminiModelOption or null if not found
-     */
-    fun findModelById(modelId: String): GeminiModelOption? {
-        return getAvailableModels().find { it.id == modelId }
-    }
-    
-    /**
-     * Returns display name for a model ID.
-     * 
-     * @param modelId Model identifier
-     * @return Display name (e.g., "Gemini 2.5 Flash Lite 🚀") or the ID itself if not found
-     */
-    fun getDisplayName(modelId: String): String {
-        return findModelById(modelId)?.displayName ?: modelId
+
+    companion object {
+        const val DEFAULT_OCR_MODEL = ModelConstants.DEFAULT_OCR_MODEL
+        const val DEFAULT_TRANSLATION_MODEL = ModelConstants.DEFAULT_TRANSLATION_MODEL
     }
 }

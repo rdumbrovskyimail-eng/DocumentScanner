@@ -822,46 +822,54 @@ class SettingsViewModel @Inject constructor(
         if (_mlkitSettings.value.isTestRunning) {
             currentOcrJob?.cancel()
             _mlkitSettings.update { it.copy(isTestRunning = false) }
-            
-            if (BuildConfig.DEBUG) {
-                Timber.d("🛑 Cancelled running OCR test due to model switch")
-            }
         }
         
         modelSwitchJob = viewModelScope.launch {
             try {
                 delay(MODEL_SWITCH_DEBOUNCE_MS)
                 
-                if (BuildConfig.DEBUG) {
-                    Timber.d("🔄 Switching OCR model to: $modelId")
-                }
-                
                 modelManager.setGlobalOcrModel(modelId)
                 _mlkitSettings.update { it.copy(selectedGeminiModel = modelId) }
                 _saveMessage.value = "✓ OCR model: $modelId"
                 
-                if (BuildConfig.DEBUG) {
-                    Timber.d("✅ OCR model switched: $modelId")
-                }
+                // 🚀 ПРОГРЕВ при ручном переключении модели в выпадающем списке
+                modelManager.warmUpModel(modelId)
                 
             } catch (e: CancellationException) {
-                if (BuildConfig.DEBUG) {
-                    Timber.d("🛑 OCR model switch cancelled")
-                }
                 throw e
-                
             } catch (e: Exception) {
                 Timber.e(e, "Failed to switch OCR model")
                 _saveMessage.value = "✗ Failed to switch OCR model"
+            }
+        }
+    }
+
+    // Добавьте новый метод регистрации новой модели
+    fun addNewOcrModel(modelId: String) {
+        viewModelScope.launch {
+            try {
+                _isSaving.value = true
+                _saveMessage.value = "Регистрация и прогрев модели..."
                 
-                viewModelScope.launch {
-                    try {
-                        val currentModel = modelManager.getGlobalOcrModel()
-                        _mlkitSettings.update { it.copy(selectedGeminiModel = currentModel) }
-                    } catch (rollbackError: Exception) {
-                        Timber.e(rollbackError, "Failed to rollback OCR model selection")
-                    }
-                }
+                // 1. Сохраняем модель в список кастомных моделей DataStore
+                settingsDataStore.addCustomModel(modelId)
+                
+                // 2. Перезагружаем состояние моделей в UI
+                loadMlkitSettings()
+                
+                // 3. Выбираем её как глобальную активную модель
+                modelManager.setGlobalOcrModel(modelId)
+                _mlkitSettings.update { it.copy(selectedGeminiModel = modelId) }
+                
+                // 4. 🚀 Моментально инициируем прогрев новой модели в фоновом потоке
+                modelManager.warmUpModel(modelId)
+                
+                _saveMessage.value = "✓ Модель $modelId добавлена и прогрета!"
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to add new custom model")
+                _saveMessage.value = "✗ Ошибка добавления: ${e.message}"
+            } finally {
+                _isSaving.value = false
             }
         }
     }

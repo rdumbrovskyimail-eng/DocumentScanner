@@ -32,6 +32,7 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
+import com.docs.scanner.data.local.preferences.GeminiModelManager
 import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.domain.repository.FolderRepository
 import com.docs.scanner.util.CrashLogHandler
@@ -56,6 +57,9 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     
     @Inject
     lateinit var folderRepository: FolderRepository
+
+    @Inject
+    lateinit var geminiModelManager: GeminiModelManager
 
     private var logcatCollector: LogcatCollector? = null
     
@@ -113,6 +117,16 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
         // 5. ✅ Quick Scans folder - в фоне
         applicationScope.launch(Dispatchers.IO) {
             ensureQuickScansFolderExists()
+        }
+        
+        // 🚀 АВТОМАТИЧЕСКИЙ ПРОГРЕВ выбранной на текущий момент модели
+        applicationScope.launch {
+            try {
+                val activeModel = settingsDataStore.geminiOcrModel.first()
+                geminiModelManager.warmUpModel(activeModel)
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to run startup model warm-up")
+            }
         }
         
         // 6. Lifecycle Observer
