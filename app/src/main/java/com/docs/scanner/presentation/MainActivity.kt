@@ -9,11 +9,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,24 +52,29 @@ class MainActivity : ComponentActivity() {
         pendingOpenTermId.value = intent?.getLongExtra("open_term", -1L)?.takeIf { it > 0 }
 
         setContent {
-            val themeMode = settingsRepository.observeThemeMode()
+            val themeMode by settingsRepository.observeThemeMode()
                 .collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
-                .value
             val darkTheme = when (themeMode) {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
-                ThemeMode.LIGHT -> false
-                ThemeMode.DARK -> true
+                ThemeMode.LIGHT  -> false
+                ThemeMode.DARK   -> true
+            }
+
+            // null = ещё не знаем; не строим NavHost, чтобы избежать мигания онбординга
+            val onboardingDone by produceState<Boolean?>(initialValue = null) {
+                value = settingsRepository.isOnboardingCompleted()
             }
 
             DocumentScannerTheme(darkTheme = darkTheme) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    NavGraph(
-                        initialOpenTermId = pendingOpenTermId.value,
-                        onOpenTermConsumed = { pendingOpenTermId.value = null }
-                    )
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    when (val done = onboardingDone) {
+                        null -> Box(Modifier.fillMaxSize())          // пустой кадр на ~1 фрейм
+                        else -> NavGraph(
+                            initialOpenTermId = pendingOpenTermId.value,
+                            onOpenTermConsumed = { pendingOpenTermId.value = null },
+                            isOnboardingDone = done
+                        )
+                    }
                 }
             }
         }
