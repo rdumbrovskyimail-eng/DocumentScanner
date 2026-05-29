@@ -1,6 +1,6 @@
 /*
  * SettingsScreen.kt
- * Version: 22.3.0 - PRODUCTION-READY SINGLE SCREEN (2026)
+ * Version: 22.4.0 - PRODUCTION-READY SINGLE SCREEN (2026)
  * 
  * ✅ REMOVED:
  * - All Tabs (AI_OCR, GENERAL, BACKUP, TESTING)
@@ -18,7 +18,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,7 +55,6 @@ fun SettingsScreen(
     onBackClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     
     val apiKeys by viewModel.apiKeys.collectAsStateWithLifecycle()
     val isLoadingKeys by viewModel.isSaving.collectAsStateWithLifecycle()
@@ -107,7 +105,7 @@ fun SettingsScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        // Единая вертикальная лента настроек без вкладок
+        // Единый вертикальный скролл-контейнер без разделения на вкладки
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -718,6 +716,117 @@ private fun DriveBackupItem(backup: BackupInfo, onRestore: () -> Unit, onDelete:
             }
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ДИАЛОГОВЫЕ ОКНА (НА РУССКОМ ЯЗЫКЕ)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun AddApiKeyDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, String?) -> Unit,
+    onTest: (String) -> Unit
+) {
+    var key by remember { mutableStateOf("") }
+    var label by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val keyRegex = remember { Regex("^AIza[A-Za-z0-9_-]{35}$") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Добавить API-ключ Gemini") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it },
+                    label = { Text("Метка для ключа (необязательно)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = {
+                        key = it
+                        error = null
+                    },
+                    label = { Text("API-ключ") },
+                    isError = error != null,
+                    supportingText = { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    when {
+                        key.isBlank() -> error = "Поле API-ключа обязательно для заполнения"
+                        !keyRegex.matches(key.trim()) -> error = "Ключ должен начинаться с AIza и состоять из 39 символов"
+                        else -> onSave(key.trim(), label.ifBlank { null })
+                    }
+                }
+            ) { 
+                Text("Сохранить") 
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = { onTest(key) },
+                    enabled = key.isNotBlank()
+                ) { 
+                    Text("Проверить") 
+                }
+                TextButton(onClick = onDismiss) { Text("Отмена") }
+            }
+        }
+    )
+}
+
+@Composable
+private fun RestoreBackupDialog(
+    backupName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (merge: Boolean) -> Unit
+) {
+    var merge by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Восстановление из бэкапа") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Восстановить из архива: $backupName")
+                Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                    Text("Объединить с текущими данными")
+                    Switch(
+                        checked = merge,
+                        onCheckedChange = { merge = it }
+                    )
+                }
+                if (!merge) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Внимание: Все текущие локальные данные будут полностью заменены!", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(merge) }
+            ) { 
+                Text(if (merge) "Объединить" else "Заменить") 
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        }
+    )
 }
 
 private fun Double.format(decimals: Int): String = "%.${decimals}f".format(this)
