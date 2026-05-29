@@ -29,10 +29,6 @@ fun OnboardingScreen(
     val apiKey by viewModel.apiKey.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     
-    LaunchedEffect(Unit) {
-        viewModel.checkFirstLaunch { onComplete() }
-    }
-    
     Scaffold(
         topBar = {
             TopAppBar(
