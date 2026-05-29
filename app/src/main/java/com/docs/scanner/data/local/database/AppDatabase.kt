@@ -266,7 +266,7 @@ abstract class AppDatabase : RoomDatabase() {
                     // Заполнить существующие записи дефолтным значением
                     db.execSQL("""
                         UPDATE translation_cache 
-                        SET model = '${ModelConstants.DEFAULT_TRANSLATION_MODEL}' 
+                        SET model = 'google_mlkit' 
                         WHERE model IS NULL
                     """)
                     Timber.d("✅ Updated existing rows with default model")
@@ -279,7 +279,7 @@ abstract class AppDatabase : RoomDatabase() {
                             translated_text TEXT NOT NULL,
                             source_language TEXT NOT NULL,
                             target_language TEXT NOT NULL,
-                            model TEXT NOT NULL DEFAULT '${ModelConstants.DEFAULT_TRANSLATION_MODEL}',
+                            model TEXT NOT NULL DEFAULT 'google_mlkit',
                             timestamp INTEGER NOT NULL
                         )
                     """)
@@ -291,7 +291,7 @@ abstract class AppDatabase : RoomDatabase() {
                         )
                         SELECT cache_key, original_text, translated_text,
                                source_language, target_language,
-                               COALESCE(model, '${ModelConstants.DEFAULT_TRANSLATION_MODEL}'),
+                               COALESCE(model, 'google_mlkit'),
                                timestamp
                         FROM translation_cache
                     """)
