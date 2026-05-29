@@ -13,19 +13,13 @@ object ModelConstants {
      * Список всех поддерживаемых моделей Gemini (май 2026).
      */
     val VALID_MODELS = listOf(
-        "gemini-3.5-flash",              // ⚡ Добавлена новая флагманская Flash
-        "gemini-3.1-flash-lite",         // 🚀 Добавлена стабильная Flash-Lite
+        "gemini-3.5-flash",
+        "gemini-3-flash",
+        "gemini-3.1-flash-lite",
         "gemini-3.1-pro-preview",
-        "gemini-3.0-flash-preview",
-        "gemini-3.1-flash-lite-preview",
-        "gemini-3.1-flash-live-preview",
-        "gemini-3.1-flash-tts-preview",
-        "gemini-2.5-pro",
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
-        "gemini-2.5-flash-native-audio-preview-12-2025",
-        "gemini-2.5-flash-preview-tts",
-        "gemini-2.5-pro-preview-tts"
+        "gemini-2.5-pro"
     )
     
     /**
@@ -41,14 +35,12 @@ object ModelConstants {
     /**
      * Fallback модели для каждой primary модели.
      */
-    fun getFallbackModels(primaryModel: String): List<String> {
-        return when (primaryModel) {
-            "gemini-3.5-flash" -> listOf("gemini-3.1-flash-lite", "gemini-2.5-flash-lite")
-            "gemini-3.1-pro-preview" -> listOf("gemini-3.5-flash", "gemini-3.1-flash-lite")
-            "gemini-3.0-flash-preview" -> listOf("gemini-3.1-flash-lite", "gemini-2.5-flash-lite")
-            "gemini-2.5-pro" -> listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")
-            "gemini-2.5-flash" -> listOf("gemini-2.5-flash-lite")
-            else -> listOf("gemini-3.1-flash-lite", "gemini-2.5-flash-lite")
-        }
+    fun getFallbackModels(primaryModel: String): List<String> = when (primaryModel) {
+        "gemini-3.5-flash" -> listOf("gemini-3-flash", "gemini-3.1-flash-lite")
+        "gemini-3-flash" -> listOf("gemini-3.1-flash-lite", "gemini-2.5-flash")
+        "gemini-3.1-pro-preview" -> listOf("gemini-3.5-flash", "gemini-3.1-flash-lite")
+        "gemini-2.5-pro" -> listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")
+        "gemini-2.5-flash" -> listOf("gemini-2.5-flash-lite", "gemini-3.1-flash-lite")
+        else -> listOf("gemini-3.1-flash-lite", "gemini-2.5-flash-lite")
     }
 }

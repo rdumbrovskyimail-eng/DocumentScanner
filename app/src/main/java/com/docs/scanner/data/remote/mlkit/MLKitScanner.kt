@@ -331,10 +331,7 @@ class MLKitScanner @Inject constructor(
             // ═══════════════════════════════════════════════════════════════
             // STEP 5: Decide on quality-based fallback
             // ═══════════════════════════════════════════════════════════════
-            val shouldFallback = geminiEnabled && (
-                metrics.recommendGeminiFallback ||
-                metrics.overallConfidence < threshold
-            )
+            val shouldFallback = geminiEnabled && metrics.recommendGeminiFallback
 
             if (shouldFallback) {
                 Timber.d("$TAG: 🔄 Low quality ML Kit result, falling back to Gemini")
@@ -370,6 +367,7 @@ class MLKitScanner @Inject constructor(
                         text = mlKitResult.text,
                         detectedLanguage = mlKitResult.detectedLanguage,
                         confidence = mlKitResult.overallConfidence,
+                        wordConfidences = mlKitResult.words.associate { it.text to it.confidence },
                         processingTimeMs = System.currentTimeMillis() - start,
                         source = OcrSource.ML_KIT
                     )

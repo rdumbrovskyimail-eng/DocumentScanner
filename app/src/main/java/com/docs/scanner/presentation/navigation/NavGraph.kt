@@ -29,7 +29,8 @@ private const val TAG = "NavGraph"
 fun NavGraph(
     navController: NavHostController = rememberNavController(),
     initialOpenTermId: Long? = null,
-    onOpenTermConsumed: () -> Unit = {}
+    onOpenTermConsumed: () -> Unit = {},
+    isOnboardingDone: Boolean = false
 ) {
     LaunchedEffect(initialOpenTermId) {
         val id = initialOpenTermId
@@ -43,7 +44,7 @@ fun NavGraph(
 
     NavHost(
         navController = navController,
-        startDestination = Screen.Onboarding.route
+        startDestination = if (isOnboardingDone) Screen.Folders.route else Screen.Onboarding.route
     ) {
         composable(Screen.Onboarding.route) {
             OnboardingScreen(

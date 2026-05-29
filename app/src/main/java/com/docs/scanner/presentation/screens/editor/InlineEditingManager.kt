@@ -112,42 +112,44 @@ class InlineEditingManager(
      * Сохранить изменения
      */
     suspend fun saveEdit(documentId: Long, field: TextEditField) {
-        val k = key(documentId, field)
-        val current = activeEdits[k] ?: run {
-            Timber.w("No active edit for $k")
-            return
-        }
-        
-        if (!current.isDirty) {
-            Timber.d("Nothing to save for $k")
-            return
-        }
-        
-        try {
-            // Добавляем в историю
-            onHistoryAdd(
-                documentId,
-                field,
-                current.originalText,
-                current.currentText
-            )
+        saveMutex.withLock {
+            val k = key(documentId, field)
+            val current = activeEdits[k] ?: run {
+                Timber.w("No active edit for $k")
+                return
+            }
             
-            // Сохраняем в БД
-            onSave(documentId, field, current.currentText)
+            if (!current.isDirty) {
+                Timber.d("Nothing to save for $k")
+                return
+            }
             
-            // Обновляем состояние
-            val saved = current.copy(
-                originalText = current.currentText,
-                isDirty = false,
-                lastSaveTimestamp = System.currentTimeMillis()
-            )
-            activeEdits[k] = saved
-            updateStateFlow()
-            
-            Timber.d("Saved edit for $k")
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to save edit for $k")
-            throw e
+            try {
+                // Добавляем в историю
+                onHistoryAdd(
+                    documentId,
+                    field,
+                    current.originalText,
+                    current.currentText
+                )
+                
+                // Сохраняем в БД
+                onSave(documentId, field, current.currentText)
+                
+                // Обновляем состояние
+                val saved = current.copy(
+                    originalText = current.currentText,
+                    isDirty = false,
+                    lastSaveTimestamp = System.currentTimeMillis()
+                )
+                activeEdits[k] = saved
+                updateStateFlow()
+                
+                Timber.d("Saved edit for $k")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save edit for $k")
+                throw e
+            }
         }
     }
     
@@ -213,14 +215,17 @@ class InlineEditingManager(
      */
     suspend fun saveAll() {
         saveMutex.withLock {
-            // ✅ FIX #12: Используем activeEdits вместо _editingStates
-            activeEdits.values.toList().forEach { state ->
-                if (state.isDirty) {
-                    try {
-                        onSave(state.documentId, state.field, state.currentText)
-                    } catch (e: Exception) {
-                        Timber.e(e, "Failed to save edit during saveAll")
-                    }
+        // ✅ FIX #12: Используем activeEdits вместо _editingStates
+        activeEdits.values.toList().forEach { state ->
+            if (state.isDirty) {
+                try {
+                    onHistoryAdd(state.documentId, state.field, state.originalText, state.currentText)
+                    onSave(state.documentId, state.field, state.currentText)
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to save edit during saveAll")
+                }
+            }
+        }
                 }
             }
             

@@ -50,6 +50,10 @@ data class InlineData(
     val data: String
 )
 
+data class ThinkingConfig(
+    val thinkingLevel: String
+)
+
 /**
  * Generation configuration for Gemini API.
  * 
@@ -62,7 +66,8 @@ data class GenerationConfig(
     val maxOutputTokens: Int = 4096,
     val temperature: Float = 0.1f,
     val topP: Float = 0.95f,
-    val topK: Int = 40
+    val topK: Int = 40,
+    val thinkingConfig: ThinkingConfig? = null
 ) {
     companion object {
         /**
@@ -78,7 +83,8 @@ data class GenerationConfig(
             maxOutputTokens = 4096,
             temperature = 0.0f,
             topP = 0.9f,
-            topK = 20
+            topK = 20,
+            thinkingConfig = ThinkingConfig("low")
         )
         
         /** Legacy OCR config for compatibility */
@@ -89,7 +95,8 @@ data class GenerationConfig(
             maxOutputTokens = 4096,
             temperature = 0.2f,
             topP = 0.9f,
-            topK = 30
+            topK = 30,
+            thinkingConfig = ThinkingConfig("low")
         )
         
         /** Config for text correction/fixing */

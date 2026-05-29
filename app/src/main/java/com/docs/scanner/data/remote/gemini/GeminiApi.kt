@@ -39,7 +39,7 @@ class GeminiApi @Inject constructor(
     companion object {
         private const val TAG = "GeminiApi"
         private val DEFAULT_MODEL = ModelConstants.DEFAULT_TRANSLATION_MODEL
-        private const val FALLBACK_MODEL = "gemini-2.5-flash"
+        private val FALLBACK_MODEL = ModelConstants.getFallbackModels(DEFAULT_MODEL).first()
     }
     
     // ════════════════════════════════════════════════════════════════════════════════

@@ -319,7 +319,7 @@ class SettingsDataStore @Inject constructor(
             Timber.e(exception, "Error reading OCR language")
             emit(emptyPreferences())
         }
-        .map { prefs -> prefs[KEY_OCR_LANGUAGE] ?: "CHINESE" }
+        .map { prefs -> prefs[KEY_OCR_LANGUAGE] ?: "AUTO" }
     
     suspend fun setOcrLanguage(language: String) {
         try {
@@ -589,39 +589,6 @@ class SettingsDataStore @Inject constructor(
         }
     }
     
-    fun getAvailableGeminiModels(): List<GeminiModelOption> = listOf(
-        GeminiModelOption(
-            id = "gemini-2.5-flash-lite",
-            displayName = "Gemini 2.5 Flash Lite 🚀",
-            description = "Ultra-fast • Stable • Best for OCR & Translation",
-            isRecommended = true
-        ),
-        GeminiModelOption(
-            id = "gemini-2.5-flash",
-            displayName = "Gemini 2.5 Flash ⚡",
-            description = "Very fast • Great balance",
-            isRecommended = false
-        ),
-        GeminiModelOption(
-            id = "gemini-3-flash-preview",
-            displayName = "Gemini 3 Flash (Preview)",
-            description = "Latest • May have rate limits",
-            isRecommended = false
-        ),
-        GeminiModelOption(
-            id = "gemini-3-pro-preview",
-            displayName = "Gemini 3 Pro (Preview) 💰",
-            description = "PAID ONLY • Highest quality • Slower",
-            isRecommended = false
-        ),
-        GeminiModelOption(
-            id = "gemini-2.5-pro",
-            displayName = "Gemini 2.5 Pro 🐌",
-            description = "Slow (4-7s) • Complex text only",
-            isRecommended = false
-        )
-    )
-    
     val translationModel: Flow<String> = dataStore.data
         .catch { e ->
             Timber.e(e, "Error reading translationModel")
@@ -645,10 +612,6 @@ class SettingsDataStore @Inject constructor(
             Timber.e(e, "Error setting Translation model")
             throw e
         }
-    }
-    
-    fun getAvailableTranslationModels(): List<GeminiModelOption> {
-        return getAvailableGeminiModels()
     }
     
     // ════════════════════════════════════════════════════════════════════════════════

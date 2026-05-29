@@ -71,9 +71,15 @@ class DragDropState(
         dragOffset = Offset.Zero
         currentIndexOfDraggedItem = index
         
-        scope.launch {
-            animatedOffsetY.snapTo(0f)
-        }
+    scope.launch {
+        animatedOffsetY.animateTo(
+            0f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessHigh
+            )
+        )
+    }
         
         hapticFeedback?.performHapticFeedback(HapticFeedbackType.LongPress)
         
@@ -234,13 +240,16 @@ fun rememberDragDropState(
     hapticFeedback: HapticFeedback? = null
 ): DragDropState {
     val scope = rememberCoroutineScope()
+    val onMoveUpdated by rememberUpdatedState(onMove)
+    val onDragStartUpdated by rememberUpdatedState(onDragStart)
+    val onDragEndUpdated by rememberUpdatedState(onDragEnd)
     
     return remember(lazyListState) {
         DragDropState(
             lazyListState = lazyListState,
-            onMove = onMove,
-            onDragStart = onDragStart,
-            onDragEnd = onDragEnd,
+            onMove = { from, to -> onMoveUpdated(from, to) },
+            onDragStart = { index -> onDragStartUpdated(index) },
+            onDragEnd = { from, to -> onDragEndUpdated(from, to) },
             scope = scope,
             hapticFeedback = hapticFeedback
         )

@@ -255,7 +255,7 @@ class GeminiOcrService @Inject constructor(
                 settingsDataStore.geminiOcrModel.first()
             } catch (e: Exception) {
                 Timber.w(e, "$TAG: Failed to get model from settings, using default")
-                "gemini-3-flash"
+                com.docs.scanner.domain.core.ModelConstants.DEFAULT_OCR_MODEL
             }
             
             if (BuildConfig.DEBUG) {
@@ -500,6 +500,11 @@ class GeminiOcrService @Inject constructor(
         synchronized(cacheLock) {
             imageCache[cacheKey] = CachedImage(base64, sizeBytes)
             
+            while (imageCache.size > IMAGE_CACHE_MAX_SIZE || imageCache.values.sumOf { it.sizeBytes } > IMAGE_CACHE_MAX_MEMORY_MB * 1024 * 1024) {
+                val oldestKey = imageCache.keys.firstOrNull() ?: break
+                imageCache.remove(oldestKey)
+            }
+            
             if (BuildConfig.DEBUG) {
                 val totalSizeMB = imageCache.values.sumOf { it.sizeBytes } / (1024f * 1024f)
                 Timber.d("$TAG: 💾 Cached image (size=${sizeBytes / 1024}KB, total=%.2fMB)", totalSizeMB)
@@ -661,7 +666,7 @@ class GeminiOcrService @Inject constructor(
         val sampleSize = calculateOptimalSampleSize(
             options.outWidth, 
             options.outHeight
-        ).coerceAtLeast(2)
+        )
         
         options.inJustDecodeBounds = false
         options.inSampleSize = sampleSize
