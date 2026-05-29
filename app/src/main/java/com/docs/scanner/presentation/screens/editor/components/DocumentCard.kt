@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FormatClear
@@ -219,7 +220,6 @@ fun DocumentCard(
             .fillMaxWidth()
             .scale(cardScale)
             .shadow(cardElevation.dp, RoundedCornerShape(16.dp))
-            .then(dragModifier)
             .then(
                 if (isSelected) {
                     Modifier.border(2.dp, selectionBorderColor, RoundedCornerShape(16.dp))
@@ -436,7 +436,9 @@ fun DocumentCard(
                 onPasteText = onPasteText,
                 onAiRewrite = onAiRewrite,
                 onClearFormatting = onClearFormatting,
-                onSharePage = onSharePage
+                onSharePage = onSharePage,
+                isSelectionMode = isSelectionMode,
+                dragModifier = dragModifier
             )
         }
     }
@@ -765,7 +767,9 @@ private fun ActionButtonsRow(
     onPasteText: ((Boolean) -> Unit)?,
     onAiRewrite: ((Boolean) -> Unit)?,
     onClearFormatting: ((Boolean) -> Unit)?,
-    onSharePage: (() -> Unit)?
+    onSharePage: (() -> Unit)?,
+    isSelectionMode: Boolean,
+    dragModifier: Modifier = Modifier
 ) {
     var showTextSelector by remember { mutableStateOf(false) }
     var pendingAction by remember { mutableStateOf<String?>(null) }
@@ -777,6 +781,18 @@ private fun ActionButtonsRow(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (!isSelectionMode) {
+            Icon(
+                imageVector = Icons.Default.DragHandle,
+                contentDescription = "Reorder page",
+                tint = GoogleDocsTextSecondary,
+                modifier = Modifier
+                    .size(36.dp)
+                    .padding(8.dp)
+                    .then(dragModifier)
+            )
+        }
+
         if (onAiRewrite != null) {
             MicroButton(
                 text = "AI",
