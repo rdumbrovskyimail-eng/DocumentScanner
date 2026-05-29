@@ -16,10 +16,11 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * InlineEditingManager.kt
- * Version: 10.0.0 - FULLY FIXED (2026)
+ * Version: 10.0.1 - FULLY FIXED (2026)
  *
  * ✅ FIX #9 APPLIED: Added saveMutex for thread-safety in saveAll()
  * ✅ FIX #12 APPLIED: saveAll() now uses activeEdits instead of _editingStates
+ * ✅ FIX #13 APPLIED: Fixed mismatched braces in saveAll()
  *
  * КРИТИЧЕСКИ ВАЖНО:
  * Использует ConcurrentHashMap для thread-safe операций
@@ -33,34 +34,33 @@ class InlineEditingManager(
     private val autoSaveDelayMs: Long = 1500L
 ) {
     private val saveMutex = Mutex()
-    
+
     // Thread-safe хранилище активных редактирований
     private val activeEdits = ConcurrentHashMap<String, InlineEditState>()
-    
+
     // Job'ы для auto-save (один на документ+поле)
     private val autoSaveJobs = ConcurrentHashMap<String, Job>()
-    
+
     // StateFlow для UI
     private val _editingStates = MutableStateFlow<Map<String, InlineEditState>>(emptyMap())
     val editingStates: StateFlow<Map<String, InlineEditState>> = _editingStates.asStateFlow()
-    
+
     /**
      * Создаём уникальный ключ для документа+поля
      */
     private fun key(documentId: Long, field: TextEditField): String = "$documentId:${field.name}"
-    
+
     /**
      * Начать редактирование
      */
     fun startEdit(documentId: Long, field: TextEditField, initialText: String) {
         val k = key(documentId, field)
-        
-        // Если уже редактируется - ничего не делаем
+
         if (activeEdits.containsKey(k)) {
             Timber.w("Already editing $k")
             return
         }
-        
+
         val state = InlineEditState(
             documentId = documentId,
             field = field,
@@ -69,13 +69,13 @@ class InlineEditingManager(
             isDirty = false,
             lastSaveTimestamp = 0L
         )
-        
+
         activeEdits[k] = state
         updateStateFlow()
-        
+
         Timber.d("Started inline edit: $k")
     }
-    
+
     /**
      * Обновить текст (при каждом символе)
      */
@@ -85,29 +85,26 @@ class InlineEditingManager(
             Timber.w("No active edit for $k")
             return
         }
-        
-        // Обновляем состояние
+
         val updated = current.copy(
             currentText = text,
             isDirty = text != current.originalText
         )
         activeEdits[k] = updated
         updateStateFlow()
-        
-        // Отменяем предыдущий auto-save Job
+
         autoSaveJobs[k]?.cancel()
-        
-        // Запускаем новый auto-save Job
+
         if (updated.isDirty) {
             autoSaveJobs[k] = scope.launch {
                 delay(autoSaveDelayMs)
                 saveEdit(documentId, field)
             }
         }
-        
+
         Timber.d("Updated text for $k (dirty=${updated.isDirty})")
     }
-    
+
     /**
      * Сохранить изменения
      */
@@ -118,25 +115,22 @@ class InlineEditingManager(
                 Timber.w("No active edit for $k")
                 return
             }
-            
+
             if (!current.isDirty) {
                 Timber.d("Nothing to save for $k")
                 return
             }
-            
+
             try {
-                // Добавляем в историю
                 onHistoryAdd(
                     documentId,
                     field,
                     current.originalText,
                     current.currentText
                 )
-                
-                // Сохраняем в БД
+
                 onSave(documentId, field, current.currentText)
-                
-                // Обновляем состояние
+
                 val saved = current.copy(
                     originalText = current.currentText,
                     isDirty = false,
@@ -144,7 +138,7 @@ class InlineEditingManager(
                 )
                 activeEdits[k] = saved
                 updateStateFlow()
-                
+
                 Timber.d("Saved edit for $k")
             } catch (e: Exception) {
                 Timber.e(e, "Failed to save edit for $k")
@@ -152,47 +146,42 @@ class InlineEditingManager(
             }
         }
     }
-    
+
     /**
      * Завершить редактирование (с сохранением)
      */
     suspend fun finishEdit(documentId: Long, field: TextEditField) {
         val k = key(documentId, field)
-        
-        // Отменяем auto-save Job
+
         autoSaveJobs[k]?.cancel()
         autoSaveJobs.remove(k)
-        
-        // Сохраняем если есть изменения
+
         val current = activeEdits[k]
         if (current?.isDirty == true) {
             saveEdit(documentId, field)
         }
-        
-        // Удаляем из активных
+
         activeEdits.remove(k)
         updateStateFlow()
-        
+
         Timber.d("Finished edit for $k")
     }
-    
+
     /**
      * Отменить редактирование (БЕЗ сохранения)
      */
     fun cancelEdit(documentId: Long, field: TextEditField) {
         val k = key(documentId, field)
-        
-        // Отменяем auto-save Job
+
         autoSaveJobs[k]?.cancel()
         autoSaveJobs.remove(k)
-        
-        // Удаляем из активных
+
         activeEdits.remove(k)
         updateStateFlow()
-        
+
         Timber.d("Cancelled edit for $k")
     }
-    
+
     /**
      * Получить текущее состояние редактирования
      */
@@ -200,7 +189,7 @@ class InlineEditingManager(
         val k = key(documentId, field)
         return activeEdits[k]
     }
-    
+
     /**
      * Проверить, редактируется ли документ+поле
      */
@@ -208,52 +197,48 @@ class InlineEditingManager(
         val k = key(documentId, field)
         return activeEdits.containsKey(k)
     }
-    
+
     /**
      * ✅ FIX #12: saveAll() now uses activeEdits instead of _editingStates
+     * ✅ FIX #13: Fixed mismatched braces
      * Сохранить все активные редактирования (при выходе из экрана)
      */
     suspend fun saveAll() {
         saveMutex.withLock {
-        // ✅ FIX #12: Используем activeEdits вместо _editingStates
-        activeEdits.values.toList().forEach { state ->
-            if (state.isDirty) {
-                try {
-                    onHistoryAdd(state.documentId, state.field, state.originalText, state.currentText)
-                    onSave(state.documentId, state.field, state.currentText)
-                } catch (e: Exception) {
-                    Timber.e(e, "Failed to save edit during saveAll")
+            activeEdits.values.toList().forEach { state ->
+                if (state.isDirty) {
+                    try {
+                        onHistoryAdd(state.documentId, state.field, state.originalText, state.currentText)
+                        onSave(state.documentId, state.field, state.currentText)
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to save edit during saveAll")
+                    }
                 }
             }
         }
-                }
-            }
-            
-            // Отменяем все Job'ы
-            autoSaveJobs.values.forEach { it.cancel() }
-            autoSaveJobs.clear()
-            
-            // Очищаем активные редактирования
-            activeEdits.clear()
-            updateStateFlow()
-        }
+
+        // Отменяем все Job'ы
+        autoSaveJobs.values.forEach { it.cancel() }
+        autoSaveJobs.clear()
+
+        // Очищаем активные редактирования
+        activeEdits.clear()
+        updateStateFlow()
     }
-    
+
     /**
      * Отменить все активные редактирования
      */
     fun cancelAll() {
-        // Отменяем все Job'ы
         autoSaveJobs.values.forEach { it.cancel() }
         autoSaveJobs.clear()
-        
-        // Очищаем состояния
+
         activeEdits.clear()
         updateStateFlow()
-        
+
         Timber.d("Cancelled all inline edits")
     }
-    
+
     /**
      * Обновить StateFlow для UI
      */
