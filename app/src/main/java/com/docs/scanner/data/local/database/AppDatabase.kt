@@ -76,6 +76,11 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        fun resetInstance() = synchronized(this) {
+            INSTANCE?.let { if (it.isOpen) it.close() }
+            INSTANCE = null
+        }
+
         private fun buildDatabase(context: Context): AppDatabase {
             return Room.databaseBuilder(
                 context.applicationContext,
