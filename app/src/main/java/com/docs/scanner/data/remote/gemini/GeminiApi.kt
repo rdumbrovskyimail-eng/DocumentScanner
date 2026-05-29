@@ -66,7 +66,7 @@ class GeminiApi @Inject constructor(
     suspend fun generateText(
         prompt: String,
         model: String = DEFAULT_MODEL,
-        fallbackModels: List<String> = listOf(FALLBACK_MODEL)
+        fallbackModels: List<String> = ModelConstants.getFallbackModels(model)
     ): DomainResult<String> {
         if (prompt.isBlank()) {
             return DomainResult.failure(
@@ -80,16 +80,29 @@ class GeminiApi @Inject constructor(
         
         return try {
             val request = createRequest(prompt)
+            val modelsToTry = listOf(model) + fallbackModels
+            var lastError: Exception? = null
             
-            val response = keyManager.executeWithFailover { apiKey ->
-                service.generateContent(
-                    model = model,
-                    apiKey = apiKey,
-                    body = request
-                )
+            for (modelToTry in modelsToTry) {
+                try {
+                    Timber.d("$TAG: Generating text with model: $modelToTry")
+                    val response = keyManager.executeWithFailover { apiKey ->
+                        service.generateContent(
+                            model = modelToTry,
+                            apiKey = apiKey,
+                            body = request
+                        )
+                    }
+                    return extractTextFromResponse(response)
+                } catch (e: Exception) {
+                    lastError = e
+                    Timber.w(e, "$TAG: Model $modelToTry failed with failover, trying next")
+                }
             }
             
-            extractTextFromResponse(response)
+            val error = lastError ?: Exception("All models failed")
+            Timber.e(error, "$TAG: All models failed with failover")
+            DomainResult.failure(DomainError.NetworkFailed(error))
             
         } catch (e: Exception) {
             Timber.e(e, "$TAG: Text generation failed (with failover)")
