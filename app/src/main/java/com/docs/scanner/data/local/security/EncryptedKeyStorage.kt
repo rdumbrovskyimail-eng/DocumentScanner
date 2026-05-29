@@ -28,13 +28,23 @@ class EncryptedKeyStorage @Inject constructor(
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
         .build()
     
-    private val encryptedPrefs: SharedPreferences = EncryptedSharedPreferences.create(
+    private val ioLock = Any()
+    private val PREFS_NAME = "secure_api_keys"
+
+    private fun buildPrefs(): SharedPreferences = EncryptedSharedPreferences.create(
         context,
-        "secure_api_keys",
+        PREFS_NAME,
         masterKey,
         EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
+
+    private val encryptedPrefs: SharedPreferences = runCatching { buildPrefs() }
+        .getOrElse { e ->
+            Timber.e(e, "Encrypted prefs corrupted — recreating")
+            context.deleteSharedPreferences(PREFS_NAME)
+            buildPrefs()
+        }
     
     companion object {
         private const val KEY_ACTIVE_API_KEY = "active_api_key"
@@ -136,17 +146,19 @@ class EncryptedKeyStorage @Inject constructor(
      * Accepts INTERNAL storage model.
      */
     private fun saveAllKeysInternal(entries: List<StoredApiKey>) {
-        try {
-            val data = StoredApiKeySerializer.serialize(entries)
-            encryptedPrefs.edit().putString(KEY_API_KEYS_LIST, data).apply()
-            
-            // Update legacy single key for backward compatibility
-            if (entries.isNotEmpty()) {
-                val primary = entries.firstOrNull { it.isActive } ?: entries.first()
-                setActiveApiKey(primary.key)
+        synchronized(ioLock) {
+            try {
+                val data = StoredApiKeySerializer.serialize(entries)
+                encryptedPrefs.edit().putString(KEY_API_KEYS_LIST, data).commit()
+                
+                // Update legacy single key for backward compatibility
+                if (entries.isNotEmpty()) {
+                    val primary = entries.firstOrNull { it.isActive } ?: entries.first()
+                    setActiveApiKey(primary.key)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save API keys list")
             }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to save API keys list")
         }
     }
     
@@ -227,16 +239,18 @@ class EncryptedKeyStorage @Inject constructor(
      * Updates key statistics after error.
      */
     fun updateKeyError(key: String) {
-        val existing = getAllApiKeys().map { it.toStoredApiKey() }
-        val updated = existing.map { entry ->
-            if (entry.key == key) {
-                entry.copy(
-                    lastErrorAt = System.currentTimeMillis(),
-                    errorCount = entry.errorCount + 1
-                )
-            } else entry
+        synchronized(ioLock) {
+            val existing = getAllApiKeys().map { it.toStoredApiKey() }
+            val updated = existing.map { entry ->
+                if (entry.key == key) {
+                    entry.copy(
+                        lastErrorAt = System.currentTimeMillis(),
+                        errorCount = entry.errorCount + 1
+                    )
+                } else entry
+            }
+            saveAllKeysInternal(updated)
         }
-        saveAllKeysInternal(updated)
     }
     
     /**

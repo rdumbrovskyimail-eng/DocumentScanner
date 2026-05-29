@@ -8,6 +8,7 @@ import timber.log.Timber
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.TimeUnit
 import kotlin.system.exitProcess
 
 /**
@@ -178,8 +179,13 @@ class CrashLogHandler private constructor(
                 )
             )
 
+            val finished = process.waitFor(2, TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroy()
+                return "(Logcat capture timed out)"
+            }
+
             val output = process.inputStream.bufferedReader().use { it.readText() }
-            process.waitFor()
             
             output.ifBlank { "(No logcat output captured)" }
             

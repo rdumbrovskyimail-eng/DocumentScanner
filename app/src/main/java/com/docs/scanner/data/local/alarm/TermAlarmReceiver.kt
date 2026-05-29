@@ -143,13 +143,15 @@ class TermAlarmReceiver : BroadcastReceiver() {
                 .setVibrate(longArrayOf(0, 500, 250, 500, 250, 500))
                 .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
                 .setOngoing(true)
-            if (canFullScreen) builder.setFullScreenIntent(pendingIntent, true)
-                // Добавление кнопки быстрого отключения на шторке
+                .setTimeoutAfter(60000)
                 .addAction(
                     android.R.drawable.ic_menu_close_clear_cancel,
                     "Dismiss",
                     dismissPendingIntent
                 )
+            if (canFullScreen) {
+                builder.setFullScreenIntent(pendingIntent, true)
+            }
         }
         
         try {
