@@ -64,10 +64,14 @@ class DriveRepositoryImpl @Inject constructor(
         val downloaded = driveService.downloadBackup(fileId, destDir = context.getExternalFilesDir(null)?.absolutePath ?: context.filesDir.absolutePath) { _, _ -> }
             .getOrElse { return Result.Error(it.toException()) }
 
-        // Default behavior for legacy UI: replace DB (merge=false)
-        return when (val res = backupRepository.restoreFromLocal(downloaded, merge = false)) {
-            is com.docs.scanner.domain.core.DomainResult.Success -> Result.Success(Unit)
-            is com.docs.scanner.domain.core.DomainResult.Failure -> Result.Error(res.error.toException())
+        return try {
+            // Default behavior for legacy UI: replace DB (merge=false)
+            when (val res = backupRepository.restoreFromLocal(downloaded, merge = false)) {
+                is com.docs.scanner.domain.core.DomainResult.Success -> Result.Success(Unit)
+                is com.docs.scanner.domain.core.DomainResult.Failure -> Result.Error(res.error.toException())
+            }
+        } finally {
+            java.io.File(downloaded).delete()
         }
     }
 

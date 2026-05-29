@@ -16,7 +16,6 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.docs.scanner.data.local.database.dao.*
 import com.docs.scanner.data.local.database.entity.*
-import com.docs.scanner.domain.core.ModelConstants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer

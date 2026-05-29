@@ -124,7 +124,7 @@ class SearchViewModel @Inject constructor(
         val index = text.indexOf(query, ignoreCase = true)
         if (index == -1) return Pair(text, emptyList())
         
-        // Return context around match (50 chars before/after)
+        // Return context around the first match (50 chars before/after)
         val start = maxOf(0, index - 50)
         val end = minOf(text.length, index + query.length + 50)
         
@@ -133,13 +133,14 @@ class SearchViewModel @Inject constructor(
         
         val snippet = prefix + text.substring(start, end) + suffix
         
+        // Find all occurrences of the query within the snippet
         val ranges = mutableListOf<IntRange>()
         var searchIndex = 0
         while (searchIndex < snippet.length) {
             val matchIndex = snippet.indexOf(query, searchIndex, ignoreCase = true)
             if (matchIndex == -1) break
             ranges.add(matchIndex until (matchIndex + query.length))
-            searchIndex = matchIndex + maxOf(1, query.length)
+            searchIndex = matchIndex + query.length
         }
         
         return Pair(snippet, ranges)

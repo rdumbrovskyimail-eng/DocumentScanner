@@ -59,7 +59,8 @@ object ImageUtils {
         context: Context,
         sourceUri: Uri,
         subDir: String = TEMP_IMAGES_DIR,
-        maxDimension: Int = MAX_IMAGE_DIMENSION
+        maxDimension: Int = MAX_IMAGE_DIMENSION,
+        clearExisting: Boolean = false
     ): Uri = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         
         Timber.d("$TAG: Copying image from $sourceUri")
@@ -70,7 +71,9 @@ object ImageUtils {
         }
         
         // 2. Очищаем старые файлы в этой директории
-        clearDirectory(outputDir, keepLast = 0)
+        if (clearExisting) {
+            clearDirectory(outputDir, keepLast = 0)
+        }
         
         // 3. Создаём выходной файл
         val outputFile = File(outputDir, "image_${System.currentTimeMillis()}.jpg")
@@ -78,7 +81,7 @@ object ImageUtils {
         try {
             // 4 & 5. Читаем только размеры и вычисляем inSampleSize
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            context.contentResolver.openInputStream(sourceUri)?.use { stream ->
+            openInputStreamForUri(context, sourceUri).use { stream ->
                 BitmapFactory.decodeStream(stream, null, options)
             }
             options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight, maxDimension, maxDimension)
@@ -86,13 +89,13 @@ object ImageUtils {
             options.inPreferredConfig = Bitmap.Config.ARGB_8888
 
             // Декодируем уменьшенную версию
-            val bitmap = context.contentResolver.openInputStream(sourceUri)?.use { stream ->
+            val bitmap = openInputStreamForUri(context, sourceUri).use { stream ->
                 BitmapFactory.decodeStream(stream, null, options)
             } ?: throw IOException("Failed to decode bitmap from URI: $sourceUri")
 
             // 6. Читаем EXIF напрямую из потока и корректируем ориентацию
             val rotatedBitmap = try {
-                context.contentResolver.openInputStream(sourceUri)?.use { stream ->
+                openInputStreamForUri(context, sourceUri).use { stream ->
                     val exif = ExifInterface(stream)
                     val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
                     val matrix = Matrix()
@@ -143,7 +146,8 @@ object ImageUtils {
         context = context,
         sourceUri = sourceUri,
         subDir = OCR_TEST_DIR,
-        maxDimension = MAX_IMAGE_DIMENSION
+        maxDimension = MAX_IMAGE_DIMENSION,
+        clearExisting = true
     )
 
     /**

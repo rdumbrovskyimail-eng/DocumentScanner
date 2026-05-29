@@ -164,7 +164,7 @@ class GeminiKeyManager @Inject constructor(
                 return result
             } catch (e: HttpException) {
                 lastError = e
-                handleHttpError(e, key, attempt)
+                handleHttpError(e, key, attempt, actualRetries)
             } catch (e: Exception) {
                 lastError = e
                 Timber.e(e, "$TAG: Unexpected error")
@@ -175,7 +175,7 @@ class GeminiKeyManager @Inject constructor(
         throw lastError ?: IllegalStateException("All API key attempts exhausted")
     }
     
-    private suspend fun handleHttpError(e: HttpException, key: String, attempt: Int) {
+    private suspend fun handleHttpError(e: HttpException, key: String, attempt: Int, maxRetries: Int) {
         when (e.code()) {
             429 -> {
                 // Rate limit - switch immediately, no backoff needed
@@ -189,8 +189,10 @@ class GeminiKeyManager @Inject constructor(
             }
             in 500..599 -> {
                 // Server error - might be temporary
-                Timber.w("$TAG: Server error (${e.code()}), will retry")
-                delay(backoffForAttempt(attempt))
+                if (attempt < maxRetries - 1) {
+                    Timber.w("$TAG: Server error (${e.code()}), will retry")
+                    delay(backoffForAttempt(attempt))
+                }
                 reportErrorAndGetNext(key, e)
             }
             else -> {
