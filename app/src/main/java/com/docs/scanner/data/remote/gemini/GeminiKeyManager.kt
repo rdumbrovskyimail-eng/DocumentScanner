@@ -139,7 +139,7 @@ class GeminiKeyManager @Inject constructor(
         var backoffMs = INITIAL_BACKOFF_MS
         
         val keyCount = keyStorage.getAllApiKeys().size.coerceAtLeast(1)
-        val actualRetries = maxOf(maxRetries, keyCount)
+        val actualRetries = maxOf(maxRetries, keyCount).coerceAtMost(5)
         repeat(actualRetries) { attempt ->
             val key = getActiveKey()
             
@@ -190,6 +190,7 @@ class GeminiKeyManager @Inject constructor(
             in 500..599 -> {
                 // Server error - might be temporary
                 Timber.w("$TAG: Server error (${e.code()}), will retry")
+                delay(backoffForAttempt(attempt))
                 reportErrorAndGetNext(key, e)
             }
             else -> {
@@ -197,6 +198,11 @@ class GeminiKeyManager @Inject constructor(
                 reportErrorAndGetNext(key, e)
             }
         }
+    }
+
+    private fun backoffForAttempt(attempt: Int): Long {
+        val factor = 1L shl attempt.coerceAtMost(30)
+        return (INITIAL_BACKOFF_MS * factor).coerceAtMost(MAX_BACKOFF_MS)
     }
     
     private fun classifyError(error: Throwable): ErrorType {
