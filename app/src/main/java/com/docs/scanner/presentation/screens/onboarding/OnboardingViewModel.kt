@@ -27,13 +27,6 @@ class OnboardingViewModel @Inject constructor(
         _apiKey.value = key
     }
 
-    fun checkFirstLaunch(onNotFirstLaunch: () -> Unit) {
-        viewModelScope.launch {
-            val completed = settingsRepository.isOnboardingCompleted()
-            if (completed) onNotFirstLaunch()
-        }
-    }
-
     fun saveAndContinue(onComplete: () -> Unit) {
         viewModelScope.launch {
             _isLoading.value = true

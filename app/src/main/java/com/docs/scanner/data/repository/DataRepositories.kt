@@ -1975,26 +1975,38 @@ class BackupRepositoryImpl @Inject constructor(
                 val backupFile = File(path)
                 if (!backupFile.exists()) throw FileNotFoundException("Backup file not found: $path")
                 
+                var manifest: BackupManifest? = null
+                var tempDbFile: File? = null
                 var imagesRestored = 0
+                
+                // Проход 1: Сначала находим и парсим манифест
                 ZipInputStream(BufferedInputStream(FileInputStream(backupFile))).use { zip ->
-                    var manifest: BackupManifest? = null
                     var entry: ZipEntry?
-                    
+                    while (zip.nextEntry.also { entry = it } != null) {
+                        if (entry!!.name == "manifest.json") {
+                            val content = zip.bufferedReader().use { it.readText() }
+                            manifest = jsonSerializer.decode<BackupManifest>(content)
+                            break
+                        }
+                        zip.closeEntry()
+                    }
+                }
+                
+                val activeManifest = manifest ?: throw Exception("Invalid backup: missing manifest.json")
+                
+                // Проход 2: Извлекаем базу во временный файл и копируем документы
+                ZipInputStream(BufferedInputStream(FileInputStream(backupFile))).use { zip ->
+                    var entry: ZipEntry?
                     while (zip.nextEntry.also { entry = it } != null) {
                         val name = entry!!.name
                         when {
-                            name == "manifest.json" -> {
-                                val content = zip.bufferedReader().use { it.readText() }
-                                manifest = jsonSerializer.decode<BackupManifest>(content)
-                            }
                             name == "database.db" && !merge -> {
-                                if (manifest == null) throw Exception("Manifest missing")
-                                database.close()
                                 val dbPath = context.getDatabasePath(DB_NAME)
-                                dbPath.parentFile?.mkdirs()
-                                FileOutputStream(dbPath).use { zip.copyTo(it) }
+                                tempDbFile = File(dbPath.parentFile, "$DB_NAME.restore.tmp")
+                                tempDbFile!!.parentFile?.mkdirs()
+                                FileOutputStream(tempDbFile!!).use { zip.copyTo(it) }
                             }
-                            name.startsWith("documents/") && manifest != null -> {
+                            name.startsWith("documents/") -> {
                                 val file = File(context.filesDir, name)
                                 file.parentFile?.mkdirs()
                                 FileOutputStream(file).use { zip.copyTo(it) }
@@ -2003,9 +2015,42 @@ class BackupRepositoryImpl @Inject constructor(
                         }
                         zip.closeEntry()
                     }
-                    if (manifest == null) throw Exception("Invalid backup: missing manifest")
                 }
-                RestoreResult(0, 0, 0, imagesRestored, emptyList())
+                
+                // Применяем базу данных (безопасная транзакционная замена)
+                tempDbFile?.let { tmp ->
+                    val dbPath = context.getDatabasePath(DB_NAME)
+                    database.close()
+                    AppDatabase.resetInstance() // Сбрасываем синглтон базы данных
+                    
+                    val rollbackFile = File(dbPath.parentFile, "$DB_NAME.rollback")
+                    if (dbPath.exists()) dbPath.copyTo(rollbackFile, overwrite = true)
+                    
+                    try {
+                        // Удаляем старые WAL/SHM файлы перед заменой базы
+                        File(dbPath.path + "-wal").delete()
+                        File(dbPath.path + "-shm").delete()
+                        
+                        if (!tmp.renameTo(dbPath)) {
+                            tmp.copyTo(dbPath, overwrite = true)
+                            tmp.delete()
+                        }
+                    } catch (e: Exception) {
+                        // Откат при ошибке записи
+                        if (rollbackFile.exists()) rollbackFile.copyTo(dbPath, overwrite = true)
+                        throw e
+                    } finally {
+                        rollbackFile.delete()
+                    }
+                }
+                
+                RestoreResult(
+                    foldersRestored = if (merge) 0 else 1, 
+                    recordsRestored = if (merge) 0 else 1, 
+                    documentsRestored = if (merge) 0 else imagesRestored, 
+                    imagesRestored = imagesRestored, 
+                    errors = if (merge) listOf("Merge is not supported, data replaced instead") else emptyList()
+                )
             }.toDomainResult()
         }
 

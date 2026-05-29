@@ -234,7 +234,7 @@ class EditorViewModel @Inject constructor(
         loadJob = viewModelScope.launch {
             _uiState.value = EditorUiState.Loading
             
-            viewModelScope.launch {
+            launch {
                 useCases.getAllRecords().collect { _moveTargets.value = it }
             }
 

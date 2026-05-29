@@ -169,7 +169,7 @@ abstract class AppDatabase : RoomDatabase() {
 
                 db.execSQL("""
                     CREATE VIRTUAL TABLE IF NOT EXISTS `analytics_translations_fts`
-                    USING FTS4(`translated_text` TEXT, `original_text` TEXT, content=`analytics_translations`)
+                    USING FTS4(`translated_text`, `original_text`, content=`analytics_translations`)
                 """.trimIndent())
 
                 // Room-style FTS content sync triggers (same naming pattern as documents_fts).
@@ -223,7 +223,7 @@ abstract class AppDatabase : RoomDatabase() {
 
                 db.execSQL("""
                     CREATE VIRTUAL TABLE IF NOT EXISTS `analytics_notes_fts`
-                    USING FTS4(`title` TEXT, `content` TEXT, content=`analytics_notes`)
+                    USING FTS4(`title`, `content`, content=`analytics_notes`)
                 """.trimIndent())
 
                 db.execSQL("""
@@ -274,7 +274,7 @@ abstract class AppDatabase : RoomDatabase() {
                     // Заполнить существующие записи дефолтным значением
                     db.execSQL("""
                         UPDATE translation_cache 
-                        SET model = 'google_mlkit' 
+                        SET model = 'gemini-2.5-flash-lite' 
                         WHERE model IS NULL
                     """)
                     Timber.d("✅ Updated existing rows with default model")
@@ -287,7 +287,7 @@ abstract class AppDatabase : RoomDatabase() {
                             translated_text TEXT NOT NULL,
                             source_language TEXT NOT NULL,
                             target_language TEXT NOT NULL,
-                            model TEXT NOT NULL DEFAULT 'google_mlkit',
+                            model TEXT NOT NULL DEFAULT 'gemini-2.5-flash-lite',
                             timestamp INTEGER NOT NULL
                         )
                     """)
@@ -299,7 +299,7 @@ abstract class AppDatabase : RoomDatabase() {
                         )
                         SELECT cache_key, original_text, translated_text,
                                source_language, target_language,
-                               COALESCE(model, 'google_mlkit'),
+                               COALESCE(model, 'gemini-2.5-flash-lite'),
                                timestamp
                         FROM translation_cache
                     """)
