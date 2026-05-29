@@ -70,6 +70,8 @@ class SearchViewModel @Inject constructor(
 
         _uiState.value = SearchUiState.Searching
 
+        var historySaved = false
+
         try {
             useCases.documents.search(query)
                 .catch { e ->
@@ -80,24 +82,27 @@ class SearchViewModel @Inject constructor(
                 }
                 .collect { documents ->
                     // Persist query to history (best-effort).
-                    useCases.documents.saveSearchQuery(query, documents.size)
+                    if (!historySaved) {
+                        useCases.documents.saveSearchQuery(query, documents.size)
+                        historySaved = true
+                    }
 
                     _uiState.value = if (documents.isEmpty()) {
                         SearchUiState.NoResults(query)
                     } else {
                         // Map to SearchResult with highlighting info
                         val results = documents.take(50).map { doc ->
+                            val matchedText = doc.originalText ?: doc.translatedText ?: ""
+                            val (snippet, matchRanges) = buildSnippet(matchedText, query)
                             SearchResult(
                                 documentId = doc.id.value,
                                 recordId = doc.recordId.value,
                                 recordName = doc.recordName ?: "Untitled",
                                 folderName = doc.folderName ?: "Documents",
-                                matchedText = doc.originalText ?: doc.translatedText ?: "",
+                                matchedText = matchedText,
                                 isOriginal = doc.originalText?.contains(query, ignoreCase = true) == true,
-                                highlightedText = highlightMatch(
-                                    text = doc.originalText ?: doc.translatedText ?: "",
-                                    query = query
-                                )
+                                highlightedText = snippet,
+                                matchRanges = matchRanges
                             )
                         }
                         SearchUiState.Success(results, query)
@@ -113,12 +118,11 @@ class SearchViewModel @Inject constructor(
     }
 
     /**
-     * Highlight matched text for UI display.
-     * Returns text with match position for highlighting.
+     * Build snippet and find all match ranges for UI display.
      */
-    private fun highlightMatch(text: String, query: String): String {
+    private fun buildSnippet(text: String, query: String): Pair<String, List<IntRange>> {
         val index = text.indexOf(query, ignoreCase = true)
-        if (index == -1) return text
+        if (index == -1) return Pair(text, emptyList())
         
         // Return context around match (50 chars before/after)
         val start = maxOf(0, index - 50)
@@ -127,7 +131,18 @@ class SearchViewModel @Inject constructor(
         val prefix = if (start > 0) "..." else ""
         val suffix = if (end < text.length) "..." else ""
         
-        return prefix + text.substring(start, end) + suffix
+        val snippet = prefix + text.substring(start, end) + suffix
+        
+        val ranges = mutableListOf<IntRange>()
+        var searchIndex = 0
+        while (searchIndex < snippet.length) {
+            val matchIndex = snippet.indexOf(query, searchIndex, ignoreCase = true)
+            if (matchIndex == -1) break
+            ranges.add(matchIndex until (matchIndex + query.length))
+            searchIndex = matchIndex + maxOf(1, query.length)
+        }
+        
+        return Pair(snippet, ranges)
     }
 
     /**
@@ -180,5 +195,6 @@ data class SearchResult(
     val folderName: String,
     val matchedText: String,
     val isOriginal: Boolean,
-    val highlightedText: String
+    val highlightedText: String,
+    val matchRanges: List<IntRange>
 )
