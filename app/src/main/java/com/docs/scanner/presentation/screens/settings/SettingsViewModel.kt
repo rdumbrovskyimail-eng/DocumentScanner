@@ -874,7 +874,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    fun getAvailableGeminiModels(): List<GeminiModelOption> {
+    suspend fun getAvailableGeminiModels(): List<GeminiModelOption> {
         return modelManager.getAvailableModels()
     }
 
@@ -905,7 +905,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
     
-    fun getAvailableTranslationModels(): List<GeminiModelOption> {
+    suspend fun getAvailableTranslationModels(): List<GeminiModelOption> {
         return modelManager.getAvailableModels()
     }
 
