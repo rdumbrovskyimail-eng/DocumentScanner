@@ -1,9 +1,12 @@
 package com.docs.scanner.presentation.navigation
 
 import android.util.Log
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.navigation.NavHostController
+import androidx.navigation.NavOptionsBuilder
 import androidx.navigation.NavType
+import kotlinx.coroutines.launch
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -28,15 +31,23 @@ private const val TAG = "NavGraph"
 @Composable
 fun NavGraph(
     navController: NavHostController = rememberNavController(),
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     initialOpenTermId: Long? = null,
     onOpenTermConsumed: () -> Unit = {},
     isOnboardingDone: Boolean = false
 ) {
+    val scope = rememberCoroutineScope()
+    val notifyNavError: (String) -> Unit = { message ->
+        scope.launch {
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
     LaunchedEffect(initialOpenTermId) {
         val id = initialOpenTermId
         if (id != null && id > 0) {
-            safeNavigate(navController) {
-                navigate(Screen.Terms.createRoute(id))
+            safeNavigate(navController, notifyNavError) {
+                navigateSingleTop(Screen.Terms.createRoute(id))
             }
             onOpenTermConsumed()
         }
@@ -49,7 +60,7 @@ fun NavGraph(
         composable(Screen.Onboarding.route) {
             OnboardingScreen(
                 onComplete = {
-                    navController.navigate(Screen.Folders.route) {
+                    navController.navigateSingleTop(Screen.Folders.route) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }
                 }
@@ -59,28 +70,28 @@ fun NavGraph(
         composable(Screen.Folders.route) {
             FoldersScreen(
                 onFolderClick = { folderId ->
-                    safeNavigate(navController) {
-                        navigate(Screen.Records.createRoute(folderId))
+                    safeNavigate(navController, notifyNavError) {
+                        navigateSingleTop(Screen.Records.createRoute(folderId))
                     }
                 },
                 onSettingsClick = {
-                    navController.navigate(Screen.Settings.route)
+                    navController.navigateSingleTop(Screen.Settings.route)
                 },
                 onSearchClick = {
-                    navController.navigate(Screen.Search.route)
+                    navController.navigateSingleTop(Screen.Search.route)
                 },
                 onTermsClick = {
-                    navController.navigate(Screen.Terms.route)
+                    navController.navigateSingleTop(Screen.Terms.createRoute())
                 },
                 onCameraClick = {
-                    navController.navigate(Screen.Camera.route)
+                    navController.navigateSingleTop(Screen.Camera.route)
                 },
                 onAnalyticsClick = {
-                    navController.navigate(Screen.AnalyticsHub.route)
+                    navController.navigateSingleTop(Screen.AnalyticsHub.route)
                 },
                 onQuickScanComplete = { recordId ->
-                    safeNavigate(navController) {
-                        navigate(Screen.Editor.createRoute(recordId))
+                    safeNavigate(navController, notifyNavError) {
+                        navigateSingleTop(Screen.Editor.createRoute(recordId))
                     }
                 }
             )
@@ -109,8 +120,8 @@ fun NavGraph(
                 folderId = folderId,
                 onBackClick = { navController.popBackStack() },
                 onRecordClick = { recordId ->
-                    safeNavigate(navController) {
-                        navigate(Screen.Editor.createRoute(recordId))
+                    safeNavigate(navController, notifyNavError) {
+                        navigateSingleTop(Screen.Editor.createRoute(recordId))
                     }
                 }
             )
@@ -148,13 +159,13 @@ fun NavGraph(
                 highlightDocumentId = highlightDocumentId,
                 onBackClick = { navController.popBackStack() },
                 onImageClick = { documentId ->
-                    safeNavigate(navController) {
-                        navigate(Screen.ImageViewer.createRoute(documentId))
+                    safeNavigate(navController, notifyNavError) {
+                        navigateSingleTop(Screen.ImageViewer.createRoute(documentId))
                     }
                 },
                 onCameraClick = {
-                    safeNavigate(navController) {
-                        navigate(Screen.Camera.route)
+                    safeNavigate(navController, notifyNavError) {
+                        navigateSingleTop(Screen.Camera.route)
                     }
                 }
             )
@@ -163,8 +174,8 @@ fun NavGraph(
         composable(Screen.Camera.route) {
             CameraScreen(
                 onScanComplete = { recordId ->
-                    safeNavigate(navController) {
-                        navigate(Screen.Editor.createRoute(recordId)) {
+                    safeNavigate(navController, notifyNavError) {
+                        navigateSingleTop(Screen.Editor.createRoute(recordId)) {
                             popUpTo(Screen.Folders.route) { inclusive = false }
                         }
                     }
@@ -177,8 +188,8 @@ fun NavGraph(
             SearchScreen(
                 onBackClick = { navController.popBackStack() },
                 onDocumentClick = { recordId, documentId ->
-                    safeNavigate(navController) {
-                        navigate(Screen.Editor.createRoute(recordId, documentId))
+                    safeNavigate(navController, notifyNavError) {
+                        navigateSingleTop(Screen.Editor.createRoute(recordId, documentId))
                     }
                 }
             )
@@ -237,13 +248,13 @@ fun NavGraph(
             AnalyticsHubScreen(
                 onBackClick = { navController.popBackStack() },
                 onOpenArchive = {
-                    safeNavigate(navController) {
-                        navigate(Screen.TranslationsArchive.route)
+                    safeNavigate(navController, notifyNavError) {
+                        navigateSingleTop(Screen.TranslationsArchive.route)
                     }
                 },
                 onOpenNotes = {
-                    safeNavigate(navController) {
-                        navigate(Screen.AnalyticsNotes.route)
+                    safeNavigate(navController, notifyNavError) {
+                        navigateSingleTop(Screen.AnalyticsNotes.route)
                     }
                 }
             )
@@ -301,5 +312,18 @@ private fun safeNavigate(
         Log.e(TAG, "Unexpected navigation error", e)
         onError?.invoke("Navigation failed")
         false
+    }
+}
+
+/**
+ * Extension to navigate with launchSingleTop = true to prevent double-tap issues.
+ */
+private fun NavHostController.navigateSingleTop(
+    route: String,
+    builder: (NavOptionsBuilder.() -> Unit)? = null
+) {
+    navigate(route) {
+        launchSingleTop = true
+        builder?.invoke(this)
     }
 }
