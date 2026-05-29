@@ -327,18 +327,18 @@ class AlarmScheduler @Inject constructor(
         const val EXTRA_NOTIFICATION_OFFSET = "notification_offset"
         
         // Шаблоны сообщений
-        private const val MSG_DAYS_2 = "2 days until: %s"
-        private const val MSG_DAY_1 = "1 day until: %s"
-        private const val MSG_TOMORROW = "Tomorrow: %s"
-        private const val MSG_HOURS_12 = "12 hours until: %s"
-        private const val MSG_HOURS_5 = "5 hours until: %s"
-        private const val MSG_HOURS_3 = "3 hours until: %s"
-        private const val MSG_HOUR_1 = "1 hour until: %s"
-        private const val MSG_MIN_60 = "60 minutes until: %s"
-        private const val MSG_MIN_30 = "30 minutes until: %s"
-        private const val MSG_MIN_15 = "15 minutes until: %s"
-        private const val MSG_NOW = "⏰ NOW: %s"
-        private const val MSG_REMINDER = "⏰ REMINDER: %s"
+        private const val MSG_DAYS_2 = "Осталось 2 дня до: %s"
+        private const val MSG_DAY_1 = "Остался 1 день до: %s"
+        private const val MSG_TOMORROW = "Завтра дедлайн: %s"
+        private const val MSG_HOURS_12 = "Осталось 12 часов до: %s"
+        private const val MSG_HOURS_5 = "Осталось 5 часов до: %s"
+        private const val MSG_HOURS_3 = "Осталось 3 часа до: %s"
+        private const val MSG_HOUR_1 = "Остался 1 час до: %s"
+        private const val MSG_MIN_60 = "Осталось 60 минут до: %s"
+        private const val MSG_MIN_30 = "Осталось 30 минут до: %s"
+        private const val MSG_MIN_15 = "Осталось 15 минут до: %s"
+        private const val MSG_NOW = "⏰ СРОК ИСТЕК: %s"
+        private const val MSG_REMINDER = "⏰ СРОЧНОЕ НАПОМИНАНИЕ: %s"
 
         // ✅ Единый генератор Request Code для планирования и отмены
         fun getRequestCode(termId: Long, offset: Int): Int {
