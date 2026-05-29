@@ -199,12 +199,7 @@ fun NavGraph(
 
         composable(Screen.Settings.route) {
             SettingsScreen(
-                onBackClick = { navController.popBackStack() },
-                onDebugClick = {
-                    safeNavigate(navController) {
-                        navigate(Screen.Debug.route)
-                    }
-                }
+                onBackClick = { navController.popBackStack() }
             )
         }
 

@@ -1,11 +1,5 @@
 /*
  * SettingsScreen.kt
- * Version: 21.0.0 - TESTING TAB DELEGATION (2026)
- * 
- * ✅ CRITICAL FIX:
- * - Removed duplicate TestingTab() function
- * - Now uses TestingTab from separate file
- * - Removed duplicate OcrTestCard and QuickStat
  */
 
 package com.docs.scanner.presentation.screens.settings
