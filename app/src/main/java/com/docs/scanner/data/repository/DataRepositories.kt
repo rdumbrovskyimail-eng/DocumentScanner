@@ -1309,7 +1309,7 @@ class SettingsRepositoryImpl @Inject constructor(
                 emit(ThemeMode.SYSTEM)
             }
 
-    override fun observeAutoTranslateEnabled(): Flow<Boolean> = flowOf(true)
+    override fun observeAutoTranslateEnabled(): Flow<Boolean> = settingsDataStore.autoTranslate
 
     override suspend fun getApiKey(): String? = 
         withContext(Dispatchers.IO) {
@@ -1391,7 +1391,7 @@ class SettingsRepositoryImpl @Inject constructor(
             Timber.d("🎨 Theme mode: $mode")
         }.toDomainResult()
 
-    override suspend fun isAutoTranslateEnabled(): Boolean = true
+    override suspend fun isAutoTranslateEnabled(): Boolean = settingsDataStore.autoTranslate.first()
 
     override suspend fun setAutoTranslateEnabled(enabled: Boolean): DomainResult<Unit> = 
         runCatching {

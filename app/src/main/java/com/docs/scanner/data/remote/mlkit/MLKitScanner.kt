@@ -65,6 +65,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -1167,15 +1168,3 @@ private fun android.graphics.Rect.toDomain(): BoundingBox = BoundingBox(
     bottom = bottom
 )
 
-private suspend fun <T> com.google.android.gms.tasks.Task<T>.await(): T =
-    suspendCancellableCoroutine { cont ->
-        addOnSuccessListener {
-            if (cont.isActive) cont.resume(it)
-        }
-        addOnFailureListener {
-            if (cont.isActive) cont.resumeWithException(it)
-        }
-        addOnCanceledListener {
-            cont.cancel()
-        }
-    }

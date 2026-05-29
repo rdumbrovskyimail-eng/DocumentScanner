@@ -37,7 +37,7 @@ class CameraViewModel @Inject constructor(
     val uiState: StateFlow<CameraUiState> = _uiState.asStateFlow()
 
     // ✅ FIX: SharedFlow for one-time navigation events
-    private val _navigationEvent = MutableSharedFlow<NavigationEvent>()
+    private val _navigationEvent = MutableSharedFlow<NavigationEvent>(extraBufferCapacity = 1)
     val navigationEvent: SharedFlow<NavigationEvent> = _navigationEvent.asSharedFlow()
 
     private val _previewPages = MutableStateFlow<List<Uri>>(emptyList())
