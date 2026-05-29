@@ -131,6 +131,13 @@ class SettingsViewModel @Inject constructor(
         settingsDataStore.cacheTtlDays
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 30)
 
+    val imageQuality: StateFlow<ImageQuality> =
+        settingsDataStore.imageQuality
+            .map { 
+                runCatching { ImageQuality.valueOf(it.uppercase()) }.getOrDefault(ImageQuality.HIGH)
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ImageQuality.HIGH)
+
     private val _storageUsage = MutableStateFlow<StorageUsage?>(null)
     val storageUsage: StateFlow<StorageUsage?> = _storageUsage.asStateFlow()
 
@@ -526,11 +533,22 @@ class SettingsViewModel @Inject constructor(
     fun clearTempFiles() {
         viewModelScope.launch {
             try {
-                val deleted = fileRepository.clearTempFiles()
-                _saveMessage.value = "✓ Cleared $deleted temp files"
+                _isSaving.value = true
+                
+                // Очищаем временные файлы изображений из кэша
+                val deletedFiles = fileRepository.clearTempFiles()
+                
+                // 🧠 Очищаем базу данных Room с кэшированными переводами
+                useCases.translation.clearCache()
+                
+                _saveMessage.value = "✓ Временные файлы ($deletedFiles) и кэш переводов очищены!"
                 refreshStorageUsage()
+                refreshCacheStats()
             } catch (e: Exception) {
-                _saveMessage.value = "✗ Failed to clear temp files: ${e.message}"
+                Timber.e(e, "Failed to clear temp files & translation cache")
+                _saveMessage.value = "✗ Ошибка очистки: ${e.message}"
+            } finally {
+                _isSaving.value = false
             }
         }
     }
