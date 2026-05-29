@@ -16,6 +16,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.docs.scanner.data.local.preferences.GeminiModelManager
+import kotlinx.coroutines.CoroutineScope
 import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.data.remote.gemini.GeminiApi
 import com.docs.scanner.domain.core.Document
@@ -53,6 +54,7 @@ class EditorViewModel @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val modelManager: GeminiModelManager,
     private val geminiApi: GeminiApi,
+    private val appScope: CoroutineScope,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -63,6 +65,7 @@ class EditorViewModel @Inject constructor(
 
     private val recordId: Long = savedStateHandle.get<Long>("recordId") ?: 0L
     private var reorderJob: kotlinx.coroutines.Job? = null
+    private var loadJob: kotlinx.coroutines.Job? = null
 
     // ════════════════════════════════════════════════════════════════════
     // MANAGERS
@@ -213,8 +216,8 @@ class EditorViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        viewModelScope.launch {
-            inlineEditingManager.saveAll()
+        appScope.launch {
+            runCatching { inlineEditingManager.saveAll() }
             inlineEditingManager.cancelAll()
         }
         _shareEvent.close()
@@ -227,46 +230,31 @@ class EditorViewModel @Inject constructor(
     // ════════════════════════════════════════════════════════════════════
 
     private fun loadData() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _uiState.value = EditorUiState.Loading
-
             try {
-                val record = useCases.getRecordById(recordId)
-                if (record == null) {
+                val record = useCases.getRecordById(recordId) ?: run {
                     _uiState.value = EditorUiState.Error("Record not found")
                     return@launch
                 }
-
-                val folder = useCases.getFolderById(record.folderId.value)
-                val folderName = folder?.name ?: ""
-
-                launch {
-                    useCases.getRecords(record.folderId.value)
-                        .catch { /* ignore */ }
-                        .collect { records ->
-                            _moveTargets.value = records.filter { it.id.value != recordId }
-                        }
-                }
-
-                useCases.getDocuments(recordId)
-                    .catch { e ->
-                        _uiState.value = EditorUiState.Error("Failed to load documents: ${e.message}")
+                val folderName = useCases.getFolderById(record.folderId.value)?.name ?: ""
+                kotlinx.coroutines.coroutineScope {
+                    launch {
+                        useCases.getRecords(record.folderId.value)
+                            .catch { }
+                            .collect { _moveTargets.value = it.filter { r -> r.id.value != recordId } }
                     }
-                    .collect { documents ->
-                        val currentRecord = (_uiState.value as? EditorUiState.Success)?.record ?: record
-
-                        _uiState.value = EditorUiState.Success(
-                            record = currentRecord,
-                            folderName = folderName,
-                            documents = documents.sortedBy { it.position }
-                        )
-
-                        if (_selectionState.value.isActive) {
-                            _selectionState.value = _selectionState.value.copy(
-                                mode = SelectionMode.Active(documents.size)
+                    useCases.getDocuments(recordId)
+                        .catch { e -> _uiState.value = EditorUiState.Error("Failed to load documents: ${e.message}") }
+                        .collect { docs ->
+                            _uiState.value = EditorUiState.Success(
+                                record = record,
+                                folderName = folderName,
+                                documents = docs.sortedBy { it.position }
                             )
                         }
-                    }
+                }
             } catch (e: Exception) {
                 _uiState.value = EditorUiState.Error("Failed to load data: ${e.message}")
             }
@@ -388,7 +376,6 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.deleteDocument(documentId)) {
                 is DomainResult.Success<*> -> { /* Auto-refresh from Flow */ }
                 is DomainResult.Failure<*> -> sendError("Failed to delete: ${result.error.message}")
-                else -> { /* Unreachable */ }
             }
         }
     }
@@ -454,7 +441,6 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateRecord(updated)) {
                 is DomainResult.Success<*> -> loadRecord()
                 is DomainResult.Failure<*> -> sendError("Failed to update: ${result.error.message}")
-                else -> { /* Unreachable */ }
             }
         }
     }
@@ -468,7 +454,6 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateRecord(updated)) {
                 is DomainResult.Success<*> -> loadRecord()
                 is DomainResult.Failure<*> -> sendError("Failed to update: ${result.error.message}")
-                else -> { /* Unreachable */ }
             }
         }
     }
@@ -495,7 +480,6 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateRecord(updated)) {
                 is DomainResult.Success<*> -> Timber.d("✅ Tag '$t' added")
                 is DomainResult.Failure<*> -> sendError("Failed to add tag: ${result.error.message}")
-                else -> { /* Unreachable */ }
             }
         }
     }
@@ -514,7 +498,6 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateRecord(updated)) {
                 is DomainResult.Success<*> -> Timber.d("✅ Tag '$t' removed")
                 is DomainResult.Failure<*> -> sendError("Failed to remove tag: ${result.error.message}")
-                else -> { /* Unreachable */ }
             }
         }
     }
@@ -531,7 +514,6 @@ class EditorViewModel @Inject constructor(
             when (val result = useCases.updateRecord(updated)) {
                 is DomainResult.Success<*> -> { /* Auto-refresh */ }
                 is DomainResult.Failure<*> -> sendError("Failed to update languages: ${result.error.message}")
-                else -> { /* Unreachable */ }
             }
         }
     }
@@ -624,7 +606,6 @@ class EditorViewModel @Inject constructor(
                 sendError("Save failed: ${result.error.message}")
                 throw Exception(result.error.message)
             }
-            else -> { /* Unreachable */ }
         }
     }
 
@@ -670,22 +651,21 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch {
             val doc = useCases.getDocumentById(documentId) ?: return@launch
 
-            if (originalText != null && originalText != doc.originalText) {
-                addToHistory(documentId, TextEditField.OCR_TEXT, doc.originalText, originalText)
-            }
-            if (translatedText != null && translatedText != doc.translatedText) {
-                addToHistory(documentId, TextEditField.TRANSLATED_TEXT, doc.translatedText, translatedText)
-            }
-
             val updated = doc.copy(
                 originalText = originalText ?: doc.originalText,
                 translatedText = translatedText ?: doc.translatedText
             )
 
             when (val result = useCases.updateDocument(updated)) {
-                is DomainResult.Success<*> -> { /* Auto-refresh */ }
+                is DomainResult.Success<*> -> {
+                    if (originalText != null && originalText != doc.originalText) {
+                        addToHistory(documentId, TextEditField.OCR_TEXT, doc.originalText, originalText)
+                    }
+                    if (translatedText != null && translatedText != doc.translatedText) {
+                        addToHistory(documentId, TextEditField.TRANSLATED_TEXT, doc.translatedText, translatedText)
+                    }
+                }
                 is DomainResult.Failure<*> -> sendError("Failed to update: ${result.error.message}")
-                else -> { /* Unreachable */ }
             }
         }
     }
@@ -716,7 +696,6 @@ class EditorViewModel @Inject constructor(
                     is DomainResult.Failure<*> -> {
                         sendError("Failed to undo: ${result.error.message}")
                     }
-                    else -> { /* Unreachable */ }
                 }
             }
         }
@@ -875,7 +854,6 @@ class EditorViewModel @Inject constructor(
                     Timber.d("Moved document $documentId to record $targetRecordId")
                 }
                 is DomainResult.Failure<*> -> sendError("Failed to move: ${result.error.message}")
-                else -> { /* Unreachable */ }
             }
         }
     }
@@ -901,7 +879,6 @@ class EditorViewModel @Inject constructor(
                     clearProcessing()
                     sendError("OCR failed: ${result.error.message}")
                 }
-                else -> { /* Unreachable */ }
             }
         }
     }
@@ -938,7 +915,6 @@ class EditorViewModel @Inject constructor(
                     clearProcessing()
                     sendError("Translation failed: ${result.error.message}")
                 }
-                else -> { /* Unreachable */ }
             }
         }
     }
@@ -1039,9 +1015,10 @@ class EditorViewModel @Inject constructor(
                 when (val result = useCases.export.exportToPdf(docIds, outputPath)) {
                     is DomainResult.Success<*> -> {
                         clearProcessing()
+                        val path = result.data as? String ?: ""
                         _shareEvent.send(
                             ShareEvent.File(
-                                path = result.data as String,
+                                path = path,
                                 mimeType = "application/pdf",
                                 fileName = "${currentState.record.name}.pdf"
                             )
@@ -1051,7 +1028,6 @@ class EditorViewModel @Inject constructor(
                         clearProcessing()
                         sendError("PDF generation failed: ${result.error.message}")
                     }
-                    else -> { /* Unreachable */ }
                 }
             } catch (e: Exception) {
                 clearProcessing()
@@ -1073,9 +1049,10 @@ class EditorViewModel @Inject constructor(
                 when (val result = useCases.export.shareDocuments(docIds, asPdf = false)) {
                     is DomainResult.Success<*> -> {
                         clearProcessing()
+                        val path = result.data as? String ?: ""
                         _shareEvent.send(
                             ShareEvent.File(
-                                path = result.data as String,
+                                path = path,
                                 mimeType = "application/zip",
                                 fileName = "${currentState.record.name}.zip"
                             )
@@ -1085,7 +1062,6 @@ class EditorViewModel @Inject constructor(
                         clearProcessing()
                         sendError("ZIP creation failed: ${result.error.message}")
                     }
-                    else -> { /* Unreachable */ }
                 }
             } catch (e: Exception) {
                 clearProcessing()
@@ -1191,11 +1167,6 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch {
             val doc = useCases.getDocumentById(documentId) ?: return@launch
 
-            val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
-            val previousValue = if (isOcrText) doc.originalText else doc.translatedText
-
-            addToHistory(documentId, field, previousValue, pastedText)
-
             val updated = if (isOcrText) {
                 doc.copy(originalText = pastedText)
             } else {
@@ -1203,9 +1174,13 @@ class EditorViewModel @Inject constructor(
             }
 
             when (val result = useCases.updateDocument(updated)) {
-                is DomainResult.Success<*> -> Timber.d("Pasted text to document $documentId")
+                is DomainResult.Success<*> -> {
+                    val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
+                    val previousValue = if (isOcrText) doc.originalText else doc.translatedText
+                    addToHistory(documentId, field, previousValue, pastedText)
+                    Timber.d("Pasted text to document $documentId")
+                }
                 is DomainResult.Failure<*> -> sendError("Failed to paste: ${result.error.message}")
-                else -> { /* Unreachable */ }
             }
         }
     }
@@ -1233,29 +1208,24 @@ class EditorViewModel @Inject constructor(
                         sendError("AI rewrite failed: ${result.error.message}")
                         return@launch
                     }
-                    else -> {
-                        clearProcessing()
-                        sendError("AI rewrite failed: Unknown error")
-                        return@launch
-                    }
                 }
 
                 val doc = useCases.getDocumentById(documentId) ?: return@launch
+                val updated = if (isOcrText) doc.copy(originalText = rewrittenText) else doc.copy(translatedText = rewrittenText)
 
-                val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
-                val previousValue = if (isOcrText) doc.originalText else doc.translatedText
-
-                addToHistory(documentId, field, previousValue, rewrittenText)
-
-                val updated = if (isOcrText) {
-                    doc.copy(originalText = rewrittenText)
-                } else {
-                    doc.copy(translatedText = rewrittenText)
+                when (val updateResult = useCases.updateDocument(updated)) {
+                    is DomainResult.Success<*> -> {
+                        val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
+                        val previousValue = if (isOcrText) doc.originalText else doc.translatedText
+                        addToHistory(documentId, field, previousValue, rewrittenText)
+                        clearProcessing()
+                        Timber.d("AI rewrote text for document $documentId")
+                    }
+                    is DomainResult.Failure<*> -> {
+                        clearProcessing()
+                        sendError("AI rewrite failed: ${updateResult.error.message}")
+                    }
                 }
-
-                useCases.updateDocument(updated)
-                clearProcessing()
-                Timber.d("AI rewrote text for document $documentId")
             } catch (e: Exception) {
                 clearProcessing()
                 sendError("AI rewrite failed: ${e.message}")
@@ -1271,13 +1241,9 @@ class EditorViewModel @Inject constructor(
             if (originalValue == null) return@launch
 
             val cleanedText = originalValue
-                .replace(Regex("\\s+"), " ")
+                .replace(Regex("[ \\t]+"), " ")
                 .replace(Regex("\\n{3,}"), "\n\n")
-                .replace(Regex("^\\s+|\\s+$"), "")
-                .replace(Regex("\\t"), " ")
-
-            val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
-            addToHistory(documentId, field, originalValue, cleanedText)
+                .trim()
 
             val updated = if (isOcrText) {
                 doc.copy(originalText = cleanedText)
@@ -1286,9 +1252,12 @@ class EditorViewModel @Inject constructor(
             }
 
             when (val result = useCases.updateDocument(updated)) {
-                is DomainResult.Success<*> -> Timber.d("Cleared formatting for document $documentId")
+                is DomainResult.Success<*> -> {
+                    val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
+                    addToHistory(documentId, field, originalValue, cleanedText)
+                    Timber.d("Cleared formatting for document $documentId")
+                }
                 is DomainResult.Failure<*> -> sendError("Failed to clear formatting: ${result.error.message}")
-                else -> { /* Unreachable */ }
             }
         }
     }
@@ -1334,15 +1303,10 @@ class EditorViewModel @Inject constructor(
                 )
 
                 val summary = when (result) {
-                    is DomainResult.Success<*> -> result.data as String
+                    is DomainResult.Success<*> -> result.data as? String ?: ""
                     is DomainResult.Failure<*> -> {
                         clearProcessing()
                         sendError("AI summarization failed: ${result.error.message}")
-                        return@launch
-                    }
-                    else -> {
-                        clearProcessing()
-                        sendError("AI summarization failed: Unknown error")
                         return@launch
                     }
                 }
@@ -1399,15 +1363,10 @@ class EditorViewModel @Inject constructor(
                 )
 
                 val keyPoints = when (result) {
-                    is DomainResult.Success<*> -> result.data as String
+                    is DomainResult.Success<*> -> result.data as? String ?: ""
                     is DomainResult.Failure<*> -> {
                         clearProcessing()
                         sendError("Key points extraction failed: ${result.error.message}")
-                        return@launch
-                    }
-                    else -> {
-                        clearProcessing()
-                        sendError("Key points extraction failed: Unknown error")
                         return@launch
                     }
                 }
@@ -1449,38 +1408,27 @@ class EditorViewModel @Inject constructor(
         progress: Int = 0,
         canCancel: Boolean = false
     ) {
-        viewModelScope.launch {
-            processingMutex.withLock {
-                _processingState.value = ProcessingState(
-                    isActive = true,
-                    operation = operation,
-                    message = message,
-                    progress = progress,
-                    canCancel = canCancel
-                )
-            }
-        }
+        _processingState.value = ProcessingState(
+            isActive = true,
+            operation = operation,
+            message = message,
+            progress = progress,
+            canCancel = canCancel
+        )
     }
 
     private fun updateProcessing(message: String? = null, progress: Int? = null) {
-        viewModelScope.launch {
-            processingMutex.withLock {
-                val current = _processingState.value
-                if (!current.isActive) return@withLock
-                _processingState.value = current.copy(
-                    message = message ?: current.message,
-                    progress = progress ?: current.progress
-                )
-            }
+        _processingState.update { current ->
+            if (!current.isActive) current
+            else current.copy(
+                message = message ?: current.message,
+                progress = progress ?: current.progress
+            )
         }
     }
 
     private fun clearProcessing() {
-        viewModelScope.launch {
-            processingMutex.withLock {
-                _processingState.value = ProcessingState()
-            }
-        }
+        _processingState.value = ProcessingState()
     }
 
     internal fun sendError(
