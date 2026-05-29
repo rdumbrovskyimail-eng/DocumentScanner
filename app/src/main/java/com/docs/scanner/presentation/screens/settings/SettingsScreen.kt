@@ -57,7 +57,6 @@ import java.io.File
 
 enum class SettingsTab(val title: String, val icon: @Composable () -> Unit) {
     AI_OCR("AI & OCR", { Icon(Icons.Default.AutoAwesome, null) }),
-    TESTING("Testing", { Icon(Icons.Default.Science, null) }),
     GENERAL("General", { Icon(Icons.Default.Settings, null) }),
     BACKUP("Backup", { Icon(Icons.Default.CloudSync, null) })
 }
@@ -105,7 +104,6 @@ fun SettingsScreen(
     val tabs = remember {
         buildList {
             add(SettingsTab.AI_OCR)
-            if (BuildConfig.DEBUG) add(SettingsTab.TESTING)
             add(SettingsTab.GENERAL)
             add(SettingsTab.BACKUP)
         }
@@ -180,22 +178,6 @@ fun SettingsScreen(
                         onTargetLanguageChange = viewModel::setTargetLanguage
                     )
 
-                    SettingsTab.TESTING -> TestingTab(
-                        mlkitSettings = mlkitSettings,
-                        onImageSelected = viewModel::setMlkitSelectedImage,
-                        onTestOcr = viewModel::runMlkitOcrTest,
-                        onClearTestResult = viewModel::clearMlkitTestResult,
-                        onCancelOcr = viewModel::cancelOcrTest,
-                        onTestGeminiFallbackChange = viewModel::setMlkitTestGeminiFallback,
-                        onTranslationTestTextChange = viewModel::setTranslationTestText,
-                        onTranslationSourceLangChange = viewModel::setTranslationSourceLang,
-                        onTranslationTargetLangChange = viewModel::setTranslationTargetLang,
-                        onTranslationTest = viewModel::testTranslation,
-                        onClearTranslationTest = viewModel::clearTranslationTest,
-                        onDebugClick = onDebugClick,
-                        snackbarHostState = snackbarHostState
-                    )
-
                     SettingsTab.GENERAL -> GeneralTab(
                         themeMode = themeMode,
                         cacheEnabled = cacheEnabled,
@@ -210,7 +192,8 @@ fun SettingsScreen(
                         onClearOldCache = { showClearOldCacheDialog = true },
                         onRefreshStorage = viewModel::refreshStorageUsage,
                         onClearTemp = viewModel::clearTempFiles,
-                        onImageQualityChange = viewModel::setImageQuality
+                        onImageQualityChange = viewModel::setImageQuality,
+                        onDebugClick = onDebugClick
                     )
 
                     SettingsTab.BACKUP -> BackupTab(
@@ -643,7 +626,8 @@ private fun GeneralTab(
     onClearOldCache: () -> Unit,
     onRefreshStorage: () -> Unit,
     onClearTemp: () -> Unit,
-    onImageQualityChange: (ImageQuality) -> Unit
+    onImageQualityChange: (ImageQuality) -> Unit,
+    onDebugClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -739,6 +723,12 @@ private fun GeneralTab(
 
         SettingsCard(title = "Image Quality", icon = Icons.Default.HighQuality) {
             SettingDropdown("Quality preset", "Select quality", ImageQuality.entries.map { it.name }) { onImageQualityChange(ImageQuality.valueOf(it)) }
+        }
+
+        SettingsCard(title = "Debug Tools", icon = Icons.Default.BugReport) {
+            Button(onClick = onDebugClick, modifier = Modifier.fillMaxWidth()) {
+                Text("Open Debug Menu")
+            }
         }
     }
 }
