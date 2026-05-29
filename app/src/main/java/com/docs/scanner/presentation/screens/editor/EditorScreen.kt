@@ -176,7 +176,6 @@ fun EditorScreen(
     var showEditDescriptionDialog by rememberSaveable { mutableStateOf(false) }
     var showTagsDialog by rememberSaveable { mutableStateOf(false) }
     var showLanguageDialog by rememberSaveable { mutableStateOf(false) }
-    var showAddDocumentDialog by rememberSaveable { mutableStateOf(false) }
     var hasAutoShownEmptyDialog by rememberSaveable { mutableStateOf(false) }
     var showSmartRetryBanner by rememberSaveable { mutableStateOf(true) }
     var showBatchDeleteConfirm by rememberSaveable { mutableStateOf(false) }
@@ -191,15 +190,6 @@ fun EditorScreen(
     // ════════════════════════════════════════════════════════════════════
     // GALLERY LAUNCHERS
     // ════════════════════════════════════════════════════════════════════
-
-    val singleGalleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        uri?.let {
-            viewModel.addDocument(it)
-            if (BuildConfig.DEBUG) Timber.d("📷 Single image selected: $it")
-        }
-    }
 
     val multiGalleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 50)
@@ -232,15 +222,7 @@ fun EditorScreen(
     // EFFECTS
     // ════════════════════════════════════════════════════════════════════
 
-    LaunchedEffect(uiState) {
-        val state = uiState
-        if (state is EditorUiState.Success) {
-            if (state.documents.isEmpty() && !showAddDocumentDialog && !hasAutoShownEmptyDialog) {
-                showAddDocumentDialog = true
-                hasAutoShownEmptyDialog = true
-            }
-        }
-    }
+
 
     LaunchedEffect(highlightDocumentId, uiState) {
         val targetId = highlightDocumentId ?: return@LaunchedEffect
@@ -484,7 +466,11 @@ fun EditorScreen(
                         IconButton(onClick = onCameraClick) {
                             Icon(Icons.Default.CameraAlt, contentDescription = "Camera")
                         }
-                        IconButton(onClick = { showAddDocumentDialog = true }) {
+                        IconButton(onClick = {
+                            multiGalleryLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }) {
                             Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Gallery")
                         }
                         IconButton(onClick = { recordMenuExpanded = true }) {
@@ -552,7 +538,11 @@ fun EditorScreen(
             if (!selectionState.isActive && !processingState.isActive) {
                 FloatingActionButtons(
                     onCameraClick = onCameraClick,
-                    onGalleryClick = { showAddDocumentDialog = true }
+                    onGalleryClick = {
+                        multiGalleryLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
                 )
             }
         },
@@ -645,7 +635,11 @@ fun EditorScreen(
                     if (state.documents.isEmpty()) {
                         EmptyRecordState(
                             onCameraClick = onCameraClick,
-                            onGalleryClick = { showAddDocumentDialog = true }
+                            onGalleryClick = {
+                                multiGalleryLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
                         )
                     } else {
                         LazyColumn(
@@ -704,29 +698,6 @@ fun EditorScreen(
     // ════════════════════════════════════════════════════════════════════
 
     val success = uiState as? EditorUiState.Success
-
-    if (showAddDocumentDialog) {
-        AddDocumentDialog(
-            onDismiss = { showAddDocumentDialog = false },
-            onCameraClick = {
-                showAddDocumentDialog = false
-                onCameraClick()
-            },
-            onSinglePhotoClick = {
-                showAddDocumentDialog = false
-                singleGalleryLauncher.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
-            },
-            onMultiplePhotosClick = {
-                showAddDocumentDialog = false
-                multiGalleryLauncher.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
-            },
-            isFirstTime = success?.documents?.isEmpty() == true
-        )
-    }
 
     editingTextDocId?.let { docId ->
         val doc = success?.documents?.find { it.id.value == docId }

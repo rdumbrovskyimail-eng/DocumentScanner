@@ -13,8 +13,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -85,7 +88,10 @@ fun SearchScreen(
                         ) { Text("Clear") }
                     }
                     if (history.isEmpty()) {
-                        Text("Type to search.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(modifier = Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
+                            Text("Type to search documents", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     } else {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(history, key = { it.id }) { item ->
@@ -116,8 +122,11 @@ fun SearchScreen(
                     }
                 }
                 SearchUiState.QueryTooShort -> Text("Query too short.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                SearchUiState.Searching -> Text("Searching...", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                is SearchUiState.NoResults -> Text("No results for \"${state.query}\"")
+                SearchUiState.Searching -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                is SearchUiState.NoResults -> Column(modifier = Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
+                    Text("No results for \"${state.query}\"")
+                }
                 is SearchUiState.Error -> Text(state.message, color = MaterialTheme.colorScheme.error)
                 is SearchUiState.Success -> {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {

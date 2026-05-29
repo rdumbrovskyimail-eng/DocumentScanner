@@ -127,45 +127,14 @@ fun AddDocumentDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 
-                // Divider
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    HorizontalDivider(modifier = Modifier.weight(1f))
-                    Text(
-                        text = "OR",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    HorizontalDivider(modifier = Modifier.weight(1f))
-                }
-                
-                // 2. SINGLE PHOTO
+                // 2. GALLERY
                 AddOptionCard(
-                    icon = Icons.Default.Image,
-                    title = "Pick 1 Photo",
-                    subtitle = "Select a single image from gallery",
+                    icon = Icons.Default.PhotoLibrary,
+                    title = "Choose from Gallery",
+                    subtitle = "Select one or multiple images",
                     gradientColors = listOf(
                         Color(0xFF34A853), // Google Green
                         Color(0xFF46B963)
-                    ),
-                    onClick = {
-                        onDismiss()
-                        onSinglePhotoClick()
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                // 3. MULTIPLE PHOTOS
-                AddOptionCard(
-                    icon = Icons.Default.PhotoLibrary,
-                    title = "Pick Multiple Photos",
-                    subtitle = "Select up to 50 images at once",
-                    gradientColors = listOf(
-                        Color(0xFF7B8BAF),
-                        Color(0xFF9BA8C9)
                     ),
                     onClick = {
                         onDismiss()

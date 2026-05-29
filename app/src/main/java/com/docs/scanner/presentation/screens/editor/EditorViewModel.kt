@@ -234,43 +234,28 @@ class EditorViewModel @Inject constructor(
         loadJob = viewModelScope.launch {
             _uiState.value = EditorUiState.Loading
             try {
-                val record = useCases.getRecordById(recordId) ?: run {
-                    _uiState.value = EditorUiState.Error("Record not found")
-                    return@launch
-                }
-                val folderName = useCases.getFolderById(record.folderId.value)?.name ?: ""
-                kotlinx.coroutines.coroutineScope {
-                    launch {
-                        useCases.getRecords(record.folderId.value)
-                            .catch { }
-                            .collect { _moveTargets.value = it.filter { r -> r.id.value != recordId } }
+                combine(
+                    useCases.observeRecord(RecordId(recordId)),
+                    useCases.observeDocuments(RecordId(recordId))
+                ) { recordResult, docsResult ->
+                    val record = recordResult.getOrNull() ?: return@combine null
+                    val docs = docsResult.getOrNull() ?: emptyList()
+                    val folderName = useCases.getFolderById(record.folderId.value)?.name ?: ""
+                    
+                    EditorUiState.Success(
+                        record = record,
+                        folderName = folderName,
+                        documents = docs.sortedBy { it.position }
+                    )
+                }.collect { state ->
+                    if (state != null) {
+                        _uiState.value = state
+                    } else {
+                        _uiState.value = EditorUiState.Error("Record not found")
                     }
-                    useCases.getDocuments(recordId)
-                        .catch { e -> _uiState.value = EditorUiState.Error("Failed to load documents: ${e.message}") }
-                        .collect { docs ->
-                            _uiState.value = EditorUiState.Success(
-                                record = record,
-                                folderName = folderName,
-                                documents = docs.sortedBy { it.position }
-                            )
-                        }
                 }
             } catch (e: Exception) {
                 _uiState.value = EditorUiState.Error("Failed to load data: ${e.message}")
-            }
-        }
-    }
-
-    private fun loadRecord() {
-        viewModelScope.launch {
-            val currentState = _uiState.value
-            if (currentState !is EditorUiState.Success) return@launch
-
-            try {
-                val record = useCases.getRecordById(recordId) ?: return@launch
-                _uiState.value = currentState.copy(record = record)
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to reload record")
             }
         }
     }
@@ -439,7 +424,7 @@ class EditorViewModel @Inject constructor(
 
             val updated = currentState.record.copy(name = name.trim())
             when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> loadRecord()
+                is DomainResult.Success<*> -> { /* Reactive flow handles update */ }
                 is DomainResult.Failure<*> -> sendError("Failed to update: ${result.error.message}")
             }
         }
@@ -452,7 +437,7 @@ class EditorViewModel @Inject constructor(
 
             val updated = currentState.record.copy(description = description)
             when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> loadRecord()
+                is DomainResult.Success<*> -> { /* Reactive flow handles update */ }
                 is DomainResult.Failure<*> -> sendError("Failed to update: ${result.error.message}")
             }
         }

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -319,34 +321,39 @@ private fun TermsList(
         items(terms, key = { it.id.value }) { term ->
             var menuExpanded by remember(term.id.value) { mutableStateOf(false) }
             val status = term.computeStatus(now)
-            val dueText = remember(term.dueDate) { formatDue(term.dueDate) }
+            val zone = ZoneId.systemDefault()
+            val dt = Instant.ofEpochMilli(term.dueDate).atZone(zone)
+            val statusColor = when (status) {
+                TermStatus.OVERDUE -> MaterialTheme.colorScheme.error
+                TermStatus.DUE_TODAY -> MaterialTheme.colorScheme.tertiary
+                TermStatus.UPCOMING -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
+
             Card(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(48.dp)) {
+                        Text(dt.dayOfMonth.toString(), style = MaterialTheme.typography.titleLarge)
+                        Text(dt.month.name.take(3), style = MaterialTheme.typography.labelSmall)
+                    }
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(term.title, style = MaterialTheme.typography.titleMedium)
-                        term.description?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-                        Text(
-                            text = "Due: $dueText • Reminder: ${term.reminderMinutesBefore}m • ${term.priority.name}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = status.name,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = when (status) {
-                                TermStatus.OVERDUE -> MaterialTheme.colorScheme.error
-                                TermStatus.DUE_TODAY -> MaterialTheme.colorScheme.tertiary
-                                TermStatus.UPCOMING -> MaterialTheme.colorScheme.primary
-                                TermStatus.COMPLETED -> MaterialTheme.colorScheme.onSurfaceVariant
-                                TermStatus.CANCELLED -> MaterialTheme.colorScheme.onSurfaceVariant
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Surface(shape = MaterialTheme.shapes.small, color = statusColor.copy(alpha = 0.1f)) {
+                                Text(text = status.name, color = statusColor, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                             }
-                        )
+                            Text(
+                                text = "${dt.hour}:${String.format("%02d", dt.minute)} • ${term.priority.name}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Actions")

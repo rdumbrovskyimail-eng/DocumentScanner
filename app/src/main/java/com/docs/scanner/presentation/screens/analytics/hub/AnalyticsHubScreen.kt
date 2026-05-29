@@ -1,5 +1,6 @@
 package com.docs.scanner.presentation.screens.analytics.hub
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -73,29 +74,38 @@ fun AnalyticsHubScreen(
             )
             Spacer(Modifier.height(8.dp))
 
-            HubTile(
-                title = "Translation Archive",
-                subtitle = "Every translation from your documents",
-                count = translationsCount,
-                icon = Icons.Default.Translate,
-                tint = MaterialTheme.colorScheme.primary,
-                onClick = onOpenArchive
-            )
+            StatGrid {
+                StatCard(
+                    title = "Translation Archive",
+                    subtitle = "Every translation from your documents",
+                    count = translationsCount,
+                    icon = Icons.Default.Translate,
+                    tint = MaterialTheme.colorScheme.primary,
+                    onClick = onOpenArchive
+                )
 
-            HubTile(
-                title = "Notes",
-                subtitle = "Information analysis & free-form notes",
-                count = notesCount,
-                icon = Icons.Default.NoteAlt,
-                tint = MaterialTheme.colorScheme.tertiary,
-                onClick = onOpenNotes
-            )
+                StatCard(
+                    title = "Notes",
+                    subtitle = "Information analysis & free-form notes",
+                    count = notesCount,
+                    icon = Icons.Default.NoteAlt,
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    onClick = onOpenNotes
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun HubTile(
+private fun StatGrid(content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        content()
+    }
+}
+
+@Composable
+private fun StatCard(
     title: String,
     subtitle: String,
     count: Int,
@@ -109,9 +119,10 @@ private fun HubTile(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         androidx.compose.foundation.layout.Row(
             modifier = Modifier
