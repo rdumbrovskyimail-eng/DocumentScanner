@@ -396,9 +396,8 @@ class SettingsDataStore @Inject constructor(
             emit(emptyPreferences())
         }
         .map { prefs ->
-            prefs[KEY_TRANSLATION_TARGET]
-                ?: java.util.Locale.getDefault().language.takeIf { it in listOf("ru","en","es","de","fr","it","pt","zh") }
-                ?: "en"
+            // По умолчанию выставляем русский язык ("ru") вместо английского ("en")
+            prefs[KEY_TRANSLATION_TARGET] ?: "ru"
         }
     
     suspend fun setTranslationTarget(language: String) {

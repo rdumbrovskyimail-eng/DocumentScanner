@@ -168,19 +168,15 @@ fun SettingsScreen(
                         apiKeys = apiKeys,
                         isLoadingKeys = isLoadingKeys,
                         mlkitSettings = mlkitSettings,
-                        autoTranslate = autoTranslate,
                         targetLanguage = targetLanguage,
                         onAddApiKey = { key, label -> viewModel.addApiKey(key, label) },
                         onRemoveApiKey = { viewModel.deleteKey(it) },
                         onSetPrimaryApiKey = { viewModel.activateKey(it) },
                         onResetApiKeyErrors = viewModel::resetApiKeyErrors,
-                        onGeminiOcrEnabledChange = viewModel::setGeminiOcrEnabled,
-                        onGeminiOcrThresholdChange = viewModel::setGeminiOcrThreshold,
-                        onGeminiOcrAlwaysChange = viewModel::setGeminiOcrAlways,
                         onGeminiOcrModelChange = viewModel::setGeminiOcrModel,
                         onAddNewOcrModel = viewModel::addNewOcrModel,
                         onTranslationModelChange = viewModel::setTranslationModel,
-                        onAutoTranslateChange = viewModel::setAutoTranslate,
+                        onAddNewTranslationModel = viewModel::addNewTranslationModel,
                         onTargetLanguageChange = viewModel::setTargetLanguage
                     )
 
@@ -345,19 +341,15 @@ private fun AiOcrTab(
     apiKeys: List<ApiKeyEntry>,
     isLoadingKeys: Boolean,
     mlkitSettings: com.docs.scanner.presentation.screens.settings.components.MlkitSettingsState,
-    autoTranslate: Boolean,
     targetLanguage: Language,
     onAddApiKey: (String, String) -> Unit,
     onRemoveApiKey: (String) -> Unit,
     onSetPrimaryApiKey: (String) -> Unit,
     onResetApiKeyErrors: () -> Unit,
-    onGeminiOcrEnabledChange: (Boolean) -> Unit,
-    onGeminiOcrThresholdChange: (Int) -> Unit,
-    onGeminiOcrAlwaysChange: (Boolean) -> Unit,
     onGeminiOcrModelChange: (String) -> Unit,
     onAddNewOcrModel: (String) -> Unit,
     onTranslationModelChange: (String) -> Unit,
-    onAutoTranslateChange: (Boolean) -> Unit,
+    onAddNewTranslationModel: (String) -> Unit,
     onTargetLanguageChange: (Language) -> Unit
 ) {
     Column(
@@ -369,14 +361,8 @@ private fun AiOcrTab(
     ) {
         SettingsCard(title = "Gemini AI Fallback", icon = Icons.Default.AutoAwesome) {
             GeminiOcrSettingsSection(
-                enabled = mlkitSettings.geminiOcrEnabled,
-                threshold = mlkitSettings.geminiOcrThreshold,
-                alwaysUseGemini = mlkitSettings.geminiOcrAlways,
                 selectedModel = mlkitSettings.selectedGeminiModel,
                 availableModels = mlkitSettings.availableGeminiModels,
-                onEnabledChange = onGeminiOcrEnabledChange,
-                onThresholdChange = onGeminiOcrThresholdChange,
-                onAlwaysUseGeminiChange = onGeminiOcrAlwaysChange,
                 onModelChange = onGeminiOcrModelChange,
                 onAddNewModel = onAddNewOcrModel
             )
@@ -384,13 +370,12 @@ private fun AiOcrTab(
 
         SettingsCard(title = "Translation", icon = Icons.Default.Translate) {
             TranslationSettingsSection(
-                autoTranslate = autoTranslate,
                 targetLanguage = targetLanguage,
                 selectedModel = mlkitSettings.selectedTranslationModel,
                 availableModels = mlkitSettings.availableTranslationModels,
-                onAutoTranslateChange = onAutoTranslateChange,
                 onTargetLanguageChange = onTargetLanguageChange,
-                onModelChange = onTranslationModelChange
+                onModelChange = onTranslationModelChange,
+                onAddNewModel = onAddNewTranslationModel
             )
         }
 
@@ -409,50 +394,16 @@ private fun AiOcrTab(
 
 @Composable
 private fun TranslationSettingsSection(
-    autoTranslate: Boolean,
     targetLanguage: Language,
     selectedModel: String,
     availableModels: List<GeminiModelOption>,
-    onAutoTranslateChange: (Boolean) -> Unit,
     onTargetLanguageChange: (Language) -> Unit,
-    onModelChange: (String) -> Unit
+    onModelChange: (String) -> Unit,
+    onAddNewModel: (String) -> Unit
 ) {
+    var customModelInput by remember { mutableStateOf("") }
+
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Row(
-            Modifier.fillMaxWidth(), 
-            Arrangement.SpaceBetween, 
-            Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "Auto-translate after OCR", 
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    "Automatically translate recognized text", 
-                    style = MaterialTheme.typography.bodySmall, 
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(
-                checked = autoTranslate,
-                onCheckedChange = onAutoTranslateChange
-            )
-        }
-        
-        Text(
-            "Gemini Model",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        
-        ModelSelectorDropdown(
-            selectedModel = selectedModel,
-            availableModels = availableModels,
-            onModelChange = onModelChange,
-            label = "Translation Model"
-        )
-        
         SettingDropdown(
             "Target Language",
             "${targetLanguage.displayName} (${targetLanguage.code})",
@@ -464,6 +415,66 @@ private fun TranslationSettingsSection(
                 sel.substringAfterLast("(").substringBefore(")").trim()
             )?.let { onTargetLanguageChange(it) }
         }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+        Text(
+            "Gemini Model for Translation",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        
+        ModelSelectorDropdown(
+            selectedModel = selectedModel,
+            availableModels = availableModels,
+            onModelChange = onModelChange,
+            label = "Translation Model"
+        )
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Зарегистрировать модель перевода",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = customModelInput,
+                    onValueChange = { customModelInput = it.replace(" ", "") },
+                    placeholder = { Text("Идентификатор модели") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                Button(
+                    onClick = {
+                        if (customModelInput.isNotBlank()) {
+                            onAddNewModel(customModelInput.trim())
+                            customModelInput = ""
+                        }
+                    },
+                    enabled = customModelInput.isNotBlank()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Добавить"
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Добавить")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
         
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -483,7 +494,7 @@ private fun TranslationSettingsSection(
                     tint = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    "💡 Translation uses the selected Gemini model. Faster models (Flash Lite) are recommended for instant results.",
+                    "💡 Автоматический перевод включен постоянно. Все распознанные документы будут мгновенно переводиться на выбранный язык с помощью указанной модели.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

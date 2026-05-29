@@ -889,42 +889,54 @@ class SettingsViewModel @Inject constructor(
             try {
                 delay(MODEL_SWITCH_DEBOUNCE_MS)
                 
-                if (BuildConfig.DEBUG) {
-                    Timber.d("🔄 Switching Translation model to: $modelId")
-                }
-                
                 modelManager.setGlobalTranslationModel(modelId)
                 _mlkitSettings.update { it.copy(selectedTranslationModel = modelId) }
                 _saveMessage.value = "✓ Translation model: $modelId"
                 
-                if (BuildConfig.DEBUG) {
-                    Timber.d("✅ Translation model switched: $modelId")
-                }
+                // 🚀 ПРОГРЕВ при ручном переключении модели перевода
+                modelManager.warmUpModel(modelId)
                 
             } catch (e: CancellationException) {
-                if (BuildConfig.DEBUG) {
-                    Timber.d("🛑 Translation model switch cancelled")
-                }
                 throw e
-                
             } catch (e: Exception) {
                 Timber.e(e, "Failed to switch Translation model")
                 _saveMessage.value = "✗ Failed to switch model"
-                
-                viewModelScope.launch {
-                    try {
-                        val currentModel = modelManager.getGlobalTranslationModel()
-                        _mlkitSettings.update { it.copy(selectedTranslationModel = currentModel) }
-                    } catch (rollbackError: Exception) {
-                        Timber.e(rollbackError, "Failed to rollback translation model selection")
-                    }
-                }
             }
         }
     }
     
     fun getAvailableTranslationModels(): List<GeminiModelOption> {
         return modelManager.getAvailableModels()
+    }
+
+    // Добавьте метод добавления новой кастомной модели для перевода
+    fun addNewTranslationModel(modelId: String) {
+        viewModelScope.launch {
+            try {
+                _isSaving.value = true
+                _saveMessage.value = "Регистрация и прогрев модели перевода..."
+                
+                // 1. Сохраняем модель в общий список кастомных моделей DataStore
+                settingsDataStore.addCustomModel(modelId)
+                
+                // 2. Обновляем состояние доступных моделей в UI
+                loadMlkitSettings()
+                
+                // 3. Выбираем её как глобальную активную модель для перевода
+                modelManager.setGlobalTranslationModel(modelId)
+                _mlkitSettings.update { it.copy(selectedTranslationModel = modelId) }
+                
+                // 4. 🚀 Моментально инициируем прогрев новой модели перевода
+                modelManager.warmUpModel(modelId)
+                
+                _saveMessage.value = "✓ Модель перевода $modelId добавлена и прогрета!"
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to add new custom translation model")
+                _saveMessage.value = "✗ Ошибка добавления: ${e.message}"
+            } finally {
+                _isSaving.value = false
+            }
+        }
     }
 
     // ════════════════════════════════════════════════════════════════════════════════

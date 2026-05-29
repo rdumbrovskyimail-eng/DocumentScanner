@@ -122,10 +122,18 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
         // 🚀 АВТОМАТИЧЕСКИЙ ПРОГРЕВ выбранной на текущий момент модели
         applicationScope.launch {
             try {
-                val activeModel = settingsDataStore.geminiOcrModel.first()
-                geminiModelManager.warmUpModel(activeModel)
+                val activeOcrModel = settingsDataStore.geminiOcrModel.first()
+                val activeTranslationModel = settingsDataStore.translationModel.first()
+                
+                // Прогреваем OCR модель
+                geminiModelManager.warmUpModel(activeOcrModel)
+                
+                // Если для перевода выбрана другая модель, прогреваем и её
+                if (activeTranslationModel != activeOcrModel) {
+                    geminiModelManager.warmUpModel(activeTranslationModel)
+                }
             } catch (e: Exception) {
-                Timber.w(e, "Failed to run startup model warm-up")
+                Timber.w(e, "Failed to run startup models warm-up")
             }
         }
         
