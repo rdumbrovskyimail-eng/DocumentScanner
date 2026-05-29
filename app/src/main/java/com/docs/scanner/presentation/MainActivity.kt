@@ -21,7 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.presentation.navigation.NavGraph
-import com.docs.scanner.presentation.theme.DocumentScannerTheme
+import com.docs.scanner.presentation.theme.AppTheme
 import com.docs.scanner.domain.core.ThemeMode
 import com.docs.scanner.domain.repository.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
                 value = settingsRepository.isOnboardingCompleted()
             }
 
-            DocumentScannerTheme(darkTheme = darkTheme) {
+            AppTheme(darkTheme = darkTheme) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     when (val done = onboardingDone) {
                         null -> Box(Modifier.fillMaxSize())          // пустой кадр на ~1 фрейм
