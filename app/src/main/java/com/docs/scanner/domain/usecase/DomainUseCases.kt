@@ -1001,6 +1001,15 @@ class AllUseCases @Inject constructor(
     suspend fun deleteRecord(recordId: Long): LegacyResult<Unit> = records.delete(RecordId(recordId)).toLegacyResult()
     suspend fun moveRecord(recordId: Long, targetFolderId: Long): LegacyResult<Unit> = records.move(RecordId(recordId), FolderId(targetFolderId)).toLegacyResult()
     fun getDocuments(recordId: Long): Flow<List<Document>> = documents.observeByRecord(RecordId(recordId))
+    fun observeRecord(recordId: RecordId): Flow<DomainResult<Record>> =
+        records.observeRecord(recordId).map { record ->
+            if (record != null) DomainResult.Success(record)
+            else DomainResult.Failure(DomainError.NotFoundError.Record(recordId))
+        }
+
+    fun observeDocuments(recordId: RecordId): Flow<DomainResult<List<Document>>> =
+        documents.observeByRecord(recordId).map { DomainResult.Success(it) }
+
     suspend fun getDocumentById(documentId: Long): Document? = documents.getById(DocumentId(documentId)).getOrNull()
     suspend fun updateDocument(document: Document): LegacyResult<Unit> = documents.update(document).toLegacyResult()
     suspend fun deleteDocument(documentId: Long): LegacyResult<Unit> = documents.delete(DocumentId(documentId)).toLegacyResult()

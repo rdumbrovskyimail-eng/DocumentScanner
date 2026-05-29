@@ -54,7 +54,7 @@ class EditorViewModel @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val modelManager: GeminiModelManager,
     private val geminiApi: GeminiApi,
-    private val appScope: CoroutineScope,
+    @AppScope private val appScope: CoroutineScope,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -233,6 +233,11 @@ class EditorViewModel @Inject constructor(
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             _uiState.value = EditorUiState.Loading
+            
+            viewModelScope.launch {
+                useCases.getAllRecords().collect { _moveTargets.value = it }
+            }
+
             try {
                 combine(
                     useCases.observeRecord(RecordId(recordId)),

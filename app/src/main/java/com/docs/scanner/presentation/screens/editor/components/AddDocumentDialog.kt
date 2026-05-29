@@ -56,8 +56,7 @@ import com.docs.scanner.presentation.theme.*
 fun AddDocumentDialog(
     onDismiss: () -> Unit,
     onCameraClick: () -> Unit,
-    onSinglePhotoClick: () -> Unit,
-    onMultiplePhotosClick: () -> Unit,
+    onGalleryClick: () -> Unit,
     isFirstTime: Boolean = true
 ) {
     Dialog(
@@ -138,7 +137,7 @@ fun AddDocumentDialog(
                     ),
                     onClick = {
                         onDismiss()
-                        onMultiplePhotosClick()
+                        onGalleryClick()
                     },
                     modifier = Modifier.fillMaxWidth()
                 )

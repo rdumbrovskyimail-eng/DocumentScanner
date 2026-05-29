@@ -257,7 +257,7 @@ class AlarmScheduler @Inject constructor(
                         pendingIntent
                     )
                     Timber.w("Scheduled inexact alarm (no SCHEDULE_EXACT_ALARM permission)")
-                    false
+                    true
                 }
             } else {
                 alarmManager.setExactAndAllowWhileIdle(

@@ -1012,8 +1012,12 @@ class DocumentRepositoryImpl @Inject constructor(
     
     private fun deleteImageFiles(imagePath: String, thumbnailPath: String?) {
         try {
-            File(imagePath).delete()
-            thumbnailPath?.let { File(it).delete() }
+            val imgFile = File(if (imagePath.startsWith("file://")) Uri.parse(imagePath).path ?: imagePath else imagePath)
+            imgFile.delete()
+            thumbnailPath?.let {
+                val thumbFile = File(if (it.startsWith("file://")) Uri.parse(it).path ?: it else it)
+                thumbFile.delete()
+            }
         } catch (e: Exception) {
             Timber.w(e, "⚠️ Failed to delete image files")
         }
@@ -1936,6 +1940,7 @@ class BackupRepositoryImpl @Inject constructor(
                         zip.closeEntry()
                         
                         // Database
+                        database.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(FULL);").close()
                         val dbPath = context.getDatabasePath(DB_NAME)
                         if (dbPath.exists()) {
                             zip.putNextEntry(ZipEntry("database.db"))
@@ -1968,78 +1973,39 @@ class BackupRepositoryImpl @Inject constructor(
         withContext(Dispatchers.IO) {
             runCatching {
                 val backupFile = File(path)
-                if (!backupFile.exists()) {
-                    throw FileNotFoundException("Backup file not found: $path")
-                }
+                if (!backupFile.exists()) throw FileNotFoundException("Backup file not found: $path")
                 
-                var foldersRestored = 0
-                var recordsRestored = 0
-                var documentsRestored = 0
                 var imagesRestored = 0
-                val errors = mutableListOf<String>()
-                
                 ZipInputStream(BufferedInputStream(FileInputStream(backupFile))).use { zip ->
+                    var manifest: BackupManifest? = null
                     var entry: ZipEntry?
-                    var manifestValid = false
                     
                     while (zip.nextEntry.also { entry = it } != null) {
-                        when (val name = entry!!.name) {
-                            "manifest.json" -> {
-                                val output = java.io.ByteArrayOutputStream()
-                                val buffer = ByteArray(1024)
-                                var len: Int
-                                while (zip.read(buffer).also { len = it } > 0) {
-                                    output.write(buffer, 0, len)
-                                }
-                                val content = output.toString("UTF-8")
-                                val manifest = jsonSerializer.decode<BackupManifest>(content)
-                                manifestValid = manifest.dbVersion in 1..AppDatabase.DATABASE_VERSION
-                                Timber.d("📦 Restoring backup from ${manifest.backupDate}")
+                        val name = entry!!.name
+                        when {
+                            name == "manifest.json" -> {
+                                val content = zip.bufferedReader().use { it.readText() }
+                                manifest = jsonSerializer.decode<BackupManifest>(content)
                             }
-                            
-                            "database.db" -> {
-                                if (!manifestValid) throw Exception("Invalid manifest")
-                                
-                                if (!merge) {
-                                    // Replace database
-                                    database.close()
-                                    val dbPath = context.getDatabasePath(DB_NAME)
-                                    dbPath.parentFile?.mkdirs()
-                                    FileOutputStream(dbPath).use { out ->
-                                        zip.copyTo(out)
-                                    }
-                                    Timber.d("✅ Database restored")
-                                }
+                            name == "database.db" && !merge -> {
+                                if (manifest == null) throw Exception("Manifest missing")
+                                database.close()
+                                val dbPath = context.getDatabasePath(DB_NAME)
+                                dbPath.parentFile?.mkdirs()
+                                FileOutputStream(dbPath).use { zip.copyTo(it) }
                             }
-                            
-                            else -> {
-                                if (name.startsWith("documents/") && manifestValid) {
-                                    val file = File(context.filesDir, name)
-                                    file.parentFile?.mkdirs()
-                                    FileOutputStream(file).use { out ->
-                                        zip.copyTo(out)
-                                    }
-                                    imagesRestored++
-                                }
+                            name.startsWith("documents/") && manifest != null -> {
+                                val file = File(context.filesDir, name)
+                                file.parentFile?.mkdirs()
+                                FileOutputStream(file).use { zip.copyTo(it) }
+                                imagesRestored++
                             }
                         }
                         zip.closeEntry()
                     }
-                    
-                    if (!manifestValid) {
-                        throw Exception("Backup validation failed: invalid manifest")
-                    }
+                    if (manifest == null) throw Exception("Invalid backup: missing manifest")
                 }
-                
-                Timber.d("✅ Restore completed: $foldersRestored folders, $recordsRestored records, $documentsRestored documents, $imagesRestored images")
-                
-                RestoreResult(
-                    foldersRestored = foldersRestored,
-                    recordsRestored = recordsRestored,
-                    documentsRestored = documentsRestored,
-                    imagesRestored = imagesRestored,
-                    errors = errors
-                )
+                RestoreResult(0, 0, 0, imagesRestored, emptyList())
             }.toDomainResult()
         }
 

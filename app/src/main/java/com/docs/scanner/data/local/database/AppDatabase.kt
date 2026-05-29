@@ -118,7 +118,11 @@ abstract class AppDatabase : RoomDatabase() {
         // ✅ ДОБАВЛЕНО: Миграция 19→20 (добавление колонки word_confidences)
         val MIGRATION_19_20 = object : Migration(19, 20) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE documents ADD COLUMN word_confidences TEXT")
+                try {
+                    db.execSQL("ALTER TABLE documents ADD COLUMN word_confidences TEXT")
+                } catch (e: Exception) {
+                    Timber.w(e, "Column word_confidences might already exist")
+                }
             }
         }
 

@@ -142,7 +142,18 @@ fun SearchScreen(
                                         style = MaterialTheme.typography.labelLarge
                                     )
                                     Text(
-                                        text = item.highlightedText,
+                                        text = androidx.compose.ui.text.buildAnnotatedString {
+                                            append(item.highlightedText)
+                                            item.matchRanges.forEach { range ->
+                                                addStyle(
+                                                    style = androidx.compose.ui.text.SpanStyle(
+                                                        background = androidx.compose.ui.graphics.Color.Yellow.copy(alpha = 0.3f)
+                                                    ),
+                                                    start = range.first,
+                                                    end = range.last + 1
+                                                )
+                                            }
+                                        },
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                     Spacer(modifier = Modifier.padding(2.dp))
