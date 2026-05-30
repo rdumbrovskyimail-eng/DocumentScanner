@@ -22,6 +22,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.docs.scanner.domain.model.Folder
 import com.docs.scanner.presentation.components.ConfirmDialog
 import com.docs.scanner.presentation.components.dragdrop.*
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.docs.scanner.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -275,18 +278,18 @@ private fun QuickScansFolderCard(folder: Folder, onClick: () -> Unit, onClearCli
             Column(Modifier.weight(1f)) {
                 Text(folder.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
                 folder.description?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                Text("${folder.recordCount} records", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = pluralStringResource(R.plurals.records_count, folder.recordCount, folder.recordCount), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Box {
                 IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Default.MoreVert, "Menu") }
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Clear folder") },
-                        onClick = { menuExpanded = false; onClearClick() },
-                        leadingIcon = { Icon(Icons.Default.ClearAll, null) },
-                        enabled = folder.recordCount > 0
-                    )
-                }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.clear_folder)) },
+                            onClick = { menuExpanded = false; onClearClick() },
+                            leadingIcon = { Icon(Icons.Default.ClearAll, null) },
+                            enabled = folder.recordCount > 0
+                        )
+                    }
             }
         }
     }
@@ -350,7 +353,7 @@ private fun FolderCard(
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(
-                    "${folder.recordCount} records",
+                    text = pluralStringResource(R.plurals.records_count, folder.recordCount, folder.recordCount),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -408,17 +411,17 @@ private fun FolderMenu(
                 Text(folder.name, Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
                 HorizontalDivider()
                 ListItem(
-                    headlineContent = { Text("Rename") },
+                    headlineContent = { Text(stringResource(R.string.rename)) },
                     leadingContent = { Icon(Icons.Default.Edit, null) },
                     modifier = Modifier.clickable(onClick = onRename)
                 )
                 ListItem(
-                    headlineContent = { Text(if (folder.isPinned) "Unpin" else "Pin to top") },
+                    headlineContent = { Text(if (folder.isPinned) stringResource(R.string.unpin) else stringResource(R.string.pin_to_top)) },
                     leadingContent = { Icon(Icons.Default.PushPin, null) },
                     modifier = Modifier.clickable(onClick = onPin)
                 )
                 ListItem(
-                    headlineContent = { Text(if (folder.isArchived) "Unarchive" else "Archive") },
+                    headlineContent = { Text(if (folder.isArchived) stringResource(R.string.unarchive) else stringResource(R.string.archive)) },
                     leadingContent = {
                         Icon(
                             if (folder.isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
@@ -428,7 +431,7 @@ private fun FolderMenu(
                     modifier = Modifier.clickable(onClick = onArchive)
                 )
                 ListItem(
-                    headlineContent = { Text("Delete") },
+                    headlineContent = { Text(stringResource(R.string.delete)) },
                     leadingContent = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
                     modifier = Modifier.clickable(onClick = onDelete)
                 )
@@ -444,13 +447,13 @@ private fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String, String?
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create folder") },
+        title = { Text(stringResource(R.string.create_folder)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -458,7 +461,7 @@ private fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String, String?
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    label = { Text("Description") },
+                    label = { Text(stringResource(R.string.description)) },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -468,11 +471,11 @@ private fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String, String?
                 onClick = { onCreate(name, description.ifBlank { null }) },
                 enabled = name.isNotBlank()
             ) {
-                Text("Create")
+                Text(stringResource(R.string.create))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
@@ -484,13 +487,13 @@ private fun EditFolderDialog(folder: Folder, onDismiss: () -> Unit, onSave: (Str
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename folder") },
+        title = { Text(stringResource(R.string.rename_folder)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -498,7 +501,7 @@ private fun EditFolderDialog(folder: Folder, onDismiss: () -> Unit, onSave: (Str
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    label = { Text("Description") },
+                    label = { Text(stringResource(R.string.description)) },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -508,11 +511,11 @@ private fun EditFolderDialog(folder: Folder, onDismiss: () -> Unit, onSave: (Str
                 onClick = { onSave(name, description.ifBlank { null }) },
                 enabled = name.isNotBlank()
             ) {
-                Text("Save")
+                Text(stringResource(R.string.save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
@@ -527,14 +530,14 @@ private fun DeleteFolderDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Delete folder?") },
+        title = { Text(stringResource(R.string.delete_folder_question)) },
         text = {
             Column {
-                Text("Delete \"${folder.name}\"?")
+                Text(stringResource(R.string.delete_folder_confirm, folder.name))
                 if (folder.recordCount > 0) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Contains ${folder.recordCount} records.",
+                        pluralStringResource(R.plurals.contains_records, folder.recordCount, folder.recordCount),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -545,7 +548,7 @@ private fun DeleteFolderDialog(
                             onCheckedChange = onDeleteContentsChange
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("Delete contents too")
+                        Text(stringResource(R.string.delete_contents_too))
                     }
                 }
             }
@@ -556,11 +559,11 @@ private fun DeleteFolderDialog(
                 onClick = onConfirm,
                 enabled = canConfirm
             ) {
-                Text("Delete", color = if (canConfirm) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
+                Text(stringResource(R.string.delete), color = if (canConfirm) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
