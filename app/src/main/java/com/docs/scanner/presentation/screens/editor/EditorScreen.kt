@@ -243,7 +243,7 @@ fun EditorScreen(
     }
 
     // 7. Стейт перетаскивания (с явным указанием типов параметров)
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from: sh.calvin.reorderable.LazyListItemInfo, to: sh.calvin.reorderable.LazyListItemInfo ->
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
         if (!selectionState.isActive) {
             viewModel.reorderDocuments(from.index, to.index)
         }
@@ -1035,7 +1035,7 @@ private fun DocumentCardItem(
             onAction(DocumentAction.AiRewrite(id, text, isOcrText = isOcr))
         },
         onClearFormatting = { isOcr -> onAction(DocumentAction.ClearFormatting(id, isOcrText = isOcr)) },
-        confidenceThreshold = ocrSettings.threshold,
+        confidenceThreshold = ocrSettings.confidenceThreshold,
         onWordTap = { word, conf -> onAction(DocumentAction.WordTap(word, conf)) },
         onStartInlineEditOcr = {
             onAction(DocumentAction.StartInlineEdit(id, TextEditField.OCR_TEXT, document.originalText.orEmpty()))
