@@ -140,6 +140,67 @@ fun EditorScreen(
     val haptic = LocalHapticFeedback.current
     val clipboardManager = LocalClipboardManager.current
 
+    fun handleDocumentAction(action: DocumentAction) {
+        when (action) {
+            is DocumentAction.ImageClick -> onImageClick(action.documentId)
+
+            is DocumentAction.OcrTextClick -> {
+                editingTextDocId = action.documentId
+                editingTextIsOcr = true
+            }
+
+            is DocumentAction.TranslationClick -> {
+                editingTextDocId = action.documentId
+                editingTextIsOcr = false
+            }
+
+            is DocumentAction.ToggleSelection -> {
+                if (!selectionState.isActive) {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                }
+                viewModel.toggleDocumentSelection(action.documentId)
+            }
+
+            is DocumentAction.MenuClick -> {
+                docMenuExpandedId = action.documentId
+            }
+
+            is DocumentAction.RetryOcr -> viewModel.retryOcr(action.documentId)
+            is DocumentAction.RetryTranslation -> viewModel.retryTranslation(action.documentId)
+            is DocumentAction.MoveUp -> viewModel.moveDocumentUp(action.documentId)
+            is DocumentAction.MoveDown -> viewModel.moveDocumentDown(action.documentId)
+
+            is DocumentAction.SharePage -> viewModel.shareSingleImage(action.imagePath)
+            is DocumentAction.DeletePage -> viewModel.deleteDocument(action.documentId)
+            is DocumentAction.MoveToRecord -> showMoveDocumentDialogForId = action.documentId
+
+            is DocumentAction.CopyText -> {
+                clipboardManager.setText(AnnotatedString(action.text))
+            }
+
+            is DocumentAction.PasteText -> {
+                val clipText = clipboardManager.getText()?.text
+                viewModel.handleDocumentAction(
+                    DocumentAction.PasteText(
+                        documentId = action.documentId,
+                        text = clipText?.takeIf { it.isNotBlank() },
+                        isOcrText = action.isOcrText
+                    )
+                )
+            }
+
+            is DocumentAction.AiRewrite,
+            is DocumentAction.ClearFormatting,
+            is DocumentAction.StartInlineEdit,
+            is DocumentAction.UpdateInlineText,
+            is DocumentAction.SaveInlineEdit,
+            is DocumentAction.CancelInlineEdit,
+            is DocumentAction.WordTap -> {
+                viewModel.handleDocumentAction(action)
+            }
+        }
+    }
+
     // ════════════════════════════════════════════════════════════════════
     // STATES
     // ════════════════════════════════════════════════════════════════════
@@ -204,7 +265,7 @@ fun EditorScreen(
     // ✅ FIX #1: UNCONDITIONAL REORDERABLE STATE
     // ════════════════════════════════════════════════════════════════════
 
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+    val reorderableState = rememberReorderableLazyListState<Long>(lazyListState) { from, to ->
         if (!selectionState.isActive) {
             viewModel.reorderDocuments(from.index, to.index)
         }
@@ -351,71 +412,6 @@ fun EditorScreen(
             )
             if (result == SnackbarResult.ActionPerformed && event.action != null) {
                 event.action.invoke()
-            }
-        }
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    // ACTION HANDLER
-    // ════════════════════════════════════════════════════════════════════
-
-    fun handleDocumentAction(action: DocumentAction) {
-        when (action) {
-            is DocumentAction.ImageClick -> onImageClick(action.documentId)
-
-            is DocumentAction.OcrTextClick -> {
-                editingTextDocId = action.documentId
-                editingTextIsOcr = true
-            }
-
-            is DocumentAction.TranslationClick -> {
-                editingTextDocId = action.documentId
-                editingTextIsOcr = false
-            }
-
-            is DocumentAction.ToggleSelection -> {
-                if (!selectionState.isActive) {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                }
-                viewModel.toggleDocumentSelection(action.documentId)
-            }
-
-            is DocumentAction.MenuClick -> {
-                docMenuExpandedId = action.documentId
-            }
-
-            is DocumentAction.RetryOcr -> viewModel.retryOcr(action.documentId)
-            is DocumentAction.RetryTranslation -> viewModel.retryTranslation(action.documentId)
-            is DocumentAction.MoveUp -> viewModel.moveDocumentUp(action.documentId)
-            is DocumentAction.MoveDown -> viewModel.moveDocumentDown(action.documentId)
-
-            is DocumentAction.SharePage -> viewModel.shareSingleImage(action.imagePath)
-            is DocumentAction.DeletePage -> viewModel.deleteDocument(action.documentId)
-            is DocumentAction.MoveToRecord -> showMoveDocumentDialogForId = action.documentId
-
-            is DocumentAction.CopyText -> {
-                clipboardManager.setText(AnnotatedString(action.text))
-            }
-
-            is DocumentAction.PasteText -> {
-                val clipText = clipboardManager.getText()?.text
-                viewModel.handleDocumentAction(
-                    DocumentAction.PasteText(
-                        documentId = action.documentId,
-                        text = clipText?.takeIf { it.isNotBlank() },
-                        isOcrText = action.isOcrText
-                    )
-                )
-            }
-
-            is DocumentAction.AiRewrite,
-            is DocumentAction.ClearFormatting,
-            is DocumentAction.StartInlineEdit,
-            is DocumentAction.UpdateInlineText,
-            is DocumentAction.SaveInlineEdit,
-            is DocumentAction.CancelInlineEdit,
-            is DocumentAction.WordTap -> {
-                viewModel.handleDocumentAction(action)
             }
         }
     }
