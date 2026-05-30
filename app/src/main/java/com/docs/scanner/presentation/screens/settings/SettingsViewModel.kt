@@ -648,7 +648,8 @@ class SettingsViewModel @Inject constructor(
                     val account = task.getResult(ApiException::class.java)
                     
                     if (account != null) {
-                        when (val result = driveRepository.signIn()) {
+                        // Передаём аккаунт явно, а не полагаемся на скрытое глобальное состояние GoogleSignIn
+                        when (val result = driveRepository.signIn(account)) {
                             is com.docs.scanner.domain.model.Result.Success -> {
                                 _driveEmail.value = result.data
                                 refreshDriveBackups()

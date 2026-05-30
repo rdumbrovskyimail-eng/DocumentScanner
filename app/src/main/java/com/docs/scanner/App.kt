@@ -64,8 +64,8 @@ class App : Application(), SingletonImageLoader.Factory, Configuration.Provider 
     private var logcatCollector: LogcatCollector? = null
     
     /**
-     * Application-wide coroutine scope.
-     * ✅ FIX: Now properly cancelled in onTerminate() to prevent memory leak
+     * Application-wide coroutine scope. Живёт всё время процесса.
+     * onTerminate() на реальных устройствах не вызывается, поэтому ручная отмена не нужна.
      */
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     

@@ -173,11 +173,10 @@ class FoldersViewModel @Inject constructor(
     fun saveFolderOrder() {
         viewModelScope.launch {
             try {
-                _localFolders
-                    .filter { !it.isQuickScans }
-                    .forEachIndexed { index, folder ->
-                        useCases.folders.updatePosition(folder.id, index)
-                    }
+                // Желательно добавить в UseCase/DAO батч-метод reorder(ids) с @Transaction.
+                // До его появления — минимально сериализуем как единый блок:
+                val ordered = _localFolders.filter { !it.isQuickScans }
+                useCases.folders.reorder(ordered.map { it.id })
             } catch (e: Exception) {
                 showError("Failed to save folder order: ${e.message}")
             } finally {

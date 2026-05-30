@@ -4,11 +4,11 @@ import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.Dispatimport kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launches.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -34,11 +34,14 @@ class DebugLogger @Inject constructor(
 ) {
     
     private val _logs = MutableStateFlow<List<DebugLog>>(emptyList())
-    val logs: StateFlow<List<DebugLog>> = _logs.asStateFlow()
-    
-    private val scope = CoroutineScope(Dispatchers.IO)
+    val logs: StateFlow<List<DebugL    // limitedParallelism(1) сериализует запись в файл — без гонок на appendText/усечении
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val scope = CoroutineScope(Dispatchers.IO.limitedParallelism(1))
     private val logFile = File(context.filesDir, "debug_logs.txt")
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    // DateTimeFormatter потокобезопасен (в отличие от SimpleDateFormat)
+    private val dateFormat = java.time.format.DateTimeFormatter
+        .ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
+        .withZone(java.time.ZoneId.systemDefault())yyy-MM-dd HH:mm:ss.SSS", Locale.US)
     
     fun debug(tag: String, message: String) {
         log(LogLevel.DEBUG, tag, message)
@@ -61,11 +64,8 @@ class DebugLogger @Inject constructor(
             level = level,
             tag = tag,
             message = message,
-            stackTrace = stackTrace
-        )
-        
-        // Добавить в память
-        _logs.value = (_logs.value + logEntry).takeLast(1000)
+        // Добавить в память (атомарно)
+        _logs.update { (it + logEntry).takeLast(1000) }     _logs.value = (_logs.value + logEntry).takeLast(1000)
         
         // Записать в файл
         scope.launch {
@@ -78,14 +78,10 @@ class DebugLogger @Inject constructor(
             LogLevel.DEBUG -> Log.d(tag, logMessage)
             LogLevel.INFO -> Log.i(tag, logMessage)
             LogLevel.WARNING -> Log.w(tag, logMessage)
-            LogLevel.ERROR -> Log.e(tag, logMessage, if (stackTrace != null) Throwable(stackTrace) else null)
-        }
-    }
-    
-    private fun writeToFile(log: DebugLog) {
+            LogLevel.ERROR -> Log.e(tag, logMessage, if (stackT    private fun writeToFile(log: DebugLog) {
         try {
-            val timestamp = dateFormat.format(Date(log.timestamp))
-            val line = "[$timestamp] [${log.level}] [${log.tag}] ${log.message}\n"
+            val timestamp = dateFormat.format(java.time.Instant.ofEpochMilli(log.timestamp))
+            val line = "[$timestamp] [${log.level}] [${log.tag}] ${log.message}\n"    val line = "[$timestamp] [${log.level}] [${log.tag}] ${log.message}\n"
             
             logFile.appendText(line)
             

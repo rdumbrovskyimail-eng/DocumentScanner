@@ -120,14 +120,17 @@ object ImageUtils {
                 rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)
             }
             
-            // Clean up heap
+            // Clean up heap: исходный больше не нужен
             if (rotatedBitmap !== bitmap) {
                 bitmap.recycle()
             }
-            
+
             Timber.d("$TAG: Image saved to ${outputFile.absolutePath} (${outputFile.length()} bytes)")
-            
-            getStableUri(context, outputFile)
+
+            val uri = getStableUri(context, outputFile)
+            // Повёрнутый bitmap уже записан в файл — освобождаем native-память
+            rotatedBitmap.recycle()
+            uri
         } catch (e: Exception) {
             outputFile.delete()
             throw IOException("Failed to copy image: ${e.message}", e)
