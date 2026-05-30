@@ -138,33 +138,33 @@ class AlarmScheduler @Inject constructor(
         when {
             // Больше 2 дней → 1 раз в день
             timeUntilTerm > DAYS_2 -> {
-                reminders.add(ReminderTime(termTime - DAYS_2, formatMessage(MSG_DAYS_2, term.title), 1))
-                reminders.add(ReminderTime(termTime - DAY_1, formatMessage(MSG_DAY_1, term.title), 2))
+                reminders.add(ReminderTime(termTime - DAYS_2, formatMessage(R.string.reminder_days_2, term.title), 1))
+                reminders.add(ReminderTime(termTime - DAY_1, formatMessage(R.string.reminder_day_1, term.title), 2))
             }
             
             // Больше 1 дня → утро и вечер
             timeUntilTerm > DAY_1 -> {
-                reminders.add(ReminderTime(termTime - DAY_1, formatMessage(MSG_TOMORROW, term.title), 3))
-                reminders.add(ReminderTime(termTime - HOURS_12, formatMessage(MSG_HOURS_12, term.title), 4))
+                reminders.add(ReminderTime(termTime - DAY_1, formatMessage(R.string.reminder_tomorrow, term.title), 3))
+                reminders.add(ReminderTime(termTime - HOURS_12, formatMessage(R.string.reminder_hours_12, term.title), 4))
             }
             
             // Меньше 1 дня, но больше 5 часов → каждые 2-3 часа
             timeUntilTerm > HOURS_5 -> {
-                reminders.add(ReminderTime(termTime - HOURS_5, formatMessage(MSG_HOURS_5, term.title), 5))
-                reminders.add(ReminderTime(termTime - HOURS_3, formatMessage(MSG_HOURS_3, term.title), 6))
-                reminders.add(ReminderTime(termTime - HOUR_1, formatMessage(MSG_HOUR_1, term.title), 7))
+                reminders.add(ReminderTime(termTime - HOURS_5, formatMessage(R.string.reminder_hours_5, term.title), 5))
+                reminders.add(ReminderTime(termTime - HOURS_3, formatMessage(R.string.reminder_hours_3, term.title), 6))
+                reminders.add(ReminderTime(termTime - HOUR_1, formatMessage(R.string.reminder_hour_1, term.title), 7))
             }
             
             // Меньше 5 часов → каждые 30 минут
             timeUntilTerm > HOUR_1 -> {
-                reminders.add(ReminderTime(termTime - MIN_60, formatMessage(MSG_MIN_60, term.title), 8))
-                reminders.add(ReminderTime(termTime - MIN_30, formatMessage(MSG_MIN_30, term.title), 9))
+                reminders.add(ReminderTime(termTime - MIN_60, formatMessage(R.string.reminder_min_60, term.title), 8))
+                reminders.add(ReminderTime(termTime - MIN_30, formatMessage(R.string.reminder_min_30, term.title), 9))
             }
             
             // Последний час → каждые 15 минут
             timeUntilTerm > MIN_15 -> {
-                reminders.add(ReminderTime(termTime - MIN_30, formatMessage(MSG_MIN_30, term.title), 10))
-                reminders.add(ReminderTime(termTime - MIN_15, formatMessage(MSG_MIN_15, term.title), 11))
+                reminders.add(ReminderTime(termTime - MIN_30, formatMessage(R.string.reminder_min_30, term.title), 10))
+                reminders.add(ReminderTime(termTime - MIN_15, formatMessage(R.string.reminder_min_15, term.title), 11))
             }
         }
 
@@ -177,7 +177,7 @@ class AlarmScheduler @Inject constructor(
         reminders.addAll(filteredPre)
         
         // Главное уведомление (в момент дедлайна)
-        reminders.add(ReminderTime(termTime, formatMessage(MSG_NOW, term.title), MAIN_ALARM_OFFSET))
+        reminders.add(ReminderTime(termTime, formatMessage(R.string.reminder_now, term.title), MAIN_ALARM_OFFSET))
         
         // Повторяющиеся напоминания ПОСЛЕ дедлайна (каждые 5 минут в течение часа)
         // Only if user enabled reminders.
@@ -186,7 +186,7 @@ class AlarmScheduler @Inject constructor(
                 reminders.add(
                     ReminderTime(
                         termTime + (i * MIN_5),
-                        formatMessage(MSG_REMINDER, term.title),
+                        formatMessage(R.string.reminder_urgent, term.title),
                         MAIN_ALARM_OFFSET + i
                     )
                 )
@@ -290,8 +290,8 @@ class AlarmScheduler @Inject constructor(
      * Форматирует сообщение напоминания.
      * TODO: В будущем использовать string resources для локализации
      */
-    private fun formatMessage(template: String, title: String): String {
-        return template.replace("%s", title)
+    private fun formatMessage(@androidx.annotation.StringRes templateRes: Int, title: String): String {
+        return context.getString(templateRes, title)
     }
     
     private data class ReminderTime(
@@ -326,23 +326,12 @@ class AlarmScheduler @Inject constructor(
         const val EXTRA_IS_MAIN_ALARM = "is_main_alarm"
         const val EXTRA_NOTIFICATION_OFFSET = "notification_offset"
         
-        // Шаблоны сообщений
-        private const val MSG_DAYS_2 = "Осталось 2 дня до: %s"
-        private const val MSG_DAY_1 = "Остался 1 день до: %s"
-        private const val MSG_TOMORROW = "Завтра дедлайн: %s"
-        private const val MSG_HOURS_12 = "Осталось 12 часов до: %s"
-        private const val MSG_HOURS_5 = "Осталось 5 часов до: %s"
-        private const val MSG_HOURS_3 = "Осталось 3 часа до: %s"
-        private const val MSG_HOUR_1 = "Остался 1 час до: %s"
-        private const val MSG_MIN_60 = "Осталось 60 минут до: %s"
-        private const val MSG_MIN_30 = "Осталось 30 минут до: %s"
-        private const val MSG_MIN_15 = "Осталось 15 минут до: %s"
-        private const val MSG_NOW = "⏰ СРОК ИСТЕК: %s"
-        private const val MSG_REMINDER = "⏰ СРОЧНОЕ НАПОМИНАНИЕ: %s"
+
 
         // ✅ Единый генератор Request Code для планирования и отмены
         fun getRequestCode(termId: Long, offset: Int): Int {
-            return (termId.hashCode() * 31 + offset) and Int.MAX_VALUE
+            // Множитель (1000) > MAX_REMINDER_OFFSET (150) — offset не «перетекает» в соседний термин
+            return (termId * 1000L + offset).hashCode() and Int.MAX_VALUE
         }
     }
 }

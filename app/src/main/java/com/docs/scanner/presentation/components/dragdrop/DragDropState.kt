@@ -72,13 +72,7 @@ class DragDropState(
         currentIndexOfDraggedItem = index
         
     scope.launch {
-        animatedOffsetY.animateTo(
-            0f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioNoBouncy,
-                stiffness = Spring.StiffnessHigh
-            )
-        )
+        animatedOffsetY.snapTo(0f)
     }
         
         hapticFeedback?.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -92,13 +86,8 @@ class DragDropState(
         dragOffset += delta
         
         scope.launch {
-            animatedOffsetY.animateTo(
-                dragOffset.y,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessHigh
-                )
-            )
+            // Во время активного перетаскивания следуем за пальцем 1:1, без пружины
+            animatedOffsetY.snapTo(dragOffset.y)
         }
         
         updateTargetIndex()

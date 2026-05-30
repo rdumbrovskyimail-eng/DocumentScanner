@@ -142,8 +142,8 @@ fun TextEditorSheet(
                             onCopy = {
                                 if (textFieldValue.selection.length > 0) {
                                     val selectedText = textFieldValue.text.substring(
-                                        textFieldValue.selection.start,
-                                        textFieldValue.selection.end
+                                        textFieldValue.selection.min,
+                                        textFieldValue.selection.max
                                     )
                                     clipboardManager.setText(AnnotatedString(selectedText))
                                 } else {
@@ -153,11 +153,11 @@ fun TextEditorSheet(
                             onPaste = {
                                 clipboardManager.getText()?.let { clipText ->
                                     val newText = textFieldValue.text.replaceRange(
-                                        textFieldValue.selection.start,
-                                        textFieldValue.selection.end,
+                                        textFieldValue.selection.min,
+                                        textFieldValue.selection.max,
                                         clipText.text
                                     )
-                                    val newCursorPos = textFieldValue.selection.start + clipText.text.length
+                                    val newCursorPos = textFieldValue.selection.min + clipText.text.length
                                     textFieldValue = TextFieldValue(
                                         text = newText,
                                         selection = TextRange(newCursorPos)
