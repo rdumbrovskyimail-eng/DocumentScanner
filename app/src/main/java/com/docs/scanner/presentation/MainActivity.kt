@@ -92,25 +92,22 @@ class MainActivity : ComponentActivity() {
 
         val permissions = mutableListOf<String>()
 
+        // Камера необходима для работы сканера документов
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) !=
             PackageManager.PERMISSION_GRANTED) {
             permissions.add(Manifest.permission.CAMERA)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Уведомления необходимы для напоминаний о дедлайнах (Android 13+)
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.POST_NOTIFICATIONS)
             }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) !=
-                PackageManager.PERMISSION_GRANTED) {
-                permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
-            }
-        } else {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) !=
-                PackageManager.PERMISSION_GRANTED) {
-                permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
+            
+            // ❌ УБРАНО: READ_MEDIA_IMAGES больше не запрашивается на старте.
+            // Использование системного Photo Picker (PickVisualMedia) не требует этого разрешения,
+            // а его запрос на Android 14+ приводил к автоматическому открытию галереи ОС.
         }
 
         if (permissions.isNotEmpty()) {
