@@ -28,6 +28,7 @@ import com.docs.scanner.domain.core.Record
 import com.docs.scanner.domain.core.RecordId
 import com.docs.scanner.domain.usecase.AddDocumentState
 import com.docs.scanner.domain.usecase.AllUseCases
+import com.docs.scanner.di.AppScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
