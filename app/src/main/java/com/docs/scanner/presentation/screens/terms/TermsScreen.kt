@@ -114,7 +114,7 @@ fun TermsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Terms & Deadlines") },
+                title = { Text("Сроки и дедлайны") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -127,7 +127,7 @@ fun TermsScreen(
                     }
                     DropdownMenu(expanded = showDeleteAllMenu, onDismissRequest = { showDeleteAllMenu = false }) {
                         DropdownMenuItem(
-                            text = { Text("Delete all completed") },
+                            text = { Text("Удалить все выполненные") },
                             leadingIcon = { Icon(Icons.Default.AutoDelete, contentDescription = null) },
                             onClick = {
                                 showDeleteAllMenu = false
@@ -135,7 +135,7 @@ fun TermsScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Delete all cancelled") },
+                            text = { Text("Удалить все отменённые") },
                             leadingIcon = { Icon(Icons.Default.AutoDelete, contentDescription = null) },
                             onClick = {
                                 showDeleteAllMenu = false
@@ -162,7 +162,7 @@ fun TermsScreen(
         ) {
             when (uiState) {
                 is TermsUiState.Error -> Text((uiState as TermsUiState.Error).message, color = MaterialTheme.colorScheme.error)
-                TermsUiState.Loading -> Text("Loading...")
+                TermsUiState.Loading -> Text("Загрузка…")
                 is TermsUiState.Success -> {
                     val s = uiState as TermsUiState.Success
                     var tabIndex by remember { mutableIntStateOf(0) }
@@ -191,7 +191,7 @@ fun TermsScreen(
                             Tab(
                                 selected = tabIndex == index,
                                 onClick = { viewModel.setFilter(f) },
-                                text = { Text("${f.name.replace('_', ' ')} ($count)") }
+                                text = { Text("${f.titleRu()} ($count)") }
                             )
                         }
                     }
@@ -200,7 +200,7 @@ fun TermsScreen(
                         value = query,
                         onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Search") },
+                        label = { Text("Поиск") },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         singleLine = true
                     )
@@ -222,7 +222,7 @@ fun TermsScreen(
 
     if (showCreateDialog) {
         TermEditorDialog(
-            title = "Create term",
+            title = "Новый срок",
             initial = null,
             now = now,
             onDismiss = { showCreateDialog = false },
@@ -242,7 +242,7 @@ fun TermsScreen(
 
     selectedTerm?.let { term ->
         TermEditorDialog(
-            title = "Edit term",
+            title = "Редактировать срок",
             initial = term,
             now = now,
             onDismiss = { viewModel.closeDialog() },
@@ -263,9 +263,9 @@ fun TermsScreen(
 
     pendingDeleteTerm?.let { term ->
         ConfirmDialog(
-            title = "Delete term?",
-            message = "This will delete \"${term.title}\". This action cannot be undone.",
-            confirmText = "Delete",
+            title = "Удалить срок?",
+            message = "Срок «${term.title}» будет удалён безвозвратно.",
+            confirmText = "Удалить",
             onConfirm = {
                 viewModel.deleteTerm(term.id.value)
                 pendingDeleteTerm = null
@@ -276,9 +276,9 @@ fun TermsScreen(
 
     if (pendingDeleteAllCompleted) {
         ConfirmDialog(
-            title = "Delete all completed?",
-            message = "This will permanently delete all completed terms.",
-            confirmText = "Delete",
+            title = "Удалить все выполненные?",
+            message = "Все выполненные сроки будут удалены безвозвратно.",
+            confirmText = "Удалить",
             onConfirm = {
                 viewModel.deleteAllCompleted()
                 pendingDeleteAllCompleted = false
@@ -289,9 +289,9 @@ fun TermsScreen(
 
     if (pendingDeleteAllCancelled) {
         ConfirmDialog(
-            title = "Delete all cancelled?",
-            message = "This will permanently delete all cancelled terms.",
-            confirmText = "Delete",
+            title = "Удалить все отменённые?",
+            message = "Все отменённые сроки будут удалены безвозвратно.",
+            confirmText = "Удалить",
             onConfirm = {
                 viewModel.deleteAllCancelled()
                 pendingDeleteAllCancelled = false
@@ -313,7 +313,7 @@ private fun TermsList(
     onDelete: (Term) -> Unit
 ) {
     if (terms.isEmpty()) {
-        Text("Nothing here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Здесь пусто.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
 
@@ -346,10 +346,10 @@ private fun TermsList(
                         Text(term.title, style = MaterialTheme.typography.titleMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Surface(shape = MaterialTheme.shapes.small, color = statusColor.copy(alpha = 0.1f)) {
-                                Text(text = status.name, color = statusColor, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                Text(text = status.titleRu(), color = statusColor, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                             }
                             Text(
-                                text = "${dt.hour}:${String.format("%02d", dt.minute)} • ${term.priority.name}",
+                                text = "${dt.hour}:${String.format("%02d", dt.minute)} • ${term.priority.titleRu()}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -360,7 +360,7 @@ private fun TermsList(
                     }
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                         DropdownMenuItem(
-                            text = { Text("Edit") },
+                            text = { Text("Редактировать") },
                             leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
                             onClick = {
                                 menuExpanded = false
@@ -369,7 +369,7 @@ private fun TermsList(
                         )
                         if (!term.isCancelled && !term.isCompleted) {
                             DropdownMenuItem(
-                                text = { Text("Complete") },
+                                text = { Text("Отметить выполненным") },
                                 leadingIcon = { Icon(Icons.Default.Done, contentDescription = null) },
                                 onClick = {
                                     menuExpanded = false
@@ -377,7 +377,7 @@ private fun TermsList(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Cancel") },
+                                text = { Text("Отменить") },
                                 leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
                                 onClick = {
                                     menuExpanded = false
@@ -387,7 +387,7 @@ private fun TermsList(
                         }
                         if (term.isCompleted) {
                             DropdownMenuItem(
-                                text = { Text("Mark as not completed") },
+                                text = { Text("Снять отметку о выполнении") },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
                                 onClick = {
                                     menuExpanded = false
@@ -397,7 +397,7 @@ private fun TermsList(
                         }
                         if (term.isCancelled) {
                             DropdownMenuItem(
-                                text = { Text("Restore") },
+                                text = { Text("Восстановить") },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
                                 onClick = {
                                     menuExpanded = false
@@ -406,7 +406,7 @@ private fun TermsList(
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text("Delete") },
+                            text = { Text("Удалить") },
                             leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
                             onClick = {
                                 menuExpanded = false
@@ -462,14 +462,14 @@ private fun TermEditorDialog(
                 OutlinedTextField(
                     value = termTitle,
                     onValueChange = { termTitle = it },
-                    label = { Text("Title") },
+                    label = { Text("Название") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
                 OutlinedTextField(
                     value = desc,
                     onValueChange = { desc = it },
-                    label = { Text("Description (optional)") },
+                    label = { Text("Описание (необязательно)") },
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -484,7 +484,7 @@ private fun TermEditorDialog(
                                 date.dayOfMonth
                             ).show()
                         }
-                    ) { Text("Date: ${date.toString()}") }
+                    ) { Text("Дата: ${date.toString()}") }
 
                     TextButton(
                         onClick = {
@@ -496,15 +496,15 @@ private fun TermEditorDialog(
                                 true
                             ).show()
                         }
-                    ) { Text("Time: ${time.toString()}") }
+                    ) { Text("Время: ${time.toString()}") }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { reminderMenu = true }) { Text("Reminder: ${reminder}m") }
+                    TextButton(onClick = { reminderMenu = true }) { Text("Напоминание: ${reminder} мин") }
                     DropdownMenu(expanded = reminderMenu, onDismissRequest = { reminderMenu = false }) {
                         listOf(0, 5, 15, 30, 60, 120, 240, 1440, 2880).forEach { m ->
                             DropdownMenuItem(
-                                text = { Text(if (m == 0) "At due time" else "$m minutes") },
+                                text = { Text(if (m == 0) "В момент срока" else "$m мин") },
                                 onClick = {
                                     reminderMenu = false
                                     reminder = m
@@ -513,11 +513,11 @@ private fun TermEditorDialog(
                         }
                     }
 
-                    TextButton(onClick = { priorityMenu = true }) { Text("Priority: ${priority.name}") }
+                    TextButton(onClick = { priorityMenu = true }) { Text("Приоритет: ${priority.titleRu()}") }
                     DropdownMenu(expanded = priorityMenu, onDismissRequest = { priorityMenu = false }) {
                         TermPriority.entries.forEach { p ->
                             DropdownMenuItem(
-                                text = { Text(p.name) },
+                                text = { Text(p.titleRu()) },
                                 onClick = {
                                     priorityMenu = false
                                     priority = p
@@ -542,10 +542,10 @@ private fun TermEditorDialog(
                         )
                     )
                 }
-            ) { Text("Save") }
+            ) { Text("Сохранить") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text("Отмена") }
         }
     )
 }
@@ -555,4 +555,30 @@ private fun formatDue(epochMillis: Long): String {
     val dt = Instant.ofEpochMilli(epochMillis).atZone(zone)
     val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     return dt.format(fmt)
+}
+
+private fun TermsFilter.titleRu(): String = when (this) {
+    TermsFilter.ACTIVE -> "Активные"
+    TermsFilter.UPCOMING -> "Скоро"
+    TermsFilter.DUE_TODAY -> "Сегодня"
+    TermsFilter.OVERDUE -> "Просроченные"
+    TermsFilter.COMPLETED -> "Выполненные"
+    TermsFilter.CANCELLED -> "Отменённые"
+    TermsFilter.ALL -> "Все"
+}
+
+private fun TermStatus.titleRu(): String = when (this) {
+    TermStatus.PENDING -> "Ожидает"
+    TermStatus.UPCOMING -> "Скоро"
+    TermStatus.DUE_TODAY -> "Сегодня"
+    TermStatus.OVERDUE -> "Просрочено"
+    TermStatus.COMPLETED -> "Выполнено"
+    TermStatus.CANCELLED -> "Отменено"
+}
+
+private fun TermPriority.titleRu(): String = when (this) {
+    TermPriority.LOW -> "Низкий"
+    TermPriority.NORMAL -> "Обычный"
+    TermPriority.HIGH -> "Высокий"
+    TermPriority.CRITICAL -> "Критический"
 }
