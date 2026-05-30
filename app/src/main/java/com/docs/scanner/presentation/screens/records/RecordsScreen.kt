@@ -145,8 +145,7 @@ fun RecordsScreen(
                             records = records,
                             sortMode = sortMode,
                             onRecordClick = onRecordClick,
-                            onMenuClick = { menuRecord = it },
-                            onReorder = viewModel::reorderRecords
+                            onMenuClick = { menuRecord = it }
                         )
                     }
                 }
@@ -256,18 +255,19 @@ private fun RecordsList(
     records: List<Record>,
     sortMode: SortMode,
     onRecordClick: (Long) -> Unit,
-    onMenuClick: (Record) -> Unit,
-    onReorder: (Int, Int) -> Unit
+    onMenuClick: (Record) -> Unit
 ) {
     val isManualMode = false
     
-    DragDropLazyColumn(
-        items = records,
-        key = { _, record -> record.id.value },
-        onMove = onReorder,
-        modifier = Modifier.fillMaxSize(),
-        enabled = isManualMode
-    ) { index, record, isDragging, dragModifier ->
+    LazyColumn(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        items(
+            items = records,
+            key = { it.id.value }
+        ) { record ->
+            val isDragging = false
+            val dragModifier = Modifier
         
         // Обертка для отступов, так как DragDropLazyColumn не принимает contentPadding
         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
