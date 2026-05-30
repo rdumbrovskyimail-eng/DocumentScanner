@@ -268,17 +268,18 @@ private fun RecordsList(
         ) { record ->
             val isDragging = false
             val dragModifier = Modifier
-        
-        // Обертка для отступов, так как DragDropLazyColumn не принимает contentPadding
-        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-            RecordCard(
-                record = record,
-                isDragging = isDragging,
-                isManualMode = isManualMode,
-                dragModifier = dragModifier, // Передаем модификатор драга внутрь
-                onClick = { onRecordClick(record.id.value) },
-                onMenuClick = { onMenuClick(record) }
-            )
+            
+            // Обертка для отступов, так как DragDropLazyColumn не принимает contentPadding
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                RecordCard(
+                    record = record,
+                    isDragging = isDragging,
+                    isManualMode = isManualMode,
+                    dragModifier = dragModifier, // Передаем модификатор драга внутрь
+                    onClick = { onRecordClick(record.id.value) },
+                    onMenuClick = { onMenuClick(record) }
+                )
+            }
         }
     }
 }
