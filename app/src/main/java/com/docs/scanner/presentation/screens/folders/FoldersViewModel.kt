@@ -17,11 +17,10 @@ import javax.inject.Inject
 // SORT MODE ENUM
 // ══════════════════════════════════════════════════════════════════════════════
 
-enum class SortMode {
-    BY_DATE,
-    BY_NAME,
-    MANUAL
-}
+    enum class SortMode {
+        BY_DATE,
+        BY_NAME
+    }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // VIEW MODEL
@@ -107,13 +106,11 @@ class FoldersViewModel @Inject constructor(
         val sortedPinned = when (sortMode) {
             SortMode.BY_DATE -> pinned.sortedByDescending { it.updatedAt }
             SortMode.BY_NAME -> pinned.sortedBy { it.name.lowercase() }
-            SortMode.MANUAL -> pinned.sortedBy { it.position }
         }
         
         val sortedOthers = when (sortMode) {
             SortMode.BY_DATE -> others.sortedByDescending { it.updatedAt }
             SortMode.BY_NAME -> others.sortedBy { it.name.lowercase() }
-            SortMode.MANUAL -> others.sortedBy { it.position }
         }
         
         return quickScans + sortedPinned + sortedOthers

@@ -113,14 +113,12 @@ class RecordsViewModel @Inject constructor(
         
         val sortedPinned = when (sortMode) {
             SortMode.BY_DATE -> pinned.sortedByDescending { it.updatedAt }
-            SortMode.BY_NAME -> pinned.sortedBy { it.name.lowercase() }
-            SortMode.MANUAL -> pinned.sortedBy { it.position }
+            else -> pinned.sortedBy { it.name.lowercase() }
         }
         
         val sortedOthers = when (sortMode) {
             SortMode.BY_DATE -> others.sortedByDescending { it.updatedAt }
-            SortMode.BY_NAME -> others.sortedBy { it.name.lowercase() }
-            SortMode.MANUAL -> others.sortedBy { it.position }
+            else -> others.sortedBy { it.name.lowercase() }
         }
         
         return sortedPinned + sortedOthers

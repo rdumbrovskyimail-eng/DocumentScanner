@@ -96,7 +96,6 @@ fun FoldersScreen(
                         DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
                             SortMenuItem(if (isRussian) "По дате" else "By Date", Icons.Default.CalendarToday, sortMode == SortMode.BY_DATE) { viewModel.setSortMode(SortMode.BY_DATE); showSortMenu = false }
                             SortMenuItem(if (isRussian) "По алфавиту" else "By Name", Icons.Default.SortByAlpha, sortMode == SortMode.BY_NAME) { viewModel.setSortMode(SortMode.BY_NAME); showSortMenu = false }
-                            SortMenuItem(if (isRussian) "Вручную" else "Manual", Icons.Default.DragHandle, sortMode == SortMode.MANUAL) { viewModel.setSortMode(SortMode.MANUAL); showSortMenu = false }
                         }
                     }
                     IconButton(onClick = { viewModel.setShowArchived(!showArchived) }) {
@@ -217,7 +216,7 @@ private fun FoldersList(
 ) {
     val quickScansFolder = folders.find { it.isQuickScans }
     val otherFolders = folders.filter { !it.isQuickScans }
-    val isManualMode = sortMode == SortMode.MANUAL
+    val isManualMode = false
     
     // Объединяем папки в один список для DragDropLazyColumn
     val displayItems = remember(quickScansFolder, otherFolders) {

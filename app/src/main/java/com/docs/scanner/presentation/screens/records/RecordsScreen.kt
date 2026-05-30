@@ -101,16 +101,6 @@ fun RecordsScreen(
                                     showSortMenu = false
                                 }
                             )
-                            
-                            SortMenuItem(
-                                text = "Вручную",
-                                icon = Icons.Default.DragHandle,
-                                selected = sortMode == SortMode.MANUAL,
-                                onClick = {
-                                    viewModel.setSortMode(SortMode.MANUAL)
-                                    showSortMenu = false
-                                }
-                            )
                         }
                     }
                 }
@@ -269,7 +259,7 @@ private fun RecordsList(
     onMenuClick: (Record) -> Unit,
     onReorder: (Int, Int) -> Unit
 ) {
-    val isManualMode = sortMode == SortMode.MANUAL
+    val isManualMode = false
     
     DragDropLazyColumn(
         items = records,
