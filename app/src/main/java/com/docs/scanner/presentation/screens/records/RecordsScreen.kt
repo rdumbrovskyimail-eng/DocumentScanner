@@ -59,7 +59,7 @@ fun RecordsScreen(
                     Text(
                         text = when (val state = uiState) {
                             is RecordsUiState.Success -> state.folderName
-                            else -> "Records"
+                            else -> "Записи"
                         }
                     )
                 },
@@ -83,7 +83,7 @@ fun RecordsScreen(
                             onDismissRequest = { showSortMenu = false }
                         ) {
                             SortMenuItem(
-                                text = "By Date",
+                                text = "По дате",
                                 icon = Icons.Default.CalendarToday,
                                 selected = sortMode == SortMode.BY_DATE,
                                 onClick = {
@@ -93,7 +93,7 @@ fun RecordsScreen(
                             )
                             
                             SortMenuItem(
-                                text = "By Name",
+                                text = "По имени",
                                 icon = Icons.Default.SortByAlpha,
                                 selected = sortMode == SortMode.BY_NAME,
                                 onClick = {
@@ -103,7 +103,7 @@ fun RecordsScreen(
                             )
                             
                             SortMenuItem(
-                                text = "Manual",
+                                text = "Вручную",
                                 icon = Icons.Default.DragHandle,
                                 selected = sortMode == SortMode.MANUAL,
                                 onClick = {
@@ -245,9 +245,9 @@ fun RecordsScreen(
     
     showDeleteDialog?.let { record ->
         ConfirmDialog(
-            title = "Delete Record?",
-            message = "This will delete \"${record.name}\" and all its documents.",
-            confirmText = "Delete",
+            title = "Удалить запись?",
+            message = "Запись «${record.name}» и все её документы будут удалены.",
+            confirmText = "Удалить",
             onConfirm = {
                 viewModel.deleteRecord(record.id.value)
                 showDeleteDialog = null
@@ -351,7 +351,7 @@ private fun RecordCard(
                 record.description?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text("${record.documentCount} pages", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${record.documentCount} стр.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             
             IconButton(onClick = onMenuClick) {
@@ -416,7 +416,7 @@ private fun EmptyRecordsState(
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = if (isQuickScansFolder) "No quick scans yet" else "No records yet",
+                text = if (isQuickScansFolder) "Быстрых сканов пока нет" else "Записей пока нет",
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -424,7 +424,7 @@ private fun EmptyRecordsState(
                 Button(onClick = onCreateClick) {
                     Icon(Icons.Default.Add, null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Create Record")
+                    Text("Создать запись")
                 }
             }
         }
@@ -446,13 +446,13 @@ private fun RecordMenu(
                 Text(record.name, Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
                 HorizontalDivider()
                 ListItem(
-                    headlineContent = { Text("Rename") },
+                    headlineContent = { Text("Переименовать") },
                     leadingContent = { Icon(Icons.Default.Edit, null) },
                     modifier = Modifier.clickable { onRename() }
                 )
                 // ✅ СИНХРОНИЗИРОВАНО: Корректный вызов обновленной вьюмодели
                 ListItem(
-                    headlineContent = { Text(if (record.isPinned) "Unpin" else "Pin to top") },
+                    headlineContent = { Text(if (record.isPinned) "Открепить" else "Закрепить сверху") },
                     leadingContent = { Icon(Icons.Default.PushPin, null) },
                     modifier = Modifier.clickable { 
                         onDismiss()
@@ -460,7 +460,7 @@ private fun RecordMenu(
                     }
                 )
                 ListItem(
-                    headlineContent = { Text(if (record.isArchived) "Unarchive" else "Archive") },
+                    headlineContent = { Text(if (record.isArchived) "Из архива" else "В архив") },
                     leadingContent = { Icon(if (record.isArchived) Icons.Default.Unarchive else Icons.Default.Archive, null) },
                     modifier = Modifier.clickable { 
                         onDismiss()
@@ -472,12 +472,12 @@ private fun RecordMenu(
                     }
                 )
                 ListItem(
-                    headlineContent = { Text("Move") },
+                    headlineContent = { Text("Переместить") },
                     leadingContent = { Icon(Icons.Default.DriveFileMove, null) },
                     modifier = Modifier.clickable(onClick = onMove)
                 )
                 ListItem(
-                    headlineContent = { Text("Delete") },
+                    headlineContent = { Text("Удалить") },
                     leadingContent = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
                     modifier = Modifier.clickable(onClick = onDelete)
                 )
@@ -492,15 +492,15 @@ private fun CreateRecordDialog(onDismiss: () -> Unit, onCreate: (String, String?
     var description by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create Record") },
+        title = { Text("Создать запись") },
         text = {
             Column {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true)
-                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") })
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Название") }, singleLine = true)
+                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Описание") })
             }
         },
-        confirmButton = { TextButton(onClick = { onCreate(name, description.ifBlank { null }) }, enabled = name.isNotBlank()) { Text("Create") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { TextButton(onClick = { onCreate(name, description.ifBlank { null }) }, enabled = name.isNotBlank()) { Text("Создать") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
     )
 }
 
@@ -510,15 +510,15 @@ private fun EditRecordDialog(record: Record, onDismiss: () -> Unit, onSave: (Str
     var description by remember { mutableStateOf(record.description ?: "") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit Record") },
+        title = { Text("Редактировать запись") },
         text = {
             Column {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true)
-                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") })
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Название") }, singleLine = true)
+                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Описание") })
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(name, description.ifBlank { null }) }, enabled = name.isNotBlank()) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { TextButton(onClick = { onSave(name, description.ifBlank { null }) }, enabled = name.isNotBlank()) { Text("Сохранить") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
     )
 }
 
@@ -532,7 +532,7 @@ private fun MoveRecordDialog(
     val selectableFolders = remember(folders) { folders.filter { it.id != record.folderId && !it.isQuickScans } }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Move to folder") },
+        title = { Text("Переместить в папку") },
         text = {
             Column {
                 selectableFolders.forEach { folder ->
@@ -541,6 +541,6 @@ private fun MoveRecordDialog(
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
     )
 }
