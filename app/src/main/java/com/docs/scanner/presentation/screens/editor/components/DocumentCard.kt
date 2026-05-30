@@ -707,7 +707,7 @@ private fun TranslationSection(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Translation failed",
+                            text = "Ошибка перевода",
                             style = MaterialTheme.typography.bodySmall,
                             color = GoogleDocsError
                         )
@@ -718,7 +718,7 @@ private fun TranslationSection(
                                 modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Retry")
+                            Text("Повторить")
                         }
                     }
                 }
@@ -740,7 +740,7 @@ private fun TranslationSection(
                     Text(
                         text = document.translatedText ?: "",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = GoogleDocsTranslationText,
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onClick() }
@@ -766,9 +766,6 @@ private fun ActionButtonsRow(
     isSelectionMode: Boolean,
     dragModifier: Modifier = Modifier
 ) {
-    var showTextSelector by remember { mutableStateOf(false) }
-    var pendingAction by remember { mutableStateOf<String?>(null) }
-    val ocrText = document.originalText ?: ""
     val translatedText = document.translatedText ?: ""
 
     Row(
@@ -776,63 +773,30 @@ private fun ActionButtonsRow(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (!isSelectionMode) {
-            Icon(
-                imageVector = Icons.Default.DragHandle,
-                contentDescription = "Reorder page",
-                tint = GoogleDocsTextSecondary,
-                modifier = Modifier
-                    .size(36.dp)
-                    .padding(8.dp)
-                    .then(dragModifier)
-            )
-        }
-
-        if (onAiRewrite != null) {
-            MicroButton(
-                text = "AI",
-                icon = Icons.Default.AutoAwesome,
-                onClick = {
-                    pendingAction = "ai"
-                    showTextSelector = true
-                },
-                enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
-            )
-        }
-
         if (onCopyText != null) {
             MicroButton(
-                text = "Copy",
+                text = "Копировать",
                 icon = Icons.Default.ContentCopy,
-                onClick = {
-                    pendingAction = "copy"
-                    showTextSelector = true
-                },
-                enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
+                onClick = { onCopyText.invoke(translatedText) },
+                enabled = translatedText.isNotBlank()
             )
         }
 
         if (onPasteText != null) {
             MicroButton(
-                text = "Paste",
+                text = "Вставить",
                 icon = Icons.Default.ContentPaste,
-                onClick = {
-                    pendingAction = "paste"
-                    showTextSelector = true
-                },
+                onClick = { onPasteText.invoke(false) },
                 enabled = true
             )
         }
 
         if (onClearFormatting != null) {
             MicroButton(
-                text = "Clear",
+                text = "Очистить",
                 icon = Icons.Default.FormatClear,
-                onClick = {
-                    pendingAction = "clear"
-                    showTextSelector = true
-                },
-                enabled = ocrText.isNotBlank() || translatedText.isNotBlank()
+                onClick = { onClearFormatting.invoke(false) },
+                enabled = translatedText.isNotBlank()
             )
         }
 
@@ -841,13 +805,14 @@ private fun ActionButtonsRow(
         if (onSharePage != null) {
             IconButton(
                 onClick = onSharePage,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(36.dp),
+                enabled = translatedText.isNotBlank()
             ) {
                 Icon(
                     Icons.Default.Share,
-                    contentDescription = "Share page",
+                    contentDescription = "Отправить перевод",
                     modifier = Modifier.size(18.dp),
-                    tint = GoogleDocsTextSecondary
+                    tint = if (translatedText.isNotBlank()) GoogleDocsTextSecondary else GoogleDocsTextTertiary
                 )
             }
         }
@@ -866,63 +831,7 @@ private fun ActionButtonsRow(
         }
     }
 
-    // Text Selector Dialog
-    if (showTextSelector) {
-        AlertDialog(
-            onDismissRequest = {
-                showTextSelector = false
-                pendingAction = null
-            },
-            title = { Text("Select text") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (ocrText.isNotBlank()) {
-                        OutlinedButton(
-                            onClick = {
-                                when (pendingAction) {
-                                    "ai" -> onAiRewrite?.invoke(true)
-                                    "copy" -> onCopyText?.invoke(ocrText)
-                                    "paste" -> onPasteText?.invoke(true)
-                                    "clear" -> onClearFormatting?.invoke(true)
-                                }
-                                showTextSelector = false
-                                pendingAction = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("OCR Text")
-                        }
-                    }
-                    if (translatedText.isNotBlank()) {
-                        OutlinedButton(
-                            onClick = {
-                                when (pendingAction) {
-                                    "ai" -> onAiRewrite?.invoke(false)
-                                    "copy" -> onCopyText?.invoke(translatedText)
-                                    "paste" -> onPasteText?.invoke(false)
-                                    "clear" -> onClearFormatting?.invoke(false)
-                                }
-                                showTextSelector = false
-                                pendingAction = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Translation")
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = {
-                    showTextSelector = false
-                    pendingAction = null
-                }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
+
 }
 
 @Composable

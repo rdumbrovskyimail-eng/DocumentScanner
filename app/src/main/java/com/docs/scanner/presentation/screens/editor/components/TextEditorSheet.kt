@@ -54,9 +54,10 @@ import com.docs.scanner.presentation.theme.*
 @Composable
 fun TextEditorSheet(
     initialText: String,
-    title: String = "Edit Text",
+    title: String = "Редактировать текст",
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
+    onShare: (String) -> Unit,
     readOnly: Boolean = false
 ) {
     var textFieldValue by remember {
@@ -88,7 +89,8 @@ fun TextEditorSheet(
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             dismissOnBackPress = true,
-            dismissOnClickOutside = false
+            dismissOnClickOutside = false,
+            decorFitsSystemWindows = false
         )
     ) {
         Box(
@@ -101,7 +103,9 @@ fun TextEditorSheet(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.85f),
+                    .fillMaxHeight()
+                    .imePadding()
+                    .navigationBarsPadding(),
                 shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 8.dp
@@ -131,7 +135,8 @@ fun TextEditorSheet(
                         hasChanges = hasChanges,
                         readOnly = readOnly,
                         onClose = onDismiss,
-                        onSave = { onSave(textFieldValue.text) }
+                        onSave = { onSave(textFieldValue.text) },
+                        onShare = { onShare(textFieldValue.text) }
                     )
                     
                     HorizontalDivider(color = GoogleDocsBorder)
@@ -270,7 +275,8 @@ private fun EditorHeader(
     hasChanges: Boolean,
     readOnly: Boolean,
     onClose: () -> Unit,
-    onSave: () -> Unit
+    onSave: () -> Unit,
+    onShare: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -283,7 +289,7 @@ private fun EditorHeader(
         IconButton(onClick = onClose) {
             Icon(
                 imageVector = Icons.Default.Close,
-                contentDescription = "Close",
+                contentDescription = "Закрыть",
                 tint = MaterialTheme.colorScheme.onSurface
             )
         }
@@ -308,19 +314,27 @@ private fun EditorHeader(
             }
         }
         
-        // Save button
-        if (!readOnly) {
-            TextButton(
-                onClick = onSave,
-                enabled = hasChanges
-            ) {
-                Text(
-                    text = "Save",
-                    color = if (hasChanges) GoogleDocsPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onShare) {
+                Icon(
+                    imageVector = Icons.Default.Share,
+                    contentDescription = "Поделиться",
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
-        } else {
-            Spacer(modifier = Modifier.width(48.dp))
+            
+            // Save button
+            if (!readOnly) {
+                TextButton(
+                    onClick = onSave,
+                    enabled = hasChanges
+                ) {
+                    Text(
+                        text = "Сохранить",
+                        color = if (hasChanges) GoogleDocsPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }
@@ -359,24 +373,39 @@ private fun EditorActionBar(
             color = GoogleDocsBorder
         )
         
-        // Copy
-        ActionChip(
-            icon = Icons.Default.ContentCopy,
-            label = "Copy",
-            onClick = onCopy
-        )
-        
-        // Paste
-        ActionChip(
-            icon = Icons.Default.ContentPaste,
-            label = "Paste",
-            onClick = onPaste
-        )
-        
-        VerticalDivider(
-            modifier = Modifier.height(24.dp),
-            color = GoogleDocsBorder
-        )
+                        // Copy
+                        ActionChip(
+                            icon = Icons.Default.ContentCopy,
+                            label = "Копировать",
+                            onClick = onCopy
+                        )
+                        
+                        // Paste
+                        ActionChip(
+                            icon = Icons.Default.ContentPaste,
+                            label = "Вставить",
+                            onClick = onPaste
+                        )
+                        
+                        VerticalDivider(
+                            modifier = Modifier.height(24.dp),
+                            color = GoogleDocsBorder
+                        )
+                        
+                        // Select All
+                        ActionChip(
+                            icon = Icons.Default.SelectAll,
+                            label = "Выделить всё",
+                            onClick = onSelectAll
+                        )
+                        
+                        // Clear
+                        ActionChip(
+                            icon = Icons.Default.Clear,
+                            label = "Очистить",
+                            onClick = onClear,
+                            tint = GoogleDocsError
+                        )
         
         // Select All
         ActionChip(

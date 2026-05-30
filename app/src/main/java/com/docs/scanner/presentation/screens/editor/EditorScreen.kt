@@ -401,67 +401,42 @@ fun EditorScreen(
                 )
             } else {
                 TopAppBar(
-                    title = {
+                            title = {
                         Text(
                             text = when (val state = uiState) {
-                                is EditorUiState.Success -> state.record.name.ifBlank { "Untitled" }
-                                else -> "Documents"
+                                is EditorUiState.Success -> state.record.name.ifBlank { "Без названия" }
+                                else -> "Документы"
                             },
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     },
-                    navigationIcon = {
-                        IconButton(onClick = onBackClick) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                        }
-                    },
                     actions = {
                         if (canUndo) {
                             IconButton(onClick = { viewModel.undoLastEdit() }) {
-                                Icon(Icons.Default.Undo, contentDescription = "Undo")
+                                Icon(Icons.Default.Undo, contentDescription = "Отменить")
                             }
                         }
                         IconButton(onClick = onCameraClick) {
-                            Icon(Icons.Default.CameraAlt, contentDescription = "Camera")
+                            Icon(Icons.Default.CameraAlt, contentDescription = "Камера")
                         }
                         IconButton(onClick = {
                             multiGalleryLauncher.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
                         }) {
-                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Gallery")
+                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Галерея")
                         }
                         IconButton(onClick = { recordMenuExpanded = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+                            Icon(Icons.Default.MoreVert, contentDescription = "Меню")
                         }
 
                         RecordMenu(
                             expanded = recordMenuExpanded,
                             onDismiss = { recordMenuExpanded = false },
-                            onRename = {
-                                recordMenuExpanded = false
-                                showRenameRecordDialog = true
-                            },
-                            onEditDescription = {
-                                recordMenuExpanded = false
-                                showEditDescriptionDialog = true
-                            },
-                            onManageTags = {
-                                recordMenuExpanded = false
-                                showTagsDialog = true
-                            },
-                            onChangeLanguages = {
-                                recordMenuExpanded = false
-                                showLanguageDialog = true
-                            },
                             onSharePdf = {
                                 recordMenuExpanded = false
                                 viewModel.shareRecordAsPdf()
-                            },
-                            onShareZip = {
-                                recordMenuExpanded = false
-                                viewModel.shareRecordImagesZip()
                             },
                             onSelectPages = {
                                 recordMenuExpanded = false
@@ -493,18 +468,7 @@ fun EditorScreen(
                 )
             }
         },
-        floatingActionButton = {
-            if (!selectionState.isActive && !processingState.isActive) {
-                FloatingActionButtons(
-                    onCameraClick = onCameraClick,
-                    onGalleryClick = {
-                        multiGalleryLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    }
-                )
-            }
-        },
+
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
 
@@ -678,12 +642,12 @@ fun EditorScreen(
         var name by remember(success.record.name) { mutableStateOf(success.record.name) }
         AlertDialog(
             onDismissRequest = { showRenameRecordDialog = false },
-            title = { Text("Rename record") },
+            title = { Text("Переименовать запись") },
             text = {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") },
+                    label = { Text("Имя") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -695,10 +659,10 @@ fun EditorScreen(
                         viewModel.updateRecordName(name)
                         showRenameRecordDialog = false
                     }
-                ) { Text("Save") }
+                ) { Text("Сохранить") }
             },
             dismissButton = {
-                TextButton(onClick = { showRenameRecordDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showRenameRecordDialog = false }) { Text("Отмена") }
             }
         )
     }

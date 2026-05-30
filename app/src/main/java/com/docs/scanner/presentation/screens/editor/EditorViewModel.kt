@@ -1044,6 +1044,14 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    fun shareText(text: String) {
+        viewModelScope.launch {
+            _shareEvent.send(
+                ShareEvent.TextContent(text = text, title = "Share text")
+            )
+        }
+    }
+
     // ════════════════════════════════════════════════════════════════════
     // AI OPERATIONS
     // ════════════════════════════════════════════════════════════════════

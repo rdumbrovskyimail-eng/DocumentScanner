@@ -156,12 +156,7 @@ fun DocumentPageMenu(
 fun RecordMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
-    onRename: () -> Unit,
-    onEditDescription: () -> Unit,
-    onManageTags: () -> Unit,
-    onChangeLanguages: () -> Unit,
     onSharePdf: () -> Unit,
-    onShareZip: () -> Unit,
     onSelectPages: () -> Unit,
     hasDocuments: Boolean
 ) {
@@ -169,74 +164,10 @@ fun RecordMenu(
         expanded = expanded,
         onDismissRequest = onDismiss
     ) {
-        // ✅ FIX #10: ADD Rename
-        DropdownMenuItem(
-            text = { Text("Rename") },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = null
-                )
-            },
-            onClick = {
-                onRename()
-                onDismiss()
-            }
-        )
-        
-        // ✅ FIX #10: ADD Edit description
-        DropdownMenuItem(
-            text = { Text("Edit description") },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Description,
-                    contentDescription = null
-                )
-            },
-            onClick = {
-                onEditDescription()
-                onDismiss()
-            }
-        )
-        
-        HorizontalDivider()
-        
-        // Manage tags
-        DropdownMenuItem(
-            text = { Text("Manage tags") },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.LocalOffer,
-                    contentDescription = null
-                )
-            },
-            onClick = {
-                onManageTags()
-                onDismiss()
-            }
-        )
-        
-        // Change languages
-        DropdownMenuItem(
-            text = { Text("Change languages") },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Language,
-                    contentDescription = null
-                )
-            },
-            onClick = {
-                onChangeLanguages()
-                onDismiss()
-            }
-        )
-        
-        HorizontalDivider()
-        
         // Select pages (enter selection mode)
         if (hasDocuments) {
             DropdownMenuItem(
-                text = { Text("Select pages") },
+                text = { Text("Выбрать страницы") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Checklist,
@@ -254,7 +185,7 @@ fun RecordMenu(
         
         // Share as PDF
         DropdownMenuItem(
-            text = { Text("Share as PDF") },
+            text = { Text("Поделиться как PDF") },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.PictureAsPdf,
@@ -264,23 +195,6 @@ fun RecordMenu(
             },
             onClick = {
                 onSharePdf()
-                onDismiss()
-            },
-            enabled = hasDocuments
-        )
-        
-        // Share images (ZIP)
-        DropdownMenuItem(
-            text = { Text("Share images (ZIP)") },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.FolderZip,
-                    contentDescription = null,
-                    tint = GoogleDocsWarning
-                )
-            },
-            onClick = {
-                onShareZip()
                 onDismiss()
             },
             enabled = hasDocuments
