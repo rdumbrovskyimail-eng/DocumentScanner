@@ -2,9 +2,10 @@ package com.docs.scanner.presentation.screens.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.docs.scanner.domain.model.Document
+import com.docs.scanner.domain.core.SearchHistoryItem
 import com.docs.scanner.domain.usecase.AllUseCases
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -28,8 +29,12 @@ class SearchViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _uiState = MutableStateFlow<SearchUiState>(SearchUiState.Empty)
+    private val _uiState = MutableStateFlow<SearchUiState>(SearchUiState.Suggestions)
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+
+    val searchHistory: StateFlow<List<SearchHistoryItem>> =
+        useCases.documents.observeSearchHistory(limit = 20)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         viewModelScope.launch {
@@ -56,7 +61,7 @@ class SearchViewModel @Inject constructor(
     private suspend fun performSearch(query: String) {
         if (query.length < 2) {
             _uiState.value = if (query.isEmpty()) {
-                SearchUiState.Empty
+                SearchUiState.Suggestions
             } else {
                 SearchUiState.QueryTooShort
             }
@@ -65,35 +70,57 @@ class SearchViewModel @Inject constructor(
 
         _uiState.value = SearchUiState.Searching
 
+        var historySaved = false
+
         try {
-            useCases.searchDocuments(query)
+            useCases.documents.search(query)
                 .catch { e ->
+                    if (e is CancellationException) throw e
                     _uiState.value = SearchUiState.Error(
                         "Search failed: ${e.message}"
                     )
                 }
                 .collect { documents ->
+                    // Persist query to history (best-effort).
+                    if (!historySaved) {
+                        useCases.documents.saveSearchQuery(query, documents.size)
+                        historySaved = true
+                    }
+
                     _uiState.value = if (documents.isEmpty()) {
                         SearchUiState.NoResults(query)
                     } else {
                         // Map to SearchResult with highlighting info
                         val results = documents.take(50).map { doc ->
+                            val original = doc.originalText
+                            val translated = doc.translatedText
+                            val inOriginal = original?.contains(query, ignoreCase = true) == true
+                            val inTranslated = translated?.contains(query, ignoreCase = true) == true
+
+                            // Берём для сниппета то поле, где реально есть совпадение; перевод в приоритете,
+                            // если в OCR совпадения нет
+                            val matchedText = when {
+                                inOriginal -> original!!
+                                inTranslated -> translated!!
+                                else -> original ?: translated ?: ""
+                            }
+                            val (snippet, matchRanges) = buildSnippet(matchedText, query)
                             SearchResult(
-                                documentId = doc.id,
-                                recordId = doc.recordId,
+                                documentId = doc.id.value,
+                                recordId = doc.recordId.value,
                                 recordName = doc.recordName ?: "Untitled",
                                 folderName = doc.folderName ?: "Documents",
-                                matchedText = doc.originalText ?: doc.translatedText ?: "",
-                                isOriginal = doc.originalText?.contains(query, ignoreCase = true) == true,
-                                highlightedText = highlightMatch(
-                                    text = doc.originalText ?: doc.translatedText ?: "",
-                                    query = query
-                                )
+                                matchedText = matchedText,
+                                isOriginal = inOriginal,
+                                highlightedText = snippet,
+                                matchRanges = matchRanges
                             )
                         }
                         SearchUiState.Success(results, query)
                     }
                 }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _uiState.value = SearchUiState.Error(
                 "Search failed: ${e.message}"
@@ -102,21 +129,32 @@ class SearchViewModel @Inject constructor(
     }
 
     /**
-     * Highlight matched text for UI display.
-     * Returns text with match position for highlighting.
+     * Build snippet and find all match ranges for UI display.
      */
-    private fun highlightMatch(text: String, query: String): String {
+    private fun buildSnippet(text: String, query: String): Pair<String, List<IntRange>> {
         val index = text.indexOf(query, ignoreCase = true)
-        if (index == -1) return text
+        if (index == -1) return Pair(text, emptyList())
         
-        // Return context around match (50 chars before/after)
+        // Return context around the first match (50 chars before/after)
         val start = maxOf(0, index - 50)
         val end = minOf(text.length, index + query.length + 50)
         
         val prefix = if (start > 0) "..." else ""
         val suffix = if (end < text.length) "..." else ""
         
-        return prefix + text.substring(start, end) + suffix
+        val snippet = prefix + text.substring(start, end) + suffix
+        
+        // Find all occurrences of the query within the snippet
+        val ranges = mutableListOf<IntRange>()
+        var searchIndex = 0
+        while (searchIndex < snippet.length) {
+            val matchIndex = snippet.indexOf(query, searchIndex, ignoreCase = true)
+            if (matchIndex == -1) break
+            ranges.add(matchIndex until (matchIndex + query.length))
+            searchIndex = matchIndex + query.length
+        }
+        
+        return Pair(snippet, ranges)
     }
 
     /**
@@ -124,7 +162,23 @@ class SearchViewModel @Inject constructor(
      */
     fun clearSearch() {
         _searchQuery.value = ""
-        _uiState.value = SearchUiState.Empty
+        _uiState.value = SearchUiState.Suggestions
+    }
+
+    fun selectHistory(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun deleteHistoryItem(id: Long) {
+        viewModelScope.launch {
+            useCases.documents.deleteSearchHistoryItem(id)
+        }
+    }
+
+    fun clearHistory() {
+        viewModelScope.launch {
+            useCases.documents.clearSearchHistory()
+        }
     }
 }
 
@@ -134,9 +188,9 @@ class SearchViewModel @Inject constructor(
  * Session 8: Added proper state management.
  */
 sealed interface SearchUiState {
-    object Empty : SearchUiState
-    object QueryTooShort : SearchUiState
-    object Searching : SearchUiState
+    data object Suggestions : SearchUiState
+    data object QueryTooShort : SearchUiState
+    data object Searching : SearchUiState
     data class Success(val results: List<SearchResult>, val query: String) : SearchUiState
     data class NoResults(val query: String) : SearchUiState
     data class Error(val message: String) : SearchUiState
@@ -153,5 +207,6 @@ data class SearchResult(
     val folderName: String,
     val matchedText: String,
     val isOriginal: Boolean,
-    val highlightedText: String
+    val highlightedText: String,
+    val matchRanges: List<IntRange>
 )

@@ -1,25 +1,18 @@
 /**
  * SettingsDataStore.kt
- * Version: 7.0.1 - FIXED (2026 Standards)
+ * Version: 7.2.0 - MODEL CONSTANTS INTEGRATION (2026)
  *
- * ✅ FIX SERIOUS-2: Убран собственный delegate, DataStore инжектится из Hilt
- *    БЫЛО: private val Context.dataStore by preferencesDataStore(...)
- *          private val dataStore = context.dataStore
- *    СТАЛО: DataStore<Preferences> инжектится через конструктор из DataStoreModule
+ * ✅ CRITICAL FIX (Session 14):
+ * - Uses ModelConstants.VALID_MODELS
+ * - Uses ModelConstants.DEFAULT_OCR_MODEL
+ * - Uses ModelConstants.DEFAULT_TRANSLATION_MODEL
+ * - Removed hardcoded VALID_MODELS list (single source of truth)
  *
- * DataStore for app settings.
- * 
- * Security:
- * - ✅ API keys stored in EncryptedKeyStorage (AES-256-GCM)
- * - ✅ Migration from plain text to encrypted storage
- * - ✅ All sensitive data properly handled
- * 
- * Features:
- * - Onboarding & First Launch tracking
- * - Google Drive backup settings
- * - UI settings (theme, language)
- * - OCR settings (language, auto-translate)
- * - Cache settings (enabled, TTL)
+ * ✅ PREVIOUS FIXES:
+ * - Added KEY_TRANSLATION_SOURCE + Flow + Setter
+ * - Added KEY_AUTO_DETECT_LANGUAGE + Flow + Setter
+ * - Added KEY_CONFIDENCE_THRESHOLD + Flow + Setter
+ * - Removed GeminiModelManager from constructor (circular dependency fix)
  */
 
 package com.docs.scanner.data.local.preferences
@@ -29,9 +22,12 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
+import com.docs.scanner.data.remote.mlkit.OcrQualityThresholds
+import com.docs.scanner.domain.core.ModelConstants
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -40,27 +36,8 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
-// ✅ FIX SERIOUS-2: УДАЛЁН собственный delegate!
-// БЫЛО:
-// private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "app_settings")
-//
-// Теперь DataStore инжектится из DataStoreModule, что гарантирует единственный экземпляр.
-
-/**
- * DataStore for app settings.
- * 
- * ✅ FIX SERIOUS-2: DataStore теперь инжектится из Hilt (DataStoreModule)
- * вместо создания собственного delegate. Это предотвращает создание
- * множественных экземпляров DataStore и связанные race conditions.
- * 
- * Fixed issues:
- * - ✅ SERIOUS-2: DataStore injected from Hilt instead of own delegate
- * - 🟠 Серьёзная #6: Improved null handling in migrateApiKeyToEncrypted
- * - 🟡 #1: Replaced android.util.Log with Timber
- */
 @Singleton
 class SettingsDataStore @Inject constructor(
-    // ✅ FIX: Инжектим DataStore из DataStoreModule вместо context.dataStore
     private val dataStore: DataStore<Preferences>
 ) {
     
@@ -77,9 +54,16 @@ class SettingsDataStore @Inject constructor(
         // UI Settings
         private val KEY_THEME = stringPreferencesKey("theme")
         private val KEY_LANGUAGE = stringPreferencesKey("language")
+        private val KEY_FOLDER_SORT_MODE = stringPreferencesKey("folder_sort_mode")
+        private val KEY_RECORD_SORT_MODE = stringPreferencesKey("record_sort_mode")
         
         // OCR Settings
         private val KEY_OCR_LANGUAGE = stringPreferencesKey("ocr_language")
+        private val KEY_AUTO_DETECT_LANGUAGE = booleanPreferencesKey("auto_detect_language")
+        private val KEY_CONFIDENCE_THRESHOLD = floatPreferencesKey("confidence_threshold")
+        
+        // Translation Settings
+        private val KEY_TRANSLATION_SOURCE = stringPreferencesKey("translation_source")
         private val KEY_TRANSLATION_TARGET = stringPreferencesKey("translation_target")
         private val KEY_AUTO_TRANSLATE = booleanPreferencesKey("auto_translate")
         private val KEY_SAVE_ORIGINALS = booleanPreferencesKey("save_originals")
@@ -87,35 +71,40 @@ class SettingsDataStore @Inject constructor(
         // Cache Settings
         private val KEY_CACHE_ENABLED = booleanPreferencesKey("cache_enabled")
         private val KEY_CACHE_TTL = intPreferencesKey("cache_ttl_days")
+
+        // Image settings
+        private val KEY_IMAGE_QUALITY = stringPreferencesKey("image_quality")
+        
+        // Gemini OCR Fallback Settings
+        private val KEY_GEMINI_OCR_ENABLED = booleanPreferencesKey("gemini_ocr_enabled")
+        private val KEY_GEMINI_OCR_THRESHOLD = intPreferencesKey("gemini_ocr_threshold")
+        private val KEY_GEMINI_OCR_ALWAYS = booleanPreferencesKey("gemini_ocr_always")
+        private val KEY_CUSTOM_MODELS = stringPreferencesKey("custom_models")
+        
+        // Gemini Model Selection
+        private val KEY_GEMINI_OCR_MODEL = stringPreferencesKey("gemini_ocr_model")
+        private val KEY_TRANSLATION_MODEL = stringPreferencesKey("translation_model")
         
         // Legacy key for migration
         private val KEY_LEGACY_API_KEY = stringPreferencesKey("gemini_api_key")
+        
+        // ✅ CRITICAL FIX: Use ModelConstants instead of hardcoded values
+        val VALID_MODELS = ModelConstants.VALID_MODELS
+        const val DEFAULT_OCR_MODEL = ModelConstants.DEFAULT_OCR_MODEL
+        const val DEFAULT_TRANSLATION_MODEL = ModelConstants.DEFAULT_TRANSLATION_MODEL
     }
     
     // ════════════════════════════════════════════════════════════════════════════════
-    // 🔴 CRITICAL: API KEY MIGRATION
+    // API KEY MIGRATION
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Migrate API key from plain text DataStore to EncryptedKeyStorage.
-     * 
-     * FIXED: 🟠 Серьёзная #6 - Improved error handling with nested try-catch
-     * 
-     * ⚠️ MUST BE CALLED ONCE on app startup!
-     * See App.kt onCreate() or MainActivity.
-     * 
-     * @param encryptedStorage Target encrypted storage
-     * @return true if migration successful or not needed, false if failed
-     */
     suspend fun migrateApiKeyToEncrypted(encryptedStorage: EncryptedKeyStorage): Boolean {
         return try {
-            // Check if old key exists
             val oldKey = dataStore.data.first()[KEY_LEGACY_API_KEY]
             
             if (!oldKey.isNullOrBlank()) {
                 Timber.i("🔄 Found legacy API key, migrating to encrypted storage...")
                 
-                // Migrate to encrypted storage with separate error handling
                 try {
                     encryptedStorage.setActiveApiKey(oldKey)
                     Timber.i("✅ API key migrated to encrypted storage")
@@ -124,14 +113,12 @@ class SettingsDataStore @Inject constructor(
                     return false
                 }
                 
-                // Remove from DataStore (even if encryption failed, we tried)
                 try {
                     dataStore.edit { prefs ->
                         prefs.remove(KEY_LEGACY_API_KEY)
                     }
                     Timber.i("✅ Removed legacy API key from DataStore")
                 } catch (e: Exception) {
-                    // Non-critical: key is already in encrypted storage
                     Timber.w(e, "⚠️ Failed to remove legacy key (non-critical)")
                 }
                 
@@ -256,9 +243,6 @@ class SettingsDataStore @Inject constructor(
     // UI SETTINGS
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * App theme: "system", "light", "dark"
-     */
     val theme: Flow<String> = dataStore.data
         .catch { exception ->
             Timber.e(exception, "Error reading theme")
@@ -279,9 +263,6 @@ class SettingsDataStore @Inject constructor(
         }
     }
     
-    /**
-     * App language: empty string for system default, or language tag (e.g., "en", "ru")
-     */
     val appLanguage: Flow<String> = dataStore.data
         .catch { exception ->
             Timber.e(exception, "Error reading app language")
@@ -298,20 +279,48 @@ class SettingsDataStore @Inject constructor(
             Timber.e(e, "Error setting app language")
         }
     }
+
+    // ✅ Полное исправление SortMode в DataStore — работа с чистыми String
+    val folderSortMode: Flow<String> = dataStore.data
+        .catch { exception ->
+            Timber.e(exception, "Error reading folder sort mode")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_FOLDER_SORT_MODE] ?: "BY_DATE" }
+
+    suspend fun setFolderSortMode(mode: String) {
+        try {
+            dataStore.edit { prefs -> prefs[KEY_FOLDER_SORT_MODE] = mode }
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting folder sort mode")
+        }
+    }
+
+    val recordSortMode: Flow<String> = dataStore.data
+        .catch { exception ->
+            Timber.e(exception, "Error reading record sort mode")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_RECORD_SORT_MODE] ?: "BY_DATE" }
+
+    suspend fun setRecordSortMode(mode: String) {
+        try {
+            dataStore.edit { prefs -> prefs[KEY_RECORD_SORT_MODE] = mode }
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting record sort mode")
+        }
+    }
     
     // ════════════════════════════════════════════════════════════════════════════════
     // OCR SETTINGS
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * OCR language model: "LATIN", "CHINESE", "JAPANESE", "KOREAN", "DEVANAGARI"
-     */
     val ocrLanguage: Flow<String> = dataStore.data
         .catch { exception ->
             Timber.e(exception, "Error reading OCR language")
             emit(emptyPreferences())
         }
-        .map { prefs -> prefs[KEY_OCR_LANGUAGE] ?: "CHINESE" }
+        .map { prefs -> prefs[KEY_OCR_LANGUAGE] ?: "AUTO" }
     
     suspend fun setOcrLanguage(language: String) {
         try {
@@ -323,15 +332,73 @@ class SettingsDataStore @Inject constructor(
         }
     }
     
-    /**
-     * Translation target language: "en", "ru", "zh", etc.
-     */
+    val autoDetectLanguage: Flow<Boolean> = dataStore.data
+        .catch { e ->
+            Timber.e(e, "Error reading autoDetectLanguage")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_AUTO_DETECT_LANGUAGE] ?: true }
+
+    suspend fun setAutoDetectLanguage(enabled: Boolean) {
+        try {
+            dataStore.edit { prefs ->
+                prefs[KEY_AUTO_DETECT_LANGUAGE] = enabled
+            }
+            Timber.d("✅ Auto-detect language set to: $enabled")
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting autoDetectLanguage")
+        }
+    }
+
+    val confidenceThreshold: Flow<Float> = dataStore.data
+        .catch { e ->
+            Timber.e(e, "Error reading confidenceThreshold")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_CONFIDENCE_THRESHOLD] ?: 0.7f }
+
+    suspend fun setConfidenceThreshold(threshold: Float) {
+        try {
+            dataStore.edit { prefs ->
+                prefs[KEY_CONFIDENCE_THRESHOLD] = threshold.coerceIn(0f, 1f)
+            }
+            Timber.d("✅ Confidence threshold set to: $threshold")
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting confidenceThreshold")
+        }
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // TRANSLATION SETTINGS
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    val translationSource: Flow<String> = dataStore.data
+        .catch { exception ->
+            Timber.e(exception, "Error reading translation source")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_TRANSLATION_SOURCE] ?: "auto" }
+
+    suspend fun setTranslationSource(language: String) {
+        try {
+            dataStore.edit { prefs ->
+                prefs[KEY_TRANSLATION_SOURCE] = language
+            }
+            Timber.d("✅ Translation source set to: $language")
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting translation source")
+        }
+    }
+    
     val translationTarget: Flow<String> = dataStore.data
         .catch { exception ->
             Timber.e(exception, "Error reading translation target")
             emit(emptyPreferences())
         }
-        .map { prefs -> prefs[KEY_TRANSLATION_TARGET] ?: "en" }
+        .map { prefs ->
+            // По умолчанию выставляем русский язык ("ru") вместо английского ("en")
+            prefs[KEY_TRANSLATION_TARGET] ?: "ru"
+        }
     
     suspend fun setTranslationTarget(language: String) {
         try {
@@ -343,15 +410,12 @@ class SettingsDataStore @Inject constructor(
         }
     }
     
-    /**
-     * Auto-translate documents after OCR
-     */
     val autoTranslate: Flow<Boolean> = dataStore.data
         .catch { exception ->
             Timber.e(exception, "Error reading auto-translate")
             emit(emptyPreferences())
         }
-        .map { prefs -> prefs[KEY_AUTO_TRANSLATE] ?: false }
+        .map { prefs -> prefs[KEY_AUTO_TRANSLATE] ?: true }
     
     suspend fun setAutoTranslate(enabled: Boolean) {
         try {
@@ -363,9 +427,6 @@ class SettingsDataStore @Inject constructor(
         }
     }
     
-    /**
-     * Save original images after processing
-     */
     val saveOriginals: Flow<Boolean> = dataStore.data
         .catch { exception ->
             Timber.e(exception, "Error reading save originals")
@@ -387,9 +448,6 @@ class SettingsDataStore @Inject constructor(
     // CACHE SETTINGS
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Enable translation caching
-     */
     val cacheEnabled: Flow<Boolean> = dataStore.data
         .catch { exception ->
             Timber.e(exception, "Error reading cache enabled")
@@ -407,9 +465,6 @@ class SettingsDataStore @Inject constructor(
         }
     }
     
-    /**
-     * Cache TTL in days (default: 30)
-     */
     val cacheTtlDays: Flow<Int> = dataStore.data
         .catch { exception ->
             Timber.e(exception, "Error reading cache TTL")
@@ -429,15 +484,176 @@ class SettingsDataStore @Inject constructor(
             Timber.e(e, "Error setting cache TTL")
         }
     }
+
+    // ════════════════════════════════════════════════════════════════════════════════
+    // IMAGE SETTINGS
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    val imageQuality: Flow<String> = dataStore.data
+        .catch { exception ->
+            Timber.e(exception, "Error reading image quality")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_IMAGE_QUALITY] ?: "HIGH" }
+
+    suspend fun setImageQuality(quality: String) {
+        require(quality in listOf("LOW", "MEDIUM", "HIGH", "ORIGINAL")) {
+            "Invalid image quality: $quality"
+        }
+        try {
+            dataStore.edit { prefs ->
+                prefs[KEY_IMAGE_QUALITY] = quality
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting image quality")
+        }
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // GEMINI OCR FALLBACK SETTINGS
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    val geminiOcrEnabled: Flow<Boolean> = dataStore.data
+        .catch { e ->
+            Timber.e(e, "Error reading geminiOcrEnabled")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_GEMINI_OCR_ENABLED] ?: true }
+    
+    val geminiOcrThreshold: Flow<Int> = dataStore.data
+        .catch { e ->
+            Timber.e(e, "Error reading geminiOcrThreshold")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_GEMINI_OCR_THRESHOLD] ?: 60 }
+    
+    val geminiOcrAlways: Flow<Boolean> = dataStore.data
+        .catch { e ->
+            Timber.e(e, "Error reading geminiOcrAlways")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> prefs[KEY_GEMINI_OCR_ALWAYS] ?: false }
+    
+    suspend fun setGeminiOcrEnabled(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[KEY_GEMINI_OCR_ENABLED] = enabled
+        }
+    }
+    
+    suspend fun setGeminiOcrThreshold(threshold: Int) {
+        dataStore.edit { prefs ->
+            prefs[KEY_GEMINI_OCR_THRESHOLD] = threshold.coerceIn(0, 100)
+        }
+    }
+    
+    suspend fun setGeminiOcrAlways(always: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[KEY_GEMINI_OCR_ALWAYS] = always
+        }
+    }
+    
+    val customModels: Flow<List<String>> = dataStore.data
+        .catch { exception ->
+            Timber.e(exception, "Error reading custom models")
+            emit(emptyPreferences())
+        }
+        .map { prefs ->
+            val json = prefs[KEY_CUSTOM_MODELS] ?: "[]"
+            try {
+                kotlinx.serialization.json.Json.decodeFromString<List<String>>(json)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+
+    suspend fun addCustomModel(modelId: String) {
+        try {
+            dataStore.edit { prefs ->
+                val currentJson = prefs[KEY_CUSTOM_MODELS] ?: "[]"
+                val currentList = try {
+                    kotlinx.serialization.json.Json.decodeFromString<List<String>>(currentJson)
+                } catch (e: Exception) {
+                    emptyList()
+                }
+                if (modelId !in currentList) {
+                    val newList = currentList + modelId
+                    prefs[KEY_CUSTOM_MODELS] = kotlinx.serialization.json.Json.encodeToString(newList)
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to save custom model to DataStore")
+        }
+    }
+    
+    suspend fun getOcrQualityThresholds(): OcrQualityThresholds {
+        val threshold = geminiOcrThreshold.first()
+        val always = geminiOcrAlways.first()
+        
+        return OcrQualityThresholds(
+            minConfidenceForSuccess = threshold / 100f,
+            geminiOcrEnabled = true,
+            alwaysUseGemini = always
+        )
+    }
+    
+    // ════════════════════════════════════════════════════════════════════════════════
+    // GEMINI MODEL SELECTION
+    // ════════════════════════════════════════════════════════════════════════════════
+    
+    val geminiOcrModel: Flow<String> = dataStore.data
+        .catch { e ->
+            Timber.e(e, "Error reading geminiOcrModel")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> 
+            prefs[KEY_GEMINI_OCR_MODEL] ?: DEFAULT_OCR_MODEL
+        }
+    
+    suspend fun setGeminiOcrModel(model: String) {
+        require(model in ModelConstants.VALID_MODELS) { 
+            "Invalid Gemini model: $model. Valid models: ${ModelConstants.VALID_MODELS}"
+        }
+        
+        try {
+            dataStore.edit { prefs ->
+                prefs[KEY_GEMINI_OCR_MODEL] = model
+            }
+            Timber.d("✅ Gemini OCR model set to: $model")
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting Gemini OCR model")
+            throw e
+        }
+    }
+    
+    val translationModel: Flow<String> = dataStore.data
+        .catch { e ->
+            Timber.e(e, "Error reading translationModel")
+            emit(emptyPreferences())
+        }
+        .map { prefs -> 
+            prefs[KEY_TRANSLATION_MODEL] ?: DEFAULT_TRANSLATION_MODEL
+        }
+    
+    suspend fun setTranslationModel(model: String) {
+        require(model in ModelConstants.VALID_MODELS) { 
+            "Invalid Translation model: $model. Valid models: ${ModelConstants.VALID_MODELS}"
+        }
+        
+        try {
+            dataStore.edit { prefs ->
+                prefs[KEY_TRANSLATION_MODEL] = model
+            }
+            Timber.d("✅ Translation model set to: $model")
+        } catch (e: Exception) {
+            Timber.e(e, "Error setting Translation model")
+            throw e
+        }
+    }
     
     // ════════════════════════════════════════════════════════════════════════════════
     // UTILITY
     // ════════════════════════════════════════════════════════════════════════════════
     
-    /**
-     * Clear all settings.
-     * ⚠️ Does NOT clear API keys (they're in EncryptedKeyStorage).
-     */
     suspend fun clearAll() {
         try {
             dataStore.edit { it.clear() }

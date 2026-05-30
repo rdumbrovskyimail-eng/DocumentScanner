@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- ✅ Include -->
+    <!-- Бэкапим ТОЛЬКО то, что явно указано -->
     <include domain="database" path="." />
     <include domain="file" path="documents/" />
     
-    <!-- ✅ ДОБАВЛЕНО: Exclude sensitive data -->
-    <exclude domain="sharedpref" path="." />
-    <exclude domain="file" path="datastore/" />
-    <exclude domain="file" path="cache/" />
+    <exclude domain="sharedpref" path="encrypted_api_keys.xml"/>
+    <exclude domain="sharedpref" path="secure_api_keys.xml"/>
+    
+    <!-- НЕТ exclude - просто не включаем то, что не нужно -->
+    <!-- sharedpref, datastore, cache НЕ включены = НЕ бэкапятся -->
 </full-backup-content>

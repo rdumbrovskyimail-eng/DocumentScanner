@@ -1,16 +1,12 @@
 /*
  * DocumentScanner - App Module Configuration
- * Version: 7.0.0 - PERFECT 10/10 (2026 Standards)
+ * Version: 7.2.2 - FINAL (2026 Standards) + Drag & Drop Support
  * 
- * Features:
- * ✅ Configuration Cache Safe Secrets
- * ✅ Baseline Profile Integration
- * ✅ Kotlin 2.1+ Optimizations (Fixed compiler args)
- * ✅ R8 Full Mode Aggressive
- * ✅ Java 21 Target
+ * ✅ ADDED: Coil 3.x image loading library
+ * ✅ ADDED: room-testing for MigrationTest support
+ * ✅ ADDED: sh.calvin.reorderable for Drag & Drop functionality
+ * ✅ UPDATED: sh.calvin.reorderable to 2.4.3 (Compose 1.7+ compatible)
  */
-
-import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -19,25 +15,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
-    
-    // Optional High-End Plugins (Safe Apply)
-    alias(libs.plugins.baseline.profile) apply false
-    alias(libs.plugins.dependency.guard) apply false
-    id("com.google.gms.google-services") version "4.4.2" apply false
-    id("com.google.firebase.crashlytics") version "3.0.2" apply false
 }
-
-// ════════════════════════════════════════════════════════════════════════════════
-// 🔐 SECRETS MANAGEMENT (Configuration Cache Safe)
-// ════════════════════════════════════════════════════════════════════════════════
-val secrets = providers.fileContents(rootProject.layout.projectDirectory.file("local.properties"))
-    .asText
-    .map { content ->
-        Properties().apply { load(content.byteInputStream()) }
-    }
-
-fun getSecret(key: String): String = 
-    secrets.orNull?.getProperty(key) ?: System.getenv(key) ?: ""
 
 // ════════════════════════════════════════════════════════════════════════════════
 // 🏗️ ANDROID CONFIGURATION
@@ -50,65 +28,48 @@ android {
         applicationId = "com.docs.scanner"
         minSdk = 26
         targetSdk = 36
-        versionCode = 700
-        versionName = "7.0.0"
+        
+        versionCode = 722
+        versionName = "7.2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         
-        // 🌍 OPTIMIZATION: Оставляем только нужные языки
         resourceConfigurations += setOf("en", "ru", "es", "de", "fr", "it", "pt", "zh")
 
-        // 🔐 SECRETS INJECTION
-        buildConfigField("String", "GEMINI_API_KEY", "\"${getSecret("GEMINI_API_KEY")}\"")
-        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${getSecret("GOOGLE_DRIVE_CLIENT_ID")}\"")
-        
-        // Manifest placeholders для Google Auth
-        manifestPlaceholders["googleClientId"] = getSecret("GOOGLE_DRIVE_CLIENT_ID")
+        // 🔐 NO BUILD-TIME SECRETS
+        // Gemini API key is entered by the user in Settings → API Key
+        // and stored encrypted on-device via EncryptedKeyStorage.
+        // Google Drive uses DEFAULT_SIGN_IN — no custom Client ID needed.
 
-        // 🗄️ ROOM OPTIMIZATION
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
             arg("room.incremental", "true")
             arg("room.generateKotlin", "true")
             arg("room.expandProjection", "true")
             
-            // ✅ NEW: Hilt optimizations
             arg("dagger.hilt.shareTestComponents", "true")
             arg("dagger.fastInit", "enabled")
         }
     }
 
-    signingConfigs {
-        create("release") {
-            val path = getSecret("RELEASE_STORE_FILE")
-            if (path.isNotEmpty() && file(path).exists()) {
-                storeFile = file(path)
-                storePassword = getSecret("RELEASE_STORE_PASSWORD")
-                keyAlias = getSecret("RELEASE_KEY_ALIAS")
-                keyPassword = getSecret("RELEASE_KEY_PASSWORD")
-                enableV3Signing = true
-                enableV4Signing = true
-            }
-        }
-    }
+    // No custom signingConfigs.
+    // Debug builds use AGP's auto-generated ~/.android/debug.keystore.
+    // For release builds, configure signing manually when you actually need it.
 
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             
-            // 🚀 R8 FULL MODE
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.findByName("release")
-            
-            // Baseline Profile Rule
-            if (project.pluginManager.hasPlugin("androidx.baselineprofile")) {
-                baselineProfile.requiresRuleProducer = false
-            }
+            // No signing config here — release builds (when needed) should
+            // explicitly configure their own keystore outside this file
+            // (e.g. via ~/.gradle/gradle.properties or environment variables
+            // in a separate release workflow).
         }
         
         debug {
@@ -117,13 +78,11 @@ android {
             versionNameSuffix = "-DEBUG"
             enableUnitTestCoverage = true
             
-            // Speed up debug builds
             packaging {
                 jniLibs.pickFirsts += listOf("**/*.so")
             }
         }
         
-        // 🧪 Benchmark Build Type
         create("benchmark") {
             initWith(getByName("release"))
             signingConfig = signingConfigs.findByName("debug")
@@ -141,27 +100,16 @@ android {
     kotlinOptions {
         jvmTarget = "21"
         
-        // ✅ FIXED: Updated Kotlin 2.1+ compiler args (2026 optimized)
         freeCompilerArgs += listOf(
-            // Stable opt-ins
             "-opt-in=kotlin.RequiresOptIn",
             "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
+            "-opt-in=androidx.compose.animation.ExperimentalAnimationApi",
             "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
             "-opt-in=kotlinx.coroutines.FlowPreview",
-            
-            // Context receivers
-            "-Xcontext-receivers",
-            
-            // ✅ NEW: Kotlin 2.1+ optimizations
-            "-Xjvm-default=all",           // Enable Java default methods
-            "-progressive",                 // Progressive mode (stricter checks)
-            
-            // ✅ REMOVED DEPRECATED FLAGS:
-            // ❌ "-Xlambdas=indy" - Already default in Kotlin 2.0+
-            // ❌ "-Xbackend-threads=0" - Deprecated, replaced by automatic parallel backend
+            "-Xjvm-default=all",
         )
         
-        // 📊 COMPOSE METRICS (Controlled via gradle.properties)
         if (project.findProperty("composeCompilerReports") == "true") {
             freeCompilerArgs += listOf(
                 "-P", "plugin:androidx.compose.compiler.plugins.kotlin:reportsDestination=${layout.buildDirectory.get().asFile}/compose_metrics",
@@ -191,7 +139,6 @@ android {
         }
     }
     
-    // ✅ NEW: Test options for 2026
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
@@ -216,7 +163,8 @@ android {
 // 📦 DEPENDENCIES
 // ════════════════════════════════════════════════════════════════════════════════
 dependencies {
-    // ✅ Bundles (See libs.versions.toml)
+    implementation(platform(libs.androidx.compose.bom))
+
     implementation(libs.bundles.compose)
     implementation(libs.bundles.networking)
     implementation(libs.bundles.room)
@@ -225,15 +173,12 @@ dependencies {
     implementation(libs.bundles.google.drive)
     implementation(libs.bundles.camerax)
 
-    // ✅ Paging 3
     implementation(libs.androidx.paging.runtime)
     implementation(libs.androidx.paging.compose)
 
-    // ✅ NEW: WorkManager & Tracing
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.tracing)
 
-    // ✅ DI
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.navigation)
     implementation(libs.androidx.hilt.work)
@@ -241,18 +186,18 @@ dependencies {
     ksp(libs.androidx.hilt.compiler)
     ksp(libs.room.compiler)
 
-    // ✅ Images
+    // ✅ COIL 3.x - Image Loading Library
     implementation(libs.coil.compose)
     implementation(libs.coil.network)
 
-    // ✅ Firebase & AI
+    implementation(libs.google.material)
+
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.vertexai)
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.perf)
 
-    // ✅ Utils
     implementation(libs.kotlinx.datetime)
     implementation(libs.kotlinx.collections.immutable)
     implementation(libs.timber)
@@ -260,18 +205,28 @@ dependencies {
     implementation(libs.androidx.biometric)
     implementation(libs.datastore.prefs)
     implementation(libs.androidx.startup)
+    implementation(libs.androidx.splashscreen)
+    implementation(libs.androidx.lifecycle.process)
 
-    // ✅ Baseline Profiles
     implementation(libs.androidx.profileinstaller)
 
-    // ✅ Java 21 Desugaring
+    // ✅ DRAG & DROP LIBRARY - sh.calvin.reorderable (Compose 1.7+ compatible)
+    implementation("sh.calvin.reorderable:reorderable:2.4.3")
+
+    // ✅ EXIF INTERFACE FOR IMAGE ROTATION AND METADATA PROCESSING
+    implementation(libs.androidx.exifinterface)
+
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
-    // ✅ Testing
+    // ✅ TESTING
     testImplementation(libs.bundles.testing)
+    
+    // ✅ ANDROID TESTING (includes room-testing for MigrationTest)
     androidTestImplementation(libs.bundles.testing.android)
+    androidTestImplementation(libs.room.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test)
+    
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.leakcanary)
 }
@@ -283,13 +238,6 @@ if (file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
     apply(plugin = "com.google.firebase.crashlytics")
     apply(plugin = "com.google.firebase.firebase-perf")
-}
-
-// 🛡️ Dependency Guard Config (If plugin applied)
-if (pluginManager.hasPlugin("com.dropbox.dependency-guard")) {
-    configure<com.dropbox.gradle.plugins.dependencyguard.DependencyGuardExtension> {
-        configuration("releaseRuntimeClasspath")
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════════

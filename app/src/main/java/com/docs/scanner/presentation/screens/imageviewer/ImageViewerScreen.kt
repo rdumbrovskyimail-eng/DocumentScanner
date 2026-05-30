@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -92,7 +93,7 @@ fun ImageViewerScreen(
             ) {
                 IconButton(onClick = onBackClick) {
                     Icon(
-                        Icons.Default.ArrowBack,
+                        Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
                         tint = Color.White
                     )
@@ -167,21 +168,4 @@ fun ImageViewerScreen(
     }
 }
 
-// ⚠️ TODO Session 9 Problem #4: Переместить в presentation/viewmodels/ImageViewerViewModel.kt
-@HiltViewModel
-class ImageViewerViewModel @Inject constructor(
-    private val documentRepository: DocumentRepository,
-    savedStateHandle: SavedStateHandle
-) : ViewModel() {
-    
-    private val documentId: Long = savedStateHandle.get<Long>("documentId") ?: 0L
-    
-    private val _document = MutableStateFlow<Document?>(null)
-    val document: StateFlow<Document?> = _document.asStateFlow()
-    
-    fun loadDocument(documentId: Long) {
-        viewModelScope.launch {
-            _document.value = documentRepository.getDocumentById(documentId)
-        }
-    }
-}
+// ViewModel is defined in `ImageViewerViewModel.kt`.

@@ -1,160 +1,342 @@
-# ================================================================================
-# Android CI/CD Pipeline
-# Version: 7.0.1 - FIXED (2026 Standards)
-#
-# ✅ FIX SERIOUS-7: Java 17 → Java 21
-#    build.gradle.kts требует Java 21 (compileOptions, kotlinOptions.jvmTarget)
-# ================================================================================
-
-name: Android CI
+name: Android CI (Nuclear Clean Build)
 
 on:
   push:
-    branches: [ main, master ]
-  workflow_dispatch:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   build:
+    name: Nuclear Clean Build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    timeout-minutes: 15
     
     steps:
-    - uses: actions/checkout@v4
-    
-    # ✅ FIX SERIOUS-7: Java 21 вместо 17
-    # build.gradle.kts:
-    #   compileOptions { sourceCompatibility = JavaVersion.VERSION_21 }
-    #   kotlinOptions { jvmTarget = "21" }
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+        clean: true  # ✅ Force clean checkout
+      
+    # ═══════════════════════════════════════════════════════════════
+    # 🔥 NUCLEAR CACHE CLEANUP - STEP 1: Delete all cached data
+    # ═══════════════════════════════════════════════════════════════
+    - name: 🔥 Nuclear Cache Cleanup
+      run: |
+        echo "🔥 NUCLEAR CLEANUP INITIATED"
+        
+        # Remove ALL Gradle caches
+        rm -rf ~/.gradle/caches
+        rm -rf ~/.gradle/wrapper
+        rm -rf ~/.gradle/daemon
+        rm -rf ~/.gradle/kotlin-dsl
+        rm -rf ~/.gradle/build-scan-data
+        rm -rf ~/.gradle/configuration-cache
+        rm -rf ~/.gradle/notifications
+        
+        # Remove ALL Kotlin Native caches
+        rm -rf ~/.konan
+        
+        # Remove ALL project build directories
+        rm -rf .gradle
+        rm -rf build
+        rm -rf app/build
+        rm -rf */build
+        
+        # Remove all intermediate files
+        find . -type d -name "intermediates" -exec rm -rf {} + 2>/dev/null || true
+        find . -type d -name "tmp" -exec rm -rf {} + 2>/dev/null || true
+        find . -type d -name ".transforms" -exec rm -rf {} + 2>/dev/null || true
+        
+        # Remove all Kotlin compilation caches
+        find . -type d -name "kotlin" -path "*/build/*" -exec rm -rf {} + 2>/dev/null || true
+        
+        echo "✅ All caches destroyed"
+        
     - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
-        java-version: '21'
         distribution: 'temurin'
-    
-    # ✅ Кэширование Gradle
-    - name: Cache Gradle packages
+        java-version: '21'
+        cache: 'gradle'  # This will create NEW clean cache
+        
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-read-only: false
+        gradle-home-cache-cleanup: true
+        cache-disabled: false  # Allow caching for NEXT build
+        
+    # ═══════════════════════════════════════════════════════════════
+    # 📦 FRESH CACHE - Only after successful build
+    # ═══════════════════════════════════════════════════════════════
+    - name: Cache Gradle (Fresh)
       uses: actions/cache@v4
       with:
         path: |
           ~/.gradle/caches
           ~/.gradle/wrapper
-          ~/.gradle/build-cache
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          ~/.gradle/daemon
+          ~/.konan
+        key: ${{ runner.os }}-gradle-nuclear-${{ github.run_number }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
         restore-keys: |
-          ${{ runner.os }}-gradle-
+          ${{ runner.os }}-gradle-nuclear-${{ github.run_number }}-
     
-    # ✅ Кэширование Kotlin
-    - name: Cache Kotlin Native
+    - name: Cache Build Outputs (Fresh)
       uses: actions/cache@v4
       with:
-        path: ~/.konan
-        key: ${{ runner.os }}-konan-${{ hashFiles('**/*.gradle*') }}
+        path: |
+          app/build/intermediates
+          app/build/tmp
+          build/kotlin
+        key: ${{ runner.os }}-build-nuclear-${{ github.run_number }}-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-konan-
-    
-    # ✅ Права на gradlew
-    - name: Make gradlew executable
+          ${{ runner.os }}-build-nuclear-${{ github.run_number }}-
+        
+    - name: Grant execute permission
       run: chmod +x gradlew
-    
-    # ✅ Setup Gradle
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
-        
-    # ✅ Сборка
-    - name: Build with Gradle
-      id: build
-      continue-on-error: true
-      run: ./gradlew assembleDebug --stacktrace
       
-    # ⚠️ ВАЖНО: always() чтобы выполнялось даже при ошибке!
-    - name: Get commit info
-      if: always()
-      id: commit
+    # ═══════════════════════════════════════════════════════════════
+    # 🧹 PRE-BUILD CLEANUP
+    # ═══════════════════════════════════════════════════════════════
+    - name: 🧹 Pre-build Gradle Clean
       run: |
-        echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        echo "date=$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+        echo "🧹 Running Gradle clean..."
+        ./gradlew clean --no-daemon --no-build-cache
         
-    # ✅ Создание Release (только при успехе)
-    - name: Create Release
-      if: steps.build.outcome == 'success'
-      id: create_release
+        # Verify cleanup
+        echo "📊 Checking cleanup status..."
+        du -sh ~/.gradle/caches 2>/dev/null || echo "✅ Gradle caches empty"
+        du -sh app/build 2>/dev/null || echo "✅ App build directory empty"
+        
+    - name: Create local.properties
+      run: |
+        cat > local.properties << EOF
+        sdk.dir=$ANDROID_HOME
+        ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+        GITHUB_TOKEN=${{ secrets.GH_TOKEN }}
+        GITHUB_OWNER=test-owner
+        GITHUB_REPO=test-repo
+        EOF
+    
+    # ═══════════════════════════════════════════════════════════════
+    # 🏗️ CLEAN BUILD FROM SCRATCH
+    # ═══════════════════════════════════════════════════════════════
+    - name: 🏗️ Fresh Build Debug APK
+      id: build
+      run: |
+        echo "🏗️ Starting CLEAN build..."
+        
+        # Capture FULL output including ALL errors
+        ./gradlew assembleDebug \
+          --no-build-cache \
+          --no-configuration-cache \
+          --rerun-tasks \
+          --no-daemon \
+          --stacktrace \
+          --info \
+          --parallel \
+          --max-workers=4 \
+          -Dorg.gradle.jvmargs="-Xmx5g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g" \
+          -Dkotlin.incremental=false \
+          -Dkotlin.compiler.execution.strategy=in-process \
+          -Pkotlin.daemon.jvmargs="-Xmx2g" 2>&1 | tee full_build_log.txt
+        
+        # Save exit code
+        echo "BUILD_EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
+      continue-on-error: true
+    
+    # ═══════════════════════════════════════════════════════════════
+    # 🔍 COMPREHENSIVE ERROR EXTRACTION
+    # ═══════════════════════════════════════════════════════════════
+    - name: 🔍 Extract ALL Compilation Errors
+      if: always()
+      run: |
+        echo "# 🔥 COMPLETE BUILD ERROR REPORT" > COMPILATION_ERRORS.md
+        echo "" >> COMPILATION_ERRORS.md
+        echo "## 📊 Build Information" >> COMPILATION_ERRORS.md
+        echo "" >> COMPILATION_ERRORS.md
+        echo "- **Build #:** ${{ github.run_number }}" >> COMPILATION_ERRORS.md
+        echo "- **Commit:** \`${{ github.sha }}\`" >> COMPILATION_ERRORS.md
+        echo "- **Branch:** \`${{ github.ref }}\`" >> COMPILATION_ERRORS.md
+        echo "- **Exit Code:** \`${BUILD_EXIT_CODE:-unknown}\`" >> COMPILATION_ERRORS.md
+        echo "- **Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> COMPILATION_ERRORS.md
+        echo "" >> COMPILATION_ERRORS.md
+        
+        if [ -f "full_build_log.txt" ]; then
+          # Extract Kotlin compilation errors
+          echo "## ❌ Kotlin Compilation Errors" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo '```kotlin' >> COMPILATION_ERRORS.md
+          grep -E "^e: file://|^e: |error:" full_build_log.txt | head -200 >> COMPILATION_ERRORS.md || echo "No Kotlin errors found" >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          
+          # Extract BUILD FAILED section
+          echo "## 🚫 Build Failure Summary" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          sed -n '/BUILD FAILED/,/BUILD FAILED/p' full_build_log.txt | head -50 >> COMPILATION_ERRORS.md || echo "No build failure section" >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          
+          # Extract task failures
+          echo "## ⚠️ Failed Tasks" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          grep "Task.*FAILED" full_build_log.txt >> COMPILATION_ERRORS.md || echo "No failed tasks logged" >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          
+          # Count errors
+          ERROR_COUNT=$(grep -c "^e: " full_build_log.txt || echo "0")
+          echo "## 📈 Error Statistics" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo "- Total Kotlin errors: **${ERROR_COUNT}**" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+        else
+          echo "⚠️ No build log found" >> COMPILATION_ERRORS.md
+        fi
+        
+        # Check critical files
+        echo "## 📁 Source File Verification" >> COMPILATION_ERRORS.md
+        echo "" >> COMPILATION_ERRORS.md
+        
+        if [ -f "app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt" ]; then
+          echo "### ✅ EditorViewModel.kt" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo '```kotlin' >> COMPILATION_ERRORS.md
+          echo "// First 30 lines:" >> COMPILATION_ERRORS.md
+          head -30 app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          
+          echo "### 🔍 DomainResult Pattern Check" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo '```kotlin' >> COMPILATION_ERRORS.md
+          grep -n "is DomainResult" app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt | head -30 >> COMPILATION_ERRORS.md || echo "No patterns found"
+          echo '```' >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          
+          # MD5 checksum
+          MD5=$(md5sum app/src/main/java/com/docs/scanner/presentation/screens/editor/EditorViewModel.kt | cut -d' ' -f1)
+          echo "**MD5:** \`${MD5}\`" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+        else
+          echo "### ❌ EditorViewModel.kt NOT FOUND" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+        fi
+        
+        # Show full file for small error reports
+        if [ "${ERROR_COUNT:-0}" -lt "20" ] && [ "${ERROR_COUNT:-0}" -gt "0" ]; then
+          echo "## 📄 Full Error Context" >> COMPILATION_ERRORS.md
+          echo "" >> COMPILATION_ERRORS.md
+          echo '```' >> COMPILATION_ERRORS.md
+          grep -B5 -A5 "^e: " full_build_log.txt >> COMPILATION_ERRORS.md || true
+          echo '```' >> COMPILATION_ERRORS.md
+        fi
+        
+        echo "---" >> COMPILATION_ERRORS.md
+        echo "" >> COMPILATION_ERRORS.md
+        echo "💡 **Tip:** Check the [full build log artifact](#artifacts) for complete details." >> COMPILATION_ERRORS.md
+        
+        # Display to console
+        cat COMPILATION_ERRORS.md
+    
+    - name: Unit Tests (Optional)
+      if: success() && github.event_name == 'pull_request'
+      run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+      continue-on-error: true
+    
+    - name: Upload Full Build Log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-${{ github.run_number }}
+        path: |
+          full_build_log.txt
+          COMPILATION_ERRORS.md
+          app/build/reports/
+          build/reports/
+        retention-days: 7
+        if-no-files-found: ignore
+    
+    - name: Upload APK
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: debug-apk-${{ github.run_number }}
+        path: app/build/outputs/apk/debug/*.apk
+        retention-days: 7
+    
+    # ═══════════════════════════════════════════════════════════════
+    # 🎯 CREATE RELEASE WITH ERROR REPORT
+    # ═══════════════════════════════════════════════════════════════
+    - name: Create Release (Success or Failure)
+      if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: build-${{ steps.commit.outputs.date }}
-        name: Build ${{ steps.commit.outputs.short_sha }}
+        tag_name: v1.0.${{ github.run_number }}
+        name: ${{ env.BUILD_EXIT_CODE == '0' && '✅' || '❌' }} Build v1.0.${{ github.run_number }}
         body: |
-          🤖 Автоматическая сборка
-          📱 Commit: ${{ github.event.head_commit.message }}
-          👤 Автор: ${{ github.actor }}
-          🕐 Время: ${{ steps.commit.outputs.date }}
-        files: app/build/outputs/apk/debug/*.apk
-        draft: false
-        prerelease: true
-      continue-on-error: true
+          ## 📱 Nuclear Clean Build v1.0.${{ github.run_number }}
+          
+          **Status:** ${{ env.BUILD_EXIT_CODE == '0' && '✅ SUCCESS' || '❌ FAILED' }}
+          **🔥 Built from scratch** - All caches purged
+          
+          **Commit:** `${{ github.sha }}`
+          **Build #:** ${{ github.run_number }}
+          **Strategy:** Nuclear clean (no cache reuse)
+          **Exit Code:** `${{ env.BUILD_EXIT_CODE }}`
+          
+          ### 📦 Downloads
+          ${{ env.BUILD_EXIT_CODE == '0' && '- ✅ **Debug APK** - See assets below' || '- ❌ **No APK** - Build failed' }}
+          - 📄 **[COMPILATION_ERRORS.md](COMPILATION_ERRORS.md)** - Complete error report
+          - 📋 **[Full Build Log](../../actions/runs/${{ github.run_id }})** - Detailed logs in artifacts
+          
+          ---
+          
+          ${{ env.BUILD_EXIT_CODE != '0' && '### ⚠️ Build Failed - See attached error report' || '### ✨ Build succeeded!' }}
+          
+        files: |
+          app/build/outputs/apk/debug/*.apk
+          COMPILATION_ERRORS.md
+        fail_on_unmatched_files: false
+        overwrite_files: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
-    # ✅ Отправка успешного уведомления (только если Release создан)
-    - name: Send Success Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome == 'success'
+    # ═══════════════════════════════════════════════════════════════
+    # 📊 BUILD SUMMARY
+    # ═══════════════════════════════════════════════════════════════
+    - name: 📊 Build Summary
+      if: always()
       run: |
-        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-        APK_NAME=$(basename "$APK_PATH")
-        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/build-${{ steps.commit.outputs.date }}"
+        echo "═══════════════════════════════════════════════════════════"
+        echo "Build Status: ${{ job.status }}"
+        echo "Exit Code: ${BUILD_EXIT_CODE:-unknown}"
+        echo "Commit: ${{ github.sha }}"
+        echo "Branch: ${{ github.ref }}"
+        echo "Build #: ${{ github.run_number }}"
+        echo "═══════════════════════════════════════════════════════════"
         
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="✅ <b>APK собран успешно!</b>
+        if [ "${BUILD_EXIT_CODE:-1}" == "0" ]; then
+          echo "✅ BUILD SUCCESSFUL"
+          ls -lh app/build/outputs/apk/debug/ 2>/dev/null || echo "No APK found"
+        else
+          echo "❌ BUILD FAILED"
+          echo ""
+          echo "📄 Error report saved to: COMPILATION_ERRORS.md"
+          echo "📋 Full log saved to: full_build_log.txt"
+          echo ""
+          echo "Quick error summary:"
+          grep "^e: " full_build_log.txt | head -10 || echo "No errors captured"
+        fi
         
-        📱 Файл: <code>${APK_NAME}</code>
-        📦 Размер: ${APK_SIZE}
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        📥 <a href='${RELEASE_URL}'>Скачать APK</a>"
-    
-    # ⚠️ Уведомление если сборка прошла, но Release не создался
-    - name: Send Release Failure Notification to Telegram
-      if: steps.build.outcome == 'success' && steps.create_release.outcome != 'success'
-      run: |
-        APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-        APK_NAME=$(basename "$APK_PATH")
-        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="⚠️ <b>APK собран, но Release не создан!</b>
-        
-        📱 Файл: <code>${APK_NAME}</code>
-        📦 Размер: ${APK_SIZE}
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        ⚠️ Проверьте права доступа к репозиторию
-        🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Посмотреть логи</a>"
-    
-    # ❌ Уведомление об ошибке сборки
-    - name: Send Build Failure Notification to Telegram
-      if: steps.build.outcome == 'failure'
-      run: |
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-        
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-             -d parse_mode="HTML" \
-             -d text="❌ <b>Сборка упала!</b>
-        
-        📝 Commit: ${COMMIT_MSG}
-        👤 Автор: ${{ github.actor }}
-        🕐 Время: ${{ steps.commit.outputs.date }}
-        #️⃣ SHA: ${{ steps.commit.outputs.short_sha }}
-        
-        🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>Посмотреть логи</a>"
+        # Fail the job if build failed
+        exit ${BUILD_EXIT_CODE:-1}

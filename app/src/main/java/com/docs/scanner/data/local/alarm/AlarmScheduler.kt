@@ -44,6 +44,31 @@ class AlarmScheduler @Inject constructor(
             true // До Android 12 разрешение не требуется
         }
     }
+
+    fun openExactAlarmSettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.startActivity(
+                Intent(
+                    android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                    android.net.Uri.parse("package:${context.packageName}")
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
+
+    fun isIgnoringBatteryOptimizations(): Boolean {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        return pm.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    fun requestIgnoreBatteryOptimizations() {
+        context.startActivity(
+            Intent(
+                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                android.net.Uri.parse("package:${context.packageName}")
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
     
     /**
      * Планирует прогрессивные напоминания для термина.
@@ -64,13 +89,6 @@ class AlarmScheduler @Inject constructor(
     }
     
     private fun scheduleTermInternal(term: TermEntity) {
-        // Проверка разрешения
-        if (!canScheduleExactAlarms()) {
-            Timber.w("Cannot schedule exact alarms - permission denied for term ${term.id}")
-            // TODO: Показать пользователю диалог с просьбой включить в Settings
-            return
-        }
-        
         val now = System.currentTimeMillis()
         val termTime = term.dueDate
         val timeUntilTerm = termTime - now
@@ -82,7 +100,7 @@ class AlarmScheduler @Inject constructor(
         
         val reminders = buildReminderList(term, termTime, timeUntilTerm)
         
-        // Планируем все напоминания
+        // Планируем все напоминания. Метод scheduleAlarm сам выберет точный или неточный запуск.
         var successCount = 0
         reminders.forEach { reminder ->
             if (scheduleAlarm(
@@ -90,7 +108,7 @@ class AlarmScheduler @Inject constructor(
                 time = reminder.time,
                 title = reminder.message,
                 description = term.description,
-                requestCode = term.id.toInt() * 1000 + reminder.offset,
+                offset = reminder.offset,
                 isMainAlarm = reminder.offset == MAIN_ALARM_OFFSET
             )) {
                 successCount++
@@ -109,6 +127,12 @@ class AlarmScheduler @Inject constructor(
         timeUntilTerm: Long
     ): List<ReminderTime> {
         val reminders = mutableListOf<ReminderTime>()
+        val now = System.currentTimeMillis()
+        val earliestReminderTime = if (term.reminderMinutesBefore > 0) {
+            termTime - (term.reminderMinutesBefore * 60_000L)
+        } else {
+            Long.MAX_VALUE // disable pre-deadline reminders
+        }
         
         // Прогрессивные напоминания ДО дедлайна
         when {
@@ -143,19 +167,30 @@ class AlarmScheduler @Inject constructor(
                 reminders.add(ReminderTime(termTime - MIN_15, formatMessage(MSG_MIN_15, term.title), 11))
             }
         }
+
+        // Respect user reminderMinutesBefore: keep only reminders within selected window.
+        val filteredPre = reminders
+            .filter { it.time >= earliestReminderTime }
+            .filter { it.time > now }
+            .toMutableList()
+        reminders.clear()
+        reminders.addAll(filteredPre)
         
         // Главное уведомление (в момент дедлайна)
         reminders.add(ReminderTime(termTime, formatMessage(MSG_NOW, term.title), MAIN_ALARM_OFFSET))
         
         // Повторяющиеся напоминания ПОСЛЕ дедлайна (каждые 5 минут в течение часа)
-        for (i in 1..POST_DEADLINE_REMINDERS) {
-            reminders.add(
-                ReminderTime(
-                    termTime + (i * MIN_5),
-                    formatMessage(MSG_REMINDER, term.title),
-                    MAIN_ALARM_OFFSET + i
+        // Only if user enabled reminders.
+        if (term.reminderMinutesBefore > 0) {
+            for (i in 1..POST_DEADLINE_REMINDERS) {
+                reminders.add(
+                    ReminderTime(
+                        termTime + (i * MIN_5),
+                        formatMessage(MSG_REMINDER, term.title),
+                        MAIN_ALARM_OFFSET + i
+                    )
                 )
-            )
+            }
         }
         
         return reminders
@@ -166,9 +201,8 @@ class AlarmScheduler @Inject constructor(
      */
     fun cancelTerm(termId: Long) {
         synchronized(scheduleLock) {
-            // Отменяем все возможные напоминания (до 150 штук)
             for (offset in 0..MAX_REMINDER_OFFSET) {
-                cancelAlarm(termId.toInt() * 1000 + offset)
+                cancelAlarm(getRequestCode(termId, offset))
             }
             Timber.d("Cancelled all alarms for term $termId")
         }
@@ -183,19 +217,21 @@ class AlarmScheduler @Inject constructor(
         time: Long,
         title: String,
         description: String?,
-        requestCode: Int,
+        offset: Int,
         isMainAlarm: Boolean = false
     ): Boolean {
         if (time <= System.currentTimeMillis()) {
             return false
         }
         
+        val requestCode = getRequestCode(termId, offset)
+        
         val intent = Intent(context, TermAlarmReceiver::class.java).apply {
             putExtra(EXTRA_TERM_ID, termId)
             putExtra(EXTRA_TITLE, title)
             putExtra(EXTRA_DESCRIPTION, description)
             putExtra(EXTRA_IS_MAIN_ALARM, isMainAlarm)
-            putExtra(EXTRA_NOTIFICATION_OFFSET, requestCode % 1000)
+            putExtra(EXTRA_NOTIFICATION_OFFSET, offset)
         }
         
         val pendingIntent = PendingIntent.getBroadcast(
@@ -215,14 +251,13 @@ class AlarmScheduler @Inject constructor(
                     )
                     true
                 } else {
-                    // Fallback: неточный будильник
                     alarmManager.setAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
                         time,
                         pendingIntent
                     )
                     Timber.w("Scheduled inexact alarm (no SCHEDULE_EXACT_ALARM permission)")
-                    false
+                    true
                 }
             } else {
                 alarmManager.setExactAndAllowWhileIdle(
@@ -251,10 +286,6 @@ class AlarmScheduler @Inject constructor(
         pendingIntent.cancel()
     }
     
-    /**
-     * Форматирует сообщение напоминания.
-     * TODO: В будущем использовать string resources для локализации
-     */
     private fun formatMessage(template: String, title: String): String {
         return template.replace("%s", title)
     }
@@ -280,6 +311,19 @@ class AlarmScheduler @Inject constructor(
         private const val DAYS_2 = 2 * DAY_1
         
         // Настройки напоминаний
+        private const val MSG_DAYS_2 = "Осталось 2 дня до: %s"
+        private const val MSG_DAY_1 = "Остался 1 день до: %s"
+        private const val MSG_TOMORROW = "Завтра дедлайн: %s"
+        private const val MSG_HOURS_12 = "Осталось 12 часов до: %s"
+        private const val MSG_HOURS_5 = "Осталось 5 часов до: %s"
+        private const val MSG_HOURS_3 = "Осталось 3 часа до: %s"
+        private const val MSG_HOUR_1 = "Остался 1 час до: %s"
+        private const val MSG_MIN_60 = "Осталось 60 минут до: %s"
+        private const val MSG_MIN_30 = "Осталось 30 минут до: %s"
+        private const val MSG_MIN_15 = "Осталось 15 минут до: %s"
+        private const val MSG_NOW = "⏰ СРОК ИСТЕК: %s"
+        private const val MSG_REMINDER = "⏰ СРОЧНОЕ НАПОМИНАНИЕ: %s"
+
         private const val MAIN_ALARM_OFFSET = 100
         private const val POST_DEADLINE_REMINDERS = 12
         private const val MAX_REMINDER_OFFSET = 150
@@ -291,18 +335,12 @@ class AlarmScheduler @Inject constructor(
         const val EXTRA_IS_MAIN_ALARM = "is_main_alarm"
         const val EXTRA_NOTIFICATION_OFFSET = "notification_offset"
         
-        // Шаблоны сообщений (TODO: перенести в string resources)
-        private const val MSG_DAYS_2 = "2 days until: %s"
-        private const val MSG_DAY_1 = "1 day until: %s"
-        private const val MSG_TOMORROW = "Tomorrow: %s"
-        private const val MSG_HOURS_12 = "12 hours until: %s"
-        private const val MSG_HOURS_5 = "5 hours until: %s"
-        private const val MSG_HOURS_3 = "3 hours until: %s"
-        private const val MSG_HOUR_1 = "1 hour until: %s"
-        private const val MSG_MIN_60 = "60 minutes until: %s"
-        private const val MSG_MIN_30 = "30 minutes until: %s"
-        private const val MSG_MIN_15 = "15 minutes until: %s"
-        private const val MSG_NOW = "⏰ NOW: %s"
-        private const val MSG_REMINDER = "⏰ REMINDER: %s"
+
+
+        // ✅ Единый генератор Request Code для планирования и отмены
+        fun getRequestCode(termId: Long, offset: Int): Int {
+            // Множитель (1000) > MAX_REMINDER_OFFSET (150) — offset не «перетекает» в соседний термин
+            return (termId * 1000L + offset).hashCode() and Int.MAX_VALUE
+        }
     }
 }
