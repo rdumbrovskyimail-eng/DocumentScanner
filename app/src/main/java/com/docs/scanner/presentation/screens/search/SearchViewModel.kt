@@ -92,7 +92,18 @@ class SearchViewModel @Inject constructor(
                     } else {
                         // Map to SearchResult with highlighting info
                         val results = documents.take(50).map { doc ->
-                            val matchedText = doc.originalText ?: doc.translatedText ?: ""
+                            val original = doc.originalText
+                            val translated = doc.translatedText
+                            val inOriginal = original?.contains(query, ignoreCase = true) == true
+                            val inTranslated = translated?.contains(query, ignoreCase = true) == true
+
+                            // Берём для сниппета то поле, где реально есть совпадение; перевод в приоритете,
+                            // если в OCR совпадения нет
+                            val matchedText = when {
+                                inOriginal -> original!!
+                                inTranslated -> translated!!
+                                else -> original ?: translated ?: ""
+                            }
                             val (snippet, matchRanges) = buildSnippet(matchedText, query)
                             SearchResult(
                                 documentId = doc.id.value,
@@ -100,7 +111,7 @@ class SearchViewModel @Inject constructor(
                                 recordName = doc.recordName ?: "Untitled",
                                 folderName = doc.folderName ?: "Documents",
                                 matchedText = matchedText,
-                                isOriginal = doc.originalText?.contains(query, ignoreCase = true) == true,
+                                isOriginal = inOriginal,
                                 highlightedText = snippet,
                                 matchRanges = matchRanges
                             )
