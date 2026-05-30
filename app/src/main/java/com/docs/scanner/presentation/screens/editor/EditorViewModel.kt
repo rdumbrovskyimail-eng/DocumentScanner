@@ -30,6 +30,7 @@ import com.docs.scanner.domain.usecase.AddDocumentState
 import com.docs.scanner.domain.usecase.AllUseCases
 import com.docs.scanner.di.AppScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -295,7 +296,7 @@ class EditorViewModel @Inject constructor(
                         }
                         is AddDocumentState.Success -> {
                             clearProcessing()
-                            loadRecord()
+                            // loadRecord() удален: изменения обновляются автоматически через combine Flow
                         }
                         is AddDocumentState.Error -> {
                             clearProcessing()
@@ -364,9 +365,9 @@ class EditorViewModel @Inject constructor(
 
     fun deleteDocument(documentId: Long) {
         viewModelScope.launch {
-            when (val result = useCases.deleteDocument(documentId)) {
-                is DomainResult.Success<*> -> { /* Auto-refresh from Flow */ }
-                is DomainResult.Failure<*> -> sendError("Failed to delete: ${result.error.message}")
+            when (val result = useCases.documents.delete(DocumentId(documentId))) {
+                is DomainResult.Success -> { /* Auto-refresh from Flow */ }
+                is DomainResult.Failure -> sendError("Failed to delete: ${result.error.message}")
             }
         }
     }
@@ -429,9 +430,9 @@ class EditorViewModel @Inject constructor(
             if (currentState !is EditorUiState.Success) return@launch
 
             val updated = currentState.record.copy(name = name.trim())
-            when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> { /* Reactive flow handles update */ }
-                is DomainResult.Failure<*> -> sendError("Failed to update: ${result.error.message}")
+            when (val result = useCases.records.update(updated)) {
+                is DomainResult.Success -> { /* Reactive flow handles update */ }
+                is DomainResult.Failure -> sendError("Failed to update: ${result.error.message}")
             }
         }
     }
@@ -442,9 +443,9 @@ class EditorViewModel @Inject constructor(
             if (currentState !is EditorUiState.Success) return@launch
 
             val updated = currentState.record.copy(description = description)
-            when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> { /* Reactive flow handles update */ }
-                is DomainResult.Failure<*> -> sendError("Failed to update: ${result.error.message}")
+            when (val result = useCases.records.update(updated)) {
+                is DomainResult.Success -> { /* Reactive flow handles update */ }
+                is DomainResult.Failure -> sendError("Failed to update: ${result.error.message}")
             }
         }
     }
@@ -468,9 +469,9 @@ class EditorViewModel @Inject constructor(
             currentTags.add(t)
 
             val updated = currentState.record.copy(tags = currentTags)
-            when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> Timber.d("✅ Tag '$t' added")
-                is DomainResult.Failure<*> -> sendError("Failed to add tag: ${result.error.message}")
+            when (val result = useCases.records.update(updated)) {
+                is DomainResult.Success -> Timber.d("✅ Tag '$t' added")
+                is DomainResult.Failure -> sendError("Failed to add tag: ${result.error.message}")
             }
         }
     }
@@ -486,9 +487,9 @@ class EditorViewModel @Inject constructor(
             if (!currentTags.remove(t)) return@launch
 
             val updated = currentState.record.copy(tags = currentTags)
-            when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> Timber.d("✅ Tag '$t' removed")
-                is DomainResult.Failure<*> -> sendError("Failed to remove tag: ${result.error.message}")
+            when (val result = useCases.records.update(updated)) {
+                is DomainResult.Success -> Timber.d("✅ Tag '$t' removed")
+                is DomainResult.Failure -> sendError("Failed to remove tag: ${result.error.message}")
             }
         }
     }
@@ -502,9 +503,9 @@ class EditorViewModel @Inject constructor(
                 sourceLanguage = source,
                 targetLanguage = target
             )
-            when (val result = useCases.updateRecord(updated)) {
-                is DomainResult.Success<*> -> { /* Auto-refresh */ }
-                is DomainResult.Failure<*> -> sendError("Failed to update languages: ${result.error.message}")
+            when (val result = useCases.records.update(updated)) {
+                is DomainResult.Success -> { /* Auto-refresh */ }
+                is DomainResult.Failure -> sendError("Failed to update languages: ${result.error.message}")
             }
         }
     }
@@ -575,22 +576,28 @@ class EditorViewModel @Inject constructor(
             return
         }
 
-        val result = when (field) {
-            TextEditField.OCR_TEXT -> {
-                val updated = doc.copy(originalText = text)
-                useCases.updateDocument(updated)
-            }
-            TextEditField.TRANSLATED_TEXT -> {
-                val updated = doc.copy(translatedText = text)
-                useCases.updateDocument(updated)
-            }
-        }
+                val result = when (field) {
+                    TextEditField.OCR_TEXT -> {
+                        val updated = doc.copy(originalText = text)
+                        useCases.documents.update(updated)
+                    }
+                    TextEditField.TRANSLATED_TEXT -> {
+                        val updated = doc.copy(translatedText = text)
+                        useCases.documents.update(updated)
+                    }
+                }
 
-        when (result) {
-            is DomainResult.Success<*> -> {
-                Timber.d("✅ Saved ${field.name} for document $documentId")
-                if (field == TextEditField.TRANSLATED_TEXT) {
-                    _scrollToTranslation.tryEmit(documentId)
+                when (result) {
+                    is DomainResult.Success -> {
+                        Timber.d("✅ Saved ${field.name} for document $documentId")
+                        if (field == TextEditField.TRANSLATED_TEXT) {
+                            _scrollToTranslation.tryEmit(documentId)
+                        }
+                    }
+                    is DomainResult.Failure -> {
+                        sendError("Save failed: ${result.error.message}")
+                        throw Exception(result.error.message)
+                    }
                 }
             }
             is DomainResult.Failure<*> -> {
@@ -647,13 +654,16 @@ class EditorViewModel @Inject constructor(
                 translatedText = translatedText ?: doc.translatedText
             )
 
-            when (val result = useCases.updateDocument(updated)) {
-                is DomainResult.Success<*> -> {
-                    if (originalText != null && originalText != doc.originalText) {
-                        addToHistory(documentId, TextEditField.OCR_TEXT, doc.originalText, originalText)
-                    }
-                    if (translatedText != null && translatedText != doc.translatedText) {
-                        addToHistory(documentId, TextEditField.TRANSLATED_TEXT, doc.translatedText, translatedText)
+                    when (val result = useCases.documents.update(updated)) {
+                        is DomainResult.Success -> {
+                            if (originalText != null && originalText != doc.originalText) {
+                                addToHistory(documentId, TextEditField.OCR_TEXT, doc.originalText, originalText)
+                            }
+                            if (translatedText != null && translatedText != doc.translatedText) {
+                                addToHistory(documentId, TextEditField.TRANSLATED_TEXT, doc.translatedText, translatedText)
+                            }
+                        }
+                        is DomainResult.Failure -> sendError("Failed to update: ${result.error.message}")
                     }
                 }
                 is DomainResult.Failure<*> -> sendError("Failed to update: ${result.error.message}")
@@ -679,12 +689,12 @@ class EditorViewModel @Inject constructor(
                     TextEditField.TRANSLATED_TEXT -> doc.copy(translatedText = lastEdit.previousValue)
                 }
 
-                when (val result = useCases.updateDocument(updated)) {
-                    is DomainResult.Success<*> -> {
+                when (val result = useCases.documents.update(updated)) {
+                    is DomainResult.Success -> {
                         _editHistory.value = history
                         Timber.d("Undid edit for document ${lastEdit.documentId}")
                     }
-                    is DomainResult.Failure<*> -> {
+                    is DomainResult.Failure -> {
                         sendError("Failed to undo: ${result.error.message}")
                     }
                 }
@@ -841,10 +851,10 @@ class EditorViewModel @Inject constructor(
                 DocumentId(documentId),
                 RecordId(targetRecordId)
             )) {
-                is DomainResult.Success<*> -> {
+                is DomainResult.Success -> {
                     Timber.d("Moved document $documentId to record $targetRecordId")
                 }
-                is DomainResult.Failure<*> -> sendError("Failed to move: ${result.error.message}")
+                is DomainResult.Failure -> sendError("Failed to move: ${result.error.message}")
             }
         }
     }
@@ -1204,15 +1214,15 @@ class EditorViewModel @Inject constructor(
                 val doc = useCases.getDocumentById(documentId) ?: return@launch
                 val updated = if (isOcrText) doc.copy(originalText = rewrittenText) else doc.copy(translatedText = rewrittenText)
 
-                when (val updateResult = useCases.updateDocument(updated)) {
-                    is DomainResult.Success<*> -> {
+                when (val updateResult = useCases.documents.update(updated)) {
+                    is DomainResult.Success -> {
                         val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
                         val previousValue = if (isOcrText) doc.originalText else doc.translatedText
                         addToHistory(documentId, field, previousValue, rewrittenText)
                         clearProcessing()
                         Timber.d("AI rewrote text for document $documentId")
                     }
-                    is DomainResult.Failure<*> -> {
+                    is DomainResult.Failure -> {
                         clearProcessing()
                         sendError("AI rewrite failed: ${updateResult.error.message}")
                     }
@@ -1242,13 +1252,13 @@ class EditorViewModel @Inject constructor(
                 doc.copy(translatedText = cleanedText)
             }
 
-            when (val result = useCases.updateDocument(updated)) {
-                is DomainResult.Success<*> -> {
+            when (val result = useCases.documents.update(updated)) {
+                is DomainResult.Success -> {
                     val field = if (isOcrText) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
                     addToHistory(documentId, field, originalValue, cleanedText)
                     Timber.d("Cleared formatting for document $documentId")
                 }
-                is DomainResult.Failure<*> -> sendError("Failed to clear formatting: ${result.error.message}")
+                is DomainResult.Failure -> sendError("Failed to clear formatting: ${result.error.message}")
             }
         }
     }

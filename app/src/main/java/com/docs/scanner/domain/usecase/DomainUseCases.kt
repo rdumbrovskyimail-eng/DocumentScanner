@@ -514,6 +514,9 @@ class RecordUseCases @Inject constructor(
     private val folderRepo: FolderRepository,
     private val time: TimeProvider
 ) {
+    fun observeRecord(id: RecordId): Flow<Record?> =
+        repo.observeRecord(id)
+
     suspend fun create(
         folderId: FolderId,
         name: String,
