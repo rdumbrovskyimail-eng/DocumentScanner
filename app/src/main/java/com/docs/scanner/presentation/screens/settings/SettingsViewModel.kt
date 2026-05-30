@@ -632,7 +632,10 @@ class SettingsViewModel @Inject constructor(
         try {
             val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail()
-                .requestScopes(Scope(DriveScopes.DRIVE_FILE))
+                .requestScopes(
+                    Scope(DriveScopes.DRIVE_FILE),
+                    Scope(DriveScopes.DRIVE_APPDATA) // нужен для appDataFolder
+                )
                 .build()
             launcher.launch(GoogleSignIn.getClient(context, gso).signInIntent)
         } catch (e: Exception) {

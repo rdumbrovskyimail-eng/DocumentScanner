@@ -1490,19 +1490,16 @@ class FileRepositoryImpl @Inject constructor(
                     Uri.fromFile(File(sourceUri))
                 }
                 
-                val inputStream = if (uri.scheme == "file") {
+                val openedStream = if (uri.scheme == "file") {
                     FileInputStream(File(uri.path ?: throw IOException("File path is null")))
                 } else {
                     context.contentResolver.openInputStream(uri)
                         ?: throw IOException("Cannot open URI: $sourceUri")
                 }
-                
-                inputBitmap = BitmapFactory.decodeStream(inputStream)
-                inputStream.close()
-                
-                if (inputBitmap == null) {
-                    throw IOException("Failed to decode bitmap from URI")
-                }
+
+                inputBitmap = openedStream.use { stream ->
+                    BitmapFactory.decodeStream(stream)
+                } ?: throw IOException("Failed to decode bitmap from URI")
                 
                 // ✅ Memory-safe rotation
                 rotatedBitmap = rotateIfNeeded(uri, inputBitmap!!)

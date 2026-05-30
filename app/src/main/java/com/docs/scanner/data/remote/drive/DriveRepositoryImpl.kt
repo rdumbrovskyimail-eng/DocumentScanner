@@ -43,7 +43,6 @@ class DriveRepositoryImpl @Inject constructor(
     }
 
     override suspend fun listBackups(): Result<List<DriveBackup>> {
-        // Placeholder: GoogleDriveService.listBackups currently returns empty list.
         return when (val res = driveService.listBackups()) {
             is com.docs.scanner.domain.core.DomainResult.Success -> {
                 Result.Success(
