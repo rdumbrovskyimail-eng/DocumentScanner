@@ -356,4 +356,30 @@ Tap + to create one.</string>
     <string name="note_add_tag">Add tag</string>
     <string name="note_delete_title">Delete note?</string>
     <string name="note_delete_message">This note will be permanently removed.</string>
+
+    <!-- Действия с папками / диалоги (FoldersScreen) -->
+    <string name="clear_folder">Очистить папку</string>
+    <string name="rename">Переименовать</string>
+    <string name="rename_folder">Переименовать папку</string>
+    <string name="pin_to_top">Закрепить сверху</string>
+    <string name="unpin">Открепить</string>
+    <string name="archive">В архив</string>
+    <string name="unarchive">Из архива</string>
+    <string name="create_folder">Создать папку</string>
+    <string name="name">Название</string>
+    <string name="description">Описание</string>
+    <string name="create">Создать</string>
+    <string name="save">Сохранить</string>
+    <string name="delete">Удалить</string>
+    <string name="cancel">Отмена</string>
+    <string name="delete_folder_question">Удалить папку?</string>
+    <string name="delete_folder_confirm">Удалить «%1$s»?</string>
+    <string name="delete_contents_too">Также удалить содержимое</string>
+
+    <plurals name="contains_records">
+        <item quantity="one">Содержит %d запись</item>
+        <item quantity="few">Содержит %d записи</item>
+        <item quantity="many">Содержит %d записей</item>
+        <item quantity="other">Содержит %d записи</item>
+    </plurals>
 </resources>
