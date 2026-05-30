@@ -178,7 +178,7 @@ fun DocumentCard(
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
-    var photoHeight by remember { mutableStateOf(200.dp) }
+    val photoHeight = 200.dp
 
     val cardScale by animateFloatAsState(
         targetValue = if (isDragging) 1.02f else 1f,
@@ -253,11 +253,6 @@ fun DocumentCard(
                         .clip(RoundedCornerShape(12.dp))
                         .background(GoogleDocsSurfaceVariant)
                         .clickable(enabled = !isSelectionMode) { onImageClick() }
-                        .onGloballyPositioned { coordinates ->
-                            with(density) {
-                                photoHeight = coordinates.size.height.toDp()
-                            }
-                        }
                 ) {
                     // ✅ FIX #6: File existence check and fallback
                     val imageFile = remember(document.imagePath) { File(document.imagePath) }

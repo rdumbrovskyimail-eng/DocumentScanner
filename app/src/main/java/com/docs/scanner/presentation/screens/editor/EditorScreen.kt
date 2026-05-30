@@ -21,6 +21,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import com.docs.scanner.presentation.screens.editor.components.RecordHeader
 import androidx.compose.animation.shrinkVertically
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -57,7 +58,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -65,6 +66,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -206,14 +208,16 @@ fun EditorScreen(
             }
 
             is DocumentAction.PasteText -> {
-                val clipText = clipboardManager.getText()?.text
-                viewModel.handleDocumentAction(
-                    DocumentAction.PasteText(
-                        documentId = action.documentId,
-                        text = clipText?.takeIf { it.isNotBlank() },
-                        isOcrText = action.isOcrText
+                val clipText = clipboardManager.getText()?.text?.takeIf { it.isNotBlank() }
+                if (clipText != null) {
+                    viewModel.handleDocumentAction(
+                        DocumentAction.PasteText(
+                            documentId = action.documentId,
+                            text = clipText,
+                            isOcrText = action.isOcrText
+                        )
                     )
-                )
+                }
             }
 
             is DocumentAction.AiRewrite,
@@ -251,7 +255,8 @@ fun EditorScreen(
     }
 
     // 9. Эффекты
-    LaunchedEffect(highlightDocumentId, uiState) {
+    val isSuccess = uiState is EditorUiState.Success
+    LaunchedEffect(highlightDocumentId, isSuccess) {
         val targetId = highlightDocumentId ?: return@LaunchedEffect
         if (consumedHighlightId == targetId) return@LaunchedEffect
 
@@ -329,9 +334,9 @@ fun EditorScreen(
                                 event.fileName?.let { name -> putExtra(Intent.EXTRA_TITLE, name) }
                             }
 
-                            if (intent.resolveActivity(context.packageManager) != null) {
+                            try {
                                 context.startActivity(Intent.createChooser(intent, "Share"))
-                            } else {
+                            } catch (e: android.content.ActivityNotFoundException) {
                                 snackbarHostState.showSnackbar("No apps to share with")
                             }
 
@@ -349,9 +354,9 @@ fun EditorScreen(
                                 putExtra(Intent.EXTRA_TITLE, event.title)
                             }
 
-                            if (sendIntent.resolveActivity(context.packageManager) != null) {
+                            try {
                                 context.startActivity(Intent.createChooser(sendIntent, event.title))
-                            } else {
+                            } catch (e: android.content.ActivityNotFoundException) {
                                 snackbarHostState.showSnackbar("No apps to share text")
                             }
                         } catch (e: Exception) {
@@ -974,18 +979,78 @@ fun EditorScreen(
         )
     }
 
-    if (showMoveDocumentDialogForId != null) {
-        val docId = showMoveDocumentDialogForId
-        if (docId != null) {
-            MoveToRecordDialog(
-                records = moveTargets.map { RecordItem(it.id.value, it.name, it.documentCount) },
-                currentRecordId = recordId,
-                onDismiss = { showMoveDocumentDialogForId = null },
-                onRecordSelected = { targetRecordId ->
-                    viewModel.moveDocument(docId, targetRecordId)
-                    showMoveDocumentDialogForId = null
-                }
-            )
-        }
-    }
+}
+
+@Composable
+private fun DocumentCardItem(
+    document: Document,
+    index: Int,
+    state: EditorUiState.Success,
+    selectionState: SelectionState,
+    ocrSettings: OcrSettingsSnapshot,
+    viewModel: EditorViewModel,
+    onAction: (DocumentAction) -> Unit,
+    docMenuExpandedId: Long?,
+    onDocMenuExpandedChange: (Long?) -> Unit,
+    isDragging: Boolean,
+    isHighlighted: Boolean,
+    dragModifier: Modifier
+) {
+    val id = document.id.value
+    val inlineStates by viewModel.inlineEditingStates.collectAsStateWithLifecycle()
+    val ocrEdit = inlineStates["$id:${TextEditField.OCR_TEXT.name}"]
+    val translationEdit = inlineStates["$id:${TextEditField.TRANSLATED_TEXT.name}"]
+
+    DocumentCard(
+        document = document,
+        index = index,
+        isSelected = id in selectionState.selectedIds,
+        isSelectionMode = selectionState.isActive,
+        isDragging = isDragging,
+        isHighlighted = isHighlighted,
+        isInlineEditingOcr = ocrEdit != null,
+        isInlineEditingTranslation = translationEdit != null,
+        inlineOcrText = ocrEdit?.currentText ?: "",
+        inlineTranslationText = translationEdit?.currentText ?: "",
+        onImageClick = { onAction(DocumentAction.ImageClick(id)) },
+        onOcrTextClick = { onAction(DocumentAction.OcrTextClick(id)) },
+        onTranslationClick = { onAction(DocumentAction.TranslationClick(id)) },
+        onSelectionToggle = { onAction(DocumentAction.ToggleSelection(id)) },
+        menuExpanded = docMenuExpandedId == id,
+        onMenuDismiss = { onDocMenuExpandedChange(null) },
+        onMenuClick = { onDocMenuExpandedChange(id) },
+        onRetryOcr = { onAction(DocumentAction.RetryOcr(id)) },
+        onRetryTranslation = { onAction(DocumentAction.RetryTranslation(id)) },
+        onMoveUp = { onAction(DocumentAction.MoveUp(id)) },
+        onMoveDown = { onAction(DocumentAction.MoveDown(id)) },
+        isFirst = index == 0,
+        isLast = index == state.documents.lastIndex,
+        onSharePage = { onAction(DocumentAction.SharePage(id, document.imagePath)) },
+        onDeletePage = { onAction(DocumentAction.DeletePage(id)) },
+        onMoveToRecord = { onAction(DocumentAction.MoveToRecord(id, 0L)) },
+        onCopyText = { text -> onAction(DocumentAction.CopyText(id, text, isOcrText = true)) },
+        onPasteText = { isOcr -> onAction(DocumentAction.PasteText(id, text = null, isOcrText = isOcr)) },
+        onAiRewrite = { isOcr ->
+            val text = if (isOcr) document.originalText.orEmpty() else document.translatedText.orEmpty()
+            onAction(DocumentAction.AiRewrite(id, text, isOcrText = isOcr))
+        },
+        onClearFormatting = { isOcr -> onAction(DocumentAction.ClearFormatting(id, isOcrText = isOcr)) },
+        confidenceThreshold = ocrSettings.threshold,
+        onWordTap = { word, conf -> onAction(DocumentAction.WordTap(word, conf)) },
+        onStartInlineEditOcr = {
+            onAction(DocumentAction.StartInlineEdit(id, TextEditField.OCR_TEXT, document.originalText.orEmpty()))
+        },
+        onStartInlineEditTranslation = {
+            onAction(DocumentAction.StartInlineEdit(id, TextEditField.TRANSLATED_TEXT, document.translatedText.orEmpty()))
+        },
+        onInlineTextChange = { text ->
+            val field = if (ocrEdit != null) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
+            onAction(DocumentAction.UpdateInlineText(id, field, text))
+        },
+        onInlineEditComplete = {
+            val field = if (ocrEdit != null) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
+            onAction(DocumentAction.SaveInlineEdit(id, field))
+        },
+        dragModifier = dragModifier
+    )
 }

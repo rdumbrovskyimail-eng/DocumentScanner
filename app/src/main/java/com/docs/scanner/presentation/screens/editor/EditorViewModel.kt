@@ -544,7 +544,7 @@ class EditorViewModel @Inject constructor(
         field: TextEditField,
         text: String
     ) {
-        val doc = getDocumentById(documentId)
+        val doc = useCases.getDocumentById(documentId)
         if (doc == null) {
             _errorEvent.send(ErrorEvent("Document no longer exists"))
             inlineEditingManager.cancelEdit(documentId, field)
@@ -1325,6 +1325,30 @@ class EditorViewModel @Inject constructor(
             _errorEvent.send(ErrorEvent(message, actionLabel, action))
         }
         Timber.e("Error: $message")
+    }
+
+    fun handleDocumentAction(action: DocumentAction) {
+        when (action) {
+            is DocumentAction.PasteText ->
+                action.text?.let { pasteText(action.documentId, it, action.isOcrText) }
+            is DocumentAction.AiRewrite ->
+                aiRewriteText(action.documentId, action.text, action.isOcrText)
+            is DocumentAction.ClearFormatting ->
+                clearFormatting(action.documentId, action.isOcrText)
+            is DocumentAction.WordTap ->
+                showConfidenceTooltip(action.word, action.confidence)
+            is DocumentAction.StartInlineEdit -> when (action.field) {
+                TextEditField.OCR_TEXT -> startInlineEditOcr(action.documentId)
+                TextEditField.TRANSLATED_TEXT -> startInlineEditTranslation(action.documentId)
+            }
+            is DocumentAction.UpdateInlineText ->
+                updateInlineText(action.documentId, action.field, action.text)
+            is DocumentAction.SaveInlineEdit ->
+                finishInlineEdit(action.documentId, action.field)
+            is DocumentAction.CancelInlineEdit ->
+                cancelInlineEdit(action.documentId, action.field)
+            else -> Timber.w("Unhandled action in ViewModel: $action")
+        }
     }
 
     fun refreshOcrSettings() {
