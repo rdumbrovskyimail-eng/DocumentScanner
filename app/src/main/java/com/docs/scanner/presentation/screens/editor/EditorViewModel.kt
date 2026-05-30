@@ -576,15 +576,30 @@ class EditorViewModel @Inject constructor(
             return
         }
 
-                val result = when (field) {
-                    TextEditField.OCR_TEXT -> {
-                        val updated = doc.copy(originalText = text)
-                        useCases.documents.update(updated)
-                    }
-                    TextEditField.TRANSLATED_TEXT -> {
-                        val updated = doc.copy(translatedText = text)
-                        useCases.documents.update(updated)
-                    }
+        val result = when (field) {
+            TextEditField.OCR_TEXT -> {
+                val updated = doc.copy(originalText = text)
+                useCases.documents.update(updated)
+            }
+            TextEditField.TRANSLATED_TEXT -> {
+                val updated = doc.copy(translatedText = text)
+                useCases.documents.update(updated)
+            }
+        }
+
+        when (result) {
+            is DomainResult.Success -> {
+                Timber.d("✅ Saved ${field.name} for document $documentId")
+                if (field == TextEditField.TRANSLATED_TEXT) {
+                    _scrollToTranslation.tryEmit(documentId)
+                }
+            }
+            is DomainResult.Failure -> {
+                sendError("Save failed: ${result.error.message}")
+                throw Exception(result.error.message)
+            }
+        }
+    }
                 }
 
                 when (result) {
@@ -654,11 +669,19 @@ class EditorViewModel @Inject constructor(
                 translatedText = translatedText ?: doc.translatedText
             )
 
-                    when (val result = useCases.documents.update(updated)) {
-                        is DomainResult.Success -> {
-                            if (originalText != null && originalText != doc.originalText) {
-                                addToHistory(documentId, TextEditField.OCR_TEXT, doc.originalText, originalText)
-                            }
+            when (val result = useCases.documents.update(updated)) {
+                is DomainResult.Success -> {
+                    if (originalText != null && originalText != doc.originalText) {
+                        addToHistory(documentId, TextEditField.OCR_TEXT, doc.originalText, originalText)
+                    }
+                    if (translatedText != null && translatedText != doc.translatedText) {
+                        addToHistory(documentId, TextEditField.TRANSLATED_TEXT, doc.translatedText, translatedText)
+                    }
+                }
+                is DomainResult.Failure -> sendError("Failed to update: ${result.error.message}")
+            }
+        }
+    }
                             if (translatedText != null && translatedText != doc.translatedText) {
                                 addToHistory(documentId, TextEditField.TRANSLATED_TEXT, doc.translatedText, translatedText)
                             }
@@ -872,14 +895,15 @@ class EditorViewModel @Inject constructor(
             )
 
             when (val result = useCases.fixOcr(documentId)) {
-                is DomainResult.Success<*> -> {
+                is com.docs.scanner.domain.model.Result.Success -> {
                     clearProcessing()
                     Timber.d("Retried OCR for document $documentId")
                 }
-                is DomainResult.Failure<*> -> {
+                is com.docs.scanner.domain.model.Result.Error -> {
                     clearProcessing()
-                    sendError("OCR failed: ${result.error.message}")
+                    sendError("OCR failed: ${result.exception.message}")
                 }
+                is com.docs.scanner.domain.model.Result.Loading -> { /* Do nothing */ }
             }
         }
     }
@@ -904,13 +928,18 @@ class EditorViewModel @Inject constructor(
 
             val target = targetLanguage.value
 
-            when (val result = useCases.translation.translateDocument(
-                docId = DocumentId(documentId),
-                targetLang = target
-            )) {
-                is DomainResult.Success<*> -> {
-                    clearProcessing()
-                    Timber.d("Retried translation for document $documentId")
+                when (val result = useCases.translation.translateDocument(
+                    docId = DocumentId(documentId),
+                    targetLang = target
+                )) {
+                    is DomainResult.Success -> {
+                        clearProcessing()
+                        Timber.d("Retried translation for document $documentId")
+                    }
+                    is DomainResult.Failure -> {
+                        clearProcessing()
+                        sendError("Translation failed: ${result.error.message}")
+                    }
                 }
                 is DomainResult.Failure<*> -> {
                     clearProcessing()
@@ -1014,9 +1043,9 @@ class EditorViewModel @Inject constructor(
                 val outputPath = "share_${System.currentTimeMillis()}.pdf"
 
                 when (val result = useCases.export.exportToPdf(docIds, outputPath)) {
-                    is DomainResult.Success<*> -> {
+                    is DomainResult.Success -> {
                         clearProcessing()
-                        val path = result.data as? String ?: ""
+                        val path = result.data
                         _shareEvent.send(
                             ShareEvent.File(
                                 path = path,
@@ -1025,7 +1054,7 @@ class EditorViewModel @Inject constructor(
                             )
                         )
                     }
-                    is DomainResult.Failure<*> -> {
+                    is DomainResult.Failure -> {
                         clearProcessing()
                         sendError("PDF generation failed: ${result.error.message}")
                     }
@@ -1048,9 +1077,9 @@ class EditorViewModel @Inject constructor(
                 val docIds = currentState.documents.map { it.id }
 
                 when (val result = useCases.export.shareDocuments(docIds, asPdf = false)) {
-                    is DomainResult.Success<*> -> {
+                    is DomainResult.Success -> {
                         clearProcessing()
-                        val path = result.data as? String ?: ""
+                        val path = result.data
                         _shareEvent.send(
                             ShareEvent.File(
                                 path = path,
@@ -1059,7 +1088,7 @@ class EditorViewModel @Inject constructor(
                             )
                         )
                     }
-                    is DomainResult.Failure<*> -> {
+                    is DomainResult.Failure -> {
                         clearProcessing()
                         sendError("ZIP creation failed: ${result.error.message}")
                     }
