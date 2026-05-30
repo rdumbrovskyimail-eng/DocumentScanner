@@ -43,6 +43,7 @@ fun FoldersScreen(
     val showArchived by viewModel.showArchived.collectAsStateWithLifecycle()
     val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val isRussian = java.util.Locale.getDefault().language == "ru"
 
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var editingFolder by remember { mutableStateOf<Folder?>(null) }
@@ -93,9 +94,9 @@ fun FoldersScreen(
                             Icon(Icons.Default.SwapVert, "Sort", tint = MaterialTheme.colorScheme.primary)
                         }
                         DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
-                            SortMenuItem("By Date", Icons.Default.CalendarToday, sortMode == SortMode.BY_DATE) { viewModel.setSortMode(SortMode.BY_DATE); showSortMenu = false }
-                            SortMenuItem("By Name", Icons.Default.SortByAlpha, sortMode == SortMode.BY_NAME) { viewModel.setSortMode(SortMode.BY_NAME); showSortMenu = false }
-                            SortMenuItem("Manual", Icons.Default.DragHandle, sortMode == SortMode.MANUAL) { viewModel.setSortMode(SortMode.MANUAL); showSortMenu = false }
+                            SortMenuItem(if (isRussian) "По дате" else "By Date", Icons.Default.CalendarToday, sortMode == SortMode.BY_DATE) { viewModel.setSortMode(SortMode.BY_DATE); showSortMenu = false }
+                            SortMenuItem(if (isRussian) "По алфавиту" else "By Name", Icons.Default.SortByAlpha, sortMode == SortMode.BY_NAME) { viewModel.setSortMode(SortMode.BY_NAME); showSortMenu = false }
+                            SortMenuItem(if (isRussian) "Вручную" else "Manual", Icons.Default.DragHandle, sortMode == SortMode.MANUAL) { viewModel.setSortMode(SortMode.MANUAL); showSortMenu = false }
                         }
                     }
                     IconButton(onClick = { viewModel.setShowArchived(!showArchived) }) {
@@ -130,9 +131,10 @@ fun FoldersScreen(
                 is FoldersUiState.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 is FoldersUiState.Error -> Text(state.message, Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.error)
                 is FoldersUiState.Empty -> {
+                    val isRussian = java.util.Locale.getDefault().language == "ru"
                     Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.FolderOpen, null, Modifier.size(64.dp), MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("No folders yet")
+                        Text(if (isRussian) "Папок пока нет" else "No folders yet")
                     }
                 }
                 is FoldersUiState.Processing -> CircularProgressIndicator(Modifier.align(Alignment.Center))
@@ -165,9 +167,9 @@ fun FoldersScreen(
 
     if (showClearQuickScansDialog) {
         ConfirmDialog(
-            title = "Clear Quick Scans?",
-            message = "Delete all records in Quick Scans?",
-            confirmText = "Clear",
+            title = if (isRussian) "Очистить быстрые сканы?" else "Clear Quick Scans?",
+            message = if (isRussian) "Удалить все записи из быстрых сканов?" else "Delete all records in Quick Scans?",
+            confirmText = if (isRussian) "Очистить" else "Clear",
             onConfirm = { viewModel.clearQuickScans(); showClearQuickScansDialog = false },
             onDismiss = { showClearQuickScansDialog = false }
         )
@@ -264,6 +266,7 @@ private fun FoldersList(
 
 @Composable
 private fun QuickScansFolderCard(folder: Folder, onClick: () -> Unit, onClearClick: () -> Unit) {
+    val isRussian = java.util.Locale.getDefault().language == "ru"
     var menuExpanded by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier
@@ -284,7 +287,7 @@ private fun QuickScansFolderCard(folder: Folder, onClick: () -> Unit, onClearCli
                 IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Default.MoreVert, "Menu") }
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.clear_folder)) },
+                            text = { Text(if (isRussian) "Очистить папку" else stringResource(R.string.clear_folder)) },
                             onClick = { menuExpanded = false; onClearClick() },
                             leadingIcon = { Icon(Icons.Default.ClearAll, null) },
                             enabled = folder.recordCount > 0
