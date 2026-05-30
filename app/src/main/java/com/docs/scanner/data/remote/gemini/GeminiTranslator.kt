@@ -82,18 +82,6 @@ class GeminiTranslator @Inject constructor(
             )
         }
         
-        if (sourceLanguage != Language.AUTO && sourceLanguage == targetLanguage) {
-            return@withContext DomainResult.failure(
-                DomainError.ValidationFailed(
-                    ValidationError.InvalidInput(
-                        field = "languages",
-                        value = "$sourceLanguage -> $targetLanguage",
-                        reason = "Source and target languages must be different"
-                    )
-                )
-            )
-        }
-        
         if (!modelManager.isValidModel(model)) {
             Timber.w("⚠️ Invalid model: $model, using default")
             val fallbackModel = ModelConstants.DEFAULT_TRANSLATION_MODEL
@@ -259,14 +247,23 @@ class GeminiTranslator @Inject constructor(
         target: Language
     ): String {
         return buildString {
-            appendLine("Translate the following text.")
-            
-            if (source != Language.AUTO) {
-                appendLine("Source language: ${source.displayName} (${source.code})")
+            if (source != Language.AUTO && source == target) {
+                // Промпт для улучшения и исправления текста на том же языке
+                appendLine("You are an expert editor and OCR correction specialist.")
+                appendLine("The following text is already in ${target.displayName} (${target.code}).")
+                appendLine("Your task is to:")
+                appendLine("1. Correct any OCR mistakes, typos, spelling, and grammar errors.")
+                appendLine("2. Improve the flow, styling, and punctuation of the text while preserving its exact meaning.")
+                appendLine("3. Return ONLY the polished and corrected text. Do NOT add quotes, markdown, explanations, or introductory/concluding remarks.")
+            } else {
+                // Стандартный промпт для перевода
+                appendLine("Translate the following text.")
+                if (source != Language.AUTO) {
+                    appendLine("Source language: ${source.displayName} (${source.code})")
+                }
+                appendLine("Target language: ${target.displayName} (${target.code})")
+                appendLine("Return ONLY the translated text. Do not add quotes, markdown, or explanations.")
             }
-            
-            appendLine("Target language: ${target.displayName} (${target.code})")
-            appendLine("Return ONLY the translated text. Do not add quotes, markdown, or explanations.")
             appendLine()
             append(text)
         }

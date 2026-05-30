@@ -415,7 +415,7 @@ class SettingsDataStore @Inject constructor(
             Timber.e(exception, "Error reading auto-translate")
             emit(emptyPreferences())
         }
-        .map { prefs -> prefs[KEY_AUTO_TRANSLATE] ?: false }
+        .map { prefs -> prefs[KEY_AUTO_TRANSLATE] ?: true }
     
     suspend fun setAutoTranslate(enabled: Boolean) {
         try {
