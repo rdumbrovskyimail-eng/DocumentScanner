@@ -57,7 +57,7 @@ fun TextEditorSheet(
     title: String = "Редактировать текст",
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
-    onShare: (String) -> Unit,
+    onShare: (() -> Unit)? = null,
     readOnly: Boolean = false
 ) {
     var textFieldValue by remember {
@@ -136,7 +136,7 @@ fun TextEditorSheet(
                         readOnly = readOnly,
                         onClose = onDismiss,
                         onSave = { onSave(textFieldValue.text) },
-                        onShare = { onShare(textFieldValue.text) }
+                        onShare = onShare
                     )
                     
                     HorizontalDivider(color = GoogleDocsBorder)
@@ -276,7 +276,7 @@ private fun EditorHeader(
     readOnly: Boolean,
     onClose: () -> Unit,
     onSave: () -> Unit,
-    onShare: () -> Unit
+    onShare: (() -> Unit)?
 ) {
     Row(
         modifier = Modifier
@@ -315,12 +315,14 @@ private fun EditorHeader(
         }
         
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onShare) {
-                Icon(
-                    imageVector = Icons.Default.Share,
-                    contentDescription = "Поделиться",
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
+            if (onShare != null) {
+                IconButton(onClick = onShare) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Поделиться",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
             
             // Save button

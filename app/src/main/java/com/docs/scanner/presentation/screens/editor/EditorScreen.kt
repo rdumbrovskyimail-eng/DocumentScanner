@@ -633,6 +633,10 @@ fun EditorScreen(
                         viewModel.updateDocumentText(docId, originalText = null, translatedText = newText)
                     }
                     editingTextDocId = null
+                },
+                onShare = {
+                    val textToShare = if (editingTextIsOcr) (doc.originalText ?: "") else (doc.translatedText ?: "")
+                    viewModel.shareText(textToShare)
                 }
             )
         }

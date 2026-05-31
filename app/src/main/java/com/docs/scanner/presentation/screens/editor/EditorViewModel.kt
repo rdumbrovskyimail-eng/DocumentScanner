@@ -1045,6 +1045,10 @@ class EditorViewModel @Inject constructor(
     }
 
     fun shareText(text: String) {
+        if (text.isBlank()) {
+            sendError("Nothing to share")
+            return
+        }
         viewModelScope.launch {
             _shareEvent.send(
                 ShareEvent.TextContent(text = text, title = "Share text")
