@@ -51,10 +51,10 @@ fun AnalyticsHubScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Analytics Center") },
+                title = { Text("Аналитический центр") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 }
             )
@@ -68,30 +68,30 @@ fun AnalyticsHubScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "Manage translations and your information analysis",
+                text = "Управление переводами и анализом информации",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(8.dp))
 
             StatGrid {
-                StatCard(
-                    title = "Translation Archive",
-                    subtitle = "Every translation from your documents",
-                    count = translationsCount,
-                    icon = Icons.Default.Translate,
-                    tint = MaterialTheme.colorScheme.primary,
-                    onClick = onOpenArchive
-                )
+            StatCard(
+                title = "Архив переводов",
+                subtitle = "Все переводы из ваших документов",
+                count = translationsCount,
+                icon = Icons.Default.Translate,
+                tint = MaterialTheme.colorScheme.primary,
+                onClick = onOpenArchive
+            )
 
-                StatCard(
-                    title = "Notes",
-                    subtitle = "Information analysis & free-form notes",
-                    count = notesCount,
-                    icon = Icons.Default.NoteAlt,
-                    tint = MaterialTheme.colorScheme.tertiary,
-                    onClick = onOpenNotes
-                )
+            StatCard(
+                title = "Заметки",
+                subtitle = "Анализ информации и свободные заметки",
+                count = notesCount,
+                icon = Icons.Default.NoteAlt,
+                tint = MaterialTheme.colorScheme.tertiary,
+                onClick = onOpenNotes
+            )
             }
         }
     }

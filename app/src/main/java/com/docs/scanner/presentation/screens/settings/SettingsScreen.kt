@@ -427,66 +427,6 @@ private fun BackupSectionContent(
                 )
             }
         }
-
-        HorizontalDivider()
-
-        Text("Cloud Sync", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-        Text(
-            text = driveEmail?.let { "Connected: $it" } ?: "Not connected to Google Drive",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall
-        )
-        
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
-                onClick = onSignInDrive,
-                enabled = driveEmail == null && !isBackingUp,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Connect")
-            }
-            OutlinedButton(
-                onClick = onSignOutDrive,
-                enabled = driveEmail != null && !isBackingUp,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Disconnect")
-            }
-        }
-        
-        if (driveEmail != null) {
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = onUploadToDrive,
-                enabled = !isBackingUp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.CloudUpload, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Upload to Drive")
-            }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = onRefreshDriveBackups,
-                enabled = !isBackingUp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Refresh, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Refresh Drive backups")
-            }
-            if (driveBackups.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text("Drive backups:", style = MaterialTheme.typography.labelLarge)
-                driveBackups.take(3).forEach { backup ->
-                    DriveBackupItem(
-                        backup = backup,
-                        onRestore = { onRestoreDriveBackup(backup) },
-                        onDelete = { onDeleteDriveBackup(backup) }
-                    )
-                }
-            }
-        }
     }
 }
 

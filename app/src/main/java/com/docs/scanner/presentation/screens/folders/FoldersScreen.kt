@@ -7,6 +7,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -67,57 +68,21 @@ fun FoldersScreen(
         }
     }
 
-    // ✅ FIX #2: PickVisualMedia вместо GetContent + persistable permission
+    // ✅ FIX #2: PickMultipleVisualMedia вместо GetContent + persistable permission
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            // Берём persistable permission чтобы Uri не expired
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris: List<Uri> ->
+        uris.forEach { uri ->
             try {
                 context.contentResolver.takePersistableUriPermission(
                     uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } catch (_: SecurityException) {
-                // Некоторые провайдеры не поддерживают persistable, это ОК
-            }
+            } catch (_: SecurityException) {}
             viewModel.quickScan(uri)
         }
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Documents") },
-                actions = {
-                    Box {
-                        IconButton(onClick = { showSortMenu = true }) {
-                            Icon(Icons.Default.SwapVert, "Sort", tint = MaterialTheme.colorScheme.primary)
-                        }
-                        DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
-                            SortMenuItem(if (isRussian) "По дате" else "By Date", Icons.Default.CalendarToday, sortMode == SortMode.BY_DATE) { viewModel.setSortMode(SortMode.BY_DATE); showSortMenu = false }
-                            SortMenuItem(if (isRussian) "По алфавиту" else "By Name", Icons.Default.SortByAlpha, sortMode == SortMode.BY_NAME) { viewModel.setSortMode(SortMode.BY_NAME); showSortMenu = false }
-                        }
-                    }
-                    IconButton(onClick = { viewModel.setShowArchived(!showArchived) }) {
-                        Icon(Icons.Default.Inventory2, "Archive", tint = if (showArchived) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    IconButton(onClick = onSearchClick) { Icon(Icons.Default.Search, "Search") }
-                    IconButton(onClick = onAnalyticsClick) {
-                        Icon(Icons.Default.Insights, "Analytics Center")
-                    }
-                    IconButton(onClick = onTermsClick) { Icon(Icons.Default.Event, "Terms") }
-                    IconButton(onClick = onCameraClick) { Icon(Icons.Default.CameraAlt, "Camera") }
-                    IconButton(onClick = {
-                        galleryLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    }) {
-                        Icon(Icons.Default.PhotoLibrary, "Gallery")
-                    }
-                    IconButton(onClick = onSettingsClick) { Icon(Icons.Default.Settings, "Settings") }
-                }
-            )
-        },
         floatingActionButton = {
             FloatingActionButton(onClick = { showCreateFolderDialog = true }) {
                 Icon(Icons.Default.Add, "Create folder")
@@ -138,15 +103,39 @@ fun FoldersScreen(
                 }
                 is FoldersUiState.Processing -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 is FoldersUiState.Success -> {
-                    FoldersList(
-                        folders = state.folders,
-                        sortMode = sortMode,
-                        onFolderClick = onFolderClick,
-                        onMenuClick = { menuFolder = it },
-                        onClearQuickScans = { showClearQuickScansDialog = true },
-                        onReorder = viewModel::reorderFolders,
-                        onDragEnd = viewModel::saveFolderOrder
-                    )
+                    val quickScansFolder = state.folders.find { it.isQuickScans }
+                    val otherFolders = state.folders.filter { !it.isQuickScans }
+                    Column(Modifier.fillMaxSize()) {
+                        TopActionsBar(
+                            onSearchClick = onSearchClick,
+                            onAnalyticsClick = onAnalyticsClick,
+                            onTermsClick = onTermsClick,
+                            onCameraClick = onCameraClick,
+                            onGalleryClick = { galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            onSettingsClick = onSettingsClick
+                        )
+                        if (quickScansFolder != null) {
+                            QuickScansFolderCard(
+                                folder = quickScansFolder,
+                                onClick = { onFolderClick(quickScansFolder.id.value) },
+                                onClearClick = { showClearQuickScansDialog = true }
+                            )
+                        }
+                        SortControl(
+                            sortMode = sortMode,
+                            showArchived = showArchived,
+                            onSortModeChange = viewModel::setSortMode,
+                            onShowArchivedChange = { viewModel.setShowArchived(!showArchived) },
+                            isRussian = isRussian
+                        )
+                        FoldersList(
+                            folders = otherFolders,
+                            onFolderClick = onFolderClick,
+                            onMenuClick = { menuFolder = it },
+                            onReorder = viewModel::reorderFolders,
+                            onDragEnd = viewModel::saveFolderOrder
+                        )
+                    }
                 }
             }
         }
@@ -207,58 +196,30 @@ fun FoldersScreen(
 @Composable
 private fun FoldersList(
     folders: List<Folder>,
-    sortMode: SortMode,
     onFolderClick: (Long) -> Unit,
     onMenuClick: (Folder) -> Unit,
-    onClearQuickScans: () -> Unit,
     onReorder: (Int, Int) -> Unit,
     onDragEnd: () -> Unit
 ) {
-    val quickScansFolder = folders.find { it.isQuickScans }
-    val otherFolders = folders.filter { !it.isQuickScans }
     val isManualMode = false
     
-    // Объединяем папки в один список для DragDropLazyColumn
-    val displayItems = remember(quickScansFolder, otherFolders) {
-        if (quickScansFolder != null) listOf(quickScansFolder) + otherFolders else otherFolders
-    }
-    
     DragDropLazyColumn(
-        items = displayItems,
+        items = folders,
         key = { _, folder -> folder.id.value },
-        onMove = { from, to ->
-            // Защита: нельзя перемещать QuickScans (индекс 0) и перемещать на её место
-            if (quickScansFolder != null) {
-                if (from == 0 || to == 0) return@DragDropLazyColumn
-            }
-            onReorder(from, to)
-        },
-        onDragEnd = { _, _ ->
-            // ✅ FIX #11: Сохраняем порядок после завершения перетаскивания
-            onDragEnd()
-        },
+        onMove = onReorder,
+        onDragEnd = { _, _ -> onDragEnd() },
         modifier = Modifier.fillMaxSize(),
         enabled = isManualMode
-    ) { index, folder, isDragging, dragModifier ->
-        
+    ) { _, folder, isDragging, dragModifier ->
         Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-            if (folder.isQuickScans) {
-                // Quick Scans Card (never draggable via handle, as handle is hidden)
-                QuickScansFolderCard(
-                    folder = folder,
-                    onClick = { onFolderClick(folder.id.value) },
-                    onClearClick = onClearQuickScans
-                )
-            } else {
-                FolderCard(
-                    folder = folder,
-                    isDragging = isDragging,
-                    isManualMode = isManualMode,
-                    dragModifier = dragModifier,
-                    onClick = { onFolderClick(folder.id.value) },
-                    onMenuClick = { onMenuClick(folder) }
-                )
-            }
+            FolderCard(
+                folder = folder,
+                isDragging = isDragging,
+                isManualMode = isManualMode,
+                dragModifier = dragModifier,
+                onClick = { onFolderClick(folder.id.value) },
+                onMenuClick = { onMenuClick(folder) }
+            )
         }
     }
 }
@@ -280,7 +241,11 @@ private fun QuickScansFolderCard(folder: Folder, onClick: () -> Unit, onClearCli
             Column(Modifier.weight(1f)) {
                 Text(folder.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
                 folder.description?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                Text(text = pluralStringResource(R.plurals.records_count, folder.recordCount, folder.recordCount), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    text = if (isRussian) "Записей: ${folder.recordCount}" else pluralStringResource(R.plurals.records_count, folder.recordCount, folder.recordCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             Box {
                 IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Default.MoreVert, "Menu") }
@@ -368,6 +333,46 @@ private fun FolderCard(
 // ══════════════════════════════════════════════════════════════════════════════
 // HELPER COMPONENTS
 // ══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun TopActionsBar(
+    onSearchClick: () -> Unit,
+    onAnalyticsClick: () -> Unit,
+    onTermsClick: () -> Unit,
+    onCameraClick: () -> Unit,
+    onGalleryClick: () -> Unit,
+    onSettingsClick: () -> Unit
+) {
+    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp), horizontalArrangement = Arrangement.End) {
+        IconButton(onClick = onSearchClick) { Icon(Icons.Default.Search, "Search") }
+        IconButton(onClick = onAnalyticsClick) { Icon(Icons.Default.Insights, "Analytics") }
+        IconButton(onClick = onTermsClick) { Icon(Icons.Default.Event, "Terms") }
+        IconButton(onClick = onCameraClick) { Icon(Icons.Default.CameraAlt, "Camera") }
+        IconButton(onClick = onGalleryClick) { Icon(Icons.Default.PhotoLibrary, "Gallery") }
+        IconButton(onClick = onSettingsClick) { Icon(Icons.Default.Settings, "Settings") }
+    }
+}
+
+@Composable
+private fun SortControl(
+    sortMode: SortMode,
+    showArchived: Boolean,
+    onSortModeChange: (SortMode) -> Unit,
+    onShowArchivedChange: () -> Unit,
+    isRussian: Boolean
+) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = { onSortModeChange(if (sortMode == SortMode.BY_DATE) SortMode.BY_NAME else SortMode.BY_DATE) }) {
+            Icon(if (sortMode == SortMode.BY_DATE) Icons.Default.CalendarToday else Icons.Default.SortByAlpha, null)
+            Spacer(Modifier.width(4.dp))
+            Text(if (isRussian) (if (sortMode == SortMode.BY_DATE) "По дате" else "По имени") else (if (sortMode == SortMode.BY_DATE) "By Date" else "By Name"))
+        }
+        Spacer(Modifier.weight(1f))
+        IconButton(onClick = onShowArchivedChange) {
+            Icon(Icons.Default.Inventory2, "Archive", tint = if (showArchived) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
 
 @Composable
 private fun SortMenuItem(

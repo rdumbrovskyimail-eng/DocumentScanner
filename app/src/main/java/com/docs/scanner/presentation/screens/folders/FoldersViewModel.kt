@@ -322,6 +322,24 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
+    fun quickScanMultiple(uris: List<Uri>) {
+        viewModelScope.launch {
+            for (uri in uris) {
+                try {
+                    useCases.quickScan(uri.toString()).collect { state ->
+                        if (state is QuickScanState.Success) {
+                            loadFolders()
+                        } else if (state is QuickScanState.Error) {
+                            showError("${state.stage}: ${state.error.message}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    showError("Quick scan error: ${e.message}")
+                }
+            }
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // HELPERS
     // ═══════════════════════════════════════════════════════════════════════════

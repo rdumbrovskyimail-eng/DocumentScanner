@@ -117,12 +117,12 @@ fun TranslationsArchiveScreen(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = viewModel::setSearchQuery,
-                            placeholder = { Text("Search translations…") },
+                            placeholder = { Text("Поиск по переводам…") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
                     } else {
-                        Text("Translation Archive")
+                        Text("Архив переводов")
                     }
                 },
                 navigationIcon = {
@@ -209,9 +209,9 @@ fun TranslationsArchiveScreen(
     // ── Delete confirmation ──────────────────────────────────────────────
     pendingDelete?.let { target ->
         ConfirmDialog(
-            title = "Delete translation?",
-            message = "This will remove the entry from the archive. The original document is not affected.",
-            confirmText = "Delete",
+            title = "Удалить перевод?",
+            message = "Запись будет удалена из архива. Оригинал документа не затрагивается.",
+            confirmText = "Удалить",
             onConfirm = {
                 viewModel.deleteTranslation(target.id)
                 pendingDelete = null
@@ -258,7 +258,7 @@ private fun TranslationRow(
                 if (translation.userModified) {
                     AssistChip(
                         onClick = {},
-                        label = { Text("edited", style = MaterialTheme.typography.labelSmall) },
+                        label = { Text("изменено", style = MaterialTheme.typography.labelSmall) },
                         colors = AssistChipDefaults.assistChipColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer
                         )
@@ -286,7 +286,7 @@ private fun TranslationRow(
                 if (!translation.sourceRecordName.isNullOrBlank()) {
                     Spacer(Modifier.size(8.dp))
                     Text(
-                        text = "•  from \"${translation.sourceRecordName}\"",
+                        text = "•  из «${translation.sourceRecordName}»",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -352,7 +352,7 @@ private fun TranslationEditorSheet(
                 IconButton(onClick = onDelete) {
                     Icon(
                         Icons.Default.Delete,
-                        contentDescription = "Delete",
+                        contentDescription = "Удалить",
                         tint = MaterialTheme.colorScheme.error
                     )
                 }
@@ -428,7 +428,7 @@ private fun TranslationItemMenu(
             }
         )
         DropdownMenuItem(
-            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+            text = { Text("Удалить", color = MaterialTheme.colorScheme.error) },
             leadingIcon = {
                 Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
             },

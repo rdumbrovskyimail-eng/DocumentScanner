@@ -50,13 +50,13 @@ fun SearchScreen(
                     OutlinedTextField(
                         value = query,
                         onValueChange = viewModel::onSearchQueryChange,
-                        placeholder = { Text("Search documents...") },
+                        placeholder = { Text("Поиск по документам…") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         trailingIcon = {
                             if (query.isNotEmpty()) {
                                 IconButton(onClick = viewModel::clearSearch) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                    Icon(Icons.Default.Clear, contentDescription = "Очистить")
                                 }
                             }
                         }
@@ -64,7 +64,7 @@ fun SearchScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 }
             )
@@ -81,16 +81,16 @@ fun SearchScreen(
                 SearchUiState.Suggestions -> {
                     val history by viewModel.searchHistory.collectAsStateWithLifecycle()
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Recent searches", style = MaterialTheme.typography.labelLarge)
+                        Text("Недавние запросы", style = MaterialTheme.typography.labelLarge)
                         TextButton(
                             onClick = viewModel::clearHistory,
                             enabled = history.isNotEmpty()
-                        ) { Text("Clear") }
+                        ) { Text("Очистить") }
                     }
                     if (history.isEmpty()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
                             Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
-                            Text("Type to search documents", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Введите запрос для поиска", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     } else {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -113,7 +113,7 @@ fun SearchScreen(
                                             )
                                         }
                                         IconButton(onClick = { viewModel.deleteHistoryItem(item.id) }) {
-                                            Icon(Icons.Default.Clear, contentDescription = "Remove")
+                                            Icon(Icons.Default.Clear, contentDescription = "Удалить")
                                         }
                                     }
                                 }
@@ -121,11 +121,11 @@ fun SearchScreen(
                         }
                     }
                 }
-                SearchUiState.QueryTooShort -> Text("Query too short.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                SearchUiState.QueryTooShort -> Text("Слишком короткий запрос.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 SearchUiState.Searching -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 is SearchUiState.NoResults -> Column(modifier = Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
                     Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
-                    Text("No results for \"${state.query}\"")
+                    Text("Ничего не найдено по запросу «${state.query}»")
                 }
                 is SearchUiState.Error -> Text(state.message, color = MaterialTheme.colorScheme.error)
                 is SearchUiState.Success -> {
@@ -159,7 +159,7 @@ fun SearchScreen(
                                     Spacer(modifier = Modifier.padding(2.dp))
                                     Row {
                                         Text(
-                                            text = if (item.isOriginal) "Original" else "Translation",
+                                            text = if (item.isOriginal) "Оригинал" else "Перевод",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
