@@ -1,13 +1,11 @@
 package com.docs.scanner.presentation.theme
 
 import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
@@ -36,17 +34,9 @@ private val DarkColors = darkColorScheme(
 @Composable
 fun AppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val colors = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val ctx = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
-        }
-        darkTheme -> DarkColors
-        else -> LightColors
-    }
+    val colors = if (darkTheme) DarkColors else LightColors
 
     val view = LocalView.current
     if (!view.isInEditMode) {
