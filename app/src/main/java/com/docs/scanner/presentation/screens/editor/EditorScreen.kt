@@ -164,7 +164,6 @@ fun EditorScreen(
     var editingTextIsOcr by rememberSaveable { mutableStateOf(true) }
     var editorReadOnly by rememberSaveable { mutableStateOf(false) }
     var showMoveDocumentDialogForId by rememberSaveable { mutableStateOf<Long?>(null) }
-    var docMenuExpandedId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     var consumedHighlightId by rememberSaveable { mutableStateOf<Long?>(null) }
     var highlightedDocId by remember { mutableStateOf<Long?>(null) }
@@ -205,9 +204,7 @@ fun EditorScreen(
                 viewModel.toggleDocumentSelection(action.documentId)
             }
 
-            is DocumentAction.MenuClick -> {
-                docMenuExpandedId = action.documentId
-            }
+            is DocumentAction.MenuClick -> { /* No-op */ }
 
             is DocumentAction.RetryOcr -> viewModel.retryOcr(action.documentId)
             is DocumentAction.RetryTranslation -> viewModel.retryTranslation(action.documentId)
@@ -606,8 +603,6 @@ fun EditorScreen(
                                         ocrSettings = ocrSettings,
                                         viewModel = viewModel,
                                         onAction = ::handleDocumentAction,
-                                        docMenuExpandedId = docMenuExpandedId,
-                                        onDocMenuExpandedChange = { id -> docMenuExpandedId = id },
                                         isDragging = actualDragging,
                                         isHighlighted = highlightedDocId == document.id.value,
                                         dragModifier = if (!selectionState.isActive) {
@@ -986,8 +981,6 @@ private fun DocumentCardItem(
     ocrSettings: OcrSettingsSnapshot,
     viewModel: EditorViewModel,
     onAction: (DocumentAction) -> Unit,
-    docMenuExpandedId: Long?,
-    onDocMenuExpandedChange: (Long?) -> Unit,
     isDragging: Boolean,
     isHighlighted: Boolean,
     dragModifier: Modifier
@@ -1005,9 +998,6 @@ private fun DocumentCardItem(
         onOcrTextClick = { onAction(DocumentAction.OcrTextClick(id)) },
         onTranslationClick = { onAction(DocumentAction.TranslationClick(id)) },
         onSelectionToggle = { onAction(DocumentAction.ToggleSelection(id)) },
-        menuExpanded = docMenuExpandedId == id,
-        onMenuDismiss = { onDocMenuExpandedChange(null) },
-        onMenuClick = { onDocMenuExpandedChange(id) },
         onRetryOcr = { onAction(DocumentAction.RetryOcr(id)) },
         onRetryTranslation = { onAction(DocumentAction.RetryTranslation(id)) },
         onMoveUp = { onAction(DocumentAction.MoveUp(id)) },

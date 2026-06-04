@@ -89,6 +89,10 @@ sealed class RecordAction {
     data class RemoveTag(val tag: String) : RecordAction()
     data class UpdateLanguages(val source: Language, val target: Language) : RecordAction()
 
+    data class EditOcr(val documentId: Long) : RecordAction()
+    data class EditTranslation(val documentId: Long) : RecordAction()
+    data class ShareTranslation(val documentId: Long) : RecordAction()
+
     data object ShareAsPdf : RecordAction()
     data object ShareAsZip : RecordAction()
     data object EnterSelectionMode : RecordAction()

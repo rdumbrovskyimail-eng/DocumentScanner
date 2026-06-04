@@ -13,6 +13,7 @@ import com.docs.scanner.domain.core.RecordId
 import com.docs.scanner.domain.usecase.MultiPageScanState
 import com.docs.scanner.domain.usecase.AllUseCases
 import com.docs.scanner.domain.usecase.QuickScanState
+import com.docs.scanner.domain.usecase.ProcessingState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -241,12 +242,12 @@ class CameraViewModel @Inject constructor(
                             val span = 40
                             val p = base + ((state.index * span) / state.total.coerceAtLeast(1))
                             val msg = when (state.state) {
-                                is com.docs.scanner.domain.usecase.ProcessingState.OcrInProgress -> "OCR page ${state.index}/${state.total}…"
-                                is com.docs.scanner.domain.usecase.ProcessingState.TranslationInProgress -> "Translating page ${state.index}/${state.total}…"
-                                is com.docs.scanner.domain.usecase.ProcessingState.OcrComplete -> "OCR complete"
-                                is com.docs.scanner.domain.usecase.ProcessingState.Complete -> "Done"
-                                is com.docs.scanner.domain.usecase.ProcessingState.Failed -> "Failed"
-                                is com.docs.scanner.domain.usecase.ProcessingState.Idle -> "Working…"
+                                is ProcessingState.OcrInProgress -> "OCR page ${state.index}/${state.total}…"
+                                is ProcessingState.TranslationInProgress -> "Translating page ${state.index}/${state.total}…"
+                                is ProcessingState.OcrComplete -> "OCR complete"
+                                is ProcessingState.Complete -> "Done"
+                                is ProcessingState.Failed -> "Failed"
+                                is ProcessingState.Idle -> "Working…"
                             }
                             _uiState.value = CameraUiState.Processing(progress = p.coerceIn(0, 99), message = msg)
                         }

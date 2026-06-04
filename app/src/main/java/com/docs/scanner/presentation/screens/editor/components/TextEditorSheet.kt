@@ -83,7 +83,7 @@ fun TextEditorSheet(
     Dialog(
         onDismissRequest = {
             if (hasChanges) {
-                // TODO: Показать диалог "Discard changes?"
+                // TODO: Показать диалог "Отменить изменения?"
             }
             onDismiss()
         },

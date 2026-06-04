@@ -133,9 +133,6 @@ fun DocumentCard(
     onTranslationClick: () -> Unit,
     onSelectionToggle: () -> Unit,
     
-    menuExpanded: Boolean,
-    onMenuDismiss: () -> Unit,
-
     // Retry actions
     onRetryOcr: () -> Unit,
     onRetryTranslation: () -> Unit,
@@ -397,8 +394,7 @@ fun DocumentCard(
                 onAiRewrite = onAiRewrite,
                 onClearFormatting = onClearFormatting,
                 onShareTranslation = onShareTranslation,
-                isSelectionMode = isSelectionMode,
-                dragModifier = dragModifier
+                isSelectionMode = isSelectionMode
             )
         }
     }
@@ -678,8 +674,7 @@ private fun ActionButtonsRow(
     onAiRewrite: ((Boolean) -> Unit)?,
     onClearFormatting: ((Boolean) -> Unit)?,
     onShareTranslation: (() -> Unit)?,
-    isSelectionMode: Boolean,
-    dragModifier: Modifier = Modifier
+    isSelectionMode: Boolean
 ) {
     val translatedText = document.translatedText ?: ""
 
