@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Surface
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,7 +39,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -176,11 +176,10 @@ fun TermsScreen(
                         TermsFilter.ALL
                     )
                     tabIndex = tabs.indexOf(filter).coerceAtLeast(0)
-
-                    TabRow(selectedTabIndex = tabIndex) {
+ 
+                    PrimaryScrollableTabRow(selectedTabIndex = tabIndex) {
                         tabs.forEachIndexed { index, f ->
-                            val count = when (f) {
-                                TermsFilter.ACTIVE -> s.active.size
+                            val count = when (f) {                                TermsFilter.ACTIVE -> s.active.size
                                 TermsFilter.UPCOMING -> s.upcoming.size
                                 TermsFilter.DUE_TODAY -> s.dueToday.size
                                 TermsFilter.OVERDUE -> s.overdue.size
