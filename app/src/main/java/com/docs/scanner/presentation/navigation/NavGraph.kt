@@ -84,7 +84,7 @@ fun NavGraph(
                     navController.navigateSingleTop(Screen.Terms.createRoute())
                 },
                 onCameraClick = {
-                    navController.navigateSingleTop(Screen.Camera.route)
+                    navController.navigateSingleTop(Screen.Camera.createRoute(null))
                 },
                 onAnalyticsClick = {
                     navController.navigateSingleTop(Screen.AnalyticsHub.route)
@@ -165,14 +165,27 @@ fun NavGraph(
                 },
                 onCameraClick = {
                     safeNavigate(navController, notifyNavError) {
-                        navigateSingleTop(Screen.Camera.route)
+                        navigateSingleTop(Screen.Camera.createRoute(recordId))
                     }
                 }
             )
         }
 
-        composable(Screen.Camera.route) {
+        composable(
+            route = Screen.Camera.route,
+            arguments = listOf(
+                navArgument("recordId") {
+                    type = NavType.LongType
+                    defaultValue = Screen.Camera.NO_RECORD
+                }
+            )
+        ) { backStackEntry ->
+            val targetRecordId = backStackEntry.arguments
+                ?.getLong("recordId")
+                ?.takeIf { it > 0L }
+
             CameraScreen(
+                targetRecordId = targetRecordId,
                 onScanComplete = { recordId ->
                     safeNavigate(navController, notifyNavError) {
                         navigateSingleTop(Screen.Editor.createRoute(recordId)) {

@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.docs.scanner.data.remote.camera.DocumentScannerWrapper
 import com.docs.scanner.domain.core.FolderId
 import com.docs.scanner.domain.core.Folder
+import com.docs.scanner.domain.core.RecordId
 import com.docs.scanner.domain.usecase.MultiPageScanState
 import com.docs.scanner.domain.usecase.AllUseCases
 import com.docs.scanner.domain.usecase.QuickScanState
@@ -48,6 +49,13 @@ class CameraViewModel @Inject constructor(
 
     private val _targetFolderId = MutableStateFlow<Long?>(null)
     val targetFolderId: StateFlow<Long?> = _targetFolderId.asStateFlow()
+
+    private val _targetRecordId = MutableStateFlow<Long?>(null)
+    val targetRecordId: StateFlow<Long?> = _targetRecordId.asStateFlow()
+
+    fun setTargetRecord(recordId: Long?) {
+        _targetRecordId.value = recordId
+    }
 
     val folders: StateFlow<List<Folder>> =
         useCases.folders.observeAll()
@@ -193,8 +201,14 @@ class CameraViewModel @Inject constructor(
             return
         }
 
+        val existingRecordId = _targetRecordId.value
+        if (existingRecordId != null) {
+            appendPagesToRecord(existingRecordId, pages)
+            return
+        }
+
         viewModelScope.launch {
-            _uiState.value = CameraUiState.Processing(progress = 0, message = "Preparing…")
+            _uiState.value = CameraUiState.Processing(progress = 0, message = "Подготовка…")
             val folder = _targetFolderId.value?.let { FolderId(it) }
 
             useCases.multiPageScan(
@@ -254,6 +268,40 @@ class CameraViewModel @Inject constructor(
                         }
                     }
                 }
+        }
+    }
+
+    private fun appendPagesToRecord(recordId: Long, pages: List<Uri>) {
+        viewModelScope.launch {
+            _uiState.value = CameraUiState.Processing(progress = 0, message = "Подготовка…")
+
+            val result = useCases.batch.addDocuments(
+                recordId = RecordId(recordId),
+                imageUris = pages.map { it.toString() },
+                onProgress = { done, total ->
+                    val p = (done * 50) / total.coerceAtLeast(1)
+                    _uiState.value = CameraUiState.Processing(
+                        progress = p.coerceIn(0, 50),
+                        message = "Сохранение $done/$total…"
+                    )
+                }
+            )
+
+            if (result.successful.isNotEmpty()) {
+                useCases.batch.processDocuments(
+                    docIds = result.successful,
+                    onProgress = { done, total ->
+                        val p = 50 + (done * 50) / total.coerceAtLeast(1)
+                        _uiState.value = CameraUiState.Processing(
+                            progress = p.coerceIn(50, 99),
+                            message = "Обработка $done/$total…"
+                        )
+                    }
+                )
+            }
+
+            _uiState.value = CameraUiState.Success(recordId)
+            _navigationEvent.emit(NavigationEvent.NavigateToEditor(recordId))
         }
     }
 }

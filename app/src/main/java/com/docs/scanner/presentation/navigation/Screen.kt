@@ -11,7 +11,13 @@ import androidx.lifecycle.SavedStateHandle
 sealed class Screen(val route: String) {
     data object Onboarding : Screen("onboarding")
     data object Folders : Screen("folders")
-    data object Camera : Screen("camera")
+    data object Camera : Screen("camera?recordId={recordId}") {
+        const val NO_RECORD: Long = -1L
+        fun createRoute(recordId: Long? = null): String {
+            val id = recordId?.takeIf { it > 0 } ?: return "camera"
+            return "camera?recordId=$id"
+        }
+    }
     data object Search : Screen("search")
     data object Settings : Screen("settings")
     data object Debug : Screen("debug")

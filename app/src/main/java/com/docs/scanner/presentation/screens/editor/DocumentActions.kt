@@ -15,10 +15,14 @@ import com.docs.scanner.domain.core.Language
 
 sealed class DocumentAction {
 
-    // Clicks
+    // Clicks (открыть полноэкранный ПРОСМОТР)
     data class ImageClick(val documentId: Long) : DocumentAction()
     data class OcrTextClick(val documentId: Long) : DocumentAction()
     data class TranslationClick(val documentId: Long) : DocumentAction()
+
+    // Открыть полноэкранный РЕДАКТОР (карандаш)
+    data class EditOcr(val documentId: Long) : DocumentAction()
+    data class EditTranslation(val documentId: Long) : DocumentAction()
 
     // Selection
     data class ToggleSelection(val documentId: Long) : DocumentAction()
@@ -37,6 +41,7 @@ sealed class DocumentAction {
 
     // Share / Delete
     data class SharePage(val documentId: Long, val imagePath: String) : DocumentAction()
+    data class ShareTranslation(val documentId: Long) : DocumentAction()
     data class DeletePage(val documentId: Long) : DocumentAction()
 
     // Text

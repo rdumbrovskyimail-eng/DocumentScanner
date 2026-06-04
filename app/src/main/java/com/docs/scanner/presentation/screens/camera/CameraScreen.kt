@@ -30,10 +30,14 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 @Composable
 fun CameraScreen(
     viewModel: CameraViewModel = hiltViewModel(),
+    targetRecordId: Long? = null,
     onScanComplete: (Long) -> Unit,
     onBackClick: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(targetRecordId) {
+        viewModel.setTargetRecord(targetRecordId)
+    }
     val pages by viewModel.previewPages.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val targetFolderId by viewModel.targetFolderId.collectAsStateWithLifecycle()

@@ -162,6 +162,7 @@ fun EditorScreen(
 
     var editingTextDocId by rememberSaveable { mutableStateOf<Long?>(null) }
     var editingTextIsOcr by rememberSaveable { mutableStateOf(true) }
+    var editorReadOnly by rememberSaveable { mutableStateOf(false) }
     var showMoveDocumentDialogForId by rememberSaveable { mutableStateOf<Long?>(null) }
     var docMenuExpandedId by rememberSaveable { mutableStateOf<Long?>(null) }
 
@@ -176,11 +177,25 @@ fun EditorScreen(
             is DocumentAction.OcrTextClick -> {
                 editingTextDocId = action.documentId
                 editingTextIsOcr = true
+                editorReadOnly = true
             }
 
             is DocumentAction.TranslationClick -> {
                 editingTextDocId = action.documentId
                 editingTextIsOcr = false
+                editorReadOnly = true
+            }
+
+            is DocumentAction.EditOcr -> {
+                editingTextDocId = action.documentId
+                editingTextIsOcr = true
+                editorReadOnly = false
+            }
+
+            is DocumentAction.EditTranslation -> {
+                editingTextDocId = action.documentId
+                editingTextIsOcr = false
+                editorReadOnly = false
             }
 
             is DocumentAction.ToggleSelection -> {
@@ -200,6 +215,11 @@ fun EditorScreen(
             is DocumentAction.MoveDown -> viewModel.moveDocumentDown(action.documentId)
 
             is DocumentAction.SharePage -> viewModel.shareSingleImage(action.imagePath)
+            is DocumentAction.ShareTranslation -> {
+                val doc = (uiState as? EditorUiState.Success)
+                    ?.documents?.find { it.id.value == action.documentId }
+                viewModel.shareText(doc?.translatedText ?: "")
+            }
             is DocumentAction.DeletePage -> viewModel.deleteDocument(action.documentId)
             is DocumentAction.MoveToRecord -> showMoveDocumentDialogForId = action.documentId
 
@@ -222,13 +242,11 @@ fun EditorScreen(
 
             is DocumentAction.AiRewrite,
             is DocumentAction.ClearFormatting,
-            is DocumentAction.StartInlineEdit,
-            is DocumentAction.UpdateInlineText,
-            is DocumentAction.SaveInlineEdit,
-            is DocumentAction.CancelInlineEdit,
             is DocumentAction.WordTap -> {
                 viewModel.handleDocumentAction(action)
             }
+
+            else -> { /* StartInlineEdit/UpdateInlineText/... больше не используются */ }
         }
     }
 
@@ -624,8 +642,17 @@ fun EditorScreen(
         if (doc != null) {
             TextEditorSheet(
                 initialText = if (editingTextIsOcr) doc.originalText ?: "" else doc.translatedText ?: "",
-                title = if (editingTextIsOcr) "Edit OCR Text" else "Edit Translation",
-                onDismiss = { editingTextDocId = null },
+                title = when {
+                    editorReadOnly && editingTextIsOcr -> "Текст OCR"
+                    editorReadOnly && !editingTextIsOcr -> "Перевод"
+                    editingTextIsOcr -> "Редактировать текст OCR"
+                    else -> "Редактировать перевод"
+                },
+                readOnly = editorReadOnly,
+                onDismiss = {
+                    editingTextDocId = null
+                    editorReadOnly = false
+                },
                 onSave = { newText ->
                     if (editingTextIsOcr) {
                         viewModel.updateDocumentText(docId, originalText = newText, translatedText = null)
@@ -633,6 +660,7 @@ fun EditorScreen(
                         viewModel.updateDocumentText(docId, originalText = null, translatedText = newText)
                     }
                     editingTextDocId = null
+                    editorReadOnly = false
                 },
                 onShare = {
                     val textToShare = if (editingTextIsOcr) (doc.originalText ?: "") else (doc.translatedText ?: "")
@@ -965,9 +993,6 @@ private fun DocumentCardItem(
     dragModifier: Modifier
 ) {
     val id = document.id.value
-    val inlineStates by viewModel.inlineEditingStates.collectAsStateWithLifecycle()
-    val ocrEdit = inlineStates["$id:${TextEditField.OCR_TEXT.name}"]
-    val translationEdit = inlineStates["$id:${TextEditField.TRANSLATED_TEXT.name}"]
 
     DocumentCard(
         document = document,
@@ -976,10 +1001,6 @@ private fun DocumentCardItem(
         isSelectionMode = selectionState.isActive,
         isDragging = isDragging,
         isHighlighted = isHighlighted,
-        isInlineEditingOcr = ocrEdit != null,
-        isInlineEditingTranslation = translationEdit != null,
-        inlineOcrText = ocrEdit?.currentText ?: "",
-        inlineTranslationText = translationEdit?.currentText ?: "",
         onImageClick = { onAction(DocumentAction.ImageClick(id)) },
         onOcrTextClick = { onAction(DocumentAction.OcrTextClick(id)) },
         onTranslationClick = { onAction(DocumentAction.TranslationClick(id)) },
@@ -994,6 +1015,7 @@ private fun DocumentCardItem(
         isFirst = index == 0,
         isLast = index == state.documents.lastIndex,
         onSharePage = { onAction(DocumentAction.SharePage(id, document.imagePath)) },
+        onShareTranslation = { onAction(DocumentAction.ShareTranslation(id)) },
         onDeletePage = { onAction(DocumentAction.DeletePage(id)) },
         onMoveToRecord = { onAction(DocumentAction.MoveToRecord(id, 0L)) },
         onCopyText = { text -> onAction(DocumentAction.CopyText(id, text, isOcrText = true)) },
@@ -1005,20 +1027,8 @@ private fun DocumentCardItem(
         onClearFormatting = { isOcr -> onAction(DocumentAction.ClearFormatting(id, isOcrText = isOcr)) },
         confidenceThreshold = ocrSettings.confidenceThreshold,
         onWordTap = { word, conf -> onAction(DocumentAction.WordTap(word, conf)) },
-        onStartInlineEditOcr = {
-            onAction(DocumentAction.StartInlineEdit(id, TextEditField.OCR_TEXT, document.originalText.orEmpty()))
-        },
-        onStartInlineEditTranslation = {
-            onAction(DocumentAction.StartInlineEdit(id, TextEditField.TRANSLATED_TEXT, document.translatedText.orEmpty()))
-        },
-        onInlineTextChange = { text ->
-            val field = if (ocrEdit != null) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
-            onAction(DocumentAction.UpdateInlineText(id, field, text))
-        },
-        onInlineEditComplete = {
-            val field = if (ocrEdit != null) TextEditField.OCR_TEXT else TextEditField.TRANSLATED_TEXT
-            onAction(DocumentAction.SaveInlineEdit(id, field))
-        },
+        onEditOcr = { onAction(DocumentAction.EditOcr(id)) },
+        onEditTranslation = { onAction(DocumentAction.EditTranslation(id)) },
         dragModifier = dragModifier
     )
 }

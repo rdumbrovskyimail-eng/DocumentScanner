@@ -58,6 +58,7 @@ fun TextEditorSheet(
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
     onShare: (() -> Unit)? = null,
+    onCopyAll: (() -> Unit)? = null,
     readOnly: Boolean = false
 ) {
     var textFieldValue by remember {
@@ -136,7 +137,10 @@ fun TextEditorSheet(
                         readOnly = readOnly,
                         onClose = onDismiss,
                         onSave = { onSave(textFieldValue.text) },
-                        onShare = onShare
+                        onShare = onShare,
+                        onCopyAll = onCopyAll ?: if (readOnly) {
+                            { clipboardManager.setText(AnnotatedString(textFieldValue.text)) }
+                        } else null
                     )
                     
                     HorizontalDivider(color = GoogleDocsBorder)
@@ -202,7 +206,7 @@ fun TextEditorSheet(
                         if (readOnly) {
                             // Read-only mode with scroll
                             Text(
-                                text = textFieldValue.text.ifBlank { "No text available" },
+                                text = textFieldValue.text.ifBlank { "Нет текста" },
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = if (textFieldValue.text.isBlank()) {
                                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -234,7 +238,7 @@ fun TextEditorSheet(
                                     Box {
                                         if (textFieldValue.text.isEmpty()) {
                                             Text(
-                                                text = "Enter text...",
+                                                text = "Введите текст…",
                                                 style = MaterialTheme.typography.bodyLarge,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                             )
@@ -254,7 +258,7 @@ fun TextEditorSheet(
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
                         Text(
-                            text = "${textFieldValue.text.length} characters",
+                            text = "Символов: ${textFieldValue.text.length}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -276,7 +280,8 @@ private fun EditorHeader(
     readOnly: Boolean,
     onClose: () -> Unit,
     onSave: () -> Unit,
-    onShare: (() -> Unit)?
+    onShare: (() -> Unit)?,
+    onCopyAll: (() -> Unit)?
 ) {
     Row(
         modifier = Modifier
@@ -315,6 +320,15 @@ private fun EditorHeader(
         }
         
         Row(verticalAlignment = Alignment.CenterVertically) {
+            if (readOnly && onCopyAll != null) {
+                IconButton(onClick = onCopyAll) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Копировать",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
             if (onShare != null) {
                 IconButton(onClick = onShare) {
                     Icon(
@@ -362,64 +376,44 @@ private fun EditorActionBar(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Undo
         ActionChip(
             icon = Icons.Default.Undo,
-            label = "Undo",
+            label = "Отменить",
             onClick = onUndo,
             enabled = hasChanges
         )
-        
+
         VerticalDivider(
             modifier = Modifier.height(24.dp),
             color = GoogleDocsBorder
         )
-        
-                        // Copy
-                        ActionChip(
-                            icon = Icons.Default.ContentCopy,
-                            label = "Копировать",
-                            onClick = onCopy
-                        )
-                        
-                        // Paste
-                        ActionChip(
-                            icon = Icons.Default.ContentPaste,
-                            label = "Вставить",
-                            onClick = onPaste
-                        )
-                        
-                        VerticalDivider(
-                            modifier = Modifier.height(24.dp),
-                            color = GoogleDocsBorder
-                        )
-                        
-                        // Select All
-                        ActionChip(
-                            icon = Icons.Default.SelectAll,
-                            label = "Выделить всё",
-                            onClick = onSelectAll
-                        )
-                        
-                        // Clear
-                        ActionChip(
-                            icon = Icons.Default.Clear,
-                            label = "Очистить",
-                            onClick = onClear,
-                            tint = GoogleDocsError
-                        )
-        
-        // Select All
+
+        ActionChip(
+            icon = Icons.Default.ContentCopy,
+            label = "Копировать",
+            onClick = onCopy
+        )
+
+        ActionChip(
+            icon = Icons.Default.ContentPaste,
+            label = "Вставить",
+            onClick = onPaste
+        )
+
+        VerticalDivider(
+            modifier = Modifier.height(24.dp),
+            color = GoogleDocsBorder
+        )
+
         ActionChip(
             icon = Icons.Default.SelectAll,
-            label = "Select All",
+            label = "Выделить всё",
             onClick = onSelectAll
         )
-        
-        // Clear
+
         ActionChip(
             icon = Icons.Default.Clear,
-            label = "Clear",
+            label = "Очистить",
             onClick = onClear,
             tint = GoogleDocsError
         )

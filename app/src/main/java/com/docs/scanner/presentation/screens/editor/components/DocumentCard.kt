@@ -127,12 +127,6 @@ fun DocumentCard(
      */
     isHighlighted: Boolean = false,
 
-    // Inline editing state (управляется извне через ViewModel)
-    isInlineEditingOcr: Boolean = false,
-    isInlineEditingTranslation: Boolean = false,
-    inlineOcrText: String = "",
-    inlineTranslationText: String = "",
-
     // Basic actions
     onImageClick: () -> Unit,
     onOcrTextClick: () -> Unit,
@@ -141,7 +135,6 @@ fun DocumentCard(
     
     menuExpanded: Boolean,
     onMenuDismiss: () -> Unit,
-    onMenuClick: () -> Unit,
 
     // Retry actions
     onRetryOcr: () -> Unit,
@@ -155,6 +148,7 @@ fun DocumentCard(
 
     // Single actions
     onSharePage: (() -> Unit)? = null,
+    onShareTranslation: (() -> Unit)? = null,
     onDeletePage: (() -> Unit)? = null,
     onMoveToRecord: (() -> Unit)? = null,
 
@@ -168,11 +162,9 @@ fun DocumentCard(
     confidenceThreshold: Float = 0.7f,
     onWordTap: ((String, Float) -> Unit)? = null,
 
-    // Inline editing callbacks
-    onStartInlineEditOcr: (() -> Unit)? = null,
-    onStartInlineEditTranslation: (() -> Unit)? = null,
-    onInlineTextChange: ((String) -> Unit)? = null,
-    onInlineEditComplete: (() -> Unit)? = null,
+    // Полноэкранный редактор (карандаш)
+    onEditOcr: (() -> Unit)? = null,
+    onEditTranslation: (() -> Unit)? = null,
 
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier
@@ -378,21 +370,7 @@ fun DocumentCard(
                         else -> {
                             OcrTextContent(
                                 document = document,
-                                isInlineEditing = isInlineEditingOcr,
-                                inlineText = inlineOcrText,
-                                onInlineTextChange = { newText ->
-                                    onInlineTextChange?.invoke(newText)
-                                },
-                                onStartInlineEdit = {
-                                    if (isInlineEditingOcr) {
-                                        onInlineEditComplete?.invoke()
-                                    } else {
-                                        onStartInlineEditOcr?.invoke()
-                                    }
-                                },
-                                confidenceThreshold = confidenceThreshold,
-                                onWordTap = onWordTap,
-                                hasInlineEditing = onStartInlineEditOcr != null
+                                onEdit = onEditOcr
                             )
                         }
                     }
@@ -404,21 +382,9 @@ fun DocumentCard(
             // ═══════════════════════════════════════════════════════════════
             TranslationSection(
                 document = document,
-                isInlineEditing = isInlineEditingTranslation,
-                inlineText = inlineTranslationText,
-                onInlineTextChange = { newText ->
-                    onInlineTextChange?.invoke(newText)
-                },
-                onStartInlineEdit = {
-                    if (isInlineEditingTranslation) {
-                        onInlineEditComplete?.invoke()
-                    } else {
-                        onStartInlineEditTranslation?.invoke()
-                    }
-                },
+                onEdit = onEditTranslation,
                 onClick = onTranslationClick,
-                onRetryTranslation = onRetryTranslation,
-                hasInlineEditing = onStartInlineEditTranslation != null
+                onRetryTranslation = onRetryTranslation
             )
 
             // ═══════════════════════════════════════════════════════════════
@@ -426,12 +392,11 @@ fun DocumentCard(
             // ═══════════════════════════════════════════════════════════════
             ActionButtonsRow(
                 document = document,
-                onMenuClick = onMenuClick,
                 onCopyText = onCopyText,
                 onPasteText = onPasteText,
                 onAiRewrite = onAiRewrite,
                 onClearFormatting = onClearFormatting,
-                onSharePage = onSharePage,
+                onShareTranslation = onShareTranslation,
                 isSelectionMode = isSelectionMode,
                 dragModifier = dragModifier
             )
@@ -528,13 +493,7 @@ private fun EmptyOcrState() {
 @Composable
 private fun OcrTextContent(
     document: Document,
-    isInlineEditing: Boolean,
-    inlineText: String,
-    onInlineTextChange: (String) -> Unit,
-    onStartInlineEdit: () -> Unit,
-    confidenceThreshold: Float,
-    onWordTap: ((String, Float) -> Unit)?,
-    hasInlineEditing: Boolean
+    onEdit: (() -> Unit)?
 ) {
     Column(
         modifier = Modifier
@@ -553,14 +512,14 @@ private fun OcrTextContent(
                 color = GoogleDocsTextTertiary
             )
 
-            if (hasInlineEditing) {
+            if (onEdit != null) {
                 IconButton(
-                    onClick = onStartInlineEdit,
+                    onClick = onEdit,
                     modifier = Modifier.size(28.dp)
                 ) {
                     Icon(
-                        if (isInlineEditing) Icons.Default.Check else Icons.Default.Edit,
-                        contentDescription = if (isInlineEditing) "Save" else "Edit inline",
+                        Icons.Default.Edit,
+                        contentDescription = "Редактировать",
                         modifier = Modifier.size(16.dp),
                         tint = GoogleDocsPrimary
                     )
@@ -570,39 +529,20 @@ private fun OcrTextContent(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Content
+        // Content (превью; тап = полноэкранный просмотр)
         Box(
             modifier = Modifier
                 .weight(1f)
+                .fillMaxWidth()
         ) {
-            if (isInlineEditing) {
-                OutlinedTextField(
-                    value = inlineText,
-                    onValueChange = onInlineTextChange,
-                    modifier = Modifier.fillMaxSize(),
-                    textStyle = MaterialTheme.typography.bodySmall,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = GoogleDocsPrimary,
-                        unfocusedBorderColor = GoogleDocsBorderLight
-                    )
-                )
-            } else if (document.wordConfidences != null && onWordTap != null) {
-                HighlightedConfidenceText(
-                    text = document.originalText ?: "",
-                    wordConfidences = document.wordConfidences,
-                    threshold = confidenceThreshold,
-                    onWordTap = onWordTap
-                )
-            } else {
-                Text(
-                    text = document.originalText ?: "",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = GoogleDocsTextPrimary,
-                    textAlign = TextAlign.Justify,
-                    maxLines = 10,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Text(
+                text = document.originalText ?: "",
+                style = MaterialTheme.typography.bodySmall,
+                color = GoogleDocsTextPrimary,
+                textAlign = TextAlign.Justify,
+                maxLines = 10,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -610,13 +550,9 @@ private fun OcrTextContent(
 @Composable
 private fun TranslationSection(
     document: Document,
-    isInlineEditing: Boolean,
-    inlineText: String,
-    onInlineTextChange: (String) -> Unit,
-    onStartInlineEdit: () -> Unit,
+    onEdit: (() -> Unit)?,
     onClick: () -> Unit,
-    onRetryTranslation: () -> Unit,
-    hasInlineEditing: Boolean
+    onRetryTranslation: () -> Unit
 ) {
     // Don't show if no translation content and not processing
     if (document.translatedText.isNullOrBlank() &&
@@ -658,25 +594,18 @@ private fun TranslationSection(
                     )
                 }
 
-                if (hasInlineEditing && !document.translatedText.isNullOrBlank()) {
+                if (onEdit != null && !document.translatedText.isNullOrBlank()) {
                     IconButton(
-                        onClick = onStartInlineEdit,
+                        onClick = onEdit,
                         modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
-                            if (isInlineEditing) Icons.Default.Check else Icons.Default.Edit,
-                            contentDescription = if (isInlineEditing) "Save" else "Edit inline",
+                            Icons.Default.Edit,
+                            contentDescription = "Редактировать",
                             modifier = Modifier.size(16.dp),
                             tint = GoogleDocsTranslationIcon
                         )
                     }
-                } else if (!hasInlineEditing && !document.translatedText.isNullOrBlank()) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit",
-                        modifier = Modifier.size(14.dp),
-                        tint = GoogleDocsTranslationIcon.copy(alpha = 0.6f)
-                    )
                 }
             }
 
@@ -723,19 +652,6 @@ private fun TranslationSection(
                     }
                 }
 
-                isInlineEditing -> {
-                    OutlinedTextField(
-                        value = inlineText,
-                        onValueChange = onInlineTextChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        textStyle = MaterialTheme.typography.bodyMedium,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = GoogleDocsTranslationIcon,
-                            unfocusedBorderColor = GoogleDocsTranslationBorder
-                        )
-                    )
-                }
-
                 else -> {
                     Text(
                         text = document.translatedText ?: "",
@@ -757,12 +673,11 @@ private fun TranslationSection(
 @Composable
 private fun ActionButtonsRow(
     document: Document,
-    onMenuClick: () -> Unit,
     onCopyText: ((String) -> Unit)?,
     onPasteText: ((Boolean) -> Unit)?,
     onAiRewrite: ((Boolean) -> Unit)?,
     onClearFormatting: ((Boolean) -> Unit)?,
-    onSharePage: (() -> Unit)?,
+    onShareTranslation: (() -> Unit)?,
     isSelectionMode: Boolean,
     dragModifier: Modifier = Modifier
 ) {
@@ -802,9 +717,9 @@ private fun ActionButtonsRow(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        if (onSharePage != null) {
+        if (onShareTranslation != null) {
             IconButton(
-                onClick = onSharePage,
+                onClick = onShareTranslation,
                 modifier = Modifier.size(36.dp),
                 enabled = translatedText.isNotBlank()
             ) {
@@ -815,19 +730,6 @@ private fun ActionButtonsRow(
                     tint = if (translatedText.isNotBlank()) GoogleDocsTextSecondary else GoogleDocsTextTertiary
                 )
             }
-        }
-
-        // ✅ FIX #5: Just IconButton, no DropdownMenu here
-        IconButton(
-            onClick = onMenuClick,
-            modifier = Modifier.size(36.dp)
-        ) {
-            Icon(
-                Icons.Default.MoreVert,
-                contentDescription = "More options",
-                modifier = Modifier.size(18.dp),
-                tint = GoogleDocsTextSecondary
-            )
         }
     }
 
