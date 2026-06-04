@@ -84,7 +84,7 @@ fun NavGraph(
                     navController.navigateSingleTop(Screen.Terms.createRoute())
                 },
                 onCameraClick = {
-                    navController.navigateSingleTop(Screen.Camera.createRoute(null, FolderId.QUICK_SCANS_ID))
+                    navController.navigateSingleTop(Screen.Camera.createRoute(null))
                 },
                 onAnalyticsClick = {
                     navController.navigateSingleTop(Screen.AnalyticsHub.route)
@@ -165,7 +165,7 @@ fun NavGraph(
                 },
                 onCameraClick = {
                     safeNavigate(navController, notifyNavError) {
-                        navigateSingleTop(Screen.Camera.createRoute(recordId, null))
+                        navigateSingleTop(Screen.Camera.createRoute(recordId))
                     }
                 }
             )
@@ -177,26 +177,19 @@ fun NavGraph(
                 navArgument("recordId") {
                     type = NavType.LongType
                     defaultValue = Screen.Camera.NO_RECORD
-                },
-                navArgument("folderId") {
-                    type = NavType.LongType
-                    defaultValue = FolderId.QUICK_SCANS_ID
                 }
             )
         ) { backStackEntry ->
             val targetRecordId = backStackEntry.arguments
                 ?.getLong("recordId")
                 ?.takeIf { it > 0L }
-            val targetFolderId = backStackEntry.arguments
-                ?.getLong("folderId")
-                ?: FolderId.QUICK_SCANS_ID
 
             CameraScreen(
                 targetRecordId = targetRecordId,
-                targetFolderId = targetFolderId,
                 onScanComplete = { recordId ->
                     safeNavigate(navController, notifyNavError) {
-                        navigateSingleTop(Screen.Editor.createRoute(recordId)) {
+                        navigateSingleTop(Screen.Editor.createRoute(recordId))
+                        {
                             popUpTo(Screen.Folders.route) { inclusive = false }
                         }
                     }
