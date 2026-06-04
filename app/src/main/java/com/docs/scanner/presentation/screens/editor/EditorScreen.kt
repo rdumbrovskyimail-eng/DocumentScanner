@@ -204,7 +204,9 @@ fun EditorScreen(
                 viewModel.toggleDocumentSelection(action.documentId)
             }
 
-            is DocumentAction.MenuClick -> { /* No-op */ }
+            is DocumentAction.MenuClick -> {
+                // меню документа удалено вместе с «3 точками»
+            }
 
             is DocumentAction.RetryOcr -> viewModel.retryOcr(action.documentId)
             is DocumentAction.RetryTranslation -> viewModel.retryTranslation(action.documentId)
