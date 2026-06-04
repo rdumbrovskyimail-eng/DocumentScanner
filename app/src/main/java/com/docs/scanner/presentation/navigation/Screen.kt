@@ -18,9 +18,6 @@ sealed class Screen(val route: String) {
             return "camera?recordId=$id"
         }
 
-        fun getRecordIdFromRoute(savedStateHandle: SavedStateHandle): Long {
-            return savedStateHandle.get<Long>("recordId") ?: NO_RECORD
-        }
     }
     data object Search : Screen("search")
     data object Settings : Screen("settings")
