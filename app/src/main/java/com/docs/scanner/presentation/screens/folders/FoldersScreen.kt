@@ -78,8 +78,8 @@ fun FoldersScreen(
                     uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             } catch (_: SecurityException) {}
-            viewModel.quickScan(uri)
         }
+        viewModel.importImagesAsRecord(uris)
     }
 
     Scaffold(

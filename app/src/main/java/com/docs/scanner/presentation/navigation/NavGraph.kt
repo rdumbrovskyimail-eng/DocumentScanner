@@ -15,8 +15,6 @@ import com.docs.scanner.domain.core.FolderId
 import com.docs.scanner.presentation.screens.camera.CameraScreen
 import com.docs.scanner.presentation.screens.editor.EditorScreen
 import com.docs.scanner.presentation.screens.folders.FoldersScreen
-import com.docs.scanner.presentation.screens.analytics.hub.AnalyticsHubScreen
-import com.docs.scanner.presentation.screens.analytics.archive.TranslationsArchiveScreen
 import com.docs.scanner.presentation.screens.analytics.notes.NotesScreen
 import com.docs.scanner.presentation.screens.imageviewer.ImageViewerScreen
 import com.docs.scanner.presentation.screens.onboarding.OnboardingScreen
@@ -87,7 +85,7 @@ fun NavGraph(
                     navController.navigateSingleTop(Screen.Camera.createRoute(null))
                 },
                 onAnalyticsClick = {
-                    navController.navigateSingleTop(Screen.AnalyticsHub.route)
+                    navController.navigateSingleTop(Screen.AnalyticsNotes.route)
                 },
                 onQuickScanComplete = { recordId ->
                     safeNavigate(navController, notifyNavError) {
@@ -256,29 +254,7 @@ fun NavGraph(
             )
         }
 
-        // ─── Analytics Center ────────────────────────────────────────────
 
-        composable(Screen.AnalyticsHub.route) {
-            AnalyticsHubScreen(
-                onBackClick = { navController.popBackStack() },
-                onOpenArchive = {
-                    safeNavigate(navController, notifyNavError) {
-                        navigateSingleTop(Screen.TranslationsArchive.route)
-                    }
-                },
-                onOpenNotes = {
-                    safeNavigate(navController, notifyNavError) {
-                        navigateSingleTop(Screen.AnalyticsNotes.route)
-                    }
-                }
-            )
-        }
-
-        composable(Screen.TranslationsArchive.route) {
-            TranslationsArchiveScreen(
-                onBackClick = { navController.popBackStack() }
-            )
-        }
 
         composable(Screen.AnalyticsNotes.route) {
             NotesScreen(

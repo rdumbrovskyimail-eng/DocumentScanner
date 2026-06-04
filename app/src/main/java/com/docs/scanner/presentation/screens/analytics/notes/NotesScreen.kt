@@ -111,11 +111,11 @@ fun NotesScreen(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = viewModel::setSearchQuery,
-                            placeholder = { Text("Search notes…") },
+                            placeholder = { Text("Поиск заметок…") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-                    } else Text("Notes")
+                    } else Text("Заметки")
                 },
                 navigationIcon = {
                     IconButton(onClick = {
@@ -124,14 +124,14 @@ fun NotesScreen(
                             viewModel.setSearchQuery("")
                         } else onBackClick()
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад")
                     }
                 },
                 actions = {
                     IconButton(onClick = { showSearchField = !showSearchField }) {
                         Icon(
                             if (showSearchField) Icons.Default.Clear else Icons.Default.Search,
-                            contentDescription = "Search"
+                            contentDescription = "Поиск"
                         )
                     }
                 }
@@ -139,7 +139,7 @@ fun NotesScreen(
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { creatingNew = true }) {
-                Icon(Icons.Default.Add, "Create note")
+                Icon(Icons.Default.Add, "Создать заметку")
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -163,7 +163,7 @@ fun NotesScreen(
                             note = note,
                             onClick = { editing = note },
                             onPinToggle = { viewModel.togglePin(note) },
-                            onArchive = { viewModel.archive(note) },
+                            onShare = { shareNote(note.displayTitle, note.contentPreview) },
                             onDelete = { pendingDelete = note }
                         )
                     }
@@ -203,9 +203,9 @@ fun NotesScreen(
 
     pendingDelete?.let { target ->
         ConfirmDialog(
-            title = "Delete note?",
-            message = "This note will be permanently removed.",
-            confirmText = "Delete",
+            title = "Удалить заметку?",
+            message = "Эта заметка будет удалена навсегда.",
+            confirmText = "Удалить",
             onConfirm = {
                 viewModel.delete(target.id)
                 pendingDelete = null
@@ -224,7 +224,7 @@ private fun NoteCard(
     note: AnalyticsNote,
     onClick: () -> Unit,
     onPinToggle: () -> Unit,
-    onArchive: () -> Unit,
+    onShare: () -> Unit,
     onDelete: () -> Unit
 ) {
     val accent = note.color?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
@@ -267,22 +267,22 @@ private fun NoteCard(
                     IconButton(onClick = onPinToggle, modifier = Modifier.size(32.dp)) {
                         Icon(
                             Icons.Default.PushPin,
-                            contentDescription = "Pin",
+                            contentDescription = "Закрепить",
                             tint = if (note.isPinned) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(onClick = onArchive, modifier = Modifier.size(32.dp)) {
+                    IconButton(onClick = onShare, modifier = Modifier.size(32.dp)) {
                         Icon(
-                            Icons.Default.Archive,
-                            contentDescription = "Archive",
+                            Icons.Default.Share,
+                            contentDescription = "Поделиться",
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
                     IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                         Icon(
                             Icons.Default.Delete,
-                            contentDescription = "Delete",
+                            contentDescription = "Удалить",
                             tint = MaterialTheme.colorScheme.error
                         )
                     }
@@ -363,10 +363,10 @@ private fun NoteEditorDialog(
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text(if (initial == null) "New note" else "Edit note") },
+                        title = { Text(if (initial == null) "Новая заметка" else "Редактировать заметку") },
                         navigationIcon = {
                             IconButton(onClick = onDismiss) {
-                                Icon(Icons.Default.Close, "Close")
+                                Icon(Icons.Default.Close, "Закрыть")
                             }
                         },
                         actions = {
@@ -378,7 +378,7 @@ private fun NoteEditorDialog(
                                     }
                                     clipboard.setText(AnnotatedString(full))
                                 }) {
-                                    Icon(Icons.Default.ContentCopy, "Copy")
+                                    Icon(Icons.Default.ContentCopy, "Копировать")
                                 }
                                 IconButton(onClick = {
                                     val send = Intent(Intent.ACTION_SEND).apply {
@@ -387,10 +387,10 @@ private fun NoteEditorDialog(
                                         putExtra(Intent.EXTRA_TEXT, content)
                                     }
                                     runCatching {
-                                        context.startActivity(Intent.createChooser(send, "Share note"))
+                                        context.startActivity(Intent.createChooser(send, "Поделиться заметкой"))
                                     }
                                 }) {
-                                    Icon(Icons.Default.Share, "Share")
+                                    Icon(Icons.Default.Share, "Поделиться")
                                 }
                             }
                             TextButton(
@@ -401,7 +401,7 @@ private fun NoteEditorDialog(
                             ) {
                                 Icon(Icons.Default.Done, contentDescription = null)
                                 Spacer(Modifier.size(4.dp))
-                                Text("Save")
+                                Text("Сохранить")
                             }
                         }
                     )
@@ -417,7 +417,7 @@ private fun NoteEditorDialog(
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it },
-                        label = { Text("Title") },
+                        label = { Text("Заголовок") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -425,7 +425,7 @@ private fun NoteEditorDialog(
                     // Color swatches
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "Color",
+                            text = "Цвет",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -472,7 +472,7 @@ private fun NoteEditorDialog(
                         OutlinedTextField(
                             value = newTag,
                             onValueChange = { newTag = it.replace(" ", "").take(30) },
-                            label = { Text("Add tag") },
+                            label = { Text("Добавить тег") },
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
@@ -484,13 +484,13 @@ private fun NoteEditorDialog(
                                 if (t.isNotBlank()) tags.add(t)
                                 newTag = ""
                             }
-                        ) { Text("Add") }
+                        ) { Text("Добавить") }
                     }
 
                     OutlinedTextField(
                         value = content,
                         onValueChange = { content = it },
-                        label = { Text("Content") },
+                        label = { Text("Содержание") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 200.dp)
@@ -549,8 +549,8 @@ private fun EmptyNotesState(searchActive: Boolean) {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = if (searchActive) "No notes match your search"
-                else "No notes yet.\nTap + to create one.",
+                text = if (searchActive) "Ничего не найдено"
+                else "Заметок пока нет.\nНажмите +, чтобы создать.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

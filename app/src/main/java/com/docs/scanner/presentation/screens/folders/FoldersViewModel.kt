@@ -322,7 +322,7 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
-    fun quickScanMultiple(uris: List<Uri>) {
+    fun importImagesAsRecord(uris: List<Uri>) {
         viewModelScope.launch {
             for (uri in uris) {
                 try {

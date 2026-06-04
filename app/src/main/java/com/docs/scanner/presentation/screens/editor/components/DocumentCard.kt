@@ -701,15 +701,6 @@ private fun ActionButtonsRow(
             )
         }
 
-        if (onClearFormatting != null) {
-            MicroButton(
-                text = "Очистить",
-                icon = Icons.Default.FormatClear,
-                onClick = { onClearFormatting.invoke(false) },
-                enabled = translatedText.isNotBlank()
-            )
-        }
-
         Spacer(modifier = Modifier.weight(1f))
 
         if (onShareTranslation != null) {

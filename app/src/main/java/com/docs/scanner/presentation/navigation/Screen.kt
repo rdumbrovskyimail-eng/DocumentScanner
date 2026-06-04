@@ -91,24 +91,6 @@ sealed class Screen(val route: String) {
         }
     }
 
-    // ─── Analytics Center ────────────────────────────────────────────────
-
-    /** Hub screen — two tiles: Translation Archive + Notes. */
-    data object AnalyticsHub : Screen("analytics")
-
-    /**
-     * Translation Archive — list of mirrored translations.
-     * Optional `highlight` query parameter auto-opens the editor sheet
-     * for the matching entry (used by deep-link from SearchScreen).
-     */
-    data object TranslationsArchive : Screen("analytics/archive?highlight={highlight}") {
-        const val HIGHLIGHT_NONE: Long = -1L
-        fun createRoute(highlightId: Long? = null): String {
-            val h = highlightId?.takeIf { it > 0L }
-            return if (h != null) "analytics/archive?highlight=$h" else "analytics/archive"
-        }
-    }
-
     /**
      * Notes — free-form information-analysis notes.
      * Optional `highlight` query parameter auto-opens the editor dialog
