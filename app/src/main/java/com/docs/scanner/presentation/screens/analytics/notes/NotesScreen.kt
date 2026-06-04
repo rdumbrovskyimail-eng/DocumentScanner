@@ -92,6 +92,7 @@ fun NotesScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showSearchField by rememberSaveable { mutableStateOf(false) }
@@ -163,7 +164,7 @@ fun NotesScreen(
                             note = note,
                             onClick = { editing = note },
                             onPinToggle = { viewModel.togglePin(note) },
-                            onShare = { shareNote(note.displayTitle, note.contentPreview) },
+                            onShare = { shareNote(context, note) },
                             onDelete = { pendingDelete = note }
                         )
                     }
@@ -556,5 +557,18 @@ private fun EmptyNotesState(searchActive: Boolean) {
             )
         }
     }
+}
+
+private fun shareNote(context: android.content.Context, note: com.docs.scanner.domain.core.AnalyticsNote) {
+    val text = buildString {
+        if (note.displayTitle.isNotBlank()) appendLine(note.displayTitle)
+        append(note.content)
+    }.trim()
+    if (text.isBlank()) return
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_TEXT, text)
+    }
+    context.startActivity(android.content.Intent.createChooser(send, "Поделиться заметкой"))
 }
 
