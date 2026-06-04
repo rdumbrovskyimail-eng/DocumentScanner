@@ -23,9 +23,13 @@ import androidx.compose.ui.unit.dp
 import com.docs.scanner.presentation.theme.*
 
 // ============================================
-// FLOATING ACTION BUTTONS (Google Docs Style)
+// FLOATING ACTION BUTTONS (Google Docs Style 2026)
 // ============================================
 
+/**
+ * Плавающие кнопки действий для добавления документов.
+ * Camera (Primary) + Gallery (Secondary)
+ */
 @Composable
 fun FloatingActionButtons(
     onCameraClick: () -> Unit,
@@ -33,29 +37,29 @@ fun FloatingActionButtons(
     modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = modifier.padding(24.dp),
+        modifier = modifier.padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Gallery Button (Secondary)
+        // Gallery Button (Secondary - smaller)
         SecondaryFab(
             onClick = onGalleryClick,
             icon = {
                 Icon(
                     imageVector = Icons.Default.PhotoLibrary,
-                    contentDescription = "Gallery",
+                    contentDescription = "Add from Gallery",
                     modifier = Modifier.size(20.dp)
                 )
             }
         )
         
-        // Camera Button (Primary)
+        // Camera Button (Primary - larger)
         PrimaryFab(
             onClick = onCameraClick,
             icon = {
                 Icon(
                     imageVector = Icons.Default.CameraAlt,
-                    contentDescription = "Camera",
+                    contentDescription = "Scan with Camera",
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -63,6 +67,9 @@ fun FloatingActionButtons(
     }
 }
 
+/**
+ * Primary FAB - большая кнопка с акцентным цветом
+ */
 @Composable
 private fun PrimaryFab(
     onClick: () -> Unit,
@@ -73,12 +80,12 @@ private fun PrimaryFab(
     val isPressed by interactionSource.collectIsPressedAsState()
     
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f,
+        targetValue = if (isPressed) 0.92f else 1f,
         label = "fab_scale"
     )
     
     val elevation by animateFloatAsState(
-        targetValue = if (isPressed) 4.dp.value else 8.dp.value,
+        targetValue = if (isPressed) 4f else 8f,
         label = "fab_elevation"
     )
     
@@ -102,13 +109,15 @@ private fun PrimaryFab(
             ),
         contentAlignment = Alignment.Center
     ) {
-        // ✅ ИСПРАВЛЕНО: правильное использование CompositionLocalProvider
         CompositionLocalProvider(LocalContentColor provides Color.White) {
             icon()
         }
     }
 }
 
+/**
+ * Secondary FAB - меньшая кнопка с нейтральным цветом
+ */
 @Composable
 private fun SecondaryFab(
     onClick: () -> Unit,
@@ -119,7 +128,7 @@ private fun SecondaryFab(
     val isPressed by interactionSource.collectIsPressedAsState()
     
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f,
+        targetValue = if (isPressed) 0.92f else 1f,
         label = "fab_scale"
     )
     
@@ -130,7 +139,7 @@ private fun SecondaryFab(
             .size(48.dp)
             .scale(scale)
             .shadow(
-                elevation = 2.dp,
+                elevation = 4.dp,
                 shape = CircleShape
             )
             .background(
@@ -149,7 +158,6 @@ private fun SecondaryFab(
             ),
         contentAlignment = Alignment.Center
     ) {
-        // ✅ ИСПРАВЛЕНО: правильное использование CompositionLocalProvider
         CompositionLocalProvider(LocalContentColor provides GoogleDocsPrimary) {
             icon()
         }

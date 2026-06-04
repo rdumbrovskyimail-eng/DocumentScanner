@@ -1,26 +1,95 @@
 package com.docs.scanner.data.local.alarm
 
+import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.media.RingtoneManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.docs.scanner.presentation.MainActivity
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
+import timber.log.Timber
 
 class TermAlarmReceiver : BroadcastReceiver() {
-    
+
+    @EntryPoint
+    @InstallIn(SingletonComponent::class)
+    interface ReceiverEntryPoint {
+        fun appDatabase(): com.docs.scanner.data.local.database.AppDatabase
+        fun alarmScheduler(): com.docs.scanner.data.local.alarm.AlarmScheduler
+    }
+
+    companion object {
+        private const val CHANNEL_ID = "term_reminders"
+        // Константы для обработки ручного сброса будильника
+        const val ACTION_DISMISS_ALARM = "com.docs.scanner.ACTION_DISMISS_ALARM"
+        const val EXTRA_NOTIFICATION_ID = "notification_id"
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
+        val action = intent.action
+        
+        // ⏰ Обработка клика по кнопке "Dismiss" (Сбросить) прямо на уведомлении
+        if (action == ACTION_DISMISS_ALARM) {
+            val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
+            if (notificationId != -1) {
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancel(notificationId)
+                Timber.d("⏰ Будильник $notificationId успешно отключен пользователем")
+            }
+            return
+        }
+        
+        if (action == Intent.ACTION_BOOT_COMPLETED || 
+            action == "android.intent.action.QUICKBOOT_POWERON" || 
+            action == "com.htc.intent.action.QUICKBOOT_POWERON") {
+            
+            val pendingResult = goAsync()
+            
+            CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                try {
+                    val entryPoint = EntryPointAccessors.fromApplication(
+                        context.applicationContext,
+                        ReceiverEntryPoint::class.java
+                    )
+                    val database = entryPoint.appDatabase()
+                    val scheduler = entryPoint.alarmScheduler()
+
+                    val activeTerms = database.termDao().observeActive().first()
+                    
+                    activeTerms.forEach { termEntity ->
+                        scheduler.scheduleTerm(termEntity)
+                    }
+                    Timber.i("✅ Восстановлено будильников после перезагрузки: ${activeTerms.size}")
+                } catch (e: Exception) {
+                    if (e !is CancellationException) {
+                        Timber.e(e, "❌ Ошибка восстановления будильников")
+                    }
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+            return
+        }
+
         val termId = intent.getLongExtra("term_id", -1)
         val title = intent.getStringExtra("title") ?: "Term Reminder"
         val description = intent.getStringExtra("description")
         val isMainAlarm = intent.getBooleanExtra("is_main_alarm", false)
-        val offset = intent.getIntExtra("notification_offset", 0) // ✅ Уникальный offset
+        val offset = intent.getIntExtra("notification_offset", 0)
         
         showNotification(context, termId, offset, title, description, isMainAlarm)
     }
-    
+
     private fun showNotification(
         context: Context,
         termId: Long,
@@ -29,8 +98,7 @@ class TermAlarmReceiver : BroadcastReceiver() {
         description: String?,
         isMainAlarm: Boolean
     ) {
-        // ✅ УНИКАЛЬНЫЙ NOTIFICATION ID (каждое напоминание = отдельное уведомление)
-        val notificationId = (termId.toInt() * 1000 + offset)
+        val notificationId = ((termId.hashCode() * 31 + offset) and Int.MAX_VALUE)
         
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -44,6 +112,18 @@ class TermAlarmReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
+        // Настройка интента для кнопки быстрого сброса будильника
+        val dismissIntent = Intent(context, TermAlarmReceiver::class.java).apply {
+            action = ACTION_DISMISS_ALARM
+            putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+        }
+        val dismissPendingIntent = PendingIntent.getBroadcast(
+            context,
+            notificationId,
+            dismissIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(description ?: "You have a term scheduled")
@@ -53,22 +133,40 @@ class TermAlarmReceiver : BroadcastReceiver() {
             .setContentIntent(pendingIntent)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
         
+        val canFullScreen = if (Build.VERSION.SDK_INT >= 34) {
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .canUseFullScreenIntent()
+        } else true
+
         if (isMainAlarm) {
             builder
                 .setVibrate(longArrayOf(0, 500, 250, 500, 250, 500))
                 .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
-                .setFullScreenIntent(pendingIntent, true)
+                .setOngoing(true)
+                .setTimeoutAfter(60000)
+                .addAction(
+                    android.R.drawable.ic_menu_close_clear_cancel,
+                    "Dismiss",
+                    dismissPendingIntent
+                )
+            if (canFullScreen) {
+                builder.setFullScreenIntent(pendingIntent, true)
+            }
         }
         
         try {
-            NotificationManagerCompat.from(context).notify(notificationId, builder.build())
-            println("✅ Notification shown: ID=$notificationId, main=$isMainAlarm")
+            val nmc = NotificationManagerCompat.from(context)
+            if (!nmc.areNotificationsEnabled()) {
+                Timber.w("⚠️ Уведомления выключены пользователем — аларм $notificationId не показан")
+                return
+            }
+            val notification = builder.build().apply {
+                flags = flags or Notification.FLAG_INSISTENT
+            }
+            nmc.notify(notificationId, notification)
+            Timber.d("⏰ Будильник запущен: ID=$notificationId, Looping=true")
         } catch (e: SecurityException) {
-            println("❌ Notification permission denied: ${e.message}")
+            Timber.e(e, "❌ Ошибка запуска: нет разрешения на уведомления")
         }
-    }
-    
-    companion object {
-        private const val CHANNEL_ID = "term_reminders"
     }
 }

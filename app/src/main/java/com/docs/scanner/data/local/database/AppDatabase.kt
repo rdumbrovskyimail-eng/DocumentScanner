@@ -1,26 +1,11 @@
 /*
  * DocumentScanner - App Database
- * Version: 7.0.0 - PRODUCTION READY 2026 (ALL 4 ANALYSES APPLIED)
- * 
- * ✅ CRITICAL FIXES:
- *    - Removed "server-side code" (30GB mmap_size → adaptive)
- *    - Fixed SearchDao availability
- * 
- * ✅ SERIOUS FIXES:
- *    - Added timeout for PRAGMA operations (Android best practice)
- *    - Removed manual FTS table creation (Room @Fts4 handles it)
- *    - Fixed WAL mode (already enabled by Room, removed duplicate)
- * 
- * ✅ ARCHITECTURAL IMPROVEMENTS:
- *    - Adaptive mmap_size based on device memory (max 256MB)
- *    - No more manual SQL for FTS (Room annotations only)
- *    - Proper migration testing hooks
- *    - Database validation utilities
- * 
- * ✅ SYNCHRONIZED:
- *    - Domain v4.1.0 (ProcessingStatus sealed interface)
- *    - Room Database with 7 entities
- *    - FTS4 full-text search (via @Fts4 annotation)
+ * Version: 7.2.1 (Build 721) - PRODUCTION READY 2026
+ *
+ * ✅ CRITICAL FIXES (Session 15):
+ * - Added MIGRATION_18_19 for model column in translation_cache
+ * - Schema version updated to 19
+ * - ModelConstants integration
  */
 
 package com.docs.scanner.data.local.database
@@ -33,10 +18,10 @@ import com.docs.scanner.data.local.database.dao.*
 import com.docs.scanner.data.local.database.entity.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import timber.log.Timber
-import kotlin.math.min
 
 // ══════════════════════════════════════════════════════════════════════════════
 // DATABASE
@@ -50,48 +35,52 @@ import kotlin.math.min
         DocumentFtsEntity::class,
         TermEntity::class,
         TranslationCacheEntity::class,
-        SearchHistoryEntity::class
+        SearchHistoryEntity::class,
+        // ─── Analytics Center (v21) ───
+        AnalyticsTranslationEntity::class,
+        AnalyticsTranslationFtsEntity::class,
+        AnalyticsNoteEntity::class,
+        AnalyticsNoteFtsEntity::class
     ],
-    version = 17,
+    version = 21, // ✅ Bumped from 20 — Analytics Center tables added
     exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
-    
+
     // ─────────────────────────────────────────────────────────────────────────
     // DAOs
     // ─────────────────────────────────────────────────────────────────────────
-    
+
     abstract fun folderDao(): FolderDao
     abstract fun recordDao(): RecordDao
     abstract fun documentDao(): DocumentDao
     abstract fun termDao(): TermDao
     abstract fun translationCacheDao(): TranslationCacheDao
     abstract fun searchHistoryDao(): SearchHistoryDao
-    
-    /**
-     * ✅ CRITICAL FIX #3: SearchDao now available.
-     * 
-     * Original code imported SearchDao in DatabaseModule but didn't provide it.
-     * 
-     * Note: This is optional - if you don't need a separate SearchDao,
-     * search functionality is already in documentDao().searchFts().
-     * But we provide it for consistency with DatabaseModule imports.
-     */
-    // abstract fun searchDao(): SearchDao // Uncomment if you create SearchDao
-    
+
+    // ─── Analytics Center ───
+    abstract fun analyticsTranslationDao(): AnalyticsTranslationDao
+    abstract fun analyticsNoteDao(): AnalyticsNoteDao
+
     companion object {
         const val DATABASE_NAME = "document_scanner.db"
-        
+        const val DATABASE_VERSION = 21
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
-        
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: buildDatabase(context).also { INSTANCE = it }
             }
         }
-        
+
+        fun resetInstance() = synchronized(this) {
+            INSTANCE?.let { if (it.isOpen) it.close() }
+            INSTANCE = null
+        }
+
         private fun buildDatabase(context: Context): AppDatabase {
             return Room.databaseBuilder(
                 context.applicationContext,
@@ -114,13 +103,237 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_13_14,
                     MIGRATION_14_15,
                     MIGRATION_15_16,
-                    MIGRATION_16_17
+                    MIGRATION_16_17,
+                    MIGRATION_17_18,
+                    MIGRATION_18_19,
+                    MIGRATION_19_20,
+                    MIGRATION_20_21 // ✅ Analytics Center
                 )
                 .addCallback(DatabaseCallback(context))
                 .fallbackToDestructiveMigrationOnDowngrade()
-                // ✅ NEW: Enable WAL automatically (Room 2.7+)
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                 .build()
+        }
+
+        // ✅ ДОБАВЛЕНО: Миграция 19→20 (добавление колонки word_confidences)
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try {
+                    db.execSQL("ALTER TABLE documents ADD COLUMN word_confidences TEXT")
+                } catch (e: Exception) {
+                    Timber.w(e, "Column word_confidences might already exist")
+                }
+            }
+        }
+
+        /**
+         * Migration 20 → 21: Analytics Center.
+         *
+         * Creates two autonomous storage areas:
+         *   - analytics_translations  — mirror of every translation event
+         *   - analytics_notes         — free-form notes ("Information Analysis")
+         *
+         * Each gets an FTS4 virtual table and four Room-style content-sync
+         * triggers (matching the convention Room uses for documents_fts).
+         *
+         * No foreign keys: Analytics Center entries survive deletion of the
+         * source documents/records by design.
+         */
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Timber.d("🔄 Running migration 20 → 21: Analytics Center")
+
+                // ─── 1. analytics_translations ────────────────────────────
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `analytics_translations` (
+                        `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        `translated_text` TEXT NOT NULL,
+                        `original_text` TEXT,
+                        `source_language` TEXT NOT NULL DEFAULT 'auto',
+                        `target_language` TEXT NOT NULL DEFAULT 'ru',
+                        `source_document_id` INTEGER,
+                        `source_record_id` INTEGER,
+                        `source_record_name` TEXT,
+                        `source_folder_name` TEXT,
+                        `user_modified` INTEGER NOT NULL DEFAULT 0,
+                        `word_count` INTEGER NOT NULL DEFAULT 0,
+                        `created_at` INTEGER NOT NULL DEFAULT 0,
+                        `updated_at` INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_translations_created_at` ON `analytics_translations` (`created_at`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_translations_updated_at` ON `analytics_translations` (`updated_at`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_translations_target_language` ON `analytics_translations` (`target_language`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_translations_source_record_id` ON `analytics_translations` (`source_record_id`)")
+
+                db.execSQL("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS `analytics_translations_fts`
+                    USING FTS4(`translated_text`, `original_text`, content=`analytics_translations`)
+                """.trimIndent())
+
+                // Room-style FTS content sync triggers (same naming pattern as documents_fts).
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_translations_fts_BEFORE_UPDATE`
+                    BEFORE UPDATE ON `analytics_translations`
+                    BEGIN DELETE FROM `analytics_translations_fts` WHERE `docid`=OLD.`rowid`; END
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_translations_fts_BEFORE_DELETE`
+                    BEFORE DELETE ON `analytics_translations`
+                    BEGIN DELETE FROM `analytics_translations_fts` WHERE `docid`=OLD.`rowid`; END
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_translations_fts_AFTER_UPDATE`
+                    AFTER UPDATE ON `analytics_translations`
+                    BEGIN INSERT INTO `analytics_translations_fts`(`docid`, `translated_text`, `original_text`)
+                        VALUES (NEW.`rowid`, NEW.`translated_text`, NEW.`original_text`); END
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_translations_fts_AFTER_INSERT`
+                    AFTER INSERT ON `analytics_translations`
+                    BEGIN INSERT INTO `analytics_translations_fts`(`docid`, `translated_text`, `original_text`)
+                        VALUES (NEW.`rowid`, NEW.`translated_text`, NEW.`original_text`); END
+                """.trimIndent())
+
+                Timber.d("  ↳ analytics_translations + FTS created")
+
+                // ─── 2. analytics_notes ───────────────────────────────────
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `analytics_notes` (
+                        `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        `title` TEXT NOT NULL DEFAULT '',
+                        `content` TEXT NOT NULL DEFAULT '',
+                        `tags` TEXT NOT NULL DEFAULT '[]',
+                        `color` TEXT,
+                        `is_pinned` INTEGER NOT NULL DEFAULT 0,
+                        `is_archived` INTEGER NOT NULL DEFAULT 0,
+                        `created_at` INTEGER NOT NULL DEFAULT 0,
+                        `updated_at` INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_notes_created_at` ON `analytics_notes` (`created_at`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_notes_updated_at` ON `analytics_notes` (`updated_at`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_notes_is_pinned` ON `analytics_notes` (`is_pinned`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_analytics_notes_is_archived` ON `analytics_notes` (`is_archived`)")
+
+                db.execSQL("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS `analytics_notes_fts`
+                    USING FTS4(`title`, `content`, content=`analytics_notes`)
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_notes_fts_BEFORE_UPDATE`
+                    BEFORE UPDATE ON `analytics_notes`
+                    BEGIN DELETE FROM `analytics_notes_fts` WHERE `docid`=OLD.`rowid`; END
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_notes_fts_BEFORE_DELETE`
+                    BEFORE DELETE ON `analytics_notes`
+                    BEGIN DELETE FROM `analytics_notes_fts` WHERE `docid`=OLD.`rowid`; END
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_notes_fts_AFTER_UPDATE`
+                    AFTER UPDATE ON `analytics_notes`
+                    BEGIN INSERT INTO `analytics_notes_fts`(`docid`, `title`, `content`)
+                        VALUES (NEW.`rowid`, NEW.`title`, NEW.`content`); END
+                """.trimIndent())
+
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS `room_fts_content_sync_analytics_notes_fts_AFTER_INSERT`
+                    AFTER INSERT ON `analytics_notes`
+                    BEGIN INSERT INTO `analytics_notes_fts`(`docid`, `title`, `content`)
+                        VALUES (NEW.`rowid`, NEW.`title`, NEW.`content`); END
+                """.trimIndent())
+
+                Timber.d("  ↳ analytics_notes + FTS created")
+                Timber.d("✅ Migration 20 → 21 completed")
+            }
+        }
+
+        // ✅ ДОБАВЛЕНО: Миграция 18→19 (добавление колонки model)
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try {
+                    Timber.d("🔄 Running migration 18 → 19: Adding model to translation_cache")
+                    
+                    // Попытка добавить колонку (может уже существовать)
+                    try {
+                        db.execSQL("ALTER TABLE translation_cache ADD COLUMN model TEXT")
+                        Timber.d("✅ Added model column")
+                    } catch (e: Exception) {
+                        Timber.w(e, "⚠️ translation_cache.model might already exist")
+                    }
+                    
+                    // Заполнить существующие записи дефолтным значением
+                    db.execSQL("""
+                        UPDATE translation_cache 
+                        SET model = 'gemini-2.5-flash-lite' 
+                        WHERE model IS NULL
+                    """)
+                    Timber.d("✅ Updated existing rows with default model")
+                    
+                    // Пересоздать таблицу с NOT NULL constraint
+                    db.execSQL("""
+                        CREATE TABLE IF NOT EXISTS translation_cache_new (
+                            cache_key TEXT PRIMARY KEY NOT NULL,
+                            original_text TEXT NOT NULL,
+                            translated_text TEXT NOT NULL,
+                            source_language TEXT NOT NULL,
+                            target_language TEXT NOT NULL,
+                            model TEXT NOT NULL DEFAULT 'gemini-2.5-flash-lite',
+                            timestamp INTEGER NOT NULL
+                        )
+                    """)
+                    
+                    db.execSQL("""
+                        INSERT INTO translation_cache_new (
+                            cache_key, original_text, translated_text,
+                            source_language, target_language, model, timestamp
+                        )
+                        SELECT cache_key, original_text, translated_text,
+                               source_language, target_language,
+                               COALESCE(model, 'gemini-2.5-flash-lite'),
+                               timestamp
+                        FROM translation_cache
+                    """)
+                    
+                    db.execSQL("DROP TABLE translation_cache")
+                    db.execSQL("ALTER TABLE translation_cache_new RENAME TO translation_cache")
+                    
+                    Timber.d("✅ Recreated table with NOT NULL constraint")
+                    
+                    // Восстановить индексы
+                    db.execSQL("""
+                        CREATE INDEX IF NOT EXISTS index_translation_cache_timestamp 
+                        ON translation_cache(timestamp ASC)
+                    """)
+                    
+                    db.execSQL("""
+                        CREATE INDEX IF NOT EXISTS index_translation_cache_languages 
+                        ON translation_cache(source_language, target_language)
+                    """)
+                    
+                    db.execSQL("""
+                        CREATE INDEX IF NOT EXISTS index_translation_cache_model 
+                        ON translation_cache(model)
+                    """)
+                    
+                    Timber.d("✅ Created indices")
+                    
+                    Timber.d("✅ Migration 18→19 completed successfully")
+                    
+                } catch (e: Exception) {
+                    Timber.e(e, "❌ Migration 18→19 FAILED")
+                    throw e
+                }
+            }
         }
     }
 }
@@ -130,71 +343,108 @@ abstract class AppDatabase : RoomDatabase() {
 // ══════════════════════════════════════════════════════════════════════════════
 
 class Converters {
-    
-    private val json = Json { 
+
+    private val json = kotlinx.serialization.json.Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
         isLenient = true
     }
-    
-    // ─────────────────────────────────────────────────────────────────────────
-    // List<String> <-> JSON
-    // ─────────────────────────────────────────────────────────────────────────
-    
+
     @TypeConverter
     fun fromStringList(list: List<String>?): String? {
-        return list?.let { json.encodeToString(it) }
+        return list?.let { 
+            json.encodeToString(
+                ListSerializer(String.serializer()), 
+                it
+            ) 
+        }
     }
-    
+
     @TypeConverter
     fun toStringList(value: String?): List<String>? {
-        return value?.let { 
+        return value?.let {
             try {
-                json.decodeFromString<List<String>>(it)
+                json.decodeFromString(
+                    ListSerializer(String.serializer()), 
+                    it
+                )
             } catch (e: Exception) {
                 Timber.w(e, "⚠️ Failed to decode string list")
                 null
             }
         }
     }
-    
-    // ─────────────────────────────────────────────────────────────────────────
-    // List<Long> <-> JSON
-    // ─────────────────────────────────────────────────────────────────────────
-    
+
     @TypeConverter
     fun fromLongList(list: List<Long>?): String? {
-        return list?.let { json.encodeToString(it) }
+        return list?.let { 
+            json.encodeToString(
+                ListSerializer(Long.serializer()), 
+                it
+            ) 
+        }
     }
-    
+
     @TypeConverter
     fun toLongList(value: String?): List<Long>? {
         return value?.let {
             try {
-                json.decodeFromString<List<Long>>(it)
+                json.decodeFromString(
+                    ListSerializer(Long.serializer()), 
+                    it
+                )
             } catch (e: Exception) {
                 Timber.w(e, "⚠️ Failed to decode long list")
                 null
             }
         }
     }
-    
-    // ─────────────────────────────────────────────────────────────────────────
-    // Map<String, String> <-> JSON
-    // ─────────────────────────────────────────────────────────────────────────
-    
+
     @TypeConverter
     fun fromStringMap(map: Map<String, String>?): String? {
-        return map?.let { json.encodeToString(it) }
+        return map?.let { 
+            json.encodeToString(
+                MapSerializer(String.serializer(), String.serializer()), 
+                it
+            ) 
+        }
     }
-    
+
     @TypeConverter
     fun toStringMap(value: String?): Map<String, String>? {
         return value?.let {
             try {
-                json.decodeFromString<Map<String, String>>(it)
+                json.decodeFromString(
+                    MapSerializer(String.serializer(), String.serializer()), 
+                    it
+                )
             } catch (e: Exception) {
                 Timber.w(e, "⚠️ Failed to decode string map")
+                null
+            }
+        }
+    }
+
+    @TypeConverter
+    fun fromStringFloatMap(map: Map<String, Float>?): String? {
+        return map?.let {
+            json.encodeToString(
+                MapSerializer(String.serializer(), Float.serializer()),
+                it
+            )
+        }
+    }
+
+    @TypeConverter
+    fun toStringFloatMap(value: String?): Map<String, Float>? {
+        return value?.let {
+            try {
+                json.decodeFromString(
+                    MapSerializer(String.serializer(), Float.serializer()),
+                    it
+                )
+            } catch (e: Exception) {
+                Timber.w(e, "⚠️ Failed to decode string float map")
                 null
             }
         }
@@ -205,130 +455,29 @@ class Converters {
 // DATABASE CALLBACK
 // ══════════════════════════════════════════════════════════════════════════════
 
-/**
- * ✅ FULLY FIXED: Removed "server-side mentality" code.
- * 
- * REMOVED:
- * - Manual FTS table creation (Room @Fts4 handles it)
- * - Manual WAL mode (Room JournalMode.WRITE_AHEAD_LOGGING handles it)
- * - 30GB mmap_size (server code on mobile = OOM crash)
- * 
- * ADDED:
- * - Adaptive mmap_size based on device memory (max 256MB)
- * - Timeout protection for PRAGMA operations
- * - Proper error handling
- */
 class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
-    
+
     companion object {
-        private const val MAX_MMAP_SIZE = 256 * 1024 * 1024L // 256MB max
-        private const val MMAP_PERCENTAGE = 0.1 // 10% of available memory
-        private const val PRAGMA_TIMEOUT_MS = 5000L
     }
-    
+
     override fun onCreate(db: SupportSQLiteDatabase) {
         super.onCreate(db)
-        
-        /**
-         * ✅ REMOVED: Manual FTS table creation.
-         * 
-         * Original code:
-         * db.execSQL("CREATE VIRTUAL TABLE documents_fts USING fts4...")
-         * 
-         * Why removed:
-         * - Room @Fts4 annotation creates FTS table automatically
-         * - Manual creation breaks Room schema validation
-         * - Can cause migration failures (hash mismatch)
-         * 
-         * Correct way: Use @Fts4 annotation in DocumentFtsEntity.
-         */
-        
-        // FTS triggers for auto-updating index (Room doesn't create these)
-        try {
-            db.execSQL("""
-                CREATE TRIGGER IF NOT EXISTS documents_fts_insert 
-                AFTER INSERT ON documents 
-                BEGIN
-                    INSERT INTO documents_fts(rowid, original_text, translated_text)
-                    VALUES (NEW.id, NEW.original_text, NEW.translated_text);
-                END
-            """)
-            
-            db.execSQL("""
-                CREATE TRIGGER IF NOT EXISTS documents_fts_update 
-                AFTER UPDATE ON documents 
-                BEGIN
-                    UPDATE documents_fts 
-                    SET original_text = NEW.original_text, translated_text = NEW.translated_text
-                    WHERE rowid = NEW.id;
-                END
-            """)
-            
-            db.execSQL("""
-                CREATE TRIGGER IF NOT EXISTS documents_fts_delete 
-                BEFORE DELETE ON documents 
-                BEGIN
-                    DELETE FROM documents_fts WHERE rowid = OLD.id;
-                END
-            """)
-            
-            Timber.d("✅ FTS triggers created")
-        } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to create FTS triggers")
-        }
     }
-    
+
     override fun onOpen(db: SupportSQLiteDatabase) {
         super.onOpen(db)
-        
-        /**
-         * ✅ CRITICAL FIX (Serious #4): Adaptive mmap_size instead of 30GB.
-         * 
-         * Original code:
-         * db.execSQL("PRAGMA mmap_size=30000000000") // 30GB!
-         * 
-         * Why this is WRONG:
-         * - 30GB address space on mobile = OOM on 32-bit devices
-         * - Even 64-bit phones don't have 30GB free address space
-         * - This is SERVER-SIDE CODE copied to mobile without adaptation
-         * - Can cause app crashes, ANRs, system instability
-         * 
-         * Fixed: Adaptive size based on available memory (max 256MB).
-         */
+
+        // ✅ Fixed mmap_size
         try {
-            // Calculate adaptive mmap_size
-            val runtime = Runtime.getRuntime()
-            val maxMemory = runtime.maxMemory()
-            val adaptiveMmapSize = (maxMemory * MMAP_PERCENTAGE).toLong()
-                .coerceAtMost(MAX_MMAP_SIZE)
-            
-            db.execSQL("PRAGMA mmap_size=$adaptiveMmapSize")
-            Timber.d("✅ Set adaptive mmap_size: ${adaptiveMmapSize / (1024 * 1024)}MB")
+            db.execSQL("PRAGMA mmap_size=268435456")
+            Timber.d("✅ Set fixed mmap_size: 256MB")
         } catch (e: Exception) {
             Timber.w(e, "⚠️ Failed to set mmap_size")
         }
-        
-        /**
-         * ✅ REMOVED: Manual WAL mode.
-         * 
-         * Original code:
-         * db.execSQL("PRAGMA journal_mode=WAL")
-         * 
-         * Why removed:
-         * - Room already sets WAL via setJournalMode() in builder
-         * - Duplicate setting is unnecessary
-         * - Can cause conflicts on some Android versions
-         * 
-         * Room handles this correctly with:
-         * .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-         */
-        
-        /**
-         * ✅ FIXED (Medium #15): Added timeout protection for PRAGMA operations.
-         * 
-         * Original: Direct PRAGMA calls without timeout = can hang UI thread
-         * Fixed: Wrapped in try-catch with logging
-         */
+
+        try { db.execSQL("PRAGMA foreign_keys=ON") } catch (_: Exception) {}
+
+        // Performance PRAGMAs
         try {
             db.execSQL("PRAGMA synchronous=NORMAL")
             db.execSQL("PRAGMA temp_store=MEMORY")
@@ -337,8 +486,8 @@ class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
         } catch (e: Exception) {
             Timber.w(e, "⚠️ Failed to apply PRAGMA settings")
         }
-        
-        // ✅ NEW: Database integrity check (only in debug builds)
+
+        // Integrity check (Debug only)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             try {
                 val cursor = db.query("PRAGMA integrity_check")
@@ -362,12 +511,10 @@ class DatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
 // MIGRATIONS
 // ══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Migration 1→2: Добавлена таблица terms
- */
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("""
+        db.execSQL(
+            """
             CREATE TABLE IF NOT EXISTS terms (
                 id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                 title TEXT NOT NULL,
@@ -384,26 +531,21 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             )
-        """)
+        """
+        )
         db.execSQL("CREATE INDEX IF NOT EXISTS index_terms_due_date ON terms(due_date)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_terms_is_completed ON terms(is_completed)")
         Timber.d("✅ Migration 1→2: terms table created")
     }
 }
 
-/**
- * Migration 2→3: Добавлено поле position в documents
- */
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE documents ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
-        Timber.d("✅ Migration 2→3: position field added")
+        Timber.d("✅ Migration 2→3: position field added to documents")
     }
 }
 
-/**
- * Migration 3→4: Добавлены поля processing_status, ocr_confidence, file_size, width, height
- */
 val MIGRATION_3_4 = object : Migration(3, 4) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE documents ADD COLUMN processing_status INTEGER NOT NULL DEFAULT 0")
@@ -416,28 +558,24 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
-/**
- * Migration 4→5: Добавлены FTS, translation_cache, search_history, языковые поля
- * 
- * ⚠️ NOTE: This migration historically created FTS table manually.
- * In v17+, Room @Fts4 handles FTS creation, but we keep this for compatibility.
- */
 val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        // ✅ FTS table (if not already created by Room)
-        db.execSQL("""
+        db.execSQL(
+            """
             CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts 
             USING fts4(content="documents", original_text, translated_text)
-        """)
+            """
+        )
         
-        // Populate FTS with existing data
-        db.execSQL("""
+        db.execSQL(
+            """
             INSERT INTO documents_fts(rowid, original_text, translated_text)
             SELECT id, original_text, translated_text FROM documents
-        """)
-        
-        // Translation cache
-        db.execSQL("""
+            """
+        )
+
+        db.execSQL(
+            """
             CREATE TABLE IF NOT EXISTS translation_cache (
                 cache_key TEXT PRIMARY KEY NOT NULL,
                 original_text TEXT NOT NULL,
@@ -446,77 +584,64 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
                 target_language TEXT NOT NULL,
                 timestamp INTEGER NOT NULL
             )
-        """)
+            """
+        )
         db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_cache_timestamp ON translation_cache(timestamp)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_translation_cache_languages ON translation_cache(source_language, target_language)")
-        
-        // Search history
-        db.execSQL("""
+
+        db.execSQL(
+            """
             CREATE TABLE IF NOT EXISTS search_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                 query TEXT NOT NULL,
                 result_count INTEGER NOT NULL DEFAULT 0,
                 timestamp INTEGER NOT NULL
             )
-        """)
+            """
+        )
         db.execSQL("CREATE INDEX IF NOT EXISTS index_search_history_query ON search_history(query)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_search_history_timestamp ON search_history(timestamp)")
-        
-        // Language fields in records
+
         db.execSQL("ALTER TABLE records ADD COLUMN source_language TEXT NOT NULL DEFAULT 'auto'")
         db.execSQL("ALTER TABLE records ADD COLUMN target_language TEXT NOT NULL DEFAULT 'en'")
-        
-        // Language fields in documents
+
         db.execSQL("ALTER TABLE documents ADD COLUMN detected_language TEXT")
         db.execSQL("ALTER TABLE documents ADD COLUMN source_language TEXT NOT NULL DEFAULT 'auto'")
         db.execSQL("ALTER TABLE documents ADD COLUMN target_language TEXT NOT NULL DEFAULT 'en'")
-        
-        // Archive and pin fields
+
         db.execSQL("ALTER TABLE folders ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE folders ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE folders ADD COLUMN color INTEGER")
         db.execSQL("ALTER TABLE folders ADD COLUMN icon TEXT")
-        
+
         db.execSQL("ALTER TABLE records ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE records ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE records ADD COLUMN tags TEXT")
-        
-        // Indices
+
         db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_is_pinned ON folders(is_pinned)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_is_archived ON folders(is_archived)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_records_is_pinned ON records(is_pinned)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_records_is_archived ON records(is_archived)")
-        
+
         db.execSQL("CREATE INDEX IF NOT EXISTS index_terms_is_cancelled ON terms(is_cancelled)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_terms_document_id ON terms(document_id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_terms_folder_id ON terms(folder_id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_terms_is_completed_due_date ON terms(is_completed, due_date)")
-        
+
         Timber.d("✅ Migration 4→5: FTS, caching, and language support added")
     }
 }
 
-/**
- * Migration 5→6: ProcessingStatus refactoring compatibility
- */
 val MIGRATION_5_6 = object : Migration(5, 6) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        // Schema doesn't change, but update version for Domain v4.1.0 compatibility
         db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_created_at ON folders(created_at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_records_created_at ON records(created_at)")
         Timber.d("✅ Migration 5→6: Performance indices added")
     }
 }
 
-/**
- * ✅ NEW: Migrations 6→17 (placeholders for future schema changes)
- * 
- * These are empty migrations to match the database version 17.
- * Add actual schema changes here when needed.
- */
 val MIGRATION_6_7 = object : Migration(6, 7) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        // Reserved for future changes
         Timber.d("✅ Migration 6→7: No schema changes")
     }
 }
@@ -581,13 +706,63 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
     }
 }
 
+val MIGRATION_17_18 = object : Migration(17, 18) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        try {
+            // ADD POSITION TO FOLDERS
+            try {
+                db.execSQL("ALTER TABLE folders ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+                Timber.d("✅ Added position column to folders")
+            } catch (e: Exception) {
+                Timber.w(e, "⚠️ folders.position might already exist")
+            }
+
+            db.execSQL("""
+                UPDATE folders 
+                SET position = (
+                    SELECT COUNT(*) 
+                    FROM folders f2 
+                    WHERE (f2.is_pinned > folders.is_pinned) 
+                       OR (f2.is_pinned = folders.is_pinned AND f2.updated_at > folders.updated_at)
+                )
+            """)
+
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_folders_position ON folders(position)")
+
+            // ADD POSITION TO RECORDS
+            try {
+                db.execSQL("ALTER TABLE records ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+                Timber.d("✅ Added position column to records")
+            } catch (e: Exception) {
+                Timber.w(e, "⚠️ records.position might already exist")
+            }
+
+            db.execSQL("""
+                UPDATE records 
+                SET position = (
+                    SELECT COUNT(*) 
+                    FROM records r2 
+                    WHERE r2.folder_id = records.folder_id
+                      AND ((r2.is_pinned > records.is_pinned) 
+                           OR (r2.is_pinned = records.is_pinned AND r2.updated_at > records.updated_at))
+                )
+            """)
+
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_records_position ON records(position)")
+
+            Timber.d("✅ Migration 17→18: Added position field to folders and records")
+
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Migration 17→18 FAILED")
+            throw e
+        }
+    }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // DATABASE EXTENSIONS
 // ══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Очистка всех данных (для logout/reset)
- */
 suspend fun AppDatabase.clearAllData() = withContext(Dispatchers.IO) {
     try {
         clearAllTables()
@@ -597,25 +772,16 @@ suspend fun AppDatabase.clearAllData() = withContext(Dispatchers.IO) {
     }
 }
 
-/**
- * Получение размера базы данных
- */
 fun AppDatabase.getDatabaseSize(context: Context): Long {
     val dbFile = context.getDatabasePath(AppDatabase.DATABASE_NAME)
     return if (dbFile.exists()) dbFile.length() else 0L
 }
 
-/**
- * Get WAL file size (for complete storage calculation)
- */
 fun AppDatabase.getWalSize(context: Context): Long {
     val walFile = context.getDatabasePath("${AppDatabase.DATABASE_NAME}-wal")
     return if (walFile.exists()) walFile.length() else 0L
 }
 
-/**
- * Get total database storage (DB + WAL + SHM)
- */
 fun AppDatabase.getTotalDatabaseSize(context: Context): Long {
     val dbSize = getDatabaseSize(context)
     val walSize = getWalSize(context)
@@ -624,11 +790,6 @@ fun AppDatabase.getTotalDatabaseSize(context: Context): Long {
     return dbSize + walSize + shmSize
 }
 
-/**
- * Vacuum database (reclaim unused space)
- * 
- * ✅ FIXED (Medium #12): Added testing support.
- */
 suspend fun AppDatabase.vacuum() = withContext(Dispatchers.IO) {
     try {
         openHelper.writableDatabase.execSQL("VACUUM")
@@ -638,9 +799,6 @@ suspend fun AppDatabase.vacuum() = withContext(Dispatchers.IO) {
     }
 }
 
-/**
- * Analyze database (update statistics for query optimizer)
- */
 suspend fun AppDatabase.analyze() = withContext(Dispatchers.IO) {
     try {
         openHelper.writableDatabase.execSQL("ANALYZE")
@@ -650,9 +808,6 @@ suspend fun AppDatabase.analyze() = withContext(Dispatchers.IO) {
     }
 }
 
-/**
- * ✅ NEW: Validate database integrity
- */
 suspend fun AppDatabase.validateIntegrity(): Boolean = withContext(Dispatchers.IO) {
     try {
         val cursor = openHelper.readableDatabase.query("PRAGMA integrity_check")
@@ -662,13 +817,13 @@ suspend fun AppDatabase.validateIntegrity(): Boolean = withContext(Dispatchers.I
             false
         }
         cursor.close()
-        
+
         if (result) {
             Timber.d("✅ Database integrity validated")
         } else {
             Timber.e("❌ Database integrity check failed")
         }
-        
+
         result
     } catch (e: Exception) {
         Timber.e(e, "❌ Integrity validation failed")
@@ -676,9 +831,6 @@ suspend fun AppDatabase.validateIntegrity(): Boolean = withContext(Dispatchers.I
     }
 }
 
-/**
- * ✅ NEW: Get database statistics for debugging
- */
 data class DatabaseStats(
     val totalSize: Long,
     val walSize: Long,
@@ -697,47 +849,6 @@ suspend fun AppDatabase.getStats(context: Context): DatabaseStats = withContext(
         recordCount = recordDao().getCount(),
         documentCount = documentDao().getCount(),
         termCount = termDao().getActiveCount(),
-        cacheEntries = translationCacheDao().getCacheCount()
+        cacheEntries = translationCacheDao().getCount()
     )
 }
-
-// ══════════════════════════════════════════════════════════════════════════════
-// END OF FILE - SUMMARY OF FIXES
-// ══════════════════════════════════════════════════════════════════════════════
-
-/**
- * ✅ ALL FIXES APPLIED FROM 4 ANALYSES:
- * 
- * 🔴 CRITICAL FIXES (1/7 total - this file's portion):
- *    ✅ #3: SearchDao availability (documented, optional implementation)
- * 
- * 🟠 SERIOUS FIXES (2/15 total):
- *    ✅ #4: Fixed 30GB mmap_size → adaptive (max 256MB based on device memory)
- *    ✅ #15: Added timeout protection for PRAGMA operations
- * 
- * 🟡 MEDIUM FIXES (1/22 total):
- *    ✅ #12: Database migrations testing support added
- *    ✅ #15: DatabaseCallback.onOpen() with proper error handling
- * 
- * 🏗️ ARCHITECTURAL IMPROVEMENTS (from Deep Analysis):
- *    ✅ Removed "server-side mentality" code:
- *       - 30GB mmap_size (server code) → adaptive mobile-friendly size
- *       - Manual FTS creation → Room @Fts4 annotation
- *       - Duplicate WAL mode setting → Room's setJournalMode()
- *    ✅ Added proper error handling throughout
- *    ✅ Added database integrity validation
- *    ✅ Added debugging utilities (getStats, validateIntegrity)
- *    ✅ Improved migration logging
- * 
- * 📊 ISSUES RESOLVED IN THIS FILE: 4 problems
- * 
- * NEXT FILES TO FIX:
- *    1. DatabaseModule.kt (Critical #3 - SearchDao provider)
- *    2. build.gradle.kts root (Critical #7)
- *    3. App.kt (Serious #2 - memory leak)
- *    4. NetworkModule.kt (Serious #1)
- *    5. EncryptedKeyStorage.kt (Serious #3)
- * 
- * Current compilation status: 4/7 critical issues remain (other files)
- * This file is now: ✅ PRODUCTION READY 2026
- */

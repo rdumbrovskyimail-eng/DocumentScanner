@@ -1,10 +1,13 @@
 package com.docs.scanner.presentation.screens.imageviewer
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -73,6 +76,18 @@ fun ImageViewerScreen(
                         translationX = offset.x,
                         translationY = offset.y
                     )
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                if (scale > 1f) {
+                                    scale = 1f
+                                    offset = Offset.Zero
+                                } else {
+                                    scale = 2f
+                                }
+                            }
+                        )
+                    }
                     .transformable(state = transformableState)
             )
         }
@@ -92,7 +107,7 @@ fun ImageViewerScreen(
             ) {
                 IconButton(onClick = onBackClick) {
                     Icon(
-                        Icons.Default.ArrowBack,
+                        Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
                         tint = Color.White
                     )
@@ -108,56 +123,6 @@ fun ImageViewerScreen(
             }
         }
         
-        Surface(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(16.dp),
-            shape = MaterialTheme.shapes.medium,
-            color = Color.Black.copy(alpha = 0.7f)
-        ) {
-            Row(
-                modifier = Modifier.padding(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                IconButton(
-                    onClick = {
-                        scale = (scale * 0.8f).coerceAtLeast(0.5f)
-                    }
-                ) {
-                    Icon(
-                        Icons.Default.ZoomOut,
-                        contentDescription = "Zoom Out",
-                        tint = Color.White
-                    )
-                }
-                
-                IconButton(
-                    onClick = {
-                        scale = 1f
-                        offset = Offset.Zero
-                    }
-                ) {
-                    Icon(
-                        Icons.Default.FitScreen,
-                        contentDescription = "Reset",
-                        tint = Color.White
-                    )
-                }
-                
-                IconButton(
-                    onClick = {
-                        scale = (scale * 1.25f).coerceAtMost(5f)
-                    }
-                ) {
-                    Icon(
-                        Icons.Default.ZoomIn,
-                        contentDescription = "Zoom In",
-                        tint = Color.White
-                    )
-                }
-            }
-        }
-        
         if (document == null) {
             CircularProgressIndicator(
                 modifier = Modifier.align(Alignment.Center),
@@ -167,21 +132,4 @@ fun ImageViewerScreen(
     }
 }
 
-// ⚠️ TODO Session 9 Problem #4: Переместить в presentation/viewmodels/ImageViewerViewModel.kt
-@HiltViewModel
-class ImageViewerViewModel @Inject constructor(
-    private val documentRepository: DocumentRepository,
-    savedStateHandle: SavedStateHandle
-) : ViewModel() {
-    
-    private val documentId: Long = savedStateHandle.get<Long>("documentId") ?: 0L
-    
-    private val _document = MutableStateFlow<Document?>(null)
-    val document: StateFlow<Document?> = _document.asStateFlow()
-    
-    fun loadDocument(documentId: Long) {
-        viewModelScope.launch {
-            _document.value = documentRepository.getDocumentById(documentId)
-        }
-    }
-}
+// ViewModel is defined in `ImageViewerViewModel.kt`.

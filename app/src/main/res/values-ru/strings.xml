@@ -1,12 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    DocumentScanner - Russian Localization Resources
+    Compliant with 2026 Typography Standards (uses proper Russian quotes « »)
+-->
 <resources>
-    <!-- ✅ РАСШИРЕНО: добавлены все строки -->
+    <!-- Имя приложения -->
+    <string name="app_name">Сканер Документов</string>
+
+    <!-- Группы уведомлений -->
+    <string name="notification_group_reminders">Напоминания</string>
+    <string name="notification_group_operations">Операции</string>
+
+    <!-- Каналы уведомлений -->
+    <string name="notification_channel_term_reminders">Напоминания о сроках</string>
+    <string name="notification_channel_term_reminders_desc">Уведомления о дедлайнах и напоминания о сроках сдачи</string>
+
+    <string name="notification_channel_scan_progress">Ход сканирования</string>
+    <string name="notification_channel_scan_progress_desc">Уведомления о прогрессе сканирования документов</string>
+
+    <string name="notification_channel_backup_restore">Резервное копирование и восстановление</string>
+    <string name="notification_channel_backup_restore_desc">Уведомления о резервном копировании на Google Диск и восстановлении данных</string>
+
+    <string name="notification_channel_general">Общие уведомления</string>
+    <string name="notification_channel_general_desc">Общие системные уведомления приложения</string>
     
-    <!-- Quick Scans -->
-    <string name="quick_scans">Быстрые сканы</string>
-    <string name="quick_scans_description">Автоматически создано для быстрых сканов</string>
-    
-    <!-- Screen Titles -->
+    <!-- Названия экранов -->
     <string name="screen_camera">Камера</string>
     <string name="screen_editor">Редактор</string>
     <string name="screen_folders">Папки</string>
@@ -14,21 +32,342 @@
     <string name="screen_search">Поиск</string>
     <string name="screen_settings">Настройки</string>
     <string name="screen_terms">Сроки и дедлайны</string>
+    <string name="screen_debug">Логи отладки</string>
+    <string name="screen_onboarding">Добро пожаловать</string>
     
-    <!-- Buttons -->
+    <!-- Общие кнопки -->
     <string name="btn_save">Сохранить</string>
     <string name="btn_delete">Удалить</string>
     <string name="btn_cancel">Отмена</string>
+    <string name="btn_ok">ОК</string>
     <string name="btn_create">Создать</string>
-    <string name="btn_edit">Редактировать</string>
+    <string name="btn_edit">Изменить</string>
     <string name="btn_add">Добавить</string>
     <string name="btn_retry">Повторить</string>
     <string name="btn_continue">Продолжить</string>
+    <string name="btn_back">Назад</string>
+    <string name="btn_done">Готово</string>
     
-    <!-- Folders -->
-    <string name="folders_empty_title">Нет папок</string>
-    <string name="folders_empty_message">Создайте первую папку для организации документов</string>
+    <!-- Экран папок -->
+    <string name="folders_title">Сканер Документов</string>
+    <string name="folders_empty_title">Папок пока нет</string>
+    <string name="folders_empty_message">Создайте свою первую папку для упорядочивания документов</string>
     <string name="folders_create_action">Создать папку</string>
+    <string name="folders_create_dialog_title">Создать папку</string>
+    <string name="folders_edit_dialog_title">Редактировать папку</string>
+    <string name="folders_delete_title">Удалить папку?</string>
+    <string name="folders_delete_message">Вы действительно хотите удалить «%1$s»?</string>
+    <string name="folders_delete_warning">Эта папка содержит %1$d записей. Все записи и связанные с ними документы будут безвозвратно удалены.</string>
+    <string name="folders_label_name">Название папки</string>
+    <string name="folders_label_description">Описание (необязательно)</string>
     
-    <!-- ... остальные переводы по аналогии -->
+    <!-- Экран записей -->
+    <string name="records_title">Записи</string>
+    <string name="records_empty_title">Записей пока нет</string>
+    <string name="records_empty_message">Создайте свою первую запись, чтобы начать добавлять документы</string>
+    <string name="records_create_action">Создать запись</string>
+    <string name="records_create_dialog_title">Создать запись</string>
+    <string name="records_edit_dialog_title">Редактировать запись</string>
+    <string name="records_delete_title">Удалить запись?</string>
+    <string name="records_delete_message">Вы действительно хотите удалить «%1$s»? Это действие безвозвратно удалит запись и все связанные с ней документы.</string>
+    <string name="records_move_title">Переместить в папку</string>
+    <string name="records_label_name">Название</string>
+    <string name="records_label_description">Описание (необязательно)</string>
+    
+    <!-- Экран редактора -->
+    <string name="editor_title">Документы</string>
+    <string name="editor_empty_title">Документов пока нет</string>
+    <string name="editor_empty_message">Добавьте первый документ, чтобы запустить сканирование и перевод</string>
+    <string name="editor_add_action">Добавить документ</string>
+    <string name="editor_ocr_text">Распознанный текст</string>
+    <string name="editor_translation">Перевод</string>
+    <string name="editor_edit_text">Редактировать текст</string>
+    <string name="editor_processing">Обработка документа...</string>
+    
+    <!-- Экран камеры -->
+    <string name="camera_title">Сканер документов</string>
+    <string name="camera_initializing">Инициализация сканера...</string>
+    <string name="camera_error_title">Ошибка сканера</string>
+    <string name="camera_permission_required">Для сканирования документов приложению требуется доступ к камере</string>
+    <string name="camera_grant_permission">Предоставить разрешение</string>
+    
+    <!-- Экран поиска -->
+    <string name="search_title">Поиск</string>
+    <string name="search_hint">Поиск по документам...</string>
+    <string name="search_empty_title">Ничего не найдено</string>
+    <string name="search_empty_message">Попробуйте изменить поисковый запрос</string>
+    <string name="search_info_title">Поиск по всем документам</string>
+    <string name="search_info_message">Введите текст для поиска в оригинальном тексте и переводах</string>
+    <string name="search_results_count">Найдено результатов: %1$d</string>
+    <string name="search_result_original">Оригинал</string>
+    <string name="search_result_translation">Перевод</string>
+    
+    <!-- Экран настроек -->
+    <string name="settings_title">Настройки</string>
+    
+    <!-- Настройки - API-ключи -->
+    <string name="settings_api_keys_title">Ключи Gemini API</string>
+    <string name="settings_no_keys_added">Нет добавленных ключей</string>
+    <string name="settings_api_keys_empty">Ключи API не добавлены. Пожалуйста, добавьте ключ Gemini API для работы перевода.</string>
+    <string name="settings_api_key_active">Активен</string>
+    <string name="settings_api_key_set_active">Сделать активным</string>
+    <string name="settings_api_key_copy">Копировать ключ</string>
+    <string name="settings_api_key_delete">Удалить ключ</string>
+    <string name="settings_api_key_test">Проверить работу</string>
+    <string name="settings_add_key">Добавить API-ключ</string>
+    <string name="settings_add_key_title">Добавить API-ключ Gemini</string>
+    <string name="settings_add_key_message">Вы можете бесплатно получить свой личный API-ключ в консоли Google AI Studio: https://aistudio.google.com/app/apikey</string>
+    <string name="settings_add_key_label">API-ключ</string>
+    <string name="settings_add_key_hint">AIza...</string>
+    <string name="settings_add_key_optional_label">Метка для ключа (необязательно)</string>
+    <string name="settings_add_key_hint_label">Мой основной ключ</string>
+    <string name="settings_add_key_info">Добавляемый ключ будет автоматически активирован по умолчанию</string>
+    <string name="settings_add_key_get">Получить бесплатный API-ключ</string>
+    <string name="settings_delete_key_title">Удалить API-ключ?</string>
+    <string name="settings_delete_key_message">Вы действительно хотите удалить выбранный API-ключ?</string>
+    <string name="settings_delete_key_warning">Этот ключ является активным на данный момент. Функция автоматического перевода будет приостановлена.</string>
+    
+    <!-- Настройки - Движок MLKit OCR -->
+    <string name="settings_mlkit_title">Модели ML Kit OCR</string>
+    <string name="settings_mlkit_script_mode">Языковой пакет распознавания</string>
+    <string name="settings_mlkit_auto_detect">Автоопределение языка</string>
+    <string name="settings_mlkit_auto_detect_subtitle">Автоматически определять тип письменности и язык по изображению</string>
+    <string name="settings_mlkit_confidence_threshold">Порог уверенности ИИ</string>
+    <string name="settings_mlkit_confidence_subtitle">Слова, распознанные с уверенностью ниже этого порога, будут подсвечены</string>
+    <string name="settings_mlkit_highlight">Подсвечивать нечеткие слова</string>
+    <string name="settings_mlkit_highlight_subtitle">Подсвечивать красным слова, в точности которых распознаватель не уверен</string>
+    <string name="settings_mlkit_show_confidences">Показывать уверенность символов</string>
+    <string name="settings_mlkit_show_confidences_subtitle">Выводить точные процентные показатели уверенности для каждого слова при тесте</string>
+    <string name="settings_mlkit_test_title">Тестирование OCR</string>
+    <string name="settings_mlkit_test_subtitle">Выберите изображение для проверки точности распознавания</string>
+    <string name="settings_mlkit_select_image">Выбрать изображение</string>
+    <string name="settings_mlkit_run_ocr">Запустить распознавание</string>
+    <string name="settings_mlkit_running">Выполнение...</string>
+    <string name="settings_mlkit_clear_cache">Сбросить кэш распознавателей</string>
+    <string name="settings_mlkit_clear_cache_subtitle">Освобождает оперативную память устройства, выгружая неиспользуемые модули OCR</string>
+    <string name="settings_mlkit_no_image">Изображение не выбрано</string>
+    <string name="settings_mlkit_ocr_result">Результат OCR</string>
+    <string name="settings_mlkit_recognized_text">Распознанный текст:</string>
+    <string name="settings_mlkit_no_text">Текст на картинке не обнаружен</string>
+    <string name="settings_mlkit_word_confidences">Уверенность распознавания слов:</string>
+    <string name="settings_mlkit_stat_confidence">Уверенность</string>
+    <string name="settings_mlkit_stat_quality">Качество</string>
+    <string name="settings_mlkit_stat_words">Слов всего</string>
+    <string name="settings_mlkit_stat_time">Время</string>
+    
+    <!-- Настройки - Облако Google Drive -->
+    <string name="settings_drive_title">Резервное копирование Google Drive</string>
+    <string name="settings_drive_message">Подключите Google Диск для надежного хранения ваших архивов</string>
+    <string name="settings_drive_signin">Войти через аккаунт Google</string>
+    <string name="settings_drive_connect">Подключить диск</string>
+    <string name="settings_drive_disconnect">Отключить диск</string>
+    <string name="settings_drive_signed_in">Активный аккаунт:</string>
+    <string name="settings_drive_not_connected">Облако не подключено</string>
+    <string name="settings_drive_signout">Выйти</string>
+    <string name="settings_drive_backup">Создать бэкап в облако</string>
+    <string name="settings_drive_upload">Загрузить архивы</string>
+    <string name="settings_drive_backing_up">Создание копии в облаке...</string>
+    <string name="settings_drive_restore">Восстановить из облака</string>
+    <string name="settings_drive_refresh">Обновить список</string>
+    <string name="settings_drive_backups">Доступные резервные копии:</string>
+    
+    <!-- Настройки - Локальный бэкап -->
+    <string name="settings_backup_local">Локальный бэкап</string>
+    <string name="settings_backup_include_images">Включать оригинальные сканы в архив</string>
+    <string name="settings_backup_create">Создать локальный бэкап</string>
+    <string name="settings_backup_recent">Локальные архивы:</string>
+    <string name="settings_backup_restore">Восстановить данные</string>
+    <string name="settings_backup_share">Поделиться</string>
+    <string name="settings_backup_working">Выполняется...</string>
+    
+    <!-- Настройки - Общие и Внешний вид -->
+    <string name="settings_appearance_title">Внешний вид</string>
+    <string name="settings_theme">Тема интерфейса</string>
+    <string name="settings_app_language">Язык интерфейса</string>
+    <string name="settings_language_system">Системный (по умолчанию)</string>
+    
+    <!-- Настройки - Перевод -->
+    <string name="settings_translation_title">Параметры перевода</string>
+    <string name="settings_auto_translate">Автоматический перевод после OCR</string>
+    <string name="settings_target_language">Язык перевода</string>
+    
+    <!-- Настройки - Кэш -->
+    <string name="settings_cache_title">Кэш базы переводов</string>
+    <string name="settings_cache_enable">Кэшировать повторяющиеся переводы</string>
+    <string name="settings_cache_ttl">Время хранения кэша (дней):</string>
+    <string name="settings_cache_entries">Всего переводов в кэше:</string>
+    <string name="settings_cache_size">Размер файлов кэша:</string>
+    <string name="settings_cache_refresh">Обновить информацию</string>
+    <string name="settings_cache_clear">Очистить кэш полностью</string>
+    <string name="settings_cache_clear_old">Очистить устаревшие записи...</string>
+    
+    <!-- Настройки - Хранилище -->
+    <string name="settings_storage_title">Занимаемое место</string>
+    <string name="settings_storage_calculating">Идет расчет...</string>
+    <string name="settings_storage_refresh">Пересчитать</string>
+    <string name="settings_storage_clear_temp">Очистить временные файлы</string>
+    
+    <!-- Настройки - Качество фото -->
+    <string name="settings_image_quality_title">Сжатие изображений</string>
+    <string name="settings_image_quality_preset">Профиль качества сохранения</string>
+    <string name="settings_image_quality_select">Выберите профиль</string>
+    
+    <!-- Настройки - Отладка -->
+    <string name="settings_debug_title">Инструменты отладки</string>
+    <string name="settings_debug_subtitle">Доступ к диагностическим логам приложения</string>
+    <string name="settings_debug_save_log">Экспортировать лог-файл</string>
+    <string name="settings_debug_open_logs">Посмотреть журнал логов</string>
+    <string name="settings_app_info_title">О программе</string>
+    <string name="settings_app_info_version">Версия приложения</string>
+    <string name="settings_app_info_build">Номер сборки</string>
+    <string name="settings_app_info_package">Идентификатор пакета</string>
+    
+    <!-- Экран сроков (Сроки и дедлайны) -->
+    <string name="terms_title">Сроки и дедлайны</string>
+    <string name="terms_tab_upcoming">Предстоящие</string>
+    <string name="terms_tab_completed">Выполненные</string>
+    <string name="terms_empty_upcoming">Предстоящих сроков сдачи нет</string>
+    <string name="terms_empty_completed">Выполненных дедлайнов нет</string>
+    <string name="terms_empty_hint">Нажмите кнопку +, чтобы добавить свой первый дедлайн</string>
+    <string name="terms_create_title">Создать дедлайн</string>
+    <string name="terms_label_title">Название задачи</string>
+    <string name="terms_hint_title">Экзамен, сдача проекта, подпись договора...</string>
+    <string name="terms_label_description">Дополнительное описание (необязательно)</string>
+    <string name="terms_reminder">Напомнить за</string>
+    <string name="terms_reminder_none">Без напоминания</string>
+    <string name="terms_reminder_minutes">%1$d мин.</string>
+    <string name="terms_reminder_hour">1 час</string>
+    <string name="terms_reminder_hours">2 часа</string>
+    <string name="terms_complete">Выполнить</string>
+    <string name="terms_completed">Выполнено</string>
+    <string name="terms_overdue_minutes">Просрочено на %1$d мин.</string>
+    <string name="terms_overdue_hours">Просрочено на %1$d час.</string>
+    <string name="terms_overdue_days">Просрочено на %1$d дн.</string>
+    <string name="terms_in_minutes">Срок через %1$d мин.</string>
+    <string name="terms_in_hours">Срок через %1$d час.</string>
+    <string name="terms_in_days">Срок через %1$d дн.</string>
+    <string name="terms_in_weeks">Срок через %1$d нед.</string>
+    
+    <!-- Приветственный экран (Onboarding) -->
+    <string name="onboarding_title">Добро пожаловать в Сканер Документов</string>
+    <string name="onboarding_subtitle">Сканируйте, мгновенно распознавайте и переводите ваши документы</string>
+    <string name="onboarding_feature_scan_title">Интеллектуальное сканирование</string>
+    <string name="onboarding_feature_scan_desc">Высокоточный сканер документов на базе ML Kit с автоматическим кадрированием границ</string>
+    <string name="onboarding_feature_ocr_title">Распознавание текста (OCR)</string>
+    <string name="onboarding_feature_ocr_desc">Быстрое извлечение печатного и рукописного текста на любых языках</string>
+    <string name="onboarding_feature_translate_title">Автоматический перевод</string>
+    <string name="onboarding_feature_translate_desc">Мгновенный перевод распознанного текста с помощью нейросети Google Gemini AI</string>
+    <string name="onboarding_api_key_required">Требуется API-ключ Gemini</string>
+    <string name="onboarding_api_key_message">Для работы функций перевода и улучшения текста введите ваш ключ API от Google AI Studio</string>
+    
+    <!-- Системная папка Быстрых сканов -->
+    <string name="quick_scans">Быстрые сканы</string>
+    <string name="quick_scans_folder_name">Быстрые сканы</string>
+    <string name="quick_scans_description">Системная папка для мгновенного сохранения быстрых снимков</string>
+    
+    <!-- Ошибки на русском -->
+    <string name="error_network">Ошибка сети. Проверьте интернет-соединение.</string>
+    <string name="error_no_api_key">Пожалуйста, добавьте API-ключ в настройках приложения</string>
+    <string name="error_invalid_api_key">Неверный формат или длина API-ключи Gemini</string>
+    <string name="error_api_key_empty">Поле API-ключа не может быть пустым</string>
+    <string name="error_api_key_short">API-ключ слишком короткий</string>
+    <string name="error_camera_permission">Доступ к системной камере отклонен пользователем</string>
+    <string name="error_storage_permission">Доступ к хранилищу устройства отклонен</string>
+    <string name="error_ocr_failed">Не удалось выполнить распознавание текста на фото</string>
+    <string name="error_translation_failed">Не удалось перевести текст страницы</string>
+    <string name="error_unknown">Произошла неизвестная ошибка приложения</string>
+    <string name="error_file_not_found">Файл не найден по пути: %1$s</string>
+    <string name="error_share_failed">Не удалось поделиться файлом: %1$s</string>
+    
+    <!-- Сообщения об успешных действиях -->
+    <string name="success_saved">Успешно сохранено</string>
+    <string name="success_deleted">Успешно удалено</string>
+    <string name="success_api_key_added">API-ключ успешно добавлен</string>
+    <string name="success_api_key_copied">API-ключ скопирован в буфер обмена</string>
+    <string name="success_api_key_deleted">API-ключ удален из системы</string>
+    <string name="success_api_key_activated">API-ключ успешно назначен активным</string>
+    <string name="success_backup_complete">Резервная копия успешно создана</string>
+    <string name="success_restore_complete">Данные успешно восстановлены из резервной копии</string>
+    <string name="success_cache_cleared">Кэш базы переводов успешно очищен</string>
+    <string name="success_mlkit_cache_cleared">Кэш распознавателей MLKit успешно очищен</string>
+    
+    <!-- Системные описания элементов (Accessibility / TalkBack) -->
+    <string name="cd_back">Назад</string>
+    <string name="cd_search">Поиск</string>
+    <string name="cd_settings">Настройки</string>
+    <string name="cd_camera">Камера</string>
+    <string name="cd_gallery">Галерея</string>
+    <string name="cd_document_image">Изображение документа</string>
+    <string name="cd_delete_button">Удалить элемент</string>
+    <string name="cd_edit_button">Редактировать</string>
+    <string name="cd_add_button">Добавить элемент</string>
+    <string name="cd_menu">Открыть меню действий</string>
+    <string name="cd_close">Закрыть</string>
+    <string name="cd_expand">Развернуть</string>
+    <string name="cd_collapse">Свернуть</string>
+    <string name="cd_clear_selection">Сбросить выделение</string>
+    <string name="cd_clear_result">Очистить результаты</string>
+    
+    <!-- ════════════════════════════════════════════════════════════════════
+         ПРАВИЛА СКЛОНЕНИЯ ДЛЯ РУССКОГО ЯЗЫКА (PLURALS)
+         ════════════════════════════════════════════════════════════════════ -->
+    <plurals name="documents_count">
+        <item quantity="one">%d документ</item>
+        <item quantity="few">%d документа</item>
+        <item quantity="many">%d документов</item>
+        <item quantity="other">%d документа</item>
+    </plurals>
+    
+    <plurals name="records_count">
+        <item quantity="one">%d запись</item>
+        <item quantity="few">%d записи</item>
+        <item quantity="many">%d записей</item>
+        <item quantity="other">%d записи</item>
+    </plurals>
+    
+    <plurals name="pages_count">
+        <item quantity="one">%d страница</item>
+        <item quantity="few">%d страницы</item>
+        <item quantity="many">%d страниц</item>
+        <item quantity="other">%d страницы</item>
+    </plurals>
+    
+    <plurals name="folders_count">
+        <item quantity="one">%d папка</item>
+        <item quantity="few">%d папки</item>
+        <item quantity="many">%d папок</item>
+        <item quantity="other">%d папки</item>
+    </plurals>
+
+    <!-- Аналитический центр -->
+    <string name="analytics_center">Аналитический центр</string>
+    <string name="analytics_hub_subtitle">Управление переводами и заметками</string>
+    <string name="analytics_translation_archive">Архив переводов</string>
+    <string name="analytics_translation_archive_desc">Все переводы из ваших документов</string>
+    <string name="analytics_notes">Заметки</string>
+    <string name="analytics_notes_desc">Свободный анализ информации и заметки</string>
+
+    <!-- Архив переводов -->
+    <string name="archive_search_hint">Поиск переводов…</string>
+    <string name="archive_empty">Архив пуст.
+Переводы появляются здесь автоматически после перевода документов.</string>
+    <string name="archive_empty_search">Ни один сохраненный перевод не соответствует условиям поиска</string>
+    <string name="archive_edit_title">Редактировать перевод</string>
+    <string name="archive_edited_badge">изменено</string>
+    <string name="archive_delete_title">Удалить перевод?</string>
+    <string name="archive_delete_message">Выбранный перевод будет удален только из архива. Оригинальный документ не пострадает.</string>
+
+    <!-- Заметки -->
+    <string name="notes_search_hint">Поиск заметок…</string>
+    <string name="notes_empty">Заметок пока нет.
+Нажмите +, чтобы добавить первую аналитическую заметку.</string>
+    <string name="notes_empty_search">Ни одна заметка не соответствует условиям поиска</string>
+    <string name="note_editor_new">Новая заметка</string>
+    <string name="note_editor_edit">Редактировать заметку</string>
+    <string name="note_title_label">Заголовок</string>
+    <string name="note_content_label">Текст заметки</string>
+    <string name="note_color_label">Цвет карточки</string>
+    <string name="note_add_tag">Добавить тег</string>
+    <string name="note_delete_title">Удалить заметку?</string>
+    <string name="note_delete_message">Выбранная заметка будет безвозвратно удалена из хранилища.</string>
 </resources>

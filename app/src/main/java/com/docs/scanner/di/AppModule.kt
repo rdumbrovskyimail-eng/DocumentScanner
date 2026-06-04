@@ -4,15 +4,18 @@ import android.content.Context
 import com.docs.scanner.data.cache.TranslationCacheManager
 import com.docs.scanner.data.local.alarm.AlarmScheduler
 import com.docs.scanner.data.local.database.dao.TranslationCacheDao
-import com.docs.scanner.data.local.preferences.SettingsDataStore
 import com.docs.scanner.data.local.security.EncryptedKeyStorage
+import com.docs.scanner.domain.core.SystemTimeProvider
+import com.docs.scanner.domain.core.TimeProvider
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import javax.inject.Qualifier
 import javax.inject.Singleton
 
@@ -38,6 +41,10 @@ annotation class MainDispatcher
 @Retention(AnnotationRetention.BINARY)
 annotation class DefaultDispatcher
 
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class AppScope
+
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
@@ -59,18 +66,6 @@ object AppModule {
         @ApplicationContext context: Context
     ): EncryptedKeyStorage {
         return EncryptedKeyStorage(context)
-    }
-    
-    /**
-     * Provides DataStore for app settings.
-     * ⚠️ Does NOT store API keys (use EncryptedKeyStorage instead).
-     */
-    @Provides
-    @Singleton
-    fun provideSettingsDataStore(
-        @ApplicationContext context: Context
-    ): SettingsDataStore {
-        return SettingsDataStore(context)
     }
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -107,6 +102,14 @@ object AppModule {
         return AlarmScheduler(context)
     }
     
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // TIME (for deterministic domain logic)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    @Provides
+    @Singleton
+    fun provideTimeProvider(): TimeProvider = SystemTimeProvider()
+    
     // ⚠️ NOTE: AlarmSchedulerWrapper removed - it was duplicate wrapper.
     // ViewModels should inject AlarmScheduler directly.
     // See Session 3 Problem #3 for details.
@@ -141,4 +144,10 @@ object AppModule {
     @Singleton
     @DefaultDispatcher
     fun provideDefaultDispatcher(): CoroutineDispatcher = Dispatchers.Default
+
+    @Provides
+    @Singleton
+    @AppScope
+    fun provideAppScope(): CoroutineScope = 
+        CoroutineScope(SupervisorJob() + Dispatchers.Default)
 }

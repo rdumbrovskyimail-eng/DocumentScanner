@@ -43,6 +43,7 @@ google-services.json
 # ============================================
 .idea/
 *.iml
+.kotlin/
 .idea/workspace.xml
 .idea/tasks.xml
 .idea/gradle.xml
@@ -143,4 +144,4 @@ temp/
 
 # ✅ NEW: Backup files
 *.backup
-*.old
+*.old 
